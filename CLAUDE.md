@@ -317,3 +317,323 @@ public, private, protected, internal, static, extern, new, virtual, abstract, se
 - **Strict nullable annotations** — always annotate with `?`
 - **Use null-forgiving `!` sparingly** — only when obviously safe
 - **Prefer null checks** and pattern matching
+
+---
+
+# Best Practices
+
+## Early Returns & Guard Clauses
+
+- **Return early** to avoid deep nesting
+- **Handle error/edge cases first**, then the happy path
+- **False/unspecified should be the default** state
+
+```csharp
+// GOOD - early returns, flat structure
+public User GetUser(string id)
+{
+	if (string.IsNullOrEmpty(id))
+		return null;
+
+	if (!_cache.TryGetValue(id, out var user))
+		return LoadFromDatabase(id);
+
+	return user;
+}
+
+// BAD - nested structure
+public User GetUser(string id)
+{
+	if (!string.IsNullOrEmpty(id))
+	{
+		if (_cache.TryGetValue(id, out var user))
+		{
+			return user;
+		}
+		else
+		{
+			return LoadFromDatabase(id);
+		}
+	}
+	return null;
+}
+```
+
+## Method Parameters
+
+- **Max 4 parameters** — use a record/options object for more
+- **Boolean parameters**: Always use named arguments
+- **Sensible defaults** — methods should work with minimal config
+
+```csharp
+// GOOD - record for many parameters
+public record SearchOptions(
+	string Query,
+	int Page = 1,
+	int PageSize = 20,
+	bool IncludeDeleted = false,
+	SortOrder Sort = SortOrder.Relevance
+);
+
+public SearchResult Search(SearchOptions options) => ...
+
+// GOOD - named boolean arguments
+var result = Process(data, validateInput: true);
+
+// BAD - too many parameters
+public void Send(string to, string from, string subject, string body, bool html, bool priority, int retries) => ...
+
+// BAD - unnamed boolean
+var result = Process(data, true);  // What does true mean?
+```
+
+## Complexity & Method Design
+
+- **Cyclomatic complexity limit**: Max 5-7 branches per method
+- **Single responsibility**: One method does one thing
+- **Extract early**: Break complex logic into smaller, named methods
+
+```csharp
+// GOOD - low complexity, clear intent
+public bool CanProcessOrder(Order order) =>
+	order.Status == OrderStatus.Pending &&
+	order.Items.Count > 0 &&
+	IsPaymentValid(order) &&
+	IsInventoryAvailable(order);
+
+// BAD - high complexity, hard to follow
+public bool CanProcessOrder(Order order)
+{
+	if (order.Status == OrderStatus.Pending)
+	{
+		if (order.Items.Count > 0)
+		{
+			if (order.Payment != null && order.Payment.IsValid)
+			{
+				foreach (var item in order.Items)
+				{
+					if (_inventory.GetStock(item.ProductId) < item.Quantity)
+						return false;
+				}
+				return true;
+			}
+		}
+	}
+	return false;
+}
+```
+
+## Defensive Programming
+
+- **Validate at boundaries** — public API entry points
+- **Fail fast** — throw early, don't hide errors
+- **Trust internal code** — don't over-validate private methods
+
+```csharp
+// GOOD - validate at public API boundary
+public void ProcessOrder(Order order)
+{
+	ArgumentNullException.ThrowIfNull(order);
+	if (order.Items.Count == 0)
+		throw new ArgumentException("Order must have items", nameof(order));
+
+	ProcessInternal(order);  // Internal method trusts the input
+}
+
+private void ProcessInternal(Order order)
+{
+	// No validation needed - called only from validated context
+	foreach (var item in order.Items)
+		ProcessItem(item);
+}
+```
+
+## Immutability
+
+- **Immutable by default** — use `readonly`, `init`, records
+- **Mutate only when necessary** — performance or API requirements
+
+```csharp
+// GOOD - immutable record
+public record UserCreated(string UserId, string Email, DateTime CreatedAt);
+
+// GOOD - readonly fields
+public class UserService(IRepository repository)
+{
+	private readonly Dictionary<string, User> _cache = [];  // readonly reference, mutable content OK
+}
+
+// GOOD - init-only properties
+public class Configuration
+{
+	public required string ConnectionString { get; init; }
+	public int MaxRetries { get; init; } = 3;
+}
+```
+
+## Composition Over Inheritance
+
+- **Prefer interfaces** and delegation over base classes
+- **Avoid deep inheritance hierarchies**
+- **Sealed by default** unless designed for extension
+
+```csharp
+// GOOD - composition via interfaces
+public interface IValidator<T>
+{
+	bool Validate(T item);
+}
+
+public class OrderProcessor(IValidator<Order> validator, IRepository repository)
+{
+	public void Process(Order order)
+	{
+		if (!validator.Validate(order))
+			throw new ValidationException();
+		repository.Save(order);
+	}
+}
+
+// AVOID - inheritance hierarchy
+public abstract class BaseProcessor { }
+public abstract class EntityProcessor : BaseProcessor { }
+public class OrderProcessor : EntityProcessor { }  // Too deep
+```
+
+## Async Patterns
+
+- **Async all the way** — never block with `.Result` or `.Wait()`
+- **ConfigureAwait(false)** in library code
+- **ValueTask for hot paths** — when method often completes synchronously
+- **Always accept CancellationToken** — propagate down the call stack
+
+```csharp
+// GOOD - async all the way with cancellation
+public async Task<User> GetUserAsync(string id, CancellationToken ct = default)
+{
+	ct.ThrowIfCancellationRequested();
+
+	var user = await _repository
+		.GetByIdAsync(id, ct)
+		.ConfigureAwait(false);
+
+	return user;
+}
+
+// GOOD - ValueTask for cached results
+public ValueTask<User> GetUserAsync(string id)
+{
+	if (_cache.TryGetValue(id, out var user))
+		return ValueTask.FromResult(user);
+
+	return new ValueTask<User>(LoadUserAsync(id));
+}
+
+// BAD - blocking on async
+public User GetUser(string id) =>
+	GetUserAsync(id).Result;  // Never do this!
+```
+
+## Return Values & Null Handling
+
+- **Never return null for collections** — return empty `[]`
+- **TryGet pattern for lookups** — `bool TryGet(out T value)`
+- **Don't use Option/Result types** in C# — use nullable reference types
+
+```csharp
+// GOOD - empty collection, not null
+public IReadOnlyList<User> GetUsers(string filter) =>
+	_users.Where(u => u.Name.Contains(filter)).ToList() ?? [];
+
+// GOOD - TryGet pattern
+public bool TryGetUser(string id, out User user) =>
+	_cache.TryGetValue(id, out user);
+
+// GOOD - nullable for single items
+public User? FindUser(string id) =>
+	_users.FirstOrDefault(u => u.Id == id);
+```
+
+## Code Reuse
+
+- **Rule of three** — don't abstract until you have 3 concrete uses
+- **Prefer duplication over wrong abstraction**
+- **Extract after patterns emerge**, not before
+
+## Dependency Injection
+
+- **Constructor injection only** — no property or method injection
+- **Avoid static methods** for testability (except pure functions)
+- **IOptions<T> pattern** for configuration
+
+```csharp
+// GOOD - constructor injection with options
+public class EmailService(IOptions<EmailOptions> options, ISmtpClient client)
+{
+	private readonly EmailOptions _options = options.Value;
+
+	public Task SendAsync(Email email) => ...
+}
+```
+
+## Fluent APIs & Method Chaining
+
+- **Embrace fluent builders** for configuration
+- **Return `this`** for chainable methods
+
+```csharp
+// GOOD - fluent builder
+var query = new QueryBuilder()
+	.From("logs-*")
+	.Where(q => q.Term("level", "error"))
+	.Sort("@timestamp", SortOrder.Desc)
+	.Size(100)
+	.Build();
+```
+
+## Extension Methods
+
+- **For types you don't own** (framework/library types)
+- **For interface composition** (adding behavior to interfaces)
+- **Not for your own classes** — use instance methods
+
+```csharp
+// GOOD - extending framework type
+public static class StringExtensions
+{
+	public static bool IsNullOrEmpty(this string? value) =>
+		string.IsNullOrEmpty(value);
+}
+
+// GOOD - extending interface
+public static class QueryableExtensions
+{
+	public static IQueryable<T> WhereIf<T>(
+		this IQueryable<T> query,
+		bool condition,
+		Expression<Func<T, bool>> predicate
+	) =>
+		condition ? query.Where(predicate) : query;
+}
+```
+
+## Logging
+
+- **Structured logging** with semantic properties
+- **Log at appropriate levels** — errors for errors, info for key events
+
+```csharp
+// GOOD - structured with properties
+_logger.LogInformation("User {UserId} logged in from {IpAddress}", userId, ip);
+
+// GOOD - appropriate level
+_logger.LogError(ex, "Failed to process order {OrderId}", orderId);
+
+// BAD - string concatenation
+_logger.LogInformation("User " + userId + " logged in");
+```
+
+## Namespaces
+
+- **Feature-based organization** — group by feature, not technical layer
+- **Match logical structure**, not necessarily folder structure
