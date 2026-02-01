@@ -298,9 +298,9 @@ Console.WriteLine($"   {ipQuery}");
 
 // Combining with generated field names
 Console.WriteLine("\n>> Building dynamic query with field constants:");
-var indexPattern = Product.Mapping.SearchStrategy.Pattern;
-var priceField = Product.Mapping.Fields.Price;
-var stockField = Product.Mapping.Fields.InStock;
+var indexPattern = Product.ElasticsearchContext.SearchStrategy.Pattern;
+var priceField = Product.ElasticsearchContext.Fields.Price;
+var stockField = Product.ElasticsearchContext.Fields.InStock;
 Console.WriteLine($"   FROM {indexPattern}");
 Console.WriteLine($"   | WHERE {stockField} == true");
 Console.WriteLine($"   | WHERE {priceField} > 100");
@@ -308,9 +308,9 @@ Console.WriteLine($"   | STATS avg_price = AVG({priceField}) BY brand");
 
 // Cross-index correlation (conceptual)
 Console.WriteLine("\n>> Cross-index query pattern (orders + logs):");
-Console.WriteLine($"   -- Get orders from: {Order.Mapping.SearchStrategy.Pattern}");
-Console.WriteLine($"   -- Correlate with logs from: {ApplicationLog.Mapping.IndexStrategy.DataStreamName}");
-Console.WriteLine($"   -- Join on: {Order.Mapping.Fields.Id} = labels.orderId");
+Console.WriteLine($"   -- Get orders from: {Order.ElasticsearchContext.SearchStrategy.Pattern}");
+Console.WriteLine($"   -- Correlate with logs from: {ApplicationLog.ElasticsearchContext.IndexStrategy.DataStreamName}");
+Console.WriteLine($"   -- Join on: {Order.ElasticsearchContext.Fields.Id} = labels.orderId");
 
 Console.WriteLine("\n\n" + "=".PadRight(80, '='));
 Console.WriteLine("ES|QL queries are generated from LINQ - type-safe and AOT compatible!");

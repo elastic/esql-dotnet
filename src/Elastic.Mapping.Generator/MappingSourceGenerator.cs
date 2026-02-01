@@ -71,9 +71,9 @@ public class MappingSourceGenerator : IIncrementalGenerator
 
 	private static void Execute(SourceProductionContext context, TypeMappingModel model)
 	{
-		// Generate the static Mapping class
+		// Generate the static ElasticsearchContext class
 		var mappingSource = MappingContextEmitter.Emit(model);
-		context.AddSource($"{model.FullTypeName}.Mapping.g.cs", mappingSource);
+		context.AddSource($"{model.FullTypeName}.ElasticsearchContext.g.cs", mappingSource);
 
 		// Generate the fluent config builder
 		var configSource = ConfigBuilderEmitter.Emit(model);

@@ -98,7 +98,7 @@ internal static class ConfigBuilderEmitter
 
 		// GetSettingsJson method
 		sb.AppendLine($"{indent}\t/// <summary>Returns the settings JSON (currently unchanged by overrides).</summary>");
-		sb.AppendLine($"{indent}\tpublic string GetSettingsJson() => {model.TypeName}.Mapping.GetSettingsJson();");
+		sb.AppendLine($"{indent}\tpublic string GetSettingsJson() => {model.TypeName}.ElasticsearchContext.GetSettingsJson();");
 		sb.AppendLine();
 
 		// GetIndexJson method
@@ -137,9 +137,9 @@ internal static class ConfigBuilderEmitter
 		sb.AppendLine($"{indent}public string GetMappingJson()");
 		sb.AppendLine($"{indent}{{");
 		sb.AppendLine($"{indent}\tif (_overrides.Count == 0)");
-		sb.AppendLine($"{indent}\t\treturn {model.TypeName}.Mapping.GetMappingJson();");
+		sb.AppendLine($"{indent}\t\treturn {model.TypeName}.ElasticsearchContext.GetMappingJson();");
 		sb.AppendLine();
-		sb.AppendLine($"{indent}\treturn ApplyOverrides({model.TypeName}.Mapping.GetMappingJson());");
+		sb.AppendLine($"{indent}\treturn ApplyOverrides({model.TypeName}.ElasticsearchContext.GetMappingJson());");
 		sb.AppendLine($"{indent}}}");
 		sb.AppendLine();
 	}

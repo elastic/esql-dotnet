@@ -28,5 +28,4 @@
     <File Path="Directory.Packages.props" />
     <File Path="IMPLEMENTATION_PLAN.md" />
   </Folder>
-  <Project Path="aspire/Elastic.Examples.Aspire.csproj" />
 </Solution>

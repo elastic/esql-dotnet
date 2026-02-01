@@ -9,7 +9,7 @@ using Elastic.Mapping.Generator.Model;
 namespace Elastic.Mapping.Generator.Emitters;
 
 /// <summary>
-/// Emits the static Mapping class for a type.
+/// Emits the static ElasticsearchContext class for a type.
 /// </summary>
 internal static class MappingContextEmitter
 {
@@ -62,15 +62,26 @@ internal static class MappingContextEmitter
 	{
 		var indent = new string('\t', model.ContainingTypes.Length);
 
-		sb.AppendLine($"{indent}partial class {model.TypeName}");
+		// Implement IHasElasticsearchContext interface
+		sb.AppendLine($"{indent}partial class {model.TypeName} : global::Elastic.Mapping.IHasElasticsearchContext");
 		sb.AppendLine($"{indent}{{");
 
-		EmitMappingClass(sb, model, indent + "\t");
+		// Add the Context property implementing the interface
+		EmitContextProperty(sb, model, indent + "\t");
+
+		EmitElasticsearchContextClass(sb, model, indent + "\t");
 
 		sb.AppendLine($"{indent}}}");
 	}
 
-	private static void EmitMappingClass(StringBuilder sb, TypeMappingModel model, string indent)
+	private static void EmitContextProperty(StringBuilder sb, TypeMappingModel model, string indent)
+	{
+		sb.AppendLine($"{indent}/// <summary>Gets the Elasticsearch context for this type.</summary>");
+		sb.AppendLine($"{indent}public static global::Elastic.Mapping.ElasticsearchTypeContext Context => ElasticsearchContext.Instance;");
+		sb.AppendLine();
+	}
+
+	private static void EmitElasticsearchContextClass(StringBuilder sb, TypeMappingModel model, string indent)
 	{
 		var settingsJson = GenerateSettingsJson(model);
 		var mappingsJson = GenerateMappingsJson(model);
@@ -80,9 +91,23 @@ internal static class MappingContextEmitter
 		var mappingsHash = ComputeHash(mappingsJson);
 		var combinedHash = ComputeHash(indexJson);
 
-		sb.AppendLine($"{indent}/// <summary>Generated mapping metadata for {model.TypeName}.</summary>");
-		sb.AppendLine($"{indent}public static class Mapping");
+		sb.AppendLine($"{indent}/// <summary>Generated Elasticsearch context for {model.TypeName}.</summary>");
+		sb.AppendLine($"{indent}public static class ElasticsearchContext");
 		sb.AppendLine($"{indent}{{");
+
+		// Static Instance for IHasElasticsearchContext
+		sb.AppendLine($"{indent}\t/// <summary>Singleton instance of the context.</summary>");
+		sb.AppendLine($"{indent}\tpublic static readonly global::Elastic.Mapping.ElasticsearchTypeContext Instance = new(");
+		sb.AppendLine($"{indent}\t\tGetSettingsJson,");
+		sb.AppendLine($"{indent}\t\tGetMappingJson,");
+		sb.AppendLine($"{indent}\t\tGetIndexJson,");
+		sb.AppendLine($"{indent}\t\tHash,");
+		sb.AppendLine($"{indent}\t\tSettingsHash,");
+		sb.AppendLine($"{indent}\t\tMappingsHash,");
+		sb.AppendLine($"{indent}\t\tIndexStrategy,");
+		sb.AppendLine($"{indent}\t\tSearchStrategy");
+		sb.AppendLine($"{indent}\t);");
+		sb.AppendLine();
 
 		// Hashes
 		sb.AppendLine($"{indent}\t/// <summary>Combined hash of settings and mappings (includes generator v{GeneratorMajorVersion}).</summary>");

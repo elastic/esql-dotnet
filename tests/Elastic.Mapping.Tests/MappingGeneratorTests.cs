@@ -9,8 +9,8 @@ public class MappingGeneratorTests
 	[Test]
 	public void Index_GeneratesStaticMappingClass()
 	{
-		// The Mapping class should be generated
-		var hash = LogEntry.Mapping.Hash;
+		// The ElasticsearchContext class should be generated
+		var hash = LogEntry.ElasticsearchContext.Hash;
 		hash.Should().NotBeNullOrEmpty();
 		hash.Should().HaveLength(16);
 	}
@@ -19,23 +19,23 @@ public class MappingGeneratorTests
 	public void Index_GeneratesFieldConstants()
 	{
 		// Field constants should be generated from JsonPropertyName or camelCase
-		LogEntry.Mapping.Fields.Timestamp.Should().Be("@timestamp");
-		LogEntry.Mapping.Fields.Level.Should().Be("log.level");
-		LogEntry.Mapping.Fields.Message.Should().Be("message");
-		LogEntry.Mapping.Fields.StatusCode.Should().Be("statusCode");
+		LogEntry.ElasticsearchContext.Fields.Timestamp.Should().Be("@timestamp");
+		LogEntry.ElasticsearchContext.Fields.Level.Should().Be("log.level");
+		LogEntry.ElasticsearchContext.Fields.Message.Should().Be("message");
+		LogEntry.ElasticsearchContext.Fields.StatusCode.Should().Be("statusCode");
 	}
 
 	[Test]
 	public void Index_GeneratesIndexStrategy()
 	{
-		var strategy = LogEntry.Mapping.IndexStrategy;
+		var strategy = LogEntry.ElasticsearchContext.IndexStrategy;
 		strategy.WriteTarget.Should().Be("logs-write");
 	}
 
 	[Test]
 	public void Index_GeneratesSearchStrategy()
 	{
-		var strategy = LogEntry.Mapping.SearchStrategy;
+		var strategy = LogEntry.ElasticsearchContext.SearchStrategy;
 		strategy.Pattern.Should().Be("logs-*");
 		strategy.ReadAlias.Should().Be("logs-read");
 	}
@@ -43,7 +43,7 @@ public class MappingGeneratorTests
 	[Test]
 	public void Index_GeneratesSettingsJson()
 	{
-		var json = LogEntry.Mapping.GetSettingsJson();
+		var json = LogEntry.ElasticsearchContext.GetSettingsJson();
 		json.Should().Contain("\"number_of_shards\": 3");
 		json.Should().Contain("\"number_of_replicas\": 2");
 	}
@@ -51,7 +51,7 @@ public class MappingGeneratorTests
 	[Test]
 	public void Index_GeneratesMappingJson()
 	{
-		var json = LogEntry.Mapping.GetMappingJson();
+		var json = LogEntry.ElasticsearchContext.GetMappingJson();
 		json.Should().Contain("\"@timestamp\"");
 		json.Should().Contain("\"type\": \"date\"");
 		json.Should().Contain("\"type\": \"keyword\"");
@@ -64,7 +64,7 @@ public class MappingGeneratorTests
 	[Test]
 	public void Index_GeneratesIndexJson()
 	{
-		var json = LogEntry.Mapping.GetIndexJson();
+		var json = LogEntry.ElasticsearchContext.GetIndexJson();
 		json.Should().Contain("\"settings\":");
 		json.Should().Contain("\"mappings\":");
 	}
@@ -73,8 +73,8 @@ public class MappingGeneratorTests
 	public void Index_HashIsStable()
 	{
 		// Hash should be deterministic
-		var hash1 = LogEntry.Mapping.Hash;
-		var hash2 = LogEntry.Mapping.Hash;
+		var hash1 = LogEntry.ElasticsearchContext.Hash;
+		var hash2 = LogEntry.ElasticsearchContext.Hash;
 		hash1.Should().Be(hash2);
 	}
 
@@ -82,9 +82,9 @@ public class MappingGeneratorTests
 	public void Index_SeparateHashesProvided()
 	{
 		// Separate hashes for settings and mappings
-		var settingsHash = LogEntry.Mapping.SettingsHash;
-		var mappingsHash = LogEntry.Mapping.MappingsHash;
-		var combinedHash = LogEntry.Mapping.Hash;
+		var settingsHash = LogEntry.ElasticsearchContext.SettingsHash;
+		var mappingsHash = LogEntry.ElasticsearchContext.MappingsHash;
+		var combinedHash = LogEntry.ElasticsearchContext.Hash;
 
 		settingsHash.Should().NotBeNullOrEmpty();
 		mappingsHash.Should().NotBeNullOrEmpty();
@@ -94,20 +94,20 @@ public class MappingGeneratorTests
 	[Test]
 	public void DataStream_GeneratesCorrectStrategy()
 	{
-		var indexStrategy = NginxAccessLog.Mapping.IndexStrategy;
+		var indexStrategy = NginxAccessLog.ElasticsearchContext.IndexStrategy;
 		indexStrategy.DataStreamName.Should().Be("logs-nginx.access-production");
 		indexStrategy.Type.Should().Be("logs");
 		indexStrategy.Dataset.Should().Be("nginx.access");
 		indexStrategy.Namespace.Should().Be("production");
 
-		var searchStrategy = NginxAccessLog.Mapping.SearchStrategy;
+		var searchStrategy = NginxAccessLog.ElasticsearchContext.SearchStrategy;
 		searchStrategy.Pattern.Should().Be("logs-nginx.access-*");
 	}
 
 	[Test]
 	public void SimpleDocument_InfersTypesFromClrTypes()
 	{
-		var json = SimpleDocument.Mapping.GetMappingJson();
+		var json = SimpleDocument.ElasticsearchContext.GetMappingJson();
 		json.Should().Contain("\"name\": { \"type\": \"keyword\"");
 		json.Should().Contain("\"value\": { \"type\": \"integer\"");
 		json.Should().Contain("\"createdAt\": { \"type\": \"date\"");
@@ -116,7 +116,7 @@ public class MappingGeneratorTests
 	[Test]
 	public void AdvancedDocument_SupportsSpecializedTypes()
 	{
-		var json = AdvancedDocument.Mapping.GetMappingJson();
+		var json = AdvancedDocument.ElasticsearchContext.GetMappingJson();
 		json.Should().Contain("\"type\": \"geo_point\"");
 		json.Should().Contain("\"type\": \"dense_vector\"");
 		json.Should().Contain("\"dims\": 384");

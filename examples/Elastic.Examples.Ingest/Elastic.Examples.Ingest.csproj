@@ -16,6 +16,7 @@
 
 	<ItemGroup>
 		<PackageReference Include="Elastic.Clients.Elasticsearch" />
+		<PackageReference Include="Elastic.Ingest.Elasticsearch" />
 		<PackageReference Include="Bogus" />
 		<PackageReference Include="XenoAtom.Terminal" />
 		<PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" />
