@@ -2,13 +2,11 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-namespace Elastic.Esql.TypeMapping.Attributes;
+namespace Elastic.Mapping;
 
 /// <summary>
-/// Specifies the ES|QL field name for a property.
+/// Marks a property as a geo_point field for latitude/longitude data.
+/// Not auto-inferred; must be explicitly specified.
 /// </summary>
 [AttributeUsage(AttributeTargets.Property, AllowMultiple = false, Inherited = true)]
-public class EsqlFieldAttribute(string fieldName) : Attribute
-{
-	public string FieldName { get; } = fieldName ?? throw new ArgumentNullException(nameof(fieldName));
-}
+public sealed class GeoPointAttribute : Attribute;

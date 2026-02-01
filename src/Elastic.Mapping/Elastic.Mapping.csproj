@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFrameworks>netstandard2.0;net8.0</TargetFrameworks>
+		<LangVersion>preview</LangVersion>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<IsPackable>true</IsPackable>
+		<Description>Elasticsearch mapping source generator for AOT-compatible compile-time mapping generation</Description>
+		<PackageTags>elasticsearch;mapping;source-generator;aot</PackageTags>
+	</PropertyGroup>
+
+	<!-- Include the generator as an analyzer -->
+	<ItemGroup>
+		<ProjectReference Include="..\Elastic.Mapping.Generator\Elastic.Mapping.Generator.csproj"
+						  OutputItemType="Analyzer"
+						  ReferenceOutputAssembly="false" />
+	</ItemGroup>
+
+	<!-- Polyfills for netstandard2.0 -->
+	<ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+		<PackageReference Include="System.Text.Json" />
+		<PackageReference Include="Nullable" PrivateAssets="all" />
+		<PackageReference Include="IsExternalInit" PrivateAssets="all" />
+		<PackageReference Include="PolySharp" PrivateAssets="all" />
+	</ItemGroup>
+
+</Project>

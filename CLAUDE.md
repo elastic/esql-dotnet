@@ -637,3 +637,17 @@ _logger.LogInformation("User " + userId + " logged in");
 
 - **Feature-based organization** — group by feature, not technical layer
 - **Match logical structure**, not necessarily folder structure
+
+
+## Resolve types
+
+```csharp
+
+// AVOID Reference types fully qualified inline
+if (!typeDecl.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.PartialKeyword)))
+    return false;
+
+// GOOD always import the namespace with a using statement
+if (!typeDecl.Modifiers.Any(m => m.IsKind(SyntaxKind.PartialKeyword)))
+    return false;
+```

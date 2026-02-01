@@ -2,18 +2,21 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Text.Json.Serialization;
+using Elastic.Mapping;
+
 namespace Elastic.Esql.Tests;
 
 /// <summary>
 /// Primary test document type with various field types and attributes.
 /// </summary>
-[EsqlIndex("logs-*")]
+[Index(SearchPattern = "logs-*")]
 public class LogEntry
 {
-	[EsqlField("@timestamp")]
+	[JsonPropertyName("@timestamp")]
 	public DateTime Timestamp { get; set; }
 
-	[EsqlField("log.level")]
+	[JsonPropertyName("log.level")]
 	public string Level { get; set; } = string.Empty;
 
 	public string Message { get; set; } = string.Empty;  // → "message"
@@ -28,7 +31,7 @@ public class LogEntry
 
 	public string? ServerName { get; set; }  // → "serverName"
 
-	[EsqlIgnore]
+	[JsonIgnore]
 	public string InternalId { get; set; } = string.Empty;
 }
 
@@ -45,7 +48,7 @@ public class SimpleDocument
 /// <summary>
 /// Document with nullable properties.
 /// </summary>
-[EsqlIndex("metrics-*")]
+[Index(SearchPattern = "metrics-*")]
 public class MetricDocument
 {
 	public DateTime Timestamp { get; set; }
@@ -70,7 +73,7 @@ public enum LogLevel
 /// <summary>
 /// Document with enum property.
 /// </summary>
-[EsqlIndex("events-*")]
+[Index(SearchPattern = "events-*")]
 public class EventDocument
 {
 	public DateTime Timestamp { get; set; }

@@ -6,9 +6,9 @@ using System.Globalization;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Elastic.Esql.QueryModel;
 using Elastic.Esql.TypeMapping;
-using Elastic.Esql.TypeMapping.Attributes;
 
 namespace Elastic.Esql.Execution;
 
@@ -82,12 +82,12 @@ public class ResultMaterializer
 
 		foreach (var prop in properties)
 		{
-			if (prop.GetCustomAttribute<EsqlIgnoreAttribute>() != null)
+			if (FieldNameResolver.IsIgnored(prop))
 				continue;
 
-			// Get the field name from attribute or use camelCase
-			var fieldAttr = prop.GetCustomAttribute<EsqlFieldAttribute>();
-			var fieldName = fieldAttr?.FieldName ?? ToCamelCase(prop.Name);
+			// Get the field name from JsonPropertyName or use camelCase
+			var jsonPropertyName = prop.GetCustomAttribute<JsonPropertyNameAttribute>();
+			var fieldName = jsonPropertyName?.Name ?? ToCamelCase(prop.Name);
 
 			map[fieldName] = prop;
 

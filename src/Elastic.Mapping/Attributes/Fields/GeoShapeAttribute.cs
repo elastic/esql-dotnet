@@ -2,12 +2,11 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-namespace Elastic.Esql.TypeMapping.Attributes;
+namespace Elastic.Mapping;
 
 /// <summary>
-/// Indicates that a property should be ignored in ES|QL queries.
+/// Marks a property as a geo_shape field for complex geographic shapes.
+/// Not auto-inferred; must be explicitly specified.
 /// </summary>
 [AttributeUsage(AttributeTargets.Property, AllowMultiple = false, Inherited = true)]
-public class EsqlIgnoreAttribute : Attribute
-{
-}
+public sealed class GeoShapeAttribute : Attribute;

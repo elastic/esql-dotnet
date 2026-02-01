@@ -352,6 +352,6 @@ public class EsqlExpressionVisitor(EsqlQueryContext context) : ExpressionVisitor
 				_ = result.Append('-');
 			_ = result.Append(char.ToLowerInvariant(c));
 		}
-		return result.ToString() + "*";
+		return result + "*";
 	}
 }

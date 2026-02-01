@@ -4,9 +4,5 @@
 
 global using TUnit.Core;
 global using AwesomeAssertions;
-global using Elastic.Esql;
-global using Elastic.Esql.Core;
-global using Elastic.Esql.Extensions;
-global using Elastic.Esql.Functions;
-global using Elastic.Esql.TypeMapping;
 global using Elastic.Mapping;
+global using System.Text.Json.Serialization;

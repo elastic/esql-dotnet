@@ -1,0 +1,103 @@
+// Licensed to Elasticsearch B.V under one or more agreements.
+// Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
+// See the LICENSE file in the project root for more information
+
+namespace Elastic.Mapping.Tests;
+
+/// <summary>
+/// Test model with Index attribute for traditional index configuration.
+/// </summary>
+[Index(
+	WriteAlias = "logs-write",
+	ReadAlias = "logs-read",
+	SearchPattern = "logs-*",
+	Shards = 3,
+	Replicas = 2
+)]
+public partial class LogEntry
+{
+	[JsonPropertyName("@timestamp")]
+	public DateTime Timestamp { get; set; }
+
+	[JsonPropertyName("log.level")]
+	[Keyword(Normalizer = "lowercase")]
+	public string Level { get; set; } = string.Empty;
+
+	[Text(Analyzer = "standard", Norms = false)]
+	public string Message { get; set; } = string.Empty;
+
+	public int StatusCode { get; set; }
+
+	public double Duration { get; set; }
+
+	public bool IsError { get; set; }
+
+	[Ip]
+	public string? ClientIp { get; set; }
+
+	[JsonIgnore]
+	public string InternalId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Test model with DataStream attribute.
+/// </summary>
+[DataStream(Type = "logs", Dataset = "nginx.access", Namespace = "production")]
+public partial class NginxAccessLog
+{
+	[JsonPropertyName("@timestamp")]
+	[Date(Format = "strict_date_optional_time")]
+	public DateTime Timestamp { get; set; }
+
+	[Text(Analyzer = "standard")]
+	public string Path { get; set; } = string.Empty;
+
+	public int StatusCode { get; set; }
+
+	[Ip]
+	public string? ClientIp { get; set; }
+}
+
+/// <summary>
+/// Test model with minimal configuration.
+/// </summary>
+[Index(Name = "simple-docs")]
+public partial class SimpleDocument
+{
+	public string Name { get; set; } = string.Empty;
+	public int Value { get; set; }
+	public DateTime CreatedAt { get; set; }
+}
+
+/// <summary>
+/// Test model with advanced field types.
+/// </summary>
+[Index(Name = "advanced-docs")]
+public partial class AdvancedDocument
+{
+	public string Title { get; set; } = string.Empty;
+
+	[GeoPoint]
+	public object? Location { get; set; }
+
+	[DenseVector(Dims = 384, Similarity = "cosine")]
+	public float[]? Embedding { get; set; }
+
+	[SemanticText(InferenceId = "my-elser-endpoint")]
+	public string? SemanticContent { get; set; }
+
+	[Completion(Analyzer = "simple")]
+	public string? Suggest { get; set; }
+
+	[Nested]
+	public List<Tag>? Tags { get; set; }
+}
+
+/// <summary>
+/// Nested type for testing.
+/// </summary>
+public class Tag
+{
+	public string Name { get; set; } = string.Empty;
+	public string Value { get; set; } = string.Empty;
+}

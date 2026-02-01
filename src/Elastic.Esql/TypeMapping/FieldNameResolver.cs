@@ -4,7 +4,8 @@
 
 using System.Collections.Concurrent;
 using System.Reflection;
-using Elastic.Esql.TypeMapping.Attributes;
+using System.Text.Json.Serialization;
+using Elastic.Mapping;
 
 namespace Elastic.Esql.TypeMapping;
 
@@ -22,10 +23,10 @@ public class FieldNameResolver
 
 	private static string ResolveInternal(MemberInfo member)
 	{
-		// Check for EsqlField attribute
-		var fieldAttribute = member.GetCustomAttribute<EsqlFieldAttribute>();
-		if (fieldAttribute != null)
-			return fieldAttribute.FieldName;
+		// Check for JsonPropertyName attribute (STJ - single source of truth)
+		var jsonPropertyName = member.GetCustomAttribute<JsonPropertyNameAttribute>();
+		if (jsonPropertyName != null)
+			return jsonPropertyName.Name;
 
 		// Default to camelCase
 		return ToCamelCase(member.Name);
@@ -36,14 +37,25 @@ public class FieldNameResolver
 	/// </summary>
 	public static string? GetIndexPattern(Type type)
 	{
-		var indexAttribute = type.GetCustomAttribute<EsqlIndexAttribute>();
-		return indexAttribute?.IndexPattern;
+		// Check for [Index] attribute with SearchPattern
+		var indexAttribute = type.GetCustomAttribute<IndexAttribute>();
+		if (indexAttribute?.SearchPattern != null)
+			return indexAttribute.SearchPattern;
+
+		// Check for [DataStream] attribute
+		var dataStreamAttribute = type.GetCustomAttribute<DataStreamAttribute>();
+		if (dataStreamAttribute != null)
+			return $"{dataStreamAttribute.Type}-{dataStreamAttribute.Dataset}-*";
+
+		// Fallback to index name
+		return indexAttribute?.Name;
 	}
 
 	/// <summary>
 	/// Checks if a property should be ignored.
 	/// </summary>
-	public static bool IsIgnored(MemberInfo member) => member.GetCustomAttribute<EsqlIgnoreAttribute>() != null;
+	public static bool IsIgnored(MemberInfo member) =>
+		member.GetCustomAttribute<JsonIgnoreAttribute>() != null;
 
 	private static string ToCamelCase(string name)
 	{

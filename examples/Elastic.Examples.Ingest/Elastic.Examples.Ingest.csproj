@@ -1,0 +1,24 @@
+<!-- Licensed to Elasticsearch B.V under one or more agreements. -->
+<!-- Elasticsearch B.V licenses this file to you under the Apache 2.0 License. -->
+<!-- See the LICENSE file in the project root for more information -->
+
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net10.0</TargetFramework>
+		<UserSecretsId>elastic-esql-examples-aspire</UserSecretsId>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\Elastic.Examples.Domain\Elastic.Examples.Domain.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Elastic.Clients.Elasticsearch" />
+		<PackageReference Include="Bogus" />
+		<PackageReference Include="XenoAtom.Terminal" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" />
+	</ItemGroup>
+
+</Project>

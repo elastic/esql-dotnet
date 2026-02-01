@@ -4,18 +4,29 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
+  <Folder Name="/examples/">
+    <Project Path="examples/Elastic.Examples.Domain/Elastic.Examples.Domain.csproj" />
+    <Project Path="examples/Elastic.Examples.Esql/Elastic.Examples.Esql.csproj" />
+    <Project Path="examples/Elastic.Examples.Ingest/Elastic.Examples.Ingest.csproj" />
+    <Project Path="examples/Elastic.Examples.Mapping/Elastic.Examples.Mapping.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/Elastic.Esql/Elastic.Esql.csproj" />
+    <Project Path="src/Elastic.Mapping.Generator/Elastic.Mapping.Generator.csproj" />
+    <Project Path="src/Elastic.Mapping/Elastic.Mapping.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <File Path="tests\Directory.Build.props" />
     <Project Path="tests/Elastic.Esql.Tests/Elastic.Esql.Tests.csproj" />
+    <Project Path="tests/Elastic.Mapping.Tests/Elastic.Mapping.Tests.csproj" />
   </Folder>
   <Folder Name="/_root/">
     <File Path=".editorconfig" />
     <File Path=".gitignore" />
+    <File Path="CLAUDE.md" />
     <File Path="Directory.Build.props" />
     <File Path="Directory.Packages.props" />
     <File Path="IMPLEMENTATION_PLAN.md" />
   </Folder>
+  <Project Path="aspire/Elastic.Examples.Aspire.csproj" />
 </Solution>
