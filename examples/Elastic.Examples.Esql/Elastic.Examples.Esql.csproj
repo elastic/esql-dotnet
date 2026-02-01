@@ -5,7 +5,14 @@
 		<TargetFramework>net10.0</TargetFramework>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
+		<UserSecretsId>elastic-esql-examples-aspire</UserSecretsId>
 	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Elastic.Clients.Elasticsearch" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" />
+		<PackageReference Include="XenoAtom.Terminal" />
+	</ItemGroup>
 
 	<ItemGroup>
 		<ProjectReference Include="..\Elastic.Examples.Domain\Elastic.Examples.Domain.csproj" />

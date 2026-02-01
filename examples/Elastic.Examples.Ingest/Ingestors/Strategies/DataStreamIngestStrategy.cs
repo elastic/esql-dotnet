@@ -33,7 +33,8 @@ public static class DataStreamIngestStrategy
 		{
 			Context = context,
 			OnBootstrapStatus = callbacks.OnStatus,
-			BufferOptions = new BufferOptions { OutboundBufferMaxSize = batchSize }
+			BufferOptions = new BufferOptions { OutboundBufferMaxSize = batchSize },
+			Settings = callbacks.SettingsModifier
 		};
 
 		var channel = new MappingDataStreamChannel<T>(options);
@@ -133,8 +134,13 @@ public static class DataStreamIngestStrategy
 			return;
 		}
 
+		// Apply settings modifier if provided (e.g., for serverless compatibility)
+		var settingsJson = context.GetSettingsJson();
+		if (callbacks.SettingsModifier != null)
+			settingsJson = callbacks.SettingsModifier(settingsJson);
+
 		callbacks.OnStatus($"Creating component template '{settingsTemplateName}'...");
-		await CreateComponentTemplateAsync(client, settingsTemplateName, "settings", context.GetSettingsJson(), ct);
+		await CreateComponentTemplateAsync(client, settingsTemplateName, "settings", settingsJson, ct);
 
 		callbacks.OnStatus($"Creating component template '{mappingsTemplateName}'...");
 		await CreateComponentTemplateAsync(client, mappingsTemplateName, "mappings", context.GetMappingsJson(), ct);

@@ -20,6 +20,10 @@
     <Project Path="tests/Elastic.Esql.Tests/Elastic.Esql.Tests.csproj" />
     <Project Path="tests/Elastic.Mapping.Tests/Elastic.Mapping.Tests.csproj" />
   </Folder>
+  <Folder Name="/integration-tests/">
+    <File Path="integration-tests\Directory.Build.props" />
+    <Project Path="integration-tests/Elastic.Integration.Tests/Elastic.Integration.Tests.csproj" />
+  </Folder>
   <Folder Name="/_root/">
     <File Path=".editorconfig" />
     <File Path=".gitignore" />
@@ -28,4 +32,5 @@
     <File Path="Directory.Packages.props" />
     <File Path="IMPLEMENTATION_PLAN.md" />
   </Folder>
+  <Project Path="aspire/aspire.csproj" />
 </Solution>

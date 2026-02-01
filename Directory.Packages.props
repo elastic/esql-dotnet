@@ -26,7 +26,8 @@
     <PackageVersion Include="PolySharp" Version="1.14.1" />
 
     <!-- Aspire -->
-    <PackageVersion Include="Aspire.Hosting.AppHost" Version="9.1.0" />
+    <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.1.0" />
+    <PackageVersion Include="Aspire.Hosting.Testing" Version="13.1.0" />
 
     <!-- Ingest example dependencies -->
     <PackageVersion Include="Elastic.Clients.Elasticsearch" Version="8.17.0" />
@@ -34,7 +35,7 @@
     <PackageVersion Include="AutoBogus" Version="2.13.1" />
     <PackageVersion Include="Bogus" Version="35.6.1" />
     <PackageVersion Include="XenoAtom.Terminal" Version="1.5.1" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.UserSecrets" Version="9.0.1" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.UserSecrets" Version="10.0.1" />
   </ItemGroup>
   <!-- AWS -->
 </Project>

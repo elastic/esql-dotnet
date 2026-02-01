@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information
 
 using Elastic.Clients.Elasticsearch;
+using Elastic.Examples.Ingest;
 using Elastic.Examples.Ingest.Ingestors;
 using Elastic.Transport;
 using Microsoft.Extensions.Configuration;
@@ -15,7 +16,14 @@ WriteOutput("[gray]════════════════════�
 // Get Elasticsearch connection configuration
 var (url, apiKey) = GetElasticsearchConfiguration();
 
-WriteOutput($"[cyan]Elasticsearch:[/] {url}\n\n");
+// Detect serverless environment
+var isServerless = ServerlessHelper.IsServerless(url);
+var settingsModifier = ServerlessHelper.GetSettingsModifier(url);
+
+WriteOutput($"[cyan]Elasticsearch:[/] {url}");
+if (isServerless)
+	WriteOutput(" [yellow](serverless)[/]");
+WriteOutput("\n\n");
 
 // Create Elasticsearch client
 var settings = new ElasticsearchClientSettings(new Uri(url))
@@ -33,6 +41,13 @@ if (!pingResponse.IsValidResponse)
 	return 1;
 }
 WriteOutput("[bold green]Connected successfully![/]\n\n");
+
+// Clean up existing indices and data streams
+WriteOutput("[gray]═══════════════════════════════════════════════════════════════════════[/]\n");
+WriteOutput("[bold]Cleaning Up Existing Data[/]\n");
+WriteOutput("[gray]═══════════════════════════════════════════════════════════════════════[/]\n\n");
+
+await CleanupIndicesAndTemplates(client);
 
 // Create callbacks for terminal output
 var callbacks = CreateCallbacks();
@@ -108,7 +123,7 @@ return totalFailed > 0 ? 1 : 0;
 
 static void WriteOutput(string markup) => Terminal.WriteMarkup(markup);
 
-static IngestCallbacks CreateCallbacks() =>
+IngestCallbacks CreateCallbacks() =>
 	new(
 		OnStatus: msg => WriteOutput($"  [gray]{msg}[/]\n"),
 		OnInfo: msg => WriteOutput($"  [cyan]{msg}[/]\n"),
@@ -124,7 +139,8 @@ static IngestCallbacks CreateCallbacks() =>
 				WriteOutput($", [red]Failed: {failed:N0}[/]");
 			WriteOutput("\n");
 		},
-		OnError: msg => WriteOutput($"  [bold red]Error: {msg}[/]\n")
+		OnError: msg => WriteOutput($"  [bold red]Error: {msg}[/]\n"),
+		SettingsModifier: settingsModifier
 	);
 
 static (string url, string apiKey) GetElasticsearchConfiguration()
@@ -161,4 +177,64 @@ static (string url, string apiKey) GetElasticsearchConfiguration()
 	}
 
 	return (url, apiKey);
+}
+
+async Task CleanupIndicesAndTemplates(ElasticsearchClient client)
+{
+	// Data streams to delete
+	string[] dataStreams = ["logs-ecommerce.app-production", "metrics-ecommerce.app-production"];
+
+	// Index patterns to delete
+	string[] indexPatterns = ["products*", "customers*", "orders-*"];
+
+	// Index templates to delete
+	string[] indexTemplates =
+	[
+		"products-write", "customers-write", "orders-write",
+		"logs-ecommerce.app-production", "metrics-ecommerce.app-production"
+	];
+
+	// Component templates to delete
+	string[] componentTemplates =
+	[
+		"products-write-settings", "products-write-mappings",
+		"customers-write-settings", "customers-write-mappings",
+		"orders-write-settings", "orders-write-mappings",
+		"logs-ecommerce.app-production-settings", "logs-ecommerce.app-production-mappings",
+		"metrics-ecommerce.app-production-settings", "metrics-ecommerce.app-production-mappings"
+	];
+
+	// Delete data streams
+	foreach (var ds in dataStreams)
+	{
+		WriteOutput($"  [gray]Deleting data stream '{ds}'...[/]");
+		var response = await client.Indices.DeleteDataStreamAsync(ds);
+		WriteOutput(response.IsValidResponse ? " [green]✓[/]\n" : " [yellow]skipped[/]\n");
+	}
+
+	// Delete indices
+	foreach (var pattern in indexPatterns)
+	{
+		WriteOutput($"  [gray]Deleting indices '{pattern}'...[/]");
+		var response = await client.Indices.DeleteAsync(pattern);
+		WriteOutput(response.IsValidResponse ? " [green]✓[/]\n" : " [yellow]skipped[/]\n");
+	}
+
+	// Delete index templates
+	foreach (var template in indexTemplates)
+	{
+		WriteOutput($"  [gray]Deleting index template '{template}'...[/]");
+		var response = await client.Indices.DeleteIndexTemplateAsync(template);
+		WriteOutput(response.IsValidResponse ? " [green]✓[/]\n" : " [yellow]skipped[/]\n");
+	}
+
+	// Delete component templates
+	foreach (var template in componentTemplates)
+	{
+		WriteOutput($"  [gray]Deleting component template '{template}'...[/]");
+		var response = await client.Cluster.DeleteComponentTemplateAsync(template);
+		WriteOutput(response.IsValidResponse ? " [green]✓[/]\n" : " [yellow]skipped[/]\n");
+	}
+
+	WriteOutput("\n");
 }

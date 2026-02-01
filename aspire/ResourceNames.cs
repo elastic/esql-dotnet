@@ -2,10 +2,10 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-namespace Elastic.Examples.Aspire;
+namespace aspire;
 
 public static class ResourceNames
 {
 	public const string ExamplesIngest = "examples-ingest";
-	public const string ElasticsearchRemote = "elasticsearch-remote";
+	public const string ExamplesEsql = "examples-esql";
 }

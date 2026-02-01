@@ -60,12 +60,14 @@ public record MetricIngestResult(int Indexed, int Failed, string? Error = null)
 /// <param name="OnProgress">Called with (current, total) batch progress.</param>
 /// <param name="OnComplete">Called with (indexed, failed) final counts.</param>
 /// <param name="OnError">Called for error messages.</param>
+/// <param name="SettingsModifier">Optional function to modify settings JSON (e.g., for serverless compatibility).</param>
 public record IngestCallbacks(
 	Action<string> OnStatus,
 	Action<string> OnInfo,
 	Action<int, int> OnProgress,
 	Action<int, int> OnComplete,
-	Action<string> OnError
+	Action<string> OnError,
+	Func<string, string>? SettingsModifier = null
 );
 
 /// <summary>
