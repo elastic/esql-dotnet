@@ -7,6 +7,15 @@ using System.Collections.Immutable;
 namespace Elastic.Mapping.Generator.Model;
 
 /// <summary>
+/// Represents information about a nested or object type for recursive mapping.
+/// </summary>
+internal sealed record NestedTypeModel(
+	string TypeName,
+	string FullyQualifiedName,
+	ImmutableArray<PropertyMappingModel> Properties
+);
+
+/// <summary>
 /// Represents a property's mapping information extracted from source.
 /// Must be equatable for incremental generator caching.
 /// </summary>
@@ -15,7 +24,8 @@ internal sealed record PropertyMappingModel(
 	string FieldName,
 	string FieldType,
 	bool IsIgnored,
-	ImmutableDictionary<string, string?> Options
+	ImmutableDictionary<string, string?> Options,
+	NestedTypeModel? NestedType = null
 )
 {
 	public static PropertyMappingModel Create(
@@ -23,9 +33,10 @@ internal sealed record PropertyMappingModel(
 		string fieldName,
 		string fieldType,
 		bool isIgnored = false,
-		ImmutableDictionary<string, string?>? options = null
+		ImmutableDictionary<string, string?>? options = null,
+		NestedTypeModel? nestedType = null
 	) =>
-		new(propertyName, fieldName, fieldType, isIgnored, options ?? ImmutableDictionary<string, string?>.Empty);
+		new(propertyName, fieldName, fieldType, isIgnored, options ?? ImmutableDictionary<string, string?>.Empty, nestedType);
 }
 
 /// <summary>

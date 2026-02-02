@@ -2,6 +2,8 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using Elastic.Mapping.Analysis;
+
 namespace Elastic.Mapping.Tests;
 
 /// <summary>
@@ -37,6 +39,16 @@ public partial class LogEntry
 
 	[JsonIgnore]
 	public string InternalId { get; set; } = string.Empty;
+
+	/// <summary>Configures LogEntry-specific analysis settings.</summary>
+	public static AnalysisBuilder ConfigureAnalysis(AnalysisBuilder analysis) => analysis
+		.Analyzer("log_message_analyzer", a => a
+			.Custom()
+			.Tokenizer(BuiltInAnalysis.Tokenizers.Standard)
+			.Filters(BuiltInAnalysis.TokenFilters.Lowercase))
+		.Normalizer("lowercase", n => n
+			.Custom()
+			.Filters(BuiltInAnalysis.TokenFilters.Lowercase));
 }
 
 /// <summary>

@@ -3,12 +3,14 @@
 // See the LICENSE file in the project root for more information
 
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Elastic.Channels;
 using Elastic.Clients.Elasticsearch;
 using Elastic.Clients.Elasticsearch.Core.Bulk;
 using Elastic.Examples.Ingest.Channels;
 using Elastic.Ingest.Elasticsearch;
 using Elastic.Mapping;
+using Elastic.Mapping.Analysis;
 using Elastic.Transport;
 using HttpMethod = Elastic.Transport.HttpMethod;
 
@@ -35,8 +37,7 @@ public static class IndexIngestStrategy
 			Context = context,
 			BulkOperationIdLookup = idLookup,
 			OnBootstrapStatus = callbacks.OnStatus,
-			BufferOptions = new BufferOptions { OutboundBufferMaxSize = batchSize },
-			Settings = callbacks.SettingsModifier
+			BufferOptions = new BufferOptions { OutboundBufferMaxSize = batchSize }
 		};
 
 		var channel = new MappingIndexChannel<T>(options);
@@ -78,7 +79,7 @@ public static class IndexIngestStrategy
 		IngestCallbacks callbacks,
 		CancellationToken ct) where T : class
 	{
-		await BootstrapTemplatesAsync(client, context, callbacks, ct);
+		await BootstrapTemplatesAsync<T>(client, context, callbacks, ct);
 
 		var indexed = 0;
 		var failed = 0;
@@ -121,15 +122,14 @@ public static class IndexIngestStrategy
 		return (indexed, failed);
 	}
 
-	private static async Task BootstrapTemplatesAsync(
+	private static async Task BootstrapTemplatesAsync<T>(
 		ElasticsearchClient client,
 		ElasticsearchTypeContext context,
 		IngestCallbacks callbacks,
-		CancellationToken ct)
+		CancellationToken ct) where T : class
 	{
 		var indexName = context.IndexStrategy?.WriteTarget?.TrimEnd('-') ?? "index";
-		var settingsTemplateName = $"{indexName}-settings";
-		var mappingsTemplateName = $"{indexName}-mappings";
+		var componentTemplateName = $"{indexName}-write";
 		var indexTemplateName = indexName;
 
 		callbacks.OnStatus($"Checking index template '{indexTemplateName}'...");
@@ -141,19 +141,12 @@ public static class IndexIngestStrategy
 			return;
 		}
 
-		// Apply settings modifier if provided (e.g., for serverless compatibility)
-		var settingsJson = context.GetSettingsJson();
-		if (callbacks.SettingsModifier != null)
-			settingsJson = callbacks.SettingsModifier(settingsJson);
-
-		callbacks.OnStatus($"Creating component template '{settingsTemplateName}'...");
-		await CreateComponentTemplateAsync(client, settingsTemplateName, "settings", settingsJson, ct);
-
-		callbacks.OnStatus($"Creating component template '{mappingsTemplateName}'...");
-		await CreateComponentTemplateAsync(client, mappingsTemplateName, "mappings", context.GetMappingsJson(), ct);
+		// Create combined component template (settings + mappings together to pass analyzer validation)
+		callbacks.OnStatus($"Creating component template '{componentTemplateName}'...");
+		await CreateCombinedComponentTemplateAsync<T>(client, componentTemplateName, context.GetSettingsJson(), context.GetMappingsJson(), ct);
 
 		callbacks.OnStatus($"Creating index template '{indexTemplateName}'...");
-		await CreateIndexTemplateAsync(client, indexTemplateName, settingsTemplateName, mappingsTemplateName, context, ct);
+		await CreateIndexTemplateAsync(client, indexTemplateName, componentTemplateName, context, ct);
 	}
 
 	private static async Task<string?> GetTemplateHashAsync(ElasticsearchClient client, string templateName, CancellationToken ct)
@@ -193,41 +186,84 @@ public static class IndexIngestStrategy
 		return null;
 	}
 
-	private static async Task CreateComponentTemplateAsync(
+	private static async Task CreateCombinedComponentTemplateAsync<T>(
 		ElasticsearchClient client,
 		string name,
-		string section,
-		string json,
-		CancellationToken ct)
+		string settingsJson,
+		string mappingsJson,
+		CancellationToken ct) where T : class
 	{
-		var sectionContent = ExtractSectionContent(json, section);
+		// Merge analysis settings from ConfigureAnalysis if the type implements IHasAnalysisConfiguration
+		var analysisSettings = GetAnalysisSettings<T>();
+		if (analysisSettings?.HasConfiguration == true)
+			settingsJson = analysisSettings.MergeIntoSettings(settingsJson);
 
-		var body = $$"""
+		using var settingsDoc = JsonDocument.Parse(settingsJson);
+		using var mappingsDoc = JsonDocument.Parse(mappingsJson);
+
+		var settingsContent = settingsDoc.RootElement.TryGetProperty("settings", out var s)
+			? JsonNode.Parse(s.GetRawText())
+			: new JsonObject();
+
+		var mappingsContent = mappingsDoc.RootElement.TryGetProperty("mappings", out var m)
+			? JsonNode.Parse(m.GetRawText())
+			: new JsonObject();
+
+		var template = new JsonObject
+		{
+			["template"] = new JsonObject
 			{
-				"template": {
-					"{{section}}": {{sectionContent}}
-				},
-				"_meta": {
-					"managed_by": "Elastic.Examples.Ingest"
-				}
+				["settings"] = settingsContent,
+				["mappings"] = mappingsContent
+			},
+			["_meta"] = new JsonObject
+			{
+				["managed_by"] = "Elastic.Examples.Ingest"
 			}
-			""";
+		};
 
 		var endpointPath = new EndpointPath(HttpMethod.PUT, $"_component_template/{name}");
 		_ = await client.Transport.RequestAsync<StringResponse>(
 			in endpointPath,
-			PostData.String(body),
+			PostData.String(template.ToJsonString()),
 			null,
 			null,
 			ct
 		);
 	}
 
+	private static AnalysisSettings? GetAnalysisSettings<T>() where T : class
+	{
+		var configureMethod = typeof(T).GetMethod(
+			"ConfigureAnalysis",
+			System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static,
+			null,
+			[typeof(AnalysisBuilder)],
+			null
+		);
+
+		if (configureMethod == null)
+			return null;
+
+		try
+		{
+			var builder = new AnalysisBuilder();
+			var result = configureMethod.Invoke(null, [builder]);
+			if (result is AnalysisBuilder returnedBuilder)
+				return returnedBuilder.Build();
+		}
+		catch
+		{
+			// If reflection fails, continue without analysis
+		}
+
+		return null;
+	}
+
 	private static async Task CreateIndexTemplateAsync(
 		ElasticsearchClient client,
 		string name,
-		string settingsTemplate,
-		string mappingsTemplate,
+		string componentTemplate,
 		ElasticsearchTypeContext context,
 		CancellationToken ct)
 	{
@@ -238,7 +274,7 @@ public static class IndexIngestStrategy
 		var body = $$"""
 			{
 				"index_patterns": ["{{indexPattern}}"],
-				"composed_of": ["{{settingsTemplate}}", "{{mappingsTemplate}}"],
+				"composed_of": ["{{componentTemplate}}"],
 				"priority": 100,
 				"_meta": {
 					"hash": "{{context.Hash}}",
@@ -255,14 +291,5 @@ public static class IndexIngestStrategy
 			null,
 			ct
 		);
-	}
-
-	private static string ExtractSectionContent(string json, string section)
-	{
-		using var doc = JsonDocument.Parse(json);
-		if (doc.RootElement.TryGetProperty(section, out var content))
-			return content.GetRawText();
-
-		return "{}";
 	}
 }

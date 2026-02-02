@@ -2,14 +2,14 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Elastic.Channels.Diagnostics;
 using Elastic.Clients.Elasticsearch;
 using Elastic.Ingest.Elasticsearch;
 using Elastic.Ingest.Elasticsearch.DataStreams;
 using Elastic.Mapping;
+using Elastic.Mapping.Analysis;
 using BulkResponse = Elastic.Ingest.Elasticsearch.Serialization.BulkResponse;
 using DataStreamName = Elastic.Ingest.Elasticsearch.DataStreams.DataStreamName;
 
@@ -25,12 +25,6 @@ public class MappingDataStreamChannelOptions<T>(ElasticsearchClient client) : Da
 
 	/// <summary>The Elasticsearch context for this type.</summary>
 	public required ElasticsearchTypeContext Context { get; init; }
-
-	/// <summary>Optional modifier for settings JSON.</summary>
-	public Func<string, string>? Settings { get; init; }
-
-	/// <summary>Optional modifier for mappings JSON.</summary>
-	public Func<string, string>? Mappings { get; init; }
 
 	/// <summary>Optional callback invoked during bootstrap.</summary>
 	public Action<string>? OnBootstrapStatus { get; init; }
@@ -89,24 +83,8 @@ public class MappingDataStreamChannel<T>(
 			return true;
 
 		var dataStreamName = GetDataStreamName();
-		var settingsTemplateName = $"{dataStreamName}-settings";
-		var mappingsTemplateName = $"{dataStreamName}-mappings";
+		var componentTemplateName = $"{dataStreamName}-write";
 		var indexTemplateName = dataStreamName;
-
-		// Get base JSON from context
-		var settingsJson = _options.Context.GetSettingsJson();
-		var mappingsJson = _options.Context.GetMappingsJson();
-
-		// Apply modifier functions if provided
-		if (_options.Settings != null)
-			settingsJson = _options.Settings(settingsJson);
-		if (_options.Mappings != null)
-			mappingsJson = _options.Mappings(mappingsJson);
-
-		// Compute hash
-		var hash = (_options.Settings == null && _options.Mappings == null)
-			? _options.Context.Hash
-			: ComputeHash(settingsJson, mappingsJson);
 
 		// Check if index template exists
 		_options.OnBootstrapStatus?.Invoke($"Checking index template '{indexTemplateName}'...");
@@ -117,21 +95,15 @@ public class MappingDataStreamChannel<T>(
 			return false;
 		}
 
-		// Create settings component template
-		_options.OnBootstrapStatus?.Invoke($"Creating component template '{settingsTemplateName}'...");
-		var settingsBody = CreateComponentTemplateBody("settings", settingsJson);
-		if (!PutComponentTemplate(bootstrapMethod, settingsTemplateName, settingsBody))
-			return false;
-
-		// Create mappings component template
-		_options.OnBootstrapStatus?.Invoke($"Creating component template '{mappingsTemplateName}'...");
-		var mappingsBody = CreateComponentTemplateBody("mappings", mappingsJson);
-		if (!PutComponentTemplate(bootstrapMethod, mappingsTemplateName, mappingsBody))
+		// Create combined component template (settings + mappings together to pass analyzer validation)
+		_options.OnBootstrapStatus?.Invoke($"Creating component template '{componentTemplateName}'...");
+		var combinedBody = CreateCombinedTemplateBody(_options.Context.GetSettingsJson(), _options.Context.GetMappingsJson());
+		if (!PutComponentTemplate(bootstrapMethod, componentTemplateName, combinedBody))
 			return false;
 
 		// Create index template with data stream configuration
 		_options.OnBootstrapStatus?.Invoke($"Creating index template '{indexTemplateName}'...");
-		var indexTemplate = CreateDataStreamIndexTemplateBody(dataStreamName, settingsTemplateName, mappingsTemplateName, hash);
+		var indexTemplate = CreateDataStreamIndexTemplateBody(dataStreamName, componentTemplateName, _options.Context.Hash);
 		if (!PutIndexTemplate(bootstrapMethod, indexTemplateName, indexTemplate))
 			return false;
 
@@ -150,24 +122,8 @@ public class MappingDataStreamChannel<T>(
 			return true;
 
 		var dataStreamName = GetDataStreamName();
-		var settingsTemplateName = $"{dataStreamName}-settings";
-		var mappingsTemplateName = $"{dataStreamName}-mappings";
+		var componentTemplateName = $"{dataStreamName}-write";
 		var indexTemplateName = dataStreamName;
-
-		// Get base JSON from context
-		var settingsJson = _options.Context.GetSettingsJson();
-		var mappingsJson = _options.Context.GetMappingsJson();
-
-		// Apply modifier functions if provided
-		if (_options.Settings != null)
-			settingsJson = _options.Settings(settingsJson);
-		if (_options.Mappings != null)
-			mappingsJson = _options.Mappings(mappingsJson);
-
-		// Compute hash
-		var hash = (_options.Settings == null && _options.Mappings == null)
-			? _options.Context.Hash
-			: ComputeHash(settingsJson, mappingsJson);
 
 		// Check if index template exists
 		_options.OnBootstrapStatus?.Invoke($"Checking index template '{indexTemplateName}'...");
@@ -178,21 +134,15 @@ public class MappingDataStreamChannel<T>(
 			return false;
 		}
 
-		// Create settings component template
-		_options.OnBootstrapStatus?.Invoke($"Creating component template '{settingsTemplateName}'...");
-		var settingsBody = CreateComponentTemplateBody("settings", settingsJson);
-		if (!await PutComponentTemplateAsync(bootstrapMethod, settingsTemplateName, settingsBody, ctx).ConfigureAwait(false))
-			return false;
-
-		// Create mappings component template
-		_options.OnBootstrapStatus?.Invoke($"Creating component template '{mappingsTemplateName}'...");
-		var mappingsBody = CreateComponentTemplateBody("mappings", mappingsJson);
-		if (!await PutComponentTemplateAsync(bootstrapMethod, mappingsTemplateName, mappingsBody, ctx).ConfigureAwait(false))
+		// Create combined component template (settings + mappings together to pass analyzer validation)
+		_options.OnBootstrapStatus?.Invoke($"Creating component template '{componentTemplateName}'...");
+		var combinedBody = CreateCombinedTemplateBody(_options.Context.GetSettingsJson(), _options.Context.GetMappingsJson());
+		if (!await PutComponentTemplateAsync(bootstrapMethod, componentTemplateName, combinedBody, ctx).ConfigureAwait(false))
 			return false;
 
 		// Create index template with data stream configuration
 		_options.OnBootstrapStatus?.Invoke($"Creating index template '{indexTemplateName}'...");
-		var indexTemplate = CreateDataStreamIndexTemplateBody(dataStreamName, settingsTemplateName, mappingsTemplateName, hash);
+		var indexTemplate = CreateDataStreamIndexTemplateBody(dataStreamName, componentTemplateName, _options.Context.Hash);
 		if (!await PutIndexTemplateAsync(bootstrapMethod, indexTemplateName, indexTemplate, ctx).ConfigureAwait(false))
 			return false;
 
@@ -212,22 +162,70 @@ public class MappingDataStreamChannel<T>(
 		return $"logs-{typeof(T).Name.ToLowerInvariant()}-default";
 	}
 
-	private static string CreateComponentTemplateBody(string section, string json)
+	private string CreateCombinedTemplateBody(string settingsJson, string mappingsJson)
 	{
-		var sectionContent = ExtractSectionContent(json, section);
-		return $$"""
+		// Merge analysis settings from ConfigureAnalysis if the type implements IHasAnalysisConfiguration
+		var analysisSettings = GetAnalysisSettings();
+		if (analysisSettings?.HasConfiguration == true)
+			settingsJson = analysisSettings.MergeIntoSettings(settingsJson);
+
+		using var settingsDoc = JsonDocument.Parse(settingsJson);
+		using var mappingsDoc = JsonDocument.Parse(mappingsJson);
+
+		var settingsContent = settingsDoc.RootElement.TryGetProperty("settings", out var s)
+			? JsonNode.Parse(s.GetRawText())
+			: new JsonObject();
+
+		var mappingsContent = mappingsDoc.RootElement.TryGetProperty("mappings", out var m)
+			? JsonNode.Parse(m.GetRawText())
+			: new JsonObject();
+
+		var template = new JsonObject
+		{
+			["template"] = new JsonObject
 			{
-				"template": {
-					"{{section}}": {{sectionContent}}
-				},
-				"_meta": {
-					"managed_by": "Elastic.Examples.Ingest"
-				}
+				["settings"] = settingsContent,
+				["mappings"] = mappingsContent
+			},
+			["_meta"] = new JsonObject
+			{
+				["managed_by"] = "Elastic.Examples.Ingest"
 			}
-			""";
+		};
+
+		return template.ToJsonString();
 	}
 
-	private string CreateDataStreamIndexTemplateBody(string dataStreamName, string settingsTemplate, string mappingsTemplate, string hash)
+	private AnalysisSettings? GetAnalysisSettings()
+	{
+		// Check if type T has a ConfigureAnalysis static method (implements IHasAnalysisConfiguration)
+		var configureMethod = typeof(T).GetMethod(
+			"ConfigureAnalysis",
+			System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static,
+			null,
+			[typeof(AnalysisBuilder)],
+			null
+		);
+
+		if (configureMethod == null)
+			return null;
+
+		try
+		{
+			var builder = new AnalysisBuilder();
+			var result = configureMethod.Invoke(null, [builder]);
+			if (result is AnalysisBuilder returnedBuilder)
+				return returnedBuilder.Build();
+		}
+		catch
+		{
+			// If reflection fails, continue without analysis
+		}
+
+		return null;
+	}
+
+	private string CreateDataStreamIndexTemplateBody(string dataStreamName, string componentTemplate, string hash)
 	{
 		var type = _options.Context.IndexStrategy?.Type ?? "logs";
 
@@ -239,7 +237,8 @@ public class MappingDataStreamChannel<T>(
 			_ => ["data-streams-mappings"]
 		};
 
-		var allTemplates = new[] { settingsTemplate, mappingsTemplate }.Concat(ecsTemplates).Select(t => $"\"{t}\"");
+		// Put custom template LAST so it overrides ECS defaults
+		var allTemplates = ecsTemplates.Append(componentTemplate).Select(t => $"\"{t}\"");
 
 		return $$"""
 			{
@@ -253,27 +252,5 @@ public class MappingDataStreamChannel<T>(
 				}
 			}
 			""";
-	}
-
-	private static string ExtractSectionContent(string json, string section)
-	{
-		using var doc = JsonDocument.Parse(json);
-		if (doc.RootElement.TryGetProperty(section, out var content))
-			return content.GetRawText();
-
-		return "{}";
-	}
-
-	private static string ComputeHash(string settingsJson, string mappingsJson)
-	{
-		var combined = $"v1:{Minify(settingsJson)}:{Minify(mappingsJson)}";
-		var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(combined));
-		return Convert.ToHexString(bytes)[..16].ToLowerInvariant();
-	}
-
-	private static string Minify(string json)
-	{
-		using var doc = JsonDocument.Parse(json);
-		return JsonSerializer.Serialize(doc.RootElement);
 	}
 }

@@ -62,8 +62,27 @@ internal static class MappingContextEmitter
 	{
 		var indent = new string('\t', model.ContainingTypes.Length);
 
-		// Implement IHasElasticsearchContext interface
-		sb.AppendLine($"{indent}partial class {model.TypeName} : global::Elastic.Mapping.IHasElasticsearchContext");
+		// Build interface list - IHasElasticsearchContext is always included
+		var baseInterface = "global::Elastic.Mapping.IHasElasticsearchContext";
+
+		// Check if we need NET8+ interfaces for static abstract members
+		var hasNet8Interfaces = model.HasConfigureAnalysis || model.HasConfigureMappings;
+
+		if (hasNet8Interfaces)
+		{
+			// Emit conditional compilation for NET8+ interfaces
+			sb.AppendLine("#if NET8_0_OR_GREATER");
+			EmitClassDeclarationWithInterfaces(sb, model, indent);
+			sb.AppendLine("#else");
+			sb.AppendLine($"{indent}partial class {model.TypeName} : {baseInterface}");
+			sb.AppendLine("#endif");
+		}
+		else
+		{
+			// No Configure* methods - just implement base interface
+			sb.AppendLine($"{indent}partial class {model.TypeName} : {baseInterface}");
+		}
+
 		sb.AppendLine($"{indent}{{");
 
 		// Add the Context property implementing the interface
@@ -72,6 +91,29 @@ internal static class MappingContextEmitter
 		EmitElasticsearchContextClass(sb, model, indent + "\t");
 
 		sb.AppendLine($"{indent}}}");
+	}
+
+	private static void EmitClassDeclarationWithInterfaces(StringBuilder sb, TypeMappingModel model, string indent)
+	{
+		var interfaces = new List<string> { "global::Elastic.Mapping.IHasElasticsearchContext" };
+
+		if (model.HasConfigureAnalysis && model.HasConfigureMappings && !string.IsNullOrEmpty(model.MappingsBuilderTypeName))
+		{
+			// Full index configuration: implements IHasIndexConfiguration<TBuilder>
+			interfaces.Add($"global::Elastic.Mapping.IHasIndexConfiguration<{model.MappingsBuilderTypeName}>");
+		}
+		else if (model.HasConfigureAnalysis)
+		{
+			// Analysis only: implements IHasAnalysisConfiguration
+			interfaces.Add("global::Elastic.Mapping.IHasAnalysisConfiguration");
+		}
+		else if (model.HasConfigureMappings && !string.IsNullOrEmpty(model.MappingsBuilderTypeName))
+		{
+			// Mappings only: implements IHasMappingsConfiguration<TBuilder>
+			interfaces.Add($"global::Elastic.Mapping.IHasMappingsConfiguration<{model.MappingsBuilderTypeName}>");
+		}
+
+		sb.AppendLine($"{indent}partial class {model.TypeName} : {string.Join(", ", interfaces)}");
 	}
 
 	private static void EmitContextProperty(StringBuilder sb, TypeMappingModel model, string indent)
@@ -129,6 +171,15 @@ internal static class MappingContextEmitter
 
 		// Fields class
 		EmitFieldsClass(sb, model, indent + "\t");
+
+		// Field mapping dictionaries for runtime lookup without reflection
+		EmitFieldMappingClass(sb, model, indent + "\t");
+
+		// Ignored properties set
+		EmitIgnoredProperties(sb, model, indent + "\t");
+
+		// Property map for deserialization
+		EmitGetPropertyMap(sb, model, indent + "\t");
 
 		sb.AppendLine($"{indent}}}");
 	}
@@ -235,23 +286,21 @@ internal static class MappingContextEmitter
 		sb.AppendLine("\t\"settings\": {");
 
 		var idx = model.IndexConfig;
-		if (idx != null)
-		{
-			sb.AppendLine($"\t\t\"number_of_shards\": {idx.Shards},");
-			sb.AppendLine($"\t\t\"number_of_replicas\": {idx.Replicas}");
+		var settingsList = new List<string>();
 
-			if (!string.IsNullOrEmpty(idx.RefreshInterval))
-			{
-				sb.Remove(sb.Length - 1, 1); // Remove newline
-				sb.AppendLine(",");
-				sb.AppendLine($"\t\t\"refresh_interval\": \"{idx.RefreshInterval}\"");
-			}
-		}
-		else
-		{
-			sb.AppendLine("\t\t\"number_of_shards\": 1,");
-			sb.AppendLine("\t\t\"number_of_replicas\": 1");
-		}
+		// Only emit shards/replicas when explicitly configured (serverless compatibility)
+		// Values of -1 mean "not set" and will be omitted
+		if (idx != null && idx.Shards > 0)
+			settingsList.Add($"\t\t\"number_of_shards\": {idx.Shards}");
+
+		if (idx != null && idx.Replicas >= 0)
+			settingsList.Add($"\t\t\"number_of_replicas\": {idx.Replicas}");
+
+		if (idx != null && !string.IsNullOrEmpty(idx.RefreshInterval))
+			settingsList.Add($"\t\t\"refresh_interval\": \"{idx.RefreshInterval}\"");
+
+		// Join settings with commas
+		sb.AppendLine(string.Join(",\n", settingsList));
 
 		sb.AppendLine("\t}");
 		sb.Append("}");
@@ -376,6 +425,94 @@ internal static class MappingContextEmitter
 		}
 
 		return sb.ToString();
+	}
+
+	private static void EmitFieldMappingClass(StringBuilder sb, TypeMappingModel model, string indent)
+	{
+		var props = model.Properties.Where(p => !p.IsIgnored).ToList();
+
+		sb.AppendLine();
+		sb.AppendLine($"{indent}/// <summary>Field name mapping dictionaries.</summary>");
+		sb.AppendLine($"{indent}public static class FieldMapping");
+		sb.AppendLine($"{indent}{{");
+
+		// PropertyToField
+		sb.AppendLine($"{indent}\t/// <summary>Maps C# property name to ES|QL field name.</summary>");
+		sb.AppendLine($"{indent}\tpublic static readonly global::System.Collections.Generic.IReadOnlyDictionary<string, string> PropertyToField = new global::System.Collections.Generic.Dictionary<string, string>");
+		sb.AppendLine($"{indent}\t{{");
+		foreach (var prop in props)
+			sb.AppendLine($"{indent}\t\t[\"{prop.PropertyName}\"] = \"{prop.FieldName}\",");
+		sb.AppendLine($"{indent}\t}};");
+		sb.AppendLine();
+
+		// FieldToProperty
+		sb.AppendLine($"{indent}\t/// <summary>Maps ES|QL field name to C# property name.</summary>");
+		sb.AppendLine($"{indent}\tpublic static readonly global::System.Collections.Generic.IReadOnlyDictionary<string, string> FieldToProperty = new global::System.Collections.Generic.Dictionary<string, string>");
+		sb.AppendLine($"{indent}\t{{");
+		foreach (var prop in props)
+			sb.AppendLine($"{indent}\t\t[\"{prop.FieldName}\"] = \"{prop.PropertyName}\",");
+		sb.AppendLine($"{indent}\t}};");
+
+		sb.AppendLine($"{indent}}}");
+	}
+
+	private static void EmitIgnoredProperties(StringBuilder sb, TypeMappingModel model, string indent)
+	{
+		var ignored = model.Properties.Where(p => p.IsIgnored).ToList();
+
+		sb.AppendLine();
+		sb.AppendLine($"{indent}/// <summary>Property names marked with [JsonIgnore].</summary>");
+		sb.Append($"{indent}public static readonly global::System.Collections.Generic.IReadOnlySet<string> IgnoredProperties = ");
+
+		if (ignored.Count == 0)
+			sb.AppendLine("new global::System.Collections.Generic.HashSet<string>();");
+		else
+		{
+			sb.AppendLine("new global::System.Collections.Generic.HashSet<string>");
+			sb.AppendLine($"{indent}{{");
+			foreach (var prop in ignored)
+				sb.AppendLine($"{indent}\t\"{prop.PropertyName}\",");
+			sb.AppendLine($"{indent}}};");
+		}
+	}
+
+	private static void EmitGetPropertyMap(StringBuilder sb, TypeMappingModel model, string indent)
+	{
+		var props = model.Properties.Where(p => !p.IsIgnored).ToList();
+		var typeName = model.FullyQualifiedName;
+
+		sb.AppendLine();
+		sb.AppendLine($"{indent}/// <summary>Gets PropertyInfo lookup keyed by field name (for deserialization).</summary>");
+		sb.AppendLine($"{indent}public static global::System.Collections.Generic.Dictionary<string, global::System.Reflection.PropertyInfo> GetPropertyMap() => new()");
+		sb.AppendLine($"{indent}{{");
+
+		foreach (var prop in props)
+		{
+			// Add by field name
+			sb.AppendLine($"{indent}\t[\"{prop.FieldName}\"] = typeof(global::{typeName}).GetProperty(nameof(global::{typeName}.{prop.PropertyName}))!,");
+
+			// Also add by property name if different from field name
+			if (prop.PropertyName != prop.FieldName)
+				sb.AppendLine($"{indent}\t[\"{prop.PropertyName}\"] = typeof(global::{typeName}).GetProperty(nameof(global::{typeName}.{prop.PropertyName}))!,");
+
+			// Also add by camelCase if different from both field name and property name
+			var camelCase = ToCamelCase(prop.PropertyName);
+			if (camelCase != prop.FieldName && camelCase != prop.PropertyName)
+				sb.AppendLine($"{indent}\t[\"{camelCase}\"] = typeof(global::{typeName}).GetProperty(nameof(global::{typeName}.{prop.PropertyName}))!,");
+		}
+
+		sb.AppendLine($"{indent}}};");
+	}
+
+	private static string ToCamelCase(string name)
+	{
+		if (string.IsNullOrEmpty(name))
+			return name;
+
+		if (name.Length == 1)
+			return name.ToLowerInvariant();
+
+		return char.ToLowerInvariant(name[0]) + name.Substring(1);
 	}
 
 	private static string ToSnakeCase(string name)

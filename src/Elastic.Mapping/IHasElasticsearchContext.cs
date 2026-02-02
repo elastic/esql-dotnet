@@ -4,6 +4,44 @@
 
 namespace Elastic.Mapping;
 
+#if NET8_0_OR_GREATER
+/// <summary>
+/// Interface for types that have Elasticsearch context with static abstract access.
+/// The generated code provides a static `Context` property directly on the type.
+/// </summary>
+/// <remarks>
+/// <para>
+/// On .NET 8+, this interface provides a static abstract member for compile-time
+/// type-safe access to the context without reflection.
+/// </para>
+/// </remarks>
+/// <example>
+/// <code>
+/// // Generated code pattern:
+/// public partial class Product : IHasElasticsearchContext
+/// {
+///     public static ElasticsearchTypeContext Context => ElasticsearchContext.Instance;
+///
+///     public static class ElasticsearchContext
+///     {
+///         public static readonly ElasticsearchTypeContext Instance = new(...);
+///         // ... hash, settings, mappings, etc.
+///     }
+/// }
+///
+/// // Usage with generic constraint:
+/// public static void Process&lt;T&gt;() where T : IHasElasticsearchContext
+/// {
+///     var context = T.Context;  // Accessed via static abstract member
+/// }
+/// </code>
+/// </example>
+public interface IHasElasticsearchContext
+{
+	/// <summary>Gets the Elasticsearch context for this type.</summary>
+	static abstract ElasticsearchTypeContext Context { get; }
+}
+#else
 /// <summary>
 /// Marker interface for types that have Elasticsearch context.
 /// The generated code provides a static `Context` property directly on the type.
@@ -43,6 +81,7 @@ namespace Elastic.Mapping;
 public interface IHasElasticsearchContext
 {
 }
+#endif
 
 /// <summary>
 /// Type-specific context containing all Elasticsearch metadata generated at compile time.

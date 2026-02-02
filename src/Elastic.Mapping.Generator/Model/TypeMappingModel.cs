@@ -17,7 +17,11 @@ internal sealed record TypeMappingModel(
 	IndexConfigModel? IndexConfig,
 	DataStreamConfigModel? DataStreamConfig,
 	ImmutableArray<PropertyMappingModel> Properties,
-	ImmutableArray<string> ContainingTypes
+	ImmutableArray<string> ContainingTypes,
+	AnalysisComponentsModel AnalysisComponents,
+	bool HasConfigureAnalysis,
+	bool HasConfigureMappings,
+	string? MappingsBuilderTypeName
 )
 {
 	public string FullTypeName =>

@@ -2,14 +2,14 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Elastic.Channels.Diagnostics;
 using Elastic.Clients.Elasticsearch;
 using Elastic.Ingest.Elasticsearch;
 using Elastic.Ingest.Elasticsearch.Indices;
 using Elastic.Mapping;
+using Elastic.Mapping.Analysis;
 using BulkResponse = Elastic.Ingest.Elasticsearch.Serialization.BulkResponse;
 
 namespace Elastic.Examples.Ingest.Channels;
@@ -24,12 +24,6 @@ public class MappingIndexChannelOptions<T>(ElasticsearchClient client) : IndexCh
 
 	/// <summary>The Elasticsearch context for this type.</summary>
 	public required ElasticsearchTypeContext Context { get; init; }
-
-	/// <summary>Optional modifier for settings JSON.</summary>
-	public Func<string, string>? Settings { get; init; }
-
-	/// <summary>Optional modifier for mappings JSON.</summary>
-	public Func<string, string>? Mappings { get; init; }
 
 	/// <summary>Optional callback invoked during bootstrap.</summary>
 	public Action<string>? OnBootstrapStatus { get; init; }
@@ -48,6 +42,17 @@ public class MappingIndexChannel<T>(
 ) : IndexChannel<T>(MappingIndexChannel<T>.ConfigureOptions(options), callbackListeners)
 	where T : class
 {
+	/// <summary>
+	/// Creates a channel with auto-discovered context via interfaces.
+	/// </summary>
+#pragma warning disable CA1000 // Do not declare static members on generic types - Factory method needs type parameter
+	public static MappingIndexChannel<T> Create<TDoc>(ElasticsearchClient client)
+		where TDoc : class, T, IHasElasticsearchContext
+	{
+#pragma warning restore CA1000
+		var options = new MappingIndexChannelOptions<T>(client) { Context = TDoc.Context };
+		return new MappingIndexChannel<T>(options);
+	}
 	private readonly MappingIndexChannelOptions<T> _options = options;
 
 	private static MappingIndexChannelOptions<T> ConfigureOptions(MappingIndexChannelOptions<T> options)
@@ -68,26 +73,10 @@ public class MappingIndexChannel<T>(
 			return true;
 
 		var indexName = GetIndexBaseName();
-		var settingsTemplateName = $"{indexName}-settings";
-		var mappingsTemplateName = $"{indexName}-mappings";
+		var componentTemplateName = $"{indexName}-write";
 		var indexTemplateName = indexName;
 
-		// Get base JSON from context
-		var settingsJson = _options.Context.GetSettingsJson();
-		var mappingsJson = _options.Context.GetMappingsJson();
-
-		// Apply modifier functions if provided
-		if (_options.Settings != null)
-			settingsJson = _options.Settings(settingsJson);
-		if (_options.Mappings != null)
-			mappingsJson = _options.Mappings(mappingsJson);
-
-		// Compute hash
-		var hash = (_options.Settings == null && _options.Mappings == null)
-			? _options.Context.Hash
-			: ComputeHash(settingsJson, mappingsJson);
-
-		// Check if index template exists and compare hash
+		// Check if index template exists
 		_options.OnBootstrapStatus?.Invoke($"Checking index template '{indexTemplateName}'...");
 
 		if (IndexTemplateExists(indexTemplateName))
@@ -96,21 +85,15 @@ public class MappingIndexChannel<T>(
 			return false;
 		}
 
-		// Create settings component template
-		_options.OnBootstrapStatus?.Invoke($"Creating component template '{settingsTemplateName}'...");
-		var settingsBody = CreateComponentTemplateBody("settings", settingsJson);
-		if (!PutComponentTemplate(bootstrapMethod, settingsTemplateName, settingsBody))
-			return false;
-
-		// Create mappings component template
-		_options.OnBootstrapStatus?.Invoke($"Creating component template '{mappingsTemplateName}'...");
-		var mappingsBody = CreateComponentTemplateBody("mappings", mappingsJson);
-		if (!PutComponentTemplate(bootstrapMethod, mappingsTemplateName, mappingsBody))
+		// Create combined component template (settings + mappings together to pass analyzer validation)
+		_options.OnBootstrapStatus?.Invoke($"Creating component template '{componentTemplateName}'...");
+		var combinedBody = CreateCombinedTemplateBody(_options.Context.GetSettingsJson(), _options.Context.GetMappingsJson());
+		if (!PutComponentTemplate(bootstrapMethod, componentTemplateName, combinedBody))
 			return false;
 
 		// Create index template
 		_options.OnBootstrapStatus?.Invoke($"Creating index template '{indexTemplateName}'...");
-		var indexTemplate = CreateIndexTemplateBody(indexName, settingsTemplateName, mappingsTemplateName, hash);
+		var indexTemplate = CreateIndexTemplateBody(indexName, componentTemplateName, _options.Context.Hash);
 		if (!PutIndexTemplate(bootstrapMethod, indexTemplateName, indexTemplate))
 			return false;
 
@@ -129,24 +112,8 @@ public class MappingIndexChannel<T>(
 			return true;
 
 		var indexName = GetIndexBaseName();
-		var settingsTemplateName = $"{indexName}-settings";
-		var mappingsTemplateName = $"{indexName}-mappings";
+		var componentTemplateName = $"{indexName}-write";
 		var indexTemplateName = indexName;
-
-		// Get base JSON from context
-		var settingsJson = _options.Context.GetSettingsJson();
-		var mappingsJson = _options.Context.GetMappingsJson();
-
-		// Apply modifier functions if provided
-		if (_options.Settings != null)
-			settingsJson = _options.Settings(settingsJson);
-		if (_options.Mappings != null)
-			mappingsJson = _options.Mappings(mappingsJson);
-
-		// Compute hash
-		var hash = (_options.Settings == null && _options.Mappings == null)
-			? _options.Context.Hash
-			: ComputeHash(settingsJson, mappingsJson);
 
 		// Check if index template exists
 		_options.OnBootstrapStatus?.Invoke($"Checking index template '{indexTemplateName}'...");
@@ -157,21 +124,15 @@ public class MappingIndexChannel<T>(
 			return false;
 		}
 
-		// Create settings component template
-		_options.OnBootstrapStatus?.Invoke($"Creating component template '{settingsTemplateName}'...");
-		var settingsBody = CreateComponentTemplateBody("settings", settingsJson);
-		if (!await PutComponentTemplateAsync(bootstrapMethod, settingsTemplateName, settingsBody, ctx).ConfigureAwait(false))
-			return false;
-
-		// Create mappings component template
-		_options.OnBootstrapStatus?.Invoke($"Creating component template '{mappingsTemplateName}'...");
-		var mappingsBody = CreateComponentTemplateBody("mappings", mappingsJson);
-		if (!await PutComponentTemplateAsync(bootstrapMethod, mappingsTemplateName, mappingsBody, ctx).ConfigureAwait(false))
+		// Create combined component template (settings + mappings together to pass analyzer validation)
+		_options.OnBootstrapStatus?.Invoke($"Creating component template '{componentTemplateName}'...");
+		var combinedBody = CreateCombinedTemplateBody(_options.Context.GetSettingsJson(), _options.Context.GetMappingsJson());
+		if (!await PutComponentTemplateAsync(bootstrapMethod, componentTemplateName, combinedBody, ctx).ConfigureAwait(false))
 			return false;
 
 		// Create index template
 		_options.OnBootstrapStatus?.Invoke($"Creating index template '{indexTemplateName}'...");
-		var indexTemplate = CreateIndexTemplateBody(indexName, settingsTemplateName, mappingsTemplateName, hash);
+		var indexTemplate = CreateIndexTemplateBody(indexName, componentTemplateName, _options.Context.Hash);
 		if (!await PutIndexTemplateAsync(bootstrapMethod, indexTemplateName, indexTemplate, ctx).ConfigureAwait(false))
 			return false;
 
@@ -185,28 +146,76 @@ public class MappingIndexChannel<T>(
 		return writeTarget.TrimEnd('-');
 	}
 
-	private static string CreateComponentTemplateBody(string section, string json)
+	private string CreateCombinedTemplateBody(string settingsJson, string mappingsJson)
 	{
-		var sectionContent = ExtractSectionContent(json, section);
-		return $$"""
+		// Merge analysis settings from ConfigureAnalysis if the type implements IHasAnalysisConfiguration
+		var analysisSettings = GetAnalysisSettings();
+		if (analysisSettings?.HasConfiguration == true)
+			settingsJson = analysisSettings.MergeIntoSettings(settingsJson);
+
+		using var settingsDoc = JsonDocument.Parse(settingsJson);
+		using var mappingsDoc = JsonDocument.Parse(mappingsJson);
+
+		var settingsContent = settingsDoc.RootElement.TryGetProperty("settings", out var s)
+			? JsonNode.Parse(s.GetRawText())
+			: new JsonObject();
+
+		var mappingsContent = mappingsDoc.RootElement.TryGetProperty("mappings", out var m)
+			? JsonNode.Parse(m.GetRawText())
+			: new JsonObject();
+
+		var template = new JsonObject
+		{
+			["template"] = new JsonObject
 			{
-				"template": {
-					"{{section}}": {{sectionContent}}
-				},
-				"_meta": {
-					"managed_by": "Elastic.Examples.Ingest"
-				}
+				["settings"] = settingsContent,
+				["mappings"] = mappingsContent
+			},
+			["_meta"] = new JsonObject
+			{
+				["managed_by"] = "Elastic.Examples.Ingest"
 			}
-			""";
+		};
+
+		return template.ToJsonString();
 	}
 
-	private static string CreateIndexTemplateBody(string indexName, string settingsTemplate, string mappingsTemplate, string hash)
+	private AnalysisSettings? GetAnalysisSettings()
+	{
+		// Check if type T has a ConfigureAnalysis static method (implements IHasAnalysisConfiguration)
+		var configureMethod = typeof(T).GetMethod(
+			"ConfigureAnalysis",
+			System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static,
+			null,
+			[typeof(AnalysisBuilder)],
+			null
+		);
+
+		if (configureMethod == null)
+			return null;
+
+		try
+		{
+			var builder = new AnalysisBuilder();
+			var result = configureMethod.Invoke(null, [builder]);
+			if (result is AnalysisBuilder returnedBuilder)
+				return returnedBuilder.Build();
+		}
+		catch
+		{
+			// If reflection fails, continue without analysis
+		}
+
+		return null;
+	}
+
+	private static string CreateIndexTemplateBody(string indexName, string componentTemplate, string hash)
 	{
 		var indexPattern = indexName.EndsWith('*') ? indexName : $"{indexName}*";
 		return $$"""
 			{
 				"index_patterns": ["{{indexPattern}}"],
-				"composed_of": ["{{settingsTemplate}}", "{{mappingsTemplate}}"],
+				"composed_of": ["{{componentTemplate}}"],
 				"priority": 100,
 				"_meta": {
 					"hash": "{{hash}}",
@@ -214,27 +223,5 @@ public class MappingIndexChannel<T>(
 				}
 			}
 			""";
-	}
-
-	private static string ExtractSectionContent(string json, string section)
-	{
-		using var doc = JsonDocument.Parse(json);
-		if (doc.RootElement.TryGetProperty(section, out var content))
-			return content.GetRawText();
-
-		return "{}";
-	}
-
-	private static string ComputeHash(string settingsJson, string mappingsJson)
-	{
-		var combined = $"v1:{Minify(settingsJson)}:{Minify(mappingsJson)}";
-		var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(combined));
-		return Convert.ToHexString(bytes)[..16].ToLowerInvariant();
-	}
-
-	private static string Minify(string json)
-	{
-		using var doc = JsonDocument.Parse(json);
-		return JsonSerializer.Serialize(doc.RootElement);
 	}
 }

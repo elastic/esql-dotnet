@@ -9,6 +9,7 @@ global using Elastic.Esql;
 global using Elastic.Esql.Extensions;
 global using Elastic.Esql.Core;
 global using Elastic.Examples.Domain.Models;
+global using Elastic.Mapping.Analysis;
 global using Elastic.Examples.Ingest.Generators;
 global using Elastic.Integration.Tests.Infrastructure;
 global using LogLevel = Elastic.Examples.Domain.Models.LogLevel;

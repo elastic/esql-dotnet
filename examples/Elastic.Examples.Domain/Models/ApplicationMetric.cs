@@ -4,6 +4,8 @@
 
 using System.Text.Json.Serialization;
 using Elastic.Mapping;
+using Elastic.Mapping.Analysis;
+using static Elastic.Mapping.Analysis.BuiltInAnalysis;
 
 namespace Elastic.Examples.Domain.Models;
 
@@ -98,6 +100,52 @@ public partial class ApplicationMetric
 
 	[Object]
 	public MetricLabels? Labels { get; set; }
+
+	/// <summary>Configures ApplicationMetric-specific analysis settings.</summary>
+	public static AnalysisBuilder ConfigureAnalysis(AnalysisBuilder analysis) => analysis
+		.Normalizer("metric_normalizer", n => n
+			.Custom()
+			.Filter(TokenFilters.Lowercase));
+
+	/// <summary>Configures ApplicationMetric-specific mapping overrides.</summary>
+	public static ApplicationMetricMappingsBuilder ConfigureMappings(ApplicationMetricMappingsBuilder mappings) => mappings
+		.ServiceName(f => f
+			.Normalizer(mappings.Analysis.Normalizers.MetricNormalizer))
+		.AddRuntimeField("memory_pct_computed", r => r
+			.Double()
+			.Script("""
+				if (doc['system.memory.used.bytes'].size() > 0 && doc['system.memory.total.bytes'].size() > 0) {
+					double used = doc['system.memory.used.bytes'].value;
+					double total = doc['system.memory.total.bytes'].value;
+					if (total > 0) emit(used / total * 100);
+				}
+				"""))
+		.AddRuntimeField("error_rate_pct", r => r
+			.Double()
+			.Script("""
+				if (doc['app.errors.total'].size() > 0 && doc['app.requests.total'].size() > 0) {
+					emit(doc['app.errors.total'].value / (double)doc['app.requests.total'].value * 100);
+				}
+				"""))
+		.AddRuntimeField("latency_category", r => r
+			.Keyword()
+			.Script("""
+				if (doc['app.latency.p95'].size() > 0) {
+					double p95 = doc['app.latency.p95'].value;
+					if (p95 < 100) emit('fast');
+					else if (p95 < 500) emit('normal');
+					else if (p95 < 1000) emit('slow');
+					else emit('critical');
+				}
+				"""))
+		.AddRuntimeField("is_healthy", r => r
+			.Boolean()
+			.Script("""
+				boolean healthy = true;
+				if (doc['system.cpu.total.pct'].size() > 0 && doc['system.cpu.total.pct'].value > 80) healthy = false;
+				if (doc['system.memory.used.pct'].size() > 0 && doc['system.memory.used.pct'].value > 90) healthy = false;
+				emit(healthy);
+				"""));
 }
 
 /// <summary>

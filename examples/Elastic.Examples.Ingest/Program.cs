@@ -3,7 +3,6 @@
 // See the LICENSE file in the project root for more information
 
 using Elastic.Clients.Elasticsearch;
-using Elastic.Examples.Ingest;
 using Elastic.Examples.Ingest.Ingestors;
 using Elastic.Transport;
 using Microsoft.Extensions.Configuration;
@@ -16,14 +15,7 @@ WriteOutput("[gray]════════════════════�
 // Get Elasticsearch connection configuration
 var (url, apiKey) = GetElasticsearchConfiguration();
 
-// Detect serverless environment
-var isServerless = ServerlessHelper.IsServerless(url);
-var settingsModifier = ServerlessHelper.GetSettingsModifier(url);
-
-WriteOutput($"[cyan]Elasticsearch:[/] {url}");
-if (isServerless)
-	WriteOutput(" [yellow](serverless)[/]");
-WriteOutput("\n\n");
+WriteOutput($"[cyan]Elasticsearch:[/] {url}\n\n");
 
 // Create Elasticsearch client
 var settings = new ElasticsearchClientSettings(new Uri(url))
@@ -139,8 +131,7 @@ IngestCallbacks CreateCallbacks() =>
 				WriteOutput($", [red]Failed: {failed:N0}[/]");
 			WriteOutput("\n");
 		},
-		OnError: msg => WriteOutput($"  [bold red]Error: {msg}[/]\n"),
-		SettingsModifier: settingsModifier
+		OnError: msg => WriteOutput($"  [bold red]Error: {msg}[/]\n")
 	);
 
 static (string url, string apiKey) GetElasticsearchConfiguration()
@@ -197,11 +188,8 @@ async Task CleanupIndicesAndTemplates(ElasticsearchClient client)
 	// Component templates to delete
 	string[] componentTemplates =
 	[
-		"products-write-settings", "products-write-mappings",
-		"customers-write-settings", "customers-write-mappings",
-		"orders-write-settings", "orders-write-mappings",
-		"logs-ecommerce.app-production-settings", "logs-ecommerce.app-production-mappings",
-		"metrics-ecommerce.app-production-settings", "metrics-ecommerce.app-production-mappings"
+		"products-write-write", "customers-write-write", "orders-write-write",
+		"logs-ecommerce.app-production-write", "metrics-ecommerce.app-production-write"
 	];
 
 	// Delete data streams

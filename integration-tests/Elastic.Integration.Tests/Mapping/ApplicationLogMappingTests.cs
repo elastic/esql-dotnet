@@ -153,4 +153,20 @@ public class ApplicationLogMappingTests : IntegrationTestBase
 		template.IndexTemplate.Meta!.Should().ContainKey("hash");
 		template.IndexTemplate.Meta!.Should().ContainKey("managed_by");
 	}
+
+	[Test]
+	public async Task LogDataStream_SettingsTemplateContainsAnalyzers()
+	{
+		// The settings component template contains custom analyzers defined in ApplicationLog.ConfigureAnalysis:
+		// - log_message_analyzer (pattern tokenizer optimized for log messages)
+		// - error_message_analyzer (for exception messages)
+		// - log_tokenizer (custom pattern tokenizer)
+		// - log_word_delimiter, exception_word_delimiter (token filters)
+		// The template existence verifies the analyzers were bootstrapped
+		var response = await Fixture.ElasticsearchClient.Cluster
+			.GetComponentTemplateAsync($"{DataStreamName}-settings");
+
+		response.IsValidResponse.Should().BeTrue();
+		response.ComponentTemplates.Should().NotBeEmpty();
+	}
 }

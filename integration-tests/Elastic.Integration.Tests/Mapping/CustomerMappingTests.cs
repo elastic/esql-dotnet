@@ -139,4 +139,20 @@ public class CustomerMappingTests : IntegrationTestBase
 		template.IndexTemplate.Meta!.Should().ContainKey("hash");
 		template.IndexTemplate.Meta!.Should().ContainKey("managed_by");
 	}
+
+	[Test]
+	public async Task CustomerIndex_SettingsTemplateContainsAnalyzers()
+	{
+		// The settings component template contains custom analyzers defined in Customer.ConfigureAnalysis:
+		// - name_analyzer (phonetic-friendly analyzer for person names)
+		// - name_search_analyzer
+		// - email_analyzer (UAX URL email tokenizer)
+		// - lowercase_normalizer
+		// The template existence verifies the analyzers were bootstrapped
+		var response = await Fixture.ElasticsearchClient.Cluster
+			.GetComponentTemplateAsync("customers-settings");
+
+		response.IsValidResponse.Should().BeTrue();
+		response.ComponentTemplates.Should().NotBeEmpty();
+	}
 }

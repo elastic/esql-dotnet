@@ -54,6 +54,10 @@ internal static class TypeAnalyzer
 
 		var properties = GetProperties(typeSymbol, ct);
 		var containingTypes = GetContainingTypes(typeSymbol);
+		var analysisComponents = ConfigureAnalysisParser.Parse(typeSymbol, ct);
+
+		// Detect Configure* methods
+		var (hasConfigureAnalysis, hasConfigureMappings, mappingsBuilderTypeName) = DetectConfigureMethods(typeSymbol);
 
 		return new TypeMappingModel(
 			typeSymbol.ContainingNamespace?.ToDisplayString() ?? string.Empty,
@@ -62,7 +66,11 @@ internal static class TypeAnalyzer
 			indexConfig,
 			dataStreamConfig,
 			properties,
-			containingTypes
+			containingTypes,
+			analysisComponents,
+			hasConfigureAnalysis,
+			hasConfigureMappings,
+			mappingsBuilderTypeName
 		);
 	}
 
@@ -80,8 +88,8 @@ internal static class TypeAnalyzer
 			GetNamedArg<string>(attr, "ReadAlias"),
 			GetNamedArg<string>(attr, "DatePattern"),
 			GetNamedArg<string>(attr, "SearchPattern"),
-			GetNamedArg<int>(attr, "Shards", 1),
-			GetNamedArg<int>(attr, "Replicas", 1),
+			GetNamedArg<int>(attr, "Shards", -1),
+			GetNamedArg<int>(attr, "Replicas", -1),
 			GetNamedArg<string>(attr, "RefreshInterval"),
 			GetNamedArg<bool>(attr, "Dynamic", true)
 		);
@@ -108,7 +116,14 @@ internal static class TypeAnalyzer
 		);
 	}
 
-	private static ImmutableArray<PropertyMappingModel> GetProperties(INamedTypeSymbol typeSymbol, CancellationToken ct)
+	private static ImmutableArray<PropertyMappingModel> GetProperties(INamedTypeSymbol typeSymbol, CancellationToken ct) =>
+		GetProperties(typeSymbol, [], ct);
+
+	private static ImmutableArray<PropertyMappingModel> GetProperties(
+		INamedTypeSymbol typeSymbol,
+		HashSet<string> visitedTypes,
+		CancellationToken ct
+	)
 	{
 		var builder = ImmutableArray.CreateBuilder<PropertyMappingModel>();
 
@@ -125,7 +140,7 @@ internal static class TypeAnalyzer
 			if (property.IsStatic || property.IsIndexer)
 				continue;
 
-			var propModel = AnalyzeProperty(property);
+			var propModel = AnalyzeProperty(property, visitedTypes, ct);
 			if (propModel != null)
 				builder.Add(propModel);
 		}
@@ -133,7 +148,14 @@ internal static class TypeAnalyzer
 		return builder.ToImmutable();
 	}
 
-	private static PropertyMappingModel? AnalyzeProperty(IPropertySymbol property)
+	private static PropertyMappingModel? AnalyzeProperty(IPropertySymbol property) =>
+		AnalyzeProperty(property, [], CancellationToken.None);
+
+	private static PropertyMappingModel? AnalyzeProperty(
+		IPropertySymbol property,
+		HashSet<string> visitedTypes,
+		CancellationToken ct
+	)
 	{
 		var attrs = property.GetAttributes();
 
@@ -149,13 +171,105 @@ internal static class TypeAnalyzer
 		// Determine field type and options from attributes or CLR type
 		var (fieldType, options) = DetermineFieldTypeAndOptions(property, attrs);
 
+		// For nested/object types, recursively analyze the element type
+		NestedTypeModel? nestedType = null;
+		if (fieldType is FieldTypes.Nested or FieldTypes.Object)
+			nestedType = AnalyzeNestedType(property.Type, visitedTypes, ct);
+
 		return PropertyMappingModel.Create(
 			property.Name,
 			fieldName,
 			fieldType,
 			isIgnored,
-			options
+			options,
+			nestedType
 		);
+	}
+
+	private static NestedTypeModel? AnalyzeNestedType(
+		ITypeSymbol typeSymbol,
+		HashSet<string> visitedTypes,
+		CancellationToken ct
+	)
+	{
+		// Get the element type (unwrap List<T>, T[], etc.)
+		var elementType = GetElementType(typeSymbol);
+		if (elementType is not INamedTypeSymbol namedType)
+			return null;
+
+		var fullyQualifiedName = namedType.ToDisplayString();
+
+		// Prevent circular references
+		if (!visitedTypes.Add(fullyQualifiedName))
+			return null;
+
+		try
+		{
+			var properties = GetNestedTypeProperties(namedType, visitedTypes, ct);
+
+			if (properties.Length == 0)
+				return null;
+
+			return new NestedTypeModel(namedType.Name, fullyQualifiedName, properties);
+		}
+		finally
+		{
+			visitedTypes.Remove(fullyQualifiedName);
+		}
+	}
+
+	private static ITypeSymbol GetElementType(ITypeSymbol typeSymbol)
+	{
+		// Handle nullable
+		if (typeSymbol is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T } nullable)
+			typeSymbol = nullable.TypeArguments[0];
+
+		// Handle arrays
+		if (typeSymbol is IArrayTypeSymbol arrayType)
+			return arrayType.ElementType;
+
+		// Handle generic collections (List<T>, IEnumerable<T>, etc.)
+		if (typeSymbol is INamedTypeSymbol namedType && namedType.IsGenericType)
+		{
+			var originalDef = namedType.OriginalDefinition.ToDisplayString();
+			if (originalDef.StartsWith("System.Collections.Generic.", StringComparison.Ordinal) ||
+				originalDef == "System.Collections.IEnumerable")
+			{
+				if (namedType.TypeArguments.Length > 0)
+					return namedType.TypeArguments[0];
+			}
+		}
+
+		return typeSymbol;
+	}
+
+	private static ImmutableArray<PropertyMappingModel> GetNestedTypeProperties(
+		INamedTypeSymbol typeSymbol,
+		HashSet<string> visitedTypes,
+		CancellationToken ct
+	)
+	{
+		var builder = ImmutableArray.CreateBuilder<PropertyMappingModel>();
+
+		foreach (var member in typeSymbol.GetMembers())
+		{
+			ct.ThrowIfCancellationRequested();
+
+			if (member is not IPropertySymbol property)
+				continue;
+
+			if (property.DeclaredAccessibility != Accessibility.Public)
+				continue;
+
+			if (property.IsStatic || property.IsIndexer)
+				continue;
+
+			var propModel = AnalyzeProperty(property, visitedTypes, ct);
+			if (propModel != null)
+				builder.Add(propModel);
+		}
+
+		return builder.ToImmutable();
 	}
 
 	private static (string FieldType, ImmutableDictionary<string, string?> Options) DetermineFieldTypeAndOptions(
@@ -317,5 +431,28 @@ internal static class TypeAnalyzer
 			return name.ToLowerInvariant();
 
 		return char.ToLowerInvariant(name[0]) + name.Substring(1);
+	}
+
+	private static (bool HasConfigureAnalysis, bool HasConfigureMappings, string? MappingsBuilderTypeName) DetectConfigureMethods(INamedTypeSymbol typeSymbol)
+	{
+		var hasConfigureAnalysis = typeSymbol.GetMembers("ConfigureAnalysis")
+			.OfType<IMethodSymbol>()
+			.Any(m => m.IsStatic && m.Parameters.Length == 1);
+
+		var configureMappingsMethod = typeSymbol.GetMembers("ConfigureMappings")
+			.OfType<IMethodSymbol>()
+			.FirstOrDefault(m => m.IsStatic && m.Parameters.Length == 1);
+
+		var hasConfigureMappings = configureMappingsMethod != null;
+		string? mappingsBuilderTypeName = null;
+
+		if (hasConfigureMappings && configureMappingsMethod != null)
+		{
+			// Extract the builder type name from the parameter type
+			var parameterType = configureMappingsMethod.Parameters[0].Type;
+			mappingsBuilderTypeName = parameterType.Name;
+		}
+
+		return (hasConfigureAnalysis, hasConfigureMappings, mappingsBuilderTypeName);
 	}
 }

@@ -22,8 +22,6 @@ public static class IngestHelper
 	/// <summary>Ingests all test data to Elasticsearch using MappingIndexChannel and MappingDataStreamChannel.</summary>
 	public static async Task IngestAllTestDataAsync(ElasticsearchFixture fixture, CancellationToken ct = default)
 	{
-		var callbacks = CreateCallbacks();
-
 		// Generate data with seed 12345 (built into generators)
 		var products = ProductGenerator.Generate(ProductCount);
 		var customers = CustomerGenerator.Generate(CustomerCount);
@@ -34,20 +32,48 @@ public static class IngestHelper
 		var logs = ApplicationLogGenerator.Generate(orderIds, productIds, customerIds, LogCount);
 		var metrics = ApplicationMetricGenerator.Generate(MetricCount);
 
-		// Ingest products via MappingIndexChannel
-		await IngestViaIndexChannelAsync(fixture.ElasticsearchClient, products, Product.Context, p => p.Id, callbacks, ct);
+		// Ingest products via MappingIndexChannel (analysis included in context settings)
+		await IngestViaIndexChannelAsync(
+			fixture.ElasticsearchClient,
+			products,
+			Product.Context,
+			p => p.Id,
+			ct
+		);
 
-		// Ingest customers via MappingIndexChannel
-		await IngestViaIndexChannelAsync(fixture.ElasticsearchClient, customers, Customer.Context, c => c.Id, callbacks, ct);
+		// Ingest customers via MappingIndexChannel (analysis included in context settings)
+		await IngestViaIndexChannelAsync(
+			fixture.ElasticsearchClient,
+			customers,
+			Customer.Context,
+			c => c.Id,
+			ct
+		);
 
-		// Ingest orders via MappingIndexChannel
-		await IngestViaIndexChannelAsync(fixture.ElasticsearchClient, orders, Order.Context, o => o.Id, callbacks, ct);
+		// Ingest orders via MappingIndexChannel (analysis included in context settings)
+		await IngestViaIndexChannelAsync(
+			fixture.ElasticsearchClient,
+			orders,
+			Order.Context,
+			o => o.Id,
+			ct
+		);
 
-		// Ingest logs via MappingDataStreamChannel
-		await IngestViaDataStreamChannelAsync(fixture.ElasticsearchClient, logs, ApplicationLog.Context, callbacks, ct);
+		// Ingest logs via MappingDataStreamChannel (analysis included in context settings)
+		await IngestViaDataStreamChannelAsync(
+			fixture.ElasticsearchClient,
+			logs,
+			ApplicationLog.Context,
+			ct
+		);
 
-		// Ingest metrics via MappingDataStreamChannel
-		await IngestViaDataStreamChannelAsync(fixture.ElasticsearchClient, metrics, ApplicationMetric.Context, callbacks, ct);
+		// Ingest metrics via MappingDataStreamChannel (analysis included in context settings)
+		await IngestViaDataStreamChannelAsync(
+			fixture.ElasticsearchClient,
+			metrics,
+			ApplicationMetric.Context,
+			ct
+		);
 
 		// Refresh all indices to ensure data is searchable
 		await fixture.ElasticsearchClient.Indices.RefreshAsync("*", ct);
@@ -58,16 +84,14 @@ public static class IngestHelper
 		IReadOnlyList<T> documents,
 		Elastic.Mapping.ElasticsearchTypeContext context,
 		Func<T, string> idLookup,
-		IngestCallbacks callbacks,
 		CancellationToken ct) where T : class
 	{
 		var options = new MappingIndexChannelOptions<T>(client)
 		{
 			Context = context,
 			BulkOperationIdLookup = idLookup,
-			OnBootstrapStatus = callbacks.OnStatus,
-			BufferOptions = new BufferOptions { OutboundBufferMaxSize = BatchSize },
-			Settings = callbacks.SettingsModifier
+			OnBootstrapStatus = _ => { },
+			BufferOptions = new BufferOptions { OutboundBufferMaxSize = BatchSize }
 		};
 
 		var channel = new MappingIndexChannel<T>(options);
@@ -91,16 +115,13 @@ public static class IngestHelper
 		ElasticsearchClient client,
 		IReadOnlyList<T> documents,
 		Elastic.Mapping.ElasticsearchTypeContext context,
-		IngestCallbacks callbacks,
-		Cancel ct
-	) where T : class
+		CancellationToken ct) where T : class
 	{
 		var options = new MappingDataStreamChannelOptions<T>(client)
 		{
 			Context = context,
-			OnBootstrapStatus = callbacks.OnStatus,
-			BufferOptions = new BufferOptions { OutboundBufferMaxSize = BatchSize },
-			Settings = callbacks.SettingsModifier
+			OnBootstrapStatus = _ => { },
+			BufferOptions = new BufferOptions { OutboundBufferMaxSize = BatchSize }
 		};
 
 		var channel = new MappingDataStreamChannel<T>(options);
@@ -119,14 +140,4 @@ public static class IngestHelper
 			_ = channel.TryComplete();
 		}
 	}
-
-	private static IngestCallbacks CreateCallbacks() =>
-		new(
-			OnStatus: _ => { },
-			OnInfo: _ => { },
-			OnProgress: (_, _) => { },
-			OnComplete: (_, _) => { },
-			OnError: _ => { },
-			SettingsModifier: null
-		);
 }

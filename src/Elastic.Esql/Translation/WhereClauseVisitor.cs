@@ -7,6 +7,7 @@ using System.Globalization;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Text;
+using System.Text.Json.Serialization;
 using Elastic.Esql.Core;
 using Elastic.Esql.Functions;
 using Elastic.Esql.TypeMapping;
@@ -39,17 +40,111 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 		if (isLogicalOperator)
 			_ = _builder.Append('(');
 
-		_ = Visit(node.Left);
-
-		var op = GetOperator(node.NodeType);
-		_ = _builder.Append(' ').Append(op).Append(' ');
-
-		_ = Visit(node.Right);
+		// Check for enum comparison that needs string formatting
+		var enumContext = GetEnumComparisonContext(node);
+		if (enumContext.HasValue)
+		{
+			_ = Visit(enumContext.Value.MemberSide);
+			var op = GetOperator(node.NodeType);
+			_ = _builder.Append(' ').Append(op).Append(' ');
+			_ = _builder.Append(FormatEnumValue(enumContext.Value.EnumType, enumContext.Value.ConstantValue));
+		}
+		else
+		{
+			_ = Visit(node.Left);
+			var op = GetOperator(node.NodeType);
+			_ = _builder.Append(' ').Append(op).Append(' ');
+			_ = Visit(node.Right);
+		}
 
 		if (isLogicalOperator)
 			_ = _builder.Append(')');
 
 		return node;
+	}
+
+	private (Expression MemberSide, Type EnumType, object? ConstantValue)? GetEnumComparisonContext(BinaryExpression node)
+	{
+		// Only handle equality/inequality comparisons
+		if (node.NodeType is not (ExpressionType.Equal or ExpressionType.NotEqual))
+			return null;
+
+		// Try left=member, right=constant
+		var leftEnumType = GetEnumTypeFromExpression(node.Left);
+		if (leftEnumType != null)
+		{
+			var rightValue = TryGetConstantValue(node.Right);
+			if (rightValue != null && ShouldFormatEnumAsString(leftEnumType))
+				return (node.Left, leftEnumType, rightValue);
+		}
+
+		// Try right=member, left=constant
+		var rightEnumType = GetEnumTypeFromExpression(node.Right);
+		if (rightEnumType != null)
+		{
+			var leftValue = TryGetConstantValue(node.Left);
+			if (leftValue != null && ShouldFormatEnumAsString(rightEnumType))
+				return (node.Right, rightEnumType, leftValue);
+		}
+
+		return null;
+	}
+
+	private static Type? GetEnumTypeFromExpression(Expression expr)
+	{
+		// Unwrap Convert expressions
+		while (expr is UnaryExpression { NodeType: ExpressionType.Convert or ExpressionType.ConvertChecked } unary)
+			expr = unary.Operand;
+
+		if (expr is not MemberExpression member)
+			return null;
+
+		var memberType = member.Member switch
+		{
+			PropertyInfo prop => prop.PropertyType,
+			FieldInfo field => field.FieldType,
+			_ => null
+		};
+
+		if (memberType == null)
+			return null;
+
+		// Handle nullable enums
+		var underlying = Nullable.GetUnderlyingType(memberType) ?? memberType;
+		return underlying.IsEnum ? underlying : null;
+	}
+
+	private static bool ShouldFormatEnumAsString(Type enumType)
+	{
+		// Always format enums as strings since keyword fields expect strings.
+		// The JsonStringEnumConverter attribute on the property ensures the data is stored as strings.
+		_ = enumType; // Suppress unused parameter warning
+		return true;
+	}
+
+	private static object? TryGetConstantValue(Expression expression)
+	{
+		// Unwrap Convert expressions
+		while (expression is UnaryExpression { NodeType: ExpressionType.Convert or ExpressionType.ConvertChecked } unary)
+			expression = unary.Operand;
+
+		return expression switch
+		{
+			ConstantExpression constant => constant.Value,
+			MemberExpression member when member.Expression is ConstantExpression ce => GetMemberValue(member, ce.Value),
+			_ => null
+		};
+	}
+
+	private static string FormatEnumValue(Type enumType, object? value)
+	{
+		if (value == null)
+			return "null";
+
+		// Convert the value to the enum and get its name
+		var enumValue = Enum.ToObject(enumType, value);
+		var name = Enum.GetName(enumType, enumValue);
+		return EsqlTypeMapper.FormatValue(name ?? value.ToString() ?? "");
 	}
 
 	protected override Expression VisitUnary(UnaryExpression node)

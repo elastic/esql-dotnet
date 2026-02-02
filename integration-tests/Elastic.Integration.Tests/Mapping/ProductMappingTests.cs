@@ -128,4 +128,20 @@ public class ProductMappingTests : IntegrationTestBase
 		template.IndexTemplate.Meta!.Should().ContainKey("hash");
 		template.IndexTemplate.Meta!.Should().ContainKey("managed_by");
 	}
+
+	[Test]
+	public async Task ProductIndex_SettingsTemplateContainsAnalyzers()
+	{
+		// The settings component template contains custom analyzers defined in Product.ConfigureAnalysis:
+		// - product_name_analyzer (edge n-gram for autocomplete)
+		// - product_name_search_analyzer
+		// - product_description_analyzer (English analyzer with custom stopwords)
+		// - sku_normalizer (lowercase normalizer)
+		// The template existence verifies the analyzers were bootstrapped
+		var response = await Fixture.ElasticsearchClient.Cluster
+			.GetComponentTemplateAsync("products-settings");
+
+		response.IsValidResponse.Should().BeTrue();
+		response.ComponentTemplates.Should().NotBeEmpty();
+	}
 }

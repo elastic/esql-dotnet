@@ -4,6 +4,8 @@
 
 using System.Text.Json.Serialization;
 using Elastic.Mapping;
+using Elastic.Mapping.Analysis;
+using static Elastic.Mapping.Analysis.BuiltInAnalysis;
 
 namespace Elastic.Examples.Domain.Models;
 
@@ -15,9 +17,7 @@ namespace Elastic.Examples.Domain.Models;
 	WriteAlias = "orders-write",
 	ReadAlias = "orders-read",
 	SearchPattern = "orders-*",
-	DatePattern = "yyyy.MM",
-	Shards = 2,
-	Replicas = 1
+	DatePattern = "yyyy.MM"
 )]
 public partial class Order
 {
@@ -57,7 +57,7 @@ public partial class Order
 	[Ip]
 	public string? CustomerIp { get; set; }
 
-	[Text(Analyzer = "standard")]
+	[Text(Analyzer = "order_notes_analyzer")]
 	public string? Notes { get; set; }
 
 	[Keyword]
@@ -74,6 +74,43 @@ public partial class Order
 
 	[JsonIgnore]
 	public string ProcessingNotes { get; set; } = string.Empty;
+
+	/// <summary>Configures Order-specific analysis settings.</summary>
+	public static AnalysisBuilder ConfigureAnalysis(AnalysisBuilder analysis) => analysis
+		.TokenFilter("order_shingle", f => f
+			.Shingle()
+			.MinShingleSize(2)
+			.MaxShingleSize(3)
+			.OutputUnigrams(true))
+		.Analyzer("order_notes_analyzer", a => a
+			.Custom()
+			.Tokenizer(Tokenizers.Standard)
+			.Filters(TokenFilters.Lowercase, TokenFilters.AsciiFolding, Analysis.TokenFilters.OrderShingle));
+
+	/// <summary>Configures Order-specific mapping overrides.</summary>
+	public static OrderMappingsBuilder ConfigureMappings(OrderMappingsBuilder mappings) => mappings
+		.Notes(f => f
+			.Analyzer(mappings.Analysis.Analyzers.OrderNotesAnalyzer)
+			.MultiField("keyword", mf => mf.Keyword().IgnoreAbove(1024)))
+		.Status(f => f)
+		.AddRuntimeField("order_age_days", r => r
+			.Long()
+			.Script("""
+				long diff = System.currentTimeMillis() - doc['@timestamp'].value.toInstant().toEpochMilli();
+				emit(diff / (1000 * 60 * 60 * 24));
+				"""))
+		.AddRuntimeField("net_amount", r => r
+			.Double()
+			.Script("emit(doc['total_amount'].value - doc['discount_amount'].value)"))
+		.AddRuntimeField("status_display", r => r
+			.Keyword()
+			.Script("""
+				def status = doc['status'].value;
+				def display = ['Pending': 'Awaiting Confirmation', 'Confirmed': 'Order Confirmed',
+				               'Processing': 'Being Prepared', 'Shipped': 'In Transit',
+				               'Delivered': 'Delivered', 'Cancelled': 'Cancelled', 'Refunded': 'Refunded'];
+				emit(display.getOrDefault(status, status));
+				"""));
 }
 
 public enum OrderStatus

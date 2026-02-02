@@ -26,11 +26,11 @@ public sealed class IndexAttribute : Attribute
 	/// <summary>Search pattern for queries (e.g., "logs-*").</summary>
 	public string? SearchPattern { get; init; }
 
-	/// <summary>Number of primary shards.</summary>
-	public int Shards { get; init; } = 1;
+	/// <summary>Number of primary shards. Set to -1 (default) to omit for serverless compatibility.</summary>
+	public int Shards { get; init; } = -1;
 
-	/// <summary>Number of replica shards.</summary>
-	public int Replicas { get; init; } = 1;
+	/// <summary>Number of replica shards. Set to -1 (default) to omit for serverless compatibility.</summary>
+	public int Replicas { get; init; } = -1;
 
 	/// <summary>Refresh interval (e.g., "1s", "30s", "-1" for disabled).</summary>
 	public string? RefreshInterval { get; init; }

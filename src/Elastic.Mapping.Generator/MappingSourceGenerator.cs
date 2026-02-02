@@ -75,8 +75,17 @@ public class MappingSourceGenerator : IIncrementalGenerator
 		var mappingSource = MappingContextEmitter.Emit(model);
 		context.AddSource($"{model.FullTypeName}.ElasticsearchContext.g.cs", mappingSource);
 
-		// Generate the fluent config builder
+		// Generate the fluent config builder (legacy)
 		var configSource = ConfigBuilderEmitter.Emit(model);
 		context.AddSource($"{model.FullTypeName}.MappingConfig.g.cs", configSource);
+
+		// Generate the type-specific MappingsBuilder class
+		var mappingsBuilderSource = MappingsBuilderEmitter.Emit(model);
+		context.AddSource($"{model.FullTypeName}.MappingsBuilder.g.cs", mappingsBuilderSource);
+
+		// Generate the analysis names class (only if there are analyzers/normalizers)
+		var analysisNamesSource = AnalysisNamesEmitter.Emit(model);
+		if (analysisNamesSource != null)
+			context.AddSource($"{model.FullTypeName}.AnalysisNames.g.cs", analysisNamesSource);
 	}
 }

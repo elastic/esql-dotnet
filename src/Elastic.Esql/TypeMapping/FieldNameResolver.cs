@@ -11,10 +11,12 @@ namespace Elastic.Esql.TypeMapping;
 
 /// <summary>
 /// Resolves C# property names to ES|QL field names.
+/// Uses generated compile-time metadata when available, falling back to reflection.
 /// </summary>
 public class FieldNameResolver
 {
 	private readonly ConcurrentDictionary<MemberInfo, string> _fieldNameCache = new();
+	private static readonly ConcurrentDictionary<Type, TypeFieldMetadata?> TypeMetadataCache = new();
 
 	/// <summary>
 	/// Resolves the ES|QL field name for a property.
@@ -23,7 +25,12 @@ public class FieldNameResolver
 
 	private static string ResolveInternal(MemberInfo member)
 	{
-		// Check for JsonPropertyName attribute (STJ - single source of truth)
+		// Try generated metadata first (one-time reflection per type to find ElasticsearchContext)
+		var metadata = GetTypeMetadata(member.DeclaringType);
+		if (metadata?.PropertyToField.TryGetValue(member.Name, out var fieldName) == true)
+			return fieldName;
+
+		// Fallback to JsonPropertyName attribute for non-generated types
 		var jsonPropertyName = member.GetCustomAttribute<JsonPropertyNameAttribute>();
 		if (jsonPropertyName != null)
 			return jsonPropertyName.Name;
@@ -37,25 +44,100 @@ public class FieldNameResolver
 	/// </summary>
 	public static string? GetIndexPattern(Type type)
 	{
-		// Check for [Index] attribute with SearchPattern
+		// Try generated metadata first
+		var metadata = GetTypeMetadata(type);
+		if (metadata?.SearchPattern != null)
+			return metadata.SearchPattern;
+
+		// Fallback for non-generated types
 		var indexAttribute = type.GetCustomAttribute<IndexAttribute>();
 		if (indexAttribute?.SearchPattern != null)
 			return indexAttribute.SearchPattern;
 
-		// Check for [DataStream] attribute
 		var dataStreamAttribute = type.GetCustomAttribute<DataStreamAttribute>();
 		if (dataStreamAttribute != null)
 			return $"{dataStreamAttribute.Type}-{dataStreamAttribute.Dataset}-*";
 
-		// Fallback to index name
 		return indexAttribute?.Name;
 	}
 
 	/// <summary>
 	/// Checks if a property should be ignored.
 	/// </summary>
-	public static bool IsIgnored(MemberInfo member) =>
-		member.GetCustomAttribute<JsonIgnoreAttribute>() != null;
+	public static bool IsIgnored(MemberInfo member)
+	{
+		var metadata = GetTypeMetadata(member.DeclaringType);
+		if (metadata != null)
+			return metadata.IgnoredProperties.Contains(member.Name);
+
+		// Fallback for non-generated types
+		return member.GetCustomAttribute<JsonIgnoreAttribute>() != null;
+	}
+
+	/// <summary>
+	/// Gets the generated property map for a type if available.
+	/// </summary>
+	public static Dictionary<string, PropertyInfo>? GetGeneratedPropertyMap(Type type)
+	{
+		var metadata = GetTypeMetadata(type);
+		return metadata?.GetPropertyMapFunc?.Invoke();
+	}
+
+	private static TypeFieldMetadata? GetTypeMetadata(Type? type)
+	{
+		if (type == null)
+			return null;
+		return TypeMetadataCache.GetOrAdd(type, DiscoverMetadata);
+	}
+
+	private static TypeFieldMetadata? DiscoverMetadata(Type type)
+	{
+		// One-time reflection to find the generated ElasticsearchContext class
+		var contextType = type.GetNestedType("ElasticsearchContext", BindingFlags.Public | BindingFlags.Static);
+		if (contextType == null)
+			return null;
+
+		var fieldMappingType = contextType.GetNestedType("FieldMapping", BindingFlags.Public | BindingFlags.Static);
+		if (fieldMappingType == null)
+			return null;
+
+		// Get the generated dictionaries using pattern matching
+		var propertyToFieldValue = fieldMappingType
+			.GetField("PropertyToField", BindingFlags.Public | BindingFlags.Static)
+			?.GetValue(null);
+		var propertyToField = propertyToFieldValue is IReadOnlyDictionary<string, string> ptf ? ptf : null;
+
+		var ignoredPropsValue = contextType
+			.GetField("IgnoredProperties", BindingFlags.Public | BindingFlags.Static)
+			?.GetValue(null);
+		var ignoredProps = ignoredPropsValue is IReadOnlySet<string> ip ? ip : null;
+
+		// Get search pattern from SearchStrategy
+		string? searchPattern = null;
+		var searchStrategyProp = contextType.GetProperty("SearchStrategy", BindingFlags.Public | BindingFlags.Static);
+		if (searchStrategyProp != null)
+		{
+			var strategy = searchStrategyProp.GetValue(null);
+			if (strategy is SearchStrategy ss)
+				searchPattern = ss.Pattern;
+		}
+
+		// Get the GetPropertyMap method
+		Func<Dictionary<string, PropertyInfo>>? getPropertyMapFunc = null;
+		var getPropertyMapMethod = contextType.GetMethod("GetPropertyMap", BindingFlags.Public | BindingFlags.Static);
+		if (getPropertyMapMethod != null)
+			getPropertyMapFunc = () => (Dictionary<string, PropertyInfo>)getPropertyMapMethod.Invoke(null, null)!;
+
+		if (propertyToField == null)
+			return null;
+
+		return new TypeFieldMetadata(
+			propertyToField,
+			ignoredProps ?? new HashSet<string>(),
+			searchPattern,
+			getPropertyMapFunc
+		);
+	}
 
 	private static string ToCamelCase(string name)
 	{
@@ -68,3 +150,13 @@ public class FieldNameResolver
 		return char.ToLowerInvariant(name[0]) + name.Substring(1);
 	}
 }
+
+/// <summary>
+/// Cached metadata for a type's field mappings discovered from generated code.
+/// </summary>
+internal sealed record TypeFieldMetadata(
+	IReadOnlyDictionary<string, string> PropertyToField,
+	IReadOnlySet<string> IgnoredProperties,
+	string? SearchPattern,
+	Func<Dictionary<string, PropertyInfo>>? GetPropertyMapFunc
+);

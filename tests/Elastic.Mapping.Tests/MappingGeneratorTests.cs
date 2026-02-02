@@ -144,4 +144,60 @@ public class MappingGeneratorTests
 		hash.Should().NotBeNullOrEmpty();
 		hash.Should().HaveLength(16);
 	}
+
+	[Test]
+	public void Index_GeneratesFieldMappingDictionaries()
+	{
+		// PropertyToField maps C# property names to ES|QL field names
+		var propertyToField = LogEntry.ElasticsearchContext.FieldMapping.PropertyToField;
+		propertyToField["Timestamp"].Should().Be("@timestamp");
+		propertyToField["Level"].Should().Be("log.level");
+		propertyToField["Message"].Should().Be("message");
+		propertyToField["StatusCode"].Should().Be("statusCode");
+
+		// FieldToProperty maps ES|QL field names to C# property names
+		var fieldToProperty = LogEntry.ElasticsearchContext.FieldMapping.FieldToProperty;
+		fieldToProperty["@timestamp"].Should().Be("Timestamp");
+		fieldToProperty["log.level"].Should().Be("Level");
+		fieldToProperty["message"].Should().Be("Message");
+		fieldToProperty["statusCode"].Should().Be("StatusCode");
+	}
+
+	[Test]
+	public void Index_GeneratesIgnoredPropertiesSet()
+	{
+		// InternalId has [JsonIgnore] and should be in IgnoredProperties
+		var ignoredProperties = LogEntry.ElasticsearchContext.IgnoredProperties;
+		ignoredProperties.Should().Contain("InternalId");
+		ignoredProperties.Should().NotContain("Timestamp");
+		ignoredProperties.Should().NotContain("Message");
+	}
+
+	[Test]
+	public void Index_GeneratesGetPropertyMap()
+	{
+		// GetPropertyMap returns a dictionary for deserialization
+		var propertyMap = LogEntry.ElasticsearchContext.GetPropertyMap();
+
+		// Should map by field name
+		propertyMap["@timestamp"].Name.Should().Be("Timestamp");
+		propertyMap["log.level"].Name.Should().Be("Level");
+		propertyMap["message"].Name.Should().Be("Message");
+
+		// Should also map by property name
+		propertyMap["Timestamp"].Name.Should().Be("Timestamp");
+		propertyMap["Level"].Name.Should().Be("Level");
+
+		// Ignored properties should not be in the map
+		propertyMap.Should().NotContainKey("InternalId");
+		propertyMap.Should().NotContainKey("internalId");
+	}
+
+	[Test]
+	public void SimpleDocument_GeneratesEmptyIgnoredPropertiesSet()
+	{
+		// SimpleDocument has no [JsonIgnore] properties
+		var ignoredProperties = SimpleDocument.ElasticsearchContext.IgnoredProperties;
+		ignoredProperties.Should().BeEmpty();
+	}
 }

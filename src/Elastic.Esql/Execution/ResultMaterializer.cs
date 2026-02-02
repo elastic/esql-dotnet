@@ -77,6 +77,23 @@ public class ResultMaterializer
 
 	private static Dictionary<string, PropertyInfo> BuildPropertyMap<T>()
 	{
+		// Try generated property map first (eliminates per-property reflection)
+		var generatedMap = FieldNameResolver.GetGeneratedPropertyMap(typeof(T));
+		if (generatedMap != null)
+		{
+			// Wrap in case-insensitive dictionary for compatibility
+			var map = new Dictionary<string, PropertyInfo>(StringComparer.OrdinalIgnoreCase);
+			foreach (var kvp in generatedMap)
+				map[kvp.Key] = kvp.Value;
+			return map;
+		}
+
+		// Fallback for non-generated types
+		return BuildPropertyMapViaReflection<T>();
+	}
+
+	private static Dictionary<string, PropertyInfo> BuildPropertyMapViaReflection<T>()
+	{
 		var map = new Dictionary<string, PropertyInfo>(StringComparer.OrdinalIgnoreCase);
 		var properties = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance);
 
