@@ -10,7 +10,7 @@ public class DateTimeFormattingTests
 	public void FormatValue_DateTimeUtc_ReturnsIso8601()
 	{
 		var dt = new DateTime(2024, 1, 15, 10, 30, 45, 123, DateTimeKind.Utc);
-		var result = EsqlTypeMapper.FormatValue(dt);
+		var result = EsqlFormatting.FormatValue(dt);
 
 		_ = result.Should().Be("\"2024-01-15T10:30:45.123Z\"");
 	}
@@ -19,7 +19,7 @@ public class DateTimeFormattingTests
 	public void FormatValue_DateOnly_ReturnsDateString()
 	{
 		var d = new DateOnly(2024, 1, 15);
-		var result = EsqlTypeMapper.FormatValue(d);
+		var result = EsqlFormatting.FormatValue(d);
 
 		_ = result.Should().Be("\"2024-01-15\"");
 	}
@@ -28,7 +28,7 @@ public class DateTimeFormattingTests
 	public void FormatValue_TimeOnly_ReturnsTimeString()
 	{
 		var t = new TimeOnly(10, 30, 45);
-		var result = EsqlTypeMapper.FormatValue(t);
+		var result = EsqlFormatting.FormatValue(t);
 
 		_ = result.Should().Be("\"10:30:45\"");
 	}
@@ -37,7 +37,7 @@ public class DateTimeFormattingTests
 	public void FormatValue_Guid_ReturnsQuotedString()
 	{
 		var guid = new Guid("12345678-1234-1234-1234-123456789012");
-		var result = EsqlTypeMapper.FormatValue(guid);
+		var result = EsqlFormatting.FormatValue(guid);
 
 		_ = result.Should().Be("\"12345678-1234-1234-1234-123456789012\"");
 	}
@@ -45,7 +45,7 @@ public class DateTimeFormattingTests
 	[Test]
 	public void FormatValue_Enum_ReturnsQuotedString()
 	{
-		var result = EsqlTypeMapper.FormatValue(LogLevel.Error);
+		var result = EsqlFormatting.FormatValue(LogLevel.Error);
 
 		_ = result.Should().Be("\"Error\"");
 	}

@@ -2,7 +2,6 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-using System.Text.Json;
 using static System.Globalization.CultureInfo;
 
 namespace Elastic.Esql.TypeMapping;
@@ -10,7 +9,7 @@ namespace Elastic.Esql.TypeMapping;
 /// <summary>
 /// Maps C# types to ES|QL types and formats values.
 /// </summary>
-public static class EsqlTypeMapper
+public static class EsqlFormatting
 {
 	/// <summary>
 	/// Formats a C# value for use in an ES|QL query.
@@ -86,26 +85,5 @@ public static class EsqlTypeMapper
 		if (double.IsNegativeInfinity(d))
 			return "null";
 		return d.ToString("G", InvariantCulture);
-	}
-
-	/// <summary>
-	/// Gets the ES|QL type name for a C# type.
-	/// </summary>
-	public static string GetEsqlTypeName(Type type)
-	{
-		var underlying = Nullable.GetUnderlyingType(type) ?? type;
-
-		return underlying switch
-		{
-			_ when underlying == typeof(string) => "keyword",
-			_ when underlying == typeof(bool) => "boolean",
-			_ when underlying == typeof(int) || underlying == typeof(long) => "long",
-			_ when underlying == typeof(short) || underlying == typeof(byte) => "integer",
-			_ when underlying == typeof(float) || underlying == typeof(double) || underlying == typeof(decimal) => "double",
-			_ when underlying == typeof(DateTime) || underlying == typeof(DateTimeOffset) => "date",
-			_ when underlying == typeof(Guid) => "keyword",
-			_ when underlying.IsEnum => "keyword",
-			_ => "keyword"
-		};
 	}
 }

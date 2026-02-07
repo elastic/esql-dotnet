@@ -15,7 +15,7 @@ public class UsageOverviewTests : EsqlTestBase
 	{
 		// Esql.From<T>() - Static entry point, fluent LINQ methods
 		// Best for: Quick string generation without client setup
-		var esql = Esql.From<LogEntry>()
+		var esql = Esql.InMemory<LogEntry>()
 			.Where(l => l.StatusCode >= 500)
 			.Where(l => l.Level == "ERROR")
 			.OrderByDescending(l => l.Timestamp)
@@ -38,7 +38,7 @@ public class UsageOverviewTests : EsqlTestBase
 		// Esql.From<T>() with LINQ query syntax (from...where...select)
 		// Best for: Complex queries that read more naturally in query syntax
 		var esql = (
-			from l in Esql.From<LogEntry>()
+			from l in Esql.InMemory<LogEntry>()
 			where l.Level == "ERROR" || l.Level == "WARNING"
 			where l.StatusCode >= 400
 			orderby l.Timestamp descending
@@ -103,7 +103,7 @@ public class UsageOverviewTests : EsqlTestBase
 	{
 		// Esql.From<T>("custom-index") - Override the [EsqlIndex] attribute
 		// Best for: Querying same type across different indices
-		var esql = Esql.From<LogEntry>("production-logs-*")
+		var esql = Esql.InMemory<LogEntry>("production-logs-*")
 			.Where(l => l.Level == "ERROR")
 			.OrderByDescending(l => l.Timestamp)
 			.Take(100)

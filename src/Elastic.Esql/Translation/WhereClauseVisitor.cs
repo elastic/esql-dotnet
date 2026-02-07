@@ -144,7 +144,7 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 		// Convert the value to the enum and get its name
 		var enumValue = Enum.ToObject(enumType, value);
 		var name = Enum.GetName(enumType, enumValue);
-		return EsqlTypeMapper.FormatValue(name ?? value.ToString() ?? "");
+		return EsqlFormatting.FormatValue(name ?? value.ToString() ?? "");
 	}
 
 	protected override Expression VisitUnary(UnaryExpression node)
@@ -175,7 +175,7 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 		if (node.Expression is ConstantExpression constantExpression)
 		{
 			var value = GetMemberValue(node, constantExpression.Value);
-			_ = _builder.Append(EsqlTypeMapper.FormatValue(value));
+			_ = _builder.Append(EsqlFormatting.FormatValue(value));
 			return node;
 		}
 
@@ -185,7 +185,7 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 		{
 			var innerValue = GetMemberValue(innerMember, innerConstant.Value);
 			var value = GetMemberValue(node, innerValue);
-			_ = _builder.Append(EsqlTypeMapper.FormatValue(value));
+			_ = _builder.Append(EsqlFormatting.FormatValue(value));
 			return node;
 		}
 
@@ -212,7 +212,7 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 
 			// For other static members, evaluate the value
 			var value = GetStaticMemberValue(node);
-			_ = _builder.Append(EsqlTypeMapper.FormatValue(value));
+			_ = _builder.Append(EsqlFormatting.FormatValue(value));
 			return node;
 		}
 
@@ -297,7 +297,7 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 
 	protected override Expression VisitConstant(ConstantExpression node)
 	{
-		_ = _builder.Append(EsqlTypeMapper.FormatValue(node.Value));
+		_ = _builder.Append(EsqlFormatting.FormatValue(node.Value));
 		return node;
 	}
 
@@ -681,7 +681,7 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 		{
 			if (!first)
 				_ = _builder.Append(", ");
-			_ = _builder.Append(EsqlTypeMapper.FormatValue(item));
+			_ = _builder.Append(EsqlFormatting.FormatValue(item));
 			first = false;
 		}
 
@@ -704,7 +704,7 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 		{
 			if (!first)
 				_ = _builder.Append(", ");
-			_ = _builder.Append(EsqlTypeMapper.FormatValue(item));
+			_ = _builder.Append(EsqlFormatting.FormatValue(item));
 			first = false;
 		}
 

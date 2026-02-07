@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information
 
 using Elastic.Clients.Elasticsearch;
+using Elastic.Examples.Domain;
 using Elastic.Examples.Domain.Models;
 using Elastic.Examples.Ingest.Generators;
 using Elastic.Examples.Ingest.Ingestors.Strategies;
@@ -38,9 +39,9 @@ public class ProductIngestor : IIngestor<ProductIngestResult>
 
 			var (indexed, failed) = useIngestChannel
 				? await IndexIngestStrategy.IngestViaChannelAsync(
-					client, products, Product.Context, BatchSize, p => p.Id, callbacks, ct)
+					client, products, ExampleElasticsearchContext.Product.Context, BatchSize, p => p.Id, callbacks, ct)
 				: await IndexIngestStrategy.IngestViaBulkApiAsync(
-					client, products, Product.Context, BatchSize, p => p.Id, callbacks, ct);
+					client, products, ExampleElasticsearchContext.Product.Context, BatchSize, p => p.Id, callbacks, ct);
 
 			callbacks.OnComplete(indexed, failed);
 			return new ProductIngestResult(indexed, failed, productIds);

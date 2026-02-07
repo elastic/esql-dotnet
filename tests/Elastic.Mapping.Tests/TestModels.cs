@@ -6,17 +6,42 @@ using Elastic.Mapping.Analysis;
 
 namespace Elastic.Mapping.Tests;
 
-/// <summary>
-/// Test model with Index attribute for traditional index configuration.
-/// </summary>
-[Index(
+// ============================================================================
+// MAPPING CONTEXT: registers all test types
+// ============================================================================
+
+[ElasticsearchMappingContext]
+[Index<LogEntry>(
 	WriteAlias = "logs-write",
 	ReadAlias = "logs-read",
 	SearchPattern = "logs-*",
 	Shards = 3,
 	Replicas = 2
 )]
-public partial class LogEntry
+[DataStream<NginxAccessLog>(Type = "logs", Dataset = "nginx.access", Namespace = "production")]
+[Index<SimpleDocument>(Name = "simple-docs")]
+[Index<AdvancedDocument>(Name = "advanced-docs")]
+public static partial class TestMappingContext
+{
+	/// <summary>Configures LogEntry-specific analysis settings (context-level).</summary>
+	public static AnalysisBuilder ConfigureLogEntryAnalysis(AnalysisBuilder analysis) => analysis
+		.Analyzer("log_message_analyzer", a => a
+			.Custom()
+			.Tokenizer(BuiltInAnalysis.Tokenizers.Standard)
+			.Filters(BuiltInAnalysis.TokenFilters.Lowercase))
+		.Normalizer("lowercase", n => n
+			.Custom()
+			.Filters(BuiltInAnalysis.TokenFilters.Lowercase));
+}
+
+// ============================================================================
+// DOMAIN TYPES: clean POCOs, no mapping attributes on the class itself
+// ============================================================================
+
+/// <summary>
+/// Test model with Index configuration (registered via context).
+/// </summary>
+public class LogEntry
 {
 	[JsonPropertyName("@timestamp")]
 	public DateTime Timestamp { get; set; }
@@ -39,23 +64,12 @@ public partial class LogEntry
 
 	[JsonIgnore]
 	public string InternalId { get; set; } = string.Empty;
-
-	/// <summary>Configures LogEntry-specific analysis settings.</summary>
-	public static AnalysisBuilder ConfigureAnalysis(AnalysisBuilder analysis) => analysis
-		.Analyzer("log_message_analyzer", a => a
-			.Custom()
-			.Tokenizer(BuiltInAnalysis.Tokenizers.Standard)
-			.Filters(BuiltInAnalysis.TokenFilters.Lowercase))
-		.Normalizer("lowercase", n => n
-			.Custom()
-			.Filters(BuiltInAnalysis.TokenFilters.Lowercase));
 }
 
 /// <summary>
-/// Test model with DataStream attribute.
+/// Test model with DataStream configuration (registered via context).
 /// </summary>
-[DataStream(Type = "logs", Dataset = "nginx.access", Namespace = "production")]
-public partial class NginxAccessLog
+public class NginxAccessLog
 {
 	[JsonPropertyName("@timestamp")]
 	[Date(Format = "strict_date_optional_time")]
@@ -73,8 +87,7 @@ public partial class NginxAccessLog
 /// <summary>
 /// Test model with minimal configuration.
 /// </summary>
-[Index(Name = "simple-docs")]
-public partial class SimpleDocument
+public class SimpleDocument
 {
 	public string Name { get; set; } = string.Empty;
 	public int Value { get; set; }
@@ -84,8 +97,7 @@ public partial class SimpleDocument
 /// <summary>
 /// Test model with advanced field types.
 /// </summary>
-[Index(Name = "advanced-docs")]
-public partial class AdvancedDocument
+public class AdvancedDocument
 {
 	public string Title { get; set; } = string.Empty;
 

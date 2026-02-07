@@ -12,7 +12,7 @@ public class StaticApiFluentTests : EsqlTestBase
 	[Test]
 	public void SimpleFilter()
 	{
-		var esql = Esql.From<LogEntry>()
+		var esql = Esql.InMemory<LogEntry>()
 			.Where(l => l.Level == "ERROR")
 			.ToString();
 
@@ -26,7 +26,7 @@ public class StaticApiFluentTests : EsqlTestBase
 	[Test]
 	public void FilterWithTake()
 	{
-		var esql = Esql.From<LogEntry>()
+		var esql = Esql.InMemory<LogEntry>()
 			.Where(l => l.Level == "ERROR")
 			.Take(10)
 			.ToString();
@@ -42,7 +42,7 @@ public class StaticApiFluentTests : EsqlTestBase
 	[Test]
 	public void FilterSortTake()
 	{
-		var esql = Esql.From<LogEntry>()
+		var esql = Esql.InMemory<LogEntry>()
 			.Where(l => l.StatusCode >= 500)
 			.OrderByDescending(l => l.Timestamp)
 			.Take(100)
@@ -60,7 +60,7 @@ public class StaticApiFluentTests : EsqlTestBase
 	[Test]
 	public void ExplicitIndexPattern()
 	{
-		var esql = Esql.From<LogEntry>("my-custom-index-*")
+		var esql = Esql.InMemory<LogEntry>("my-custom-index-*")
 			.Where(l => l.Level == "ERROR")
 			.Take(10)
 			.ToString();
@@ -76,7 +76,7 @@ public class StaticApiFluentTests : EsqlTestBase
 	[Test]
 	public void Projection()
 	{
-		var esql = Esql.From<LogEntry>()
+		var esql = Esql.InMemory<LogEntry>()
 			.Where(l => l.Level == "ERROR")
 			.Select(l => new { l.Message, l.Timestamp })
 			.ToString();

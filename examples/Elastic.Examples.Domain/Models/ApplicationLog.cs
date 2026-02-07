@@ -4,8 +4,6 @@
 
 using System.Text.Json.Serialization;
 using Elastic.Mapping;
-using Elastic.Mapping.Analysis;
-using static Elastic.Mapping.Analysis.BuiltInAnalysis;
 
 namespace Elastic.Examples.Domain.Models;
 
@@ -13,8 +11,7 @@ namespace Elastic.Examples.Domain.Models;
 /// Application log entry following ECS (Elastic Common Schema).
 /// Demonstrates data stream pattern for time-series data.
 /// </summary>
-[DataStream(Type = "logs", Dataset = "ecommerce.app", Namespace = "production")]
-public partial class ApplicationLog
+public class ApplicationLog
 {
 	[JsonPropertyName("@timestamp")]
 	[Date(Format = "strict_date_optional_time")]
@@ -99,51 +96,6 @@ public partial class ApplicationLog
 
 	[JsonIgnore]
 	public bool Processed { get; set; }
-
-	/// <summary>Configures ApplicationLog-specific analysis settings.</summary>
-	public static AnalysisBuilder ConfigureAnalysis(AnalysisBuilder analysis) => analysis
-		.Tokenizer("log_tokenizer", t => t
-			.Pattern()
-			.PatternValue("[\\s\\[\\]{}(),;:=|/\\\\]+"))
-		.TokenFilter("log_word_delimiter", f => f
-			.WordDelimiterGraph()
-			.PreserveOriginal(true)
-			.SplitOnCaseChange(true)
-			.SplitOnNumerics(true))
-		.TokenFilter("exception_word_delimiter", f => f
-			.WordDelimiterGraph()
-			.PreserveOriginal(true)
-			.SplitOnCaseChange(true))
-		.Analyzer("log_message_analyzer", a => a
-			.Custom()
-			.Tokenizer(Analysis.Tokenizers.LogTokenizer)
-			.Filters(TokenFilters.Lowercase, Analysis.TokenFilters.LogWordDelimiter))
-		.Analyzer("error_message_analyzer", a => a
-			.Custom()
-			.Tokenizer(Tokenizers.Standard)
-			.Filters(TokenFilters.Lowercase, Analysis.TokenFilters.ExceptionWordDelimiter));
-
-	/// <summary>Configures ApplicationLog-specific mapping overrides.</summary>
-	public static ApplicationLogMappingsBuilder ConfigureMappings(ApplicationLogMappingsBuilder mappings) => mappings
-		.Message(f => f
-			.Analyzer(mappings.Analysis.Analyzers.LogMessageAnalyzer)
-			.MultiField("keyword", mf => mf.Keyword().IgnoreAbove(2048)))
-		.ErrorMessage(f => f
-			.Analyzer(mappings.Analysis.Analyzers.ErrorMessageAnalyzer)
-			.MultiField("keyword", mf => mf.Keyword().IgnoreAbove(1024)))
-		.Level(f => f)
-		.AddRuntimeField("is_error", r => r
-			.Boolean()
-			.Script("emit(doc['log.level'].value == 'Error' || doc['log.level'].value == 'Fatal')"))
-		.AddRuntimeField("response_time_ms", r => r
-			.Double()
-			.Script("if (doc['event.duration'].size() > 0) emit(doc['event.duration'].value / 1000000.0)"))
-		.AddRuntimeField("hour_of_day", r => r
-			.Long()
-			.Script("emit(doc['@timestamp'].value.getHour())"))
-		.AddDynamicTemplate("labels_as_keyword", dt => dt
-			.PathMatch("labels.*")
-			.Mapping(m => m.Keyword()));
 }
 
 public enum LogLevel

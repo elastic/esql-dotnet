@@ -11,21 +11,55 @@ namespace Elastic.Esql.TypeMapping;
 
 /// <summary>
 /// Resolves C# property names to ES|QL field names.
-/// Uses generated compile-time metadata when available, falling back to reflection.
+/// Uses injected mapping context or reflection-based discovery.
 /// </summary>
-public class FieldNameResolver
+public class FieldNameResolver(IElasticsearchMappingContext? mappingContext = null)
 {
 	private readonly ConcurrentDictionary<MemberInfo, string> _fieldNameCache = new();
-	private static readonly ConcurrentDictionary<Type, TypeFieldMetadata?> TypeMetadataCache = new();
+	private readonly ConcurrentDictionary<Type, TypeFieldMetadata?> _typeMetadataCache = new();
 
 	/// <summary>
 	/// Resolves the ES|QL field name for a property.
 	/// </summary>
 	public string Resolve(MemberInfo member) => _fieldNameCache.GetOrAdd(member, ResolveInternal);
 
-	private static string ResolveInternal(MemberInfo member)
+	/// <summary>
+	/// Gets the index pattern for a type.
+	/// </summary>
+	public string? GetIndexPattern(Type type) => GetTypeMetadata(type)?.SearchPattern;
+
+	/// <summary>
+	/// Checks if a property should be ignored.
+	/// </summary>
+	public bool IsIgnored(MemberInfo member)
 	{
-		// Try generated metadata first (one-time reflection per type to find ElasticsearchContext)
+		var metadata = GetTypeMetadata(member.DeclaringType);
+		if (metadata != null)
+			return metadata.IgnoredProperties.Contains(member.Name);
+
+		// Fallback for non-generated types
+		return member.GetCustomAttribute<JsonIgnoreAttribute>() != null;
+	}
+
+	/// <summary>
+	/// Gets the generated property map for a type if available.
+	/// </summary>
+	public Dictionary<string, PropertyInfo>? GetGeneratedPropertyMap(Type type) =>
+		GetTypeMetadata(type)?.GetPropertyMapFunc?.Invoke();
+
+	private TypeFieldMetadata? GetTypeMetadata(Type? type)
+	{
+		if (type == null)
+			return null;
+		return _typeMetadataCache.GetOrAdd(type, LookupMetadata);
+	}
+
+	private TypeFieldMetadata? LookupMetadata(Type type) =>
+		mappingContext?.GetTypeMetadata(type) ?? DiscoverMetadata(type);
+
+	private string ResolveInternal(MemberInfo member)
+	{
+		// Try registered/discovered metadata first
 		var metadata = GetTypeMetadata(member.DeclaringType);
 		if (metadata?.PropertyToField.TryGetValue(member.Name, out var fieldName) == true)
 			return fieldName;
@@ -39,69 +73,23 @@ public class FieldNameResolver
 		return ToCamelCase(member.Name);
 	}
 
-	/// <summary>
-	/// Gets the index pattern for a type.
-	/// </summary>
-	public static string? GetIndexPattern(Type type)
-	{
-		// Try generated metadata first
-		var metadata = GetTypeMetadata(type);
-		if (metadata?.SearchPattern != null)
-			return metadata.SearchPattern;
-
-		// Fallback for non-generated types
-		var indexAttribute = type.GetCustomAttribute<IndexAttribute>();
-		if (indexAttribute?.SearchPattern != null)
-			return indexAttribute.SearchPattern;
-
-		var dataStreamAttribute = type.GetCustomAttribute<DataStreamAttribute>();
-		if (dataStreamAttribute != null)
-			return $"{dataStreamAttribute.Type}-{dataStreamAttribute.Dataset}-*";
-
-		return indexAttribute?.Name;
-	}
-
-	/// <summary>
-	/// Checks if a property should be ignored.
-	/// </summary>
-	public static bool IsIgnored(MemberInfo member)
-	{
-		var metadata = GetTypeMetadata(member.DeclaringType);
-		if (metadata != null)
-			return metadata.IgnoredProperties.Contains(member.Name);
-
-		// Fallback for non-generated types
-		return member.GetCustomAttribute<JsonIgnoreAttribute>() != null;
-	}
-
-	/// <summary>
-	/// Gets the generated property map for a type if available.
-	/// </summary>
-	public static Dictionary<string, PropertyInfo>? GetGeneratedPropertyMap(Type type)
-	{
-		var metadata = GetTypeMetadata(type);
-		return metadata?.GetPropertyMapFunc?.Invoke();
-	}
-
-	private static TypeFieldMetadata? GetTypeMetadata(Type? type)
-	{
-		if (type == null)
-			return null;
-		return TypeMetadataCache.GetOrAdd(type, DiscoverMetadata);
-	}
-
 	private static TypeFieldMetadata? DiscoverMetadata(Type type)
 	{
-		// One-time reflection to find the generated ElasticsearchContext class
+		// Try to find the legacy ElasticsearchContext nested type on the domain type
 		var contextType = type.GetNestedType("ElasticsearchContext", BindingFlags.Public | BindingFlags.Static);
-		if (contextType == null)
-			return null;
+		if (contextType != null)
+			return DiscoverFromNestedContext(contextType);
 
+		// No metadata found — type may not have been registered yet
+		return null;
+	}
+
+	private static TypeFieldMetadata? DiscoverFromNestedContext(Type contextType)
+	{
 		var fieldMappingType = contextType.GetNestedType("FieldMapping", BindingFlags.Public | BindingFlags.Static);
 		if (fieldMappingType == null)
 			return null;
 
-		// Get the generated dictionaries using pattern matching
 		var propertyToFieldValue = fieldMappingType
 			.GetField("PropertyToField", BindingFlags.Public | BindingFlags.Static)
 			?.GetValue(null);
@@ -112,7 +100,6 @@ public class FieldNameResolver
 			?.GetValue(null);
 		var ignoredProps = ignoredPropsValue is IReadOnlySet<string> ip ? ip : null;
 
-		// Get search pattern from SearchStrategy
 		string? searchPattern = null;
 		var searchStrategyProp = contextType.GetProperty("SearchStrategy", BindingFlags.Public | BindingFlags.Static);
 		if (searchStrategyProp != null)
@@ -122,7 +109,6 @@ public class FieldNameResolver
 				searchPattern = ss.Pattern;
 		}
 
-		// Get the GetPropertyMap method
 		Func<Dictionary<string, PropertyInfo>>? getPropertyMapFunc = null;
 		var getPropertyMapMethod = contextType.GetMethod("GetPropertyMap", BindingFlags.Public | BindingFlags.Static);
 		if (getPropertyMapMethod != null)
@@ -150,13 +136,3 @@ public class FieldNameResolver
 		return char.ToLowerInvariant(name[0]) + name.Substring(1);
 	}
 }
-
-/// <summary>
-/// Cached metadata for a type's field mappings discovered from generated code.
-/// </summary>
-internal sealed record TypeFieldMetadata(
-	IReadOnlyDictionary<string, string> PropertyToField,
-	IReadOnlySet<string> IgnoredProperties,
-	string? SearchPattern,
-	Func<Dictionary<string, PropertyInfo>>? GetPropertyMapFunc
-);

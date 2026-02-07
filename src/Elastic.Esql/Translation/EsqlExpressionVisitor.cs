@@ -41,7 +41,7 @@ public class EsqlExpressionVisitor(EsqlQueryContext context) : ExpressionVisitor
 
 			// Use explicit index pattern from context if set, otherwise get from attribute or use type name
 			var indexPattern = _context.IndexPattern
-				?? FieldNameResolver.GetIndexPattern(elementType)
+				?? _context.FieldNameResolver.GetIndexPattern(elementType)
 				?? ToIndexName(elementType.Name);
 
 			_query.AddCommand(new FromCommand(indexPattern));

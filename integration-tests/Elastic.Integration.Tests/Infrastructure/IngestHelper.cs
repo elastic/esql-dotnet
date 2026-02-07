@@ -2,6 +2,7 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using Elastic.Examples.Domain;
 using Elastic.Examples.Ingest.Channels;
 using Elastic.Examples.Ingest.Ingestors;
 using Elastic.Ingest.Elasticsearch;
@@ -36,7 +37,7 @@ public static class IngestHelper
 		await IngestViaIndexChannelAsync(
 			fixture.ElasticsearchClient,
 			products,
-			Product.Context,
+			ExampleElasticsearchContext.Product.Context,
 			p => p.Id,
 			ct
 		);
@@ -45,7 +46,7 @@ public static class IngestHelper
 		await IngestViaIndexChannelAsync(
 			fixture.ElasticsearchClient,
 			customers,
-			Customer.Context,
+			ExampleElasticsearchContext.Customer.Context,
 			c => c.Id,
 			ct
 		);
@@ -54,7 +55,7 @@ public static class IngestHelper
 		await IngestViaIndexChannelAsync(
 			fixture.ElasticsearchClient,
 			orders,
-			Order.Context,
+			ExampleElasticsearchContext.Order.Context,
 			o => o.Id,
 			ct
 		);
@@ -63,7 +64,7 @@ public static class IngestHelper
 		await IngestViaDataStreamChannelAsync(
 			fixture.ElasticsearchClient,
 			logs,
-			ApplicationLog.Context,
+			ExampleElasticsearchContext.ApplicationLog.Context,
 			ct
 		);
 
@@ -71,7 +72,7 @@ public static class IngestHelper
 		await IngestViaDataStreamChannelAsync(
 			fixture.ElasticsearchClient,
 			metrics,
-			ApplicationMetric.Context,
+			ExampleElasticsearchContext.ApplicationMetric.Context,
 			ct
 		);
 

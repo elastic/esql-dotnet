@@ -201,7 +201,7 @@ return 0;
 
 async Task CleanupAsync()
 {
-	var indexName = SupportTicket.Context.IndexStrategy?.WriteTarget ?? "support-tickets";
+	var indexName = PlaygroundMappingContext.SupportTicket.Context.IndexStrategy?.WriteTarget ?? "support-tickets";
 
 	Console.WriteLine($"  Deleting index '{indexName}'...");
 	var delIdx = await client.Indices.DeleteAsync(indexName);
@@ -232,7 +232,7 @@ async Task IngestViaChannelAsync(List<SupportTicket> ticketList)
 	//    mappings JSON. The generated ElasticsearchContext includes your
 	//    customizations (runtime fields, multi-fields, etc.)
 	//
-	// The Context property (SupportTicket.Context) is source-generated and
+	// The Context property (PlaygroundMappingContext.SupportTicket.Context) is source-generated and
 	// contains pre-computed JSON for settings and mappings, the hash for
 	// change detection, and delegates for runtime configuration.
 	//
@@ -244,12 +244,12 @@ async Task IngestViaChannelAsync(List<SupportTicket> ticketList)
 	// See SupportTicket.cs for examples of both Configure* methods.
 	// =========================================================================
 
-	var targetIndex = SupportTicket.Context.IndexStrategy?.WriteTarget ?? "support-tickets";
+	var targetIndex = PlaygroundMappingContext.SupportTicket.Context.IndexStrategy?.WriteTarget ?? "support-tickets";
 	Console.WriteLine($"  Index target: {targetIndex}");
 
 	var options = new MappingIndexChannelOptions<SupportTicket>(client)
 	{
-		Context = SupportTicket.Context,
+		Context = PlaygroundMappingContext.SupportTicket.Context,
 		IndexFormat = targetIndex, // Explicitly set the fixed index name
 		BulkOperationIdLookup = t => t.TicketId,
 		OnBootstrapStatus = msg => Console.WriteLine($"  {msg}")
@@ -267,7 +267,7 @@ async Task IngestViaChannelAsync(List<SupportTicket> ticketList)
 		_ = await channel.BootstrapElasticsearchAsync(BootstrapMethod.Failure);
 
 		// Ensure index exists (triggers template application)
-		var indexName = SupportTicket.Context.IndexStrategy?.WriteTarget ?? "support-tickets";
+		var indexName = PlaygroundMappingContext.SupportTicket.Context.IndexStrategy?.WriteTarget ?? "support-tickets";
 		Console.WriteLine($"  Ensuring index '{indexName}' exists...");
 		var existsResponse = await client.Indices.ExistsAsync(indexName);
 		if (!existsResponse.Exists)

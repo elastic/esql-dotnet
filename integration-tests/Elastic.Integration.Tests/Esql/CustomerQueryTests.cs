@@ -95,7 +95,7 @@ public class CustomerQueryTests : IntegrationTestBase
 			.ToListAsync();
 
 		var linqResults = TestData.Customers
-			.Where(c => c.Tier == CustomerTier.Platinum || c.Tier == CustomerTier.Diamond)
+			.Where(c => c.Tier is CustomerTier.Platinum or CustomerTier.Diamond)
 			.ToList();
 
 		esqlResults.Should().HaveCount(linqResults.Count);

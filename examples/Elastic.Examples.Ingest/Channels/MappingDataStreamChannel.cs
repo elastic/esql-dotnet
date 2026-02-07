@@ -164,7 +164,7 @@ public class MappingDataStreamChannel<T>(
 
 	private string CreateCombinedTemplateBody(string settingsJson, string mappingsJson)
 	{
-		// Merge analysis settings from ConfigureAnalysis if the type implements IHasAnalysisConfiguration
+		// Merge analysis settings from ConfigureAnalysis if available
 		var analysisSettings = GetAnalysisSettings();
 		if (analysisSettings?.HasConfiguration == true)
 			settingsJson = analysisSettings.MergeIntoSettings(settingsJson);

@@ -2,18 +2,6 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-// =============================================================================
-// DOMAIN MODEL: SUPPORT TICKET SYSTEM
-// =============================================================================
-// This demonstrates:
-// - Partial class with source-generated ElasticsearchContext
-// - ECS-style dotted field names via [JsonPropertyName]
-// - Nested objects (Responses, Metadata)
-// - Enum serialization with [JsonConverter]
-// - Custom analyzers via ConfigureAnalysis
-// - Custom mappings via ConfigureMappings with runtime fields
-// =============================================================================
-
 using System.Text.Json.Serialization;
 using Elastic.Mapping;
 using Elastic.Mapping.Analysis;
@@ -22,11 +10,36 @@ using static Elastic.Mapping.Analysis.BuiltInAnalysis;
 namespace Playground.Models;
 
 /// <summary>
-/// A support ticket in the IT helpdesk system.
-/// Demonstrates comprehensive Elastic.Mapping features.
+/// Elasticsearch mapping context for the playground.
 /// </summary>
-[Index(Name = "support-tickets", SearchPattern = "support-tickets*")]
-public partial class SupportTicket
+[ElasticsearchMappingContext]
+[Index<SupportTicket>(Name = "support-tickets", SearchPattern = "support-tickets*")]
+public static partial class PlaygroundMappingContext
+{
+	/// <summary>Configures SupportTicket-specific analysis settings.</summary>
+	public static AnalysisBuilder ConfigureSupportTicketAnalysis(AnalysisBuilder analysis) => analysis
+		.Tokenizer("ticket_tokenizer", t => t
+			.Pattern()
+			.PatternValue(@"[\s\-_/\\.,;:]+"))
+		.TokenFilter("ticket_word_filter", f => f
+			.WordDelimiterGraph()
+			.PreserveOriginal(true)
+			.SplitOnCaseChange(true)
+			.SplitOnNumerics(true))
+		.Analyzer("ticket_content_analyzer", a => a
+			.Custom()
+			.Tokenizer(SupportTicketAnalysis.Tokenizers.TicketTokenizer)
+			.Filters(
+				TokenFilters.Lowercase,
+				SupportTicketAnalysis.TokenFilters.TicketWordFilter
+			));
+}
+
+/// <summary>
+/// A support ticket in the IT helpdesk system.
+/// Demonstrates mixed strategies: analysis on context, mappings via IConfigureElasticsearch.
+/// </summary>
+public class SupportTicket : IConfigureElasticsearch<SupportTicketMappingsBuilder>
 {
 	// --- Core identification ---
 
@@ -111,51 +124,11 @@ public partial class SupportTicket
 	[Nested]
 	public List<TicketResponse> Responses { get; set; } = [];
 
-	// =========================================================================
-	// ANALYSIS CONFIGURATION
-	// =========================================================================
-	// Define custom analyzers, tokenizers, and filters.
-	// These are automatically included in the index template settings.
-	// The source generator creates type-safe accessors: Analysis.Analyzers.TicketContentAnalyzer
-	// =========================================================================
-
-	public static AnalysisBuilder ConfigureAnalysis(AnalysisBuilder analysis) => analysis
-		// Custom tokenizer for ticket content - splits on common delimiters
-		.Tokenizer("ticket_tokenizer", t => t
-			.Pattern()
-			.PatternValue(@"[\s\-_/\\.,;:]+"))
-
-		// Word delimiter filter for camelCase and technical terms
-		.TokenFilter("ticket_word_filter", f => f
-			.WordDelimiterGraph()
-			.PreserveOriginal(true)
-			.SplitOnCaseChange(true)
-			.SplitOnNumerics(true))
-
-		// Main analyzer combining all components
-		// Note: synonym_graph must not follow word_delimiter_graph, so we use a simpler chain
-		.Analyzer("ticket_content_analyzer", a => a
-			.Custom()
-			.Tokenizer(Analysis.Tokenizers.TicketTokenizer)
-			.Filters(
-				TokenFilters.Lowercase,
-				Analysis.TokenFilters.TicketWordFilter
-			));
-
-	// =========================================================================
-	// MAPPINGS CONFIGURATION
-	// =========================================================================
-	// Customize field mappings, add runtime fields, and dynamic templates.
-	// The source generator creates a type-safe builder: SupportTicketMappingsBuilder
-	// =========================================================================
-
+	/// <summary>Configures SupportTicket-specific mapping overrides via IConfigureElasticsearch.</summary>
 	public static SupportTicketMappingsBuilder ConfigureMappings(SupportTicketMappingsBuilder mappings) => mappings
-		// Customize Subject field with a keyword multi-field for exact matching
 		.Subject(f => f
 			.Analyzer(mappings.Analysis.Analyzers.TicketContentAnalyzer)
 			.MultiField("keyword", mf => mf.Keyword().IgnoreAbove(256)))
-
-		// Runtime field: is_overdue (tickets open > 24 hours)
 		.AddRuntimeField("is_overdue", r => r
 			.Boolean()
 			.Script("""
@@ -168,8 +141,6 @@ public partial class SupportTicket
 					emit(false);
 				}
 				"""))
-
-		// Runtime field: resolution_time_hours (for resolved tickets)
 		.AddRuntimeField("resolution_time_hours", r => r
 			.Double()
 			.Script("""
@@ -179,8 +150,6 @@ public partial class SupportTicket
 					emit((resolved - created) / (1000.0 * 60 * 60));
 				}
 				"""))
-
-		// Runtime field: priority_label (human-readable priority)
 		.AddRuntimeField("priority_label", r => r
 			.Keyword()
 			.Script("""
@@ -192,20 +161,13 @@ public partial class SupportTicket
 					else emit('P4 - Low');
 				}
 				"""))
-
-		// Dynamic template: map all unknown string fields in 'custom.*' as keywords
 		.AddDynamicTemplate("custom_fields_as_keyword", dt => dt
 			.PathMatch("custom.*")
 			.Mapping(m => m.Keyword()));
 }
 
-// =============================================================================
-// NESTED OBJECTS
-// =============================================================================
-
 /// <summary>
 /// Metadata about how the ticket was submitted.
-/// Demonstrates [Object] mapping for flat JSON structure.
 /// </summary>
 public class TicketMetadata
 {
@@ -224,7 +186,6 @@ public class TicketMetadata
 
 /// <summary>
 /// A response/comment on a ticket.
-/// Demonstrates [Nested] mapping for array of objects with independent querying.
 /// </summary>
 public class TicketResponse
 {
@@ -247,10 +208,6 @@ public class TicketResponse
 	[JsonPropertyName("response.internal")]
 	public bool IsInternal { get; set; }
 }
-
-// =============================================================================
-// ENUMS
-// =============================================================================
 
 public enum TicketStatus
 {

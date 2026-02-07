@@ -22,7 +22,7 @@ public class EsqlQueryContext(EsqlClientSettings settings)
 	/// <summary>
 	/// The field name resolver.
 	/// </summary>
-	public FieldNameResolver FieldNameResolver { get; } = new FieldNameResolver();
+	public FieldNameResolver FieldNameResolver { get; } = new(settings.MappingContext);
 
 	/// <summary>
 	/// Explicit index pattern override. When set, this takes precedence over the type's EsqlIndex attribute.

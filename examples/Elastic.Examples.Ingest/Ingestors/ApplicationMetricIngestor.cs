@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information
 
 using Elastic.Clients.Elasticsearch;
+using Elastic.Examples.Domain;
 using Elastic.Examples.Domain.Models;
 using Elastic.Examples.Ingest.Generators;
 using Elastic.Examples.Ingest.Ingestors.Strategies;
@@ -37,9 +38,9 @@ public class ApplicationMetricIngestor : IIngestor<MetricIngestResult>
 
 			var (indexed, failed) = useIngestChannel
 				? await DataStreamIngestStrategy.IngestViaChannelAsync(
-					client, metrics, ApplicationMetric.Context, BatchSize, callbacks, ct)
+					client, metrics, ExampleElasticsearchContext.ApplicationMetric.Context, BatchSize, callbacks, ct)
 				: await DataStreamIngestStrategy.IngestViaBulkApiAsync(
-					client, metrics, ApplicationMetric.Context, BatchSize, callbacks, ct);
+					client, metrics, ExampleElasticsearchContext.ApplicationMetric.Context, BatchSize, callbacks, ct);
 
 			callbacks.OnComplete(indexed, failed);
 			return new MetricIngestResult(indexed, failed);

@@ -4,21 +4,13 @@
 
 using System.Text.Json.Serialization;
 using Elastic.Mapping;
-using Elastic.Mapping.Analysis;
-using static Elastic.Mapping.Analysis.BuiltInAnalysis;
 
 namespace Elastic.Examples.Domain.Models;
 
 /// <summary>
 /// Customer profile with addresses, preferences, and analytics.
 /// </summary>
-[Index(
-	Name = "customers",
-	WriteAlias = "customers-write",
-	SearchPattern = "customers*",
-	Dynamic = false
-)]
-public partial class Customer
+public class Customer
 {
 	[JsonPropertyName("customer_id")]
 	[Keyword]
@@ -80,68 +72,6 @@ public partial class Customer
 
 	[JsonIgnore]
 	public string? AuthToken { get; set; }
-
-	/// <summary>Configures Customer-specific analysis settings.</summary>
-	public static AnalysisBuilder ConfigureAnalysis(AnalysisBuilder analysis) => analysis
-		.TokenFilter("name_edge_ngram", f => f
-			.EdgeNGram()
-			.MinGram(1)
-			.MaxGram(25))
-		.Normalizer("lowercase_normalizer", n => n
-			.Custom()
-			.Filter(TokenFilters.Lowercase))
-		.Analyzer("name_analyzer", a => a
-			.Custom()
-			.Tokenizer(Tokenizers.Standard)
-			.Filters(TokenFilters.Lowercase, TokenFilters.AsciiFolding, Analysis.TokenFilters.NameEdgeNgram))
-		.Analyzer("name_search_analyzer", a => a
-			.Custom()
-			.Tokenizer(Tokenizers.Standard)
-			.Filters(TokenFilters.Lowercase, TokenFilters.AsciiFolding))
-		.Analyzer("email_analyzer", a => a
-			.Custom()
-			.Tokenizer(Tokenizers.UaxUrlEmail)
-			.Filter(TokenFilters.Lowercase));
-
-	/// <summary>Configures Customer-specific mapping overrides.</summary>
-	public static CustomerMappingsBuilder ConfigureMappings(CustomerMappingsBuilder mappings) => mappings
-		.Email(f => f
-			.Normalizer(mappings.Analysis.Normalizers.LowercaseNormalizer)
-			.MultiField("analyzed", mf => mf.Text().Analyzer(mappings.Analysis.Analyzers.EmailAnalyzer)))
-		.Addresses(a => a
-			.Street(f => f.Analyzer(mappings.Analysis.Analyzers.Standard))
-			.City(f => f.Normalizer(mappings.Analysis.Normalizers.LowercaseNormalizer))
-			.Country(f => f.Normalizer(mappings.Analysis.Normalizers.LowercaseNormalizer)))
-		.FirstName(f => f
-			.Analyzer(mappings.Analysis.Analyzers.NameAnalyzer)
-			.SearchAnalyzer(mappings.Analysis.Analyzers.NameSearchAnalyzer)
-			.MultiField("keyword", mf => mf.Keyword().IgnoreAbove(100)))
-		.LastName(f => f
-			.Analyzer(mappings.Analysis.Analyzers.NameAnalyzer)
-			.SearchAnalyzer(mappings.Analysis.Analyzers.NameSearchAnalyzer)
-			.MultiField("keyword", mf => mf.Keyword().IgnoreAbove(100)))
-		.AddField("full_name_search", f => f
-			.Text()
-			.Analyzer(mappings.Analysis.Analyzers.NameAnalyzer)
-			.SearchAnalyzer(mappings.Analysis.Analyzers.NameSearchAnalyzer))
-		.AddRuntimeField("days_since_last_order", r => r
-			.Long()
-			.Script("""
-				if (doc['lastOrderAt'].size() > 0) {
-					long diff = System.currentTimeMillis() - doc['lastOrderAt'].value.toInstant().toEpochMilli();
-					emit(diff / (1000 * 60 * 60 * 24));
-				}
-				"""))
-		.AddRuntimeField("is_active", r => r
-			.Boolean()
-			.Script("""
-				if (doc['lastOrderAt'].size() > 0) {
-					long diff = System.currentTimeMillis() - doc['lastOrderAt'].value.toInstant().toEpochMilli();
-					emit(diff < 90L * 24 * 60 * 60 * 1000);
-				} else {
-					emit(false);
-				}
-				"""));
 }
 
 public enum CustomerTier

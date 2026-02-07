@@ -5,10 +5,13 @@
 namespace Elastic.Mapping;
 
 /// <summary>
-/// Specifies data stream configuration following Elastic naming: {type}-{dataset}-{namespace}.
+/// Registers a type as an Elasticsearch data stream within an <see cref="ElasticsearchMappingContextAttribute"/> context.
+/// Applied to the context class, not the domain type.
+/// Data streams follow the Elastic naming convention: {type}-{dataset}-{namespace}.
 /// </summary>
-[AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct, AllowMultiple = false, Inherited = true)]
-public sealed class DataStreamAttribute : Attribute
+/// <typeparam name="T">The domain type to map to an Elasticsearch data stream.</typeparam>
+[AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
+public sealed class DataStreamAttribute<T> : Attribute where T : class
 {
 	/// <summary>
 	/// Data stream type (e.g., "logs", "metrics", "traces", "synthetics").
@@ -26,8 +29,6 @@ public sealed class DataStreamAttribute : Attribute
 	/// </summary>
 	public string Namespace { get; init; } = "default";
 
-	/// <summary>
-	/// Gets the full data stream name: {Type}-{Dataset}-{Namespace}.
-	/// </summary>
-	public string FullName => $"{Type}-{Dataset}-{Namespace}";
+	/// <summary>Optional static class containing ConfigureAnalysis/ConfigureMappings methods.</summary>
+	public Type? Configuration { get; init; }
 }

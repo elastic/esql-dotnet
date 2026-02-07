@@ -3,15 +3,23 @@
 // See the LICENSE file in the project root for more information
 
 using Elastic.Esql.Core;
+using Elastic.Mapping;
 
 namespace Elastic.Esql;
 
 /// <summary>
-/// Static entry point for ES|QL string generation without client instantiation.
+/// Static entry point for ES|QL string generation without InMemoryClient instantiation.
 /// </summary>
 public static class Esql
 {
-	private static readonly EsqlClient InMemoryClient = new(EsqlClientSettings.InMemory());
+	private static EsqlClient InMemoryClient = new(EsqlClientSettings.InMemory());
+
+	/// <summary>
+	/// Configures the static Esql entry point with a mapping context.
+	/// Call once at startup to enable type metadata resolution.
+	/// </summary>
+	public static void Configure(IElasticsearchMappingContext mappingContext) =>
+		InMemoryClient = new EsqlClient(EsqlClientSettings.InMemory(mappingContext));
 
 	/// <summary>
 	/// Creates a queryable for ES|QL string generation.
@@ -33,7 +41,7 @@ public static class Esql
 	/// </example>
 	/// <typeparam name="T">The document type. Should have EsqlIndex attribute or will use type name as index.</typeparam>
 	/// <returns>A queryable that can be used to build ES|QL queries.</returns>
-	public static IEsqlQueryable<T> From<T>() where T : class
+	public static IEsqlQueryable<T> InMemory<T>() where T : class
 		=> InMemoryClient.Query<T>();
 
 	/// <summary>
@@ -42,6 +50,6 @@ public static class Esql
 	/// <typeparam name="T">The document type.</typeparam>
 	/// <param name="indexPattern">The Elasticsearch index pattern (e.g., "logs-*").</param>
 	/// <returns>A queryable that can be used to build ES|QL queries.</returns>
-	public static IEsqlQueryable<T> From<T>(string indexPattern) where T : class
+	public static IEsqlQueryable<T> InMemory<T>(string indexPattern) where T : class
 		=> InMemoryClient.Query<T>(indexPattern);
 }

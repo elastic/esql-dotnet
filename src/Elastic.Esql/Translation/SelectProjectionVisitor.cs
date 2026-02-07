@@ -139,7 +139,7 @@ public class SelectProjectionVisitor(EsqlQueryContext context) : ExpressionVisit
 		{
 			// Constant value
 			var resultField = ToCamelCase(resultName);
-			var value = TypeMapping.EsqlTypeMapper.FormatValue(constant.Value);
+			var value = TypeMapping.EsqlFormatting.FormatValue(constant.Value);
 			_evalExpressions.Add($"{resultField} = {value}");
 		}
 	}
@@ -149,7 +149,7 @@ public class SelectProjectionVisitor(EsqlQueryContext context) : ExpressionVisit
 		{
 			BinaryExpression binary => TranslateBinary(binary),
 			MemberExpression member => TranslateMemberExpression(member),
-			ConstantExpression constant => TypeMapping.EsqlTypeMapper.FormatValue(constant.Value),
+			ConstantExpression constant => TypeMapping.EsqlFormatting.FormatValue(constant.Value),
 			UnaryExpression { NodeType: ExpressionType.Convert, Operand: var operand } => TranslateExpression(operand),
 			MethodCallExpression methodCall => TranslateMethodCall(methodCall),
 			_ => throw new NotSupportedException($"Expression type {expression.GetType().Name} is not supported in projections.")

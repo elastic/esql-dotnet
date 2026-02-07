@@ -9,7 +9,7 @@ public class NumericFormattingTests
 	[Test]
 	public void FormatValue_Null_ReturnsNull()
 	{
-		var result = EsqlTypeMapper.FormatValue(null);
+		var result = EsqlFormatting.FormatValue(null);
 
 		_ = result.Should().Be("null");
 	}
@@ -17,7 +17,7 @@ public class NumericFormattingTests
 	[Test]
 	public void FormatValue_True_ReturnsTrueLowercase()
 	{
-		var result = EsqlTypeMapper.FormatValue(true);
+		var result = EsqlFormatting.FormatValue(true);
 
 		_ = result.Should().Be("true");
 	}
@@ -25,7 +25,7 @@ public class NumericFormattingTests
 	[Test]
 	public void FormatValue_False_ReturnsFalseLowercase()
 	{
-		var result = EsqlTypeMapper.FormatValue(false);
+		var result = EsqlFormatting.FormatValue(false);
 
 		_ = result.Should().Be("false");
 	}
@@ -33,7 +33,7 @@ public class NumericFormattingTests
 	[Test]
 	public void FormatValue_Int_ReturnsNumber()
 	{
-		var result = EsqlTypeMapper.FormatValue(42);
+		var result = EsqlFormatting.FormatValue(42);
 
 		_ = result.Should().Be("42");
 	}
@@ -41,7 +41,7 @@ public class NumericFormattingTests
 	[Test]
 	public void FormatValue_NegativeInt_ReturnsNegativeNumber()
 	{
-		var result = EsqlTypeMapper.FormatValue(-42);
+		var result = EsqlFormatting.FormatValue(-42);
 
 		_ = result.Should().Be("-42");
 	}
@@ -49,7 +49,7 @@ public class NumericFormattingTests
 	[Test]
 	public void FormatValue_Double_ReturnsNumber()
 	{
-		var result = EsqlTypeMapper.FormatValue(3.14);
+		var result = EsqlFormatting.FormatValue(3.14);
 
 		_ = result.Should().Be("3.14");
 	}
@@ -57,7 +57,7 @@ public class NumericFormattingTests
 	[Test]
 	public void FormatValue_DoubleNaN_ReturnsNull()
 	{
-		var result = EsqlTypeMapper.FormatValue(double.NaN);
+		var result = EsqlFormatting.FormatValue(double.NaN);
 
 		_ = result.Should().Be("null");
 	}
@@ -65,7 +65,7 @@ public class NumericFormattingTests
 	[Test]
 	public void FormatValue_DoublePositiveInfinity_ReturnsNull()
 	{
-		var result = EsqlTypeMapper.FormatValue(double.PositiveInfinity);
+		var result = EsqlFormatting.FormatValue(double.PositiveInfinity);
 
 		_ = result.Should().Be("null");
 	}

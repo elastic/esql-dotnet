@@ -43,14 +43,13 @@ public class MappingIndexChannel<T>(
 	where T : class
 {
 	/// <summary>
-	/// Creates a channel with auto-discovered context via interfaces.
+	/// Creates a channel with the provided context.
 	/// </summary>
 #pragma warning disable CA1000 // Do not declare static members on generic types - Factory method needs type parameter
-	public static MappingIndexChannel<T> Create<TDoc>(ElasticsearchClient client)
-		where TDoc : class, T, IHasElasticsearchContext
+	public static MappingIndexChannel<T> Create(ElasticsearchClient client, ElasticsearchTypeContext context)
 	{
 #pragma warning restore CA1000
-		var options = new MappingIndexChannelOptions<T>(client) { Context = TDoc.Context };
+		var options = new MappingIndexChannelOptions<T>(client) { Context = context };
 		return new MappingIndexChannel<T>(options);
 	}
 	private readonly MappingIndexChannelOptions<T> _options = options;
@@ -150,7 +149,7 @@ public class MappingIndexChannel<T>(
 
 	private string CreateCombinedTemplateBody(string settingsJson, string mappingsJson)
 	{
-		// Merge analysis settings from ConfigureAnalysis if the type implements IHasAnalysisConfiguration
+		// Merge analysis settings from ConfigureAnalysis if available
 		var analysisSettings = GetAnalysisSettings();
 		if (analysisSettings?.HasConfiguration == true)
 			settingsJson = analysisSettings.MergeIntoSettings(settingsJson);

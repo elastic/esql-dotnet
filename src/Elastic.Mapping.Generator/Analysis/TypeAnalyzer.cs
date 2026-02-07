@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information
 
 using System.Collections.Immutable;
+using System.Text;
 using Elastic.Mapping.Generator.Model;
 using Microsoft.CodeAnalysis;
 
@@ -13,8 +14,6 @@ namespace Elastic.Mapping.Generator.Analysis;
 /// </summary>
 internal static class TypeAnalyzer
 {
-	private const string IndexAttributeName = "Elastic.Mapping.IndexAttribute";
-	private const string DataStreamAttributeName = "Elastic.Mapping.DataStreamAttribute";
 	private const string JsonPropertyNameAttributeName = "System.Text.Json.Serialization.JsonPropertyNameAttribute";
 	private const string JsonIgnoreAttributeName = "System.Text.Json.Serialization.JsonIgnoreAttribute";
 
@@ -34,39 +33,38 @@ internal static class TypeAnalyzer
 	private const string DenseVectorAttributeName = "Elastic.Mapping.DenseVectorAttribute";
 	private const string SemanticTextAttributeName = "Elastic.Mapping.SemanticTextAttribute";
 
-	public static TypeMappingModel? Analyze(INamedTypeSymbol typeSymbol, CancellationToken ct)
+	/// <summary>
+	/// Analyzes a type for mapping, using optional STJ configuration for naming and enum inference.
+	/// Used by the context-based pipeline.
+	/// </summary>
+	public static TypeMappingModel? Analyze(
+		INamedTypeSymbol typeSymbol,
+		StjContextConfig? stjConfig,
+		IndexConfigModel? indexConfig,
+		DataStreamConfigModel? dataStreamConfig,
+		CancellationToken ct
+	)
 	{
 		ct.ThrowIfCancellationRequested();
 
-		var indexConfig = GetIndexConfig(typeSymbol);
-		var dataStreamConfig = GetDataStreamConfig(typeSymbol);
+		var properties = GetProperties(typeSymbol, stjConfig, ct);
 
-		// Must have either [Index] or [DataStream]
-		if (indexConfig == null && dataStreamConfig == null)
-			return null;
-
-		var isPartial = typeSymbol.DeclaringSyntaxReferences
-			.Any(r => r.GetSyntax(ct) is Microsoft.CodeAnalysis.CSharp.Syntax.TypeDeclarationSyntax tds &&
-					  tds.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.PartialKeyword)));
-
-		if (!isPartial)
-			return null;
-
-		var properties = GetProperties(typeSymbol, ct);
-		var containingTypes = GetContainingTypes(typeSymbol);
-		var analysisComponents = ConfigureAnalysisParser.Parse(typeSymbol, ct);
-
-		// Detect Configure* methods
+		// Detect Configure* methods on the type itself (fallback for types that still have them)
 		var (hasConfigureAnalysis, hasConfigureMappings, mappingsBuilderTypeName) = DetectConfigureMethods(typeSymbol);
+
+		// Parse analysis components if the type has ConfigureAnalysis
+		var analysisComponents = hasConfigureAnalysis
+			? ConfigureAnalysisParser.Parse(typeSymbol, ct)
+			: AnalysisComponentsModel.Empty;
 
 		return new TypeMappingModel(
 			typeSymbol.ContainingNamespace?.ToDisplayString() ?? string.Empty,
 			typeSymbol.Name,
-			isPartial,
+			false, // isPartial not relevant for context-based types
 			indexConfig,
 			dataStreamConfig,
 			properties,
-			containingTypes,
+			ImmutableArray<string>.Empty, // No containing types for context-registered types
 			analysisComponents,
 			hasConfigureAnalysis,
 			hasConfigureMappings,
@@ -74,53 +72,16 @@ internal static class TypeAnalyzer
 		);
 	}
 
-	private static IndexConfigModel? GetIndexConfig(INamedTypeSymbol typeSymbol)
-	{
-		var attr = typeSymbol.GetAttributes()
-			.FirstOrDefault(a => a.AttributeClass?.ToDisplayString() == IndexAttributeName);
-
-		if (attr == null)
-			return null;
-
-		return new IndexConfigModel(
-			GetNamedArg<string>(attr, "Name"),
-			GetNamedArg<string>(attr, "WriteAlias"),
-			GetNamedArg<string>(attr, "ReadAlias"),
-			GetNamedArg<string>(attr, "DatePattern"),
-			GetNamedArg<string>(attr, "SearchPattern"),
-			GetNamedArg<int>(attr, "Shards", -1),
-			GetNamedArg<int>(attr, "Replicas", -1),
-			GetNamedArg<string>(attr, "RefreshInterval"),
-			GetNamedArg<bool>(attr, "Dynamic", true)
-		);
-	}
-
-	private static DataStreamConfigModel? GetDataStreamConfig(INamedTypeSymbol typeSymbol)
-	{
-		var attr = typeSymbol.GetAttributes()
-			.FirstOrDefault(a => a.AttributeClass?.ToDisplayString() == DataStreamAttributeName);
-
-		if (attr == null)
-			return null;
-
-		var type = GetNamedArg<string>(attr, "Type");
-		var dataset = GetNamedArg<string>(attr, "Dataset");
-
-		if (string.IsNullOrEmpty(type) || string.IsNullOrEmpty(dataset))
-			return null;
-
-		return new DataStreamConfigModel(
-			type!,
-			dataset!,
-			GetNamedArg<string>(attr, "Namespace") ?? "default"
-		);
-	}
-
-	private static ImmutableArray<PropertyMappingModel> GetProperties(INamedTypeSymbol typeSymbol, CancellationToken ct) =>
-		GetProperties(typeSymbol, [], ct);
+	private static ImmutableArray<PropertyMappingModel> GetProperties(
+		INamedTypeSymbol typeSymbol,
+		StjContextConfig? stjConfig,
+		CancellationToken ct
+	) =>
+		GetProperties(typeSymbol, stjConfig, [], ct);
 
 	private static ImmutableArray<PropertyMappingModel> GetProperties(
 		INamedTypeSymbol typeSymbol,
+		StjContextConfig? stjConfig,
 		HashSet<string> visitedTypes,
 		CancellationToken ct
 	)
@@ -140,7 +101,13 @@ internal static class TypeAnalyzer
 			if (property.IsStatic || property.IsIndexer)
 				continue;
 
-			var propModel = AnalyzeProperty(property, visitedTypes, ct);
+			// IgnoreReadOnlyProperties: skip properties with no setter
+			if (stjConfig?.IgnoreReadOnlyProperties == true && property.SetMethod == null && !property.IsReadOnly)
+				continue;
+			if (stjConfig?.IgnoreReadOnlyProperties == true && property.IsReadOnly)
+				continue;
+
+			var propModel = AnalyzeProperty(property, stjConfig, visitedTypes, ct);
 			if (propModel != null)
 				builder.Add(propModel);
 		}
@@ -148,11 +115,9 @@ internal static class TypeAnalyzer
 		return builder.ToImmutable();
 	}
 
-	private static PropertyMappingModel? AnalyzeProperty(IPropertySymbol property) =>
-		AnalyzeProperty(property, [], CancellationToken.None);
-
 	private static PropertyMappingModel? AnalyzeProperty(
 		IPropertySymbol property,
+		StjContextConfig? stjConfig,
 		HashSet<string> visitedTypes,
 		CancellationToken ct
 	)
@@ -162,19 +127,23 @@ internal static class TypeAnalyzer
 		// Check for [JsonIgnore]
 		var isIgnored = attrs.Any(a => a.AttributeClass?.ToDisplayString() == JsonIgnoreAttributeName);
 
-		// Get field name from [JsonPropertyName] or use camelCase
+		// Check global DefaultIgnoreCondition.Always
+		if (!isIgnored && stjConfig?.IgnoreCondition == DefaultIgnoreCondition.Always)
+			isIgnored = true;
+
+		// Get field name from [JsonPropertyName] or apply naming policy
 		var fieldName = attrs
 			.Where(a => a.AttributeClass?.ToDisplayString() == JsonPropertyNameAttributeName)
 			.Select(a => a.ConstructorArguments.FirstOrDefault().Value as string)
-			.FirstOrDefault() ?? ToCamelCase(property.Name);
+			.FirstOrDefault() ?? ApplyNamingPolicy(property.Name, stjConfig?.PropertyNamingPolicy ?? NamingPolicy.Unspecified);
 
 		// Determine field type and options from attributes or CLR type
-		var (fieldType, options) = DetermineFieldTypeAndOptions(property, attrs);
+		var (fieldType, options) = DetermineFieldTypeAndOptions(property, attrs, stjConfig);
 
 		// For nested/object types, recursively analyze the element type
 		NestedTypeModel? nestedType = null;
 		if (fieldType is FieldTypes.Nested or FieldTypes.Object)
-			nestedType = AnalyzeNestedType(property.Type, visitedTypes, ct);
+			nestedType = AnalyzeNestedType(property.Type, stjConfig, visitedTypes, ct);
 
 		return PropertyMappingModel.Create(
 			property.Name,
@@ -188,6 +157,7 @@ internal static class TypeAnalyzer
 
 	private static NestedTypeModel? AnalyzeNestedType(
 		ITypeSymbol typeSymbol,
+		StjContextConfig? stjConfig,
 		HashSet<string> visitedTypes,
 		CancellationToken ct
 	)
@@ -205,7 +175,7 @@ internal static class TypeAnalyzer
 
 		try
 		{
-			var properties = GetNestedTypeProperties(namedType, visitedTypes, ct);
+			var properties = GetNestedTypeProperties(namedType, stjConfig, visitedTypes, ct);
 
 			if (properties.Length == 0)
 				return null;
@@ -245,6 +215,7 @@ internal static class TypeAnalyzer
 
 	private static ImmutableArray<PropertyMappingModel> GetNestedTypeProperties(
 		INamedTypeSymbol typeSymbol,
+		StjContextConfig? stjConfig,
 		HashSet<string> visitedTypes,
 		CancellationToken ct
 	)
@@ -264,7 +235,7 @@ internal static class TypeAnalyzer
 			if (property.IsStatic || property.IsIndexer)
 				continue;
 
-			var propModel = AnalyzeProperty(property, visitedTypes, ct);
+			var propModel = AnalyzeProperty(property, stjConfig, visitedTypes, ct);
 			if (propModel != null)
 				builder.Add(propModel);
 		}
@@ -274,7 +245,8 @@ internal static class TypeAnalyzer
 
 	private static (string FieldType, ImmutableDictionary<string, string?> Options) DetermineFieldTypeAndOptions(
 		IPropertySymbol property,
-		ImmutableArray<AttributeData> attrs)
+		ImmutableArray<AttributeData> attrs,
+		StjContextConfig? stjConfig)
 	{
 		var optionsBuilder = ImmutableDictionary.CreateBuilder<string, string?>();
 
@@ -341,7 +313,7 @@ internal static class TypeAnalyzer
 		}
 
 		// Auto-infer from CLR type
-		var fieldType = InferFieldType(property.Type);
+		var fieldType = InferFieldType(property.Type, property, stjConfig);
 		return (fieldType, optionsBuilder.ToImmutable());
 	}
 
@@ -358,7 +330,7 @@ internal static class TypeAnalyzer
 		}
 	}
 
-	private static string InferFieldType(ITypeSymbol type)
+	private static string InferFieldType(ITypeSymbol type, IPropertySymbol? property, StjContextConfig? stjConfig)
 	{
 		// Unwrap nullable
 		if (type is INamedTypeSymbol namedType &&
@@ -380,18 +352,23 @@ internal static class TypeAnalyzer
 			"bool" or "System.Boolean" => FieldTypes.Boolean,
 			"System.DateTime" or "System.DateTimeOffset" => FieldTypes.Date,
 			"System.Guid" => FieldTypes.Keyword,
-			_ when type.TypeKind == TypeKind.Enum => FieldTypes.Keyword,
+			_ when type.TypeKind == TypeKind.Enum => InferEnumFieldType(type, property, stjConfig),
 			_ => FieldTypes.Object
 		};
 	}
 
-	private static T? GetNamedArg<T>(AttributeData attr, string name, T? defaultValue = default)
+	private static string InferEnumFieldType(ITypeSymbol enumType, IPropertySymbol? property, StjContextConfig? stjConfig)
 	{
-		var arg = attr.NamedArguments.FirstOrDefault(a => a.Key == name);
-		if (arg.Key == null)
-			return defaultValue;
+		// Check per-property [JsonConverter(typeof(JsonStringEnumConverter))]
+		if (property != null && StjContextAnalyzer.PropertyHasJsonStringEnumConverter(property))
+			return FieldTypes.Keyword;
 
-		return arg.Value.Value is T value ? value : defaultValue;
+		// Check per-type [JsonConverter(typeof(JsonStringEnumConverter))] or global UseStringEnumConverter
+		if (StjContextAnalyzer.IsEnumSerializedAsString(enumType, stjConfig))
+			return FieldTypes.Keyword;
+
+		// Default: enum without string converter → keyword (existing behavior, safe default)
+		return FieldTypes.Keyword;
 	}
 
 	private static object? GetNamedArgRaw(AttributeData attr, string name)
@@ -408,21 +385,21 @@ internal static class TypeAnalyzer
 			_ => value.ToString() ?? string.Empty
 		};
 
-	private static ImmutableArray<string> GetContainingTypes(INamedTypeSymbol typeSymbol)
-	{
-		var builder = ImmutableArray.CreateBuilder<string>();
-		var containing = typeSymbol.ContainingType;
-
-		while (containing != null)
+	/// <summary>
+	/// Applies a naming policy to a property name to derive the ES field name.
+	/// </summary>
+	internal static string ApplyNamingPolicy(string name, NamingPolicy policy) =>
+		policy switch
 		{
-			builder.Insert(0, containing.Name);
-			containing = containing.ContainingType;
-		}
+			NamingPolicy.CamelCase => ToCamelCase(name),
+			NamingPolicy.SnakeCaseLower => ToSnakeCaseLower(name),
+			NamingPolicy.SnakeCaseUpper => ToSnakeCaseUpper(name),
+			NamingPolicy.KebabCaseLower => ToKebabCaseLower(name),
+			NamingPolicy.KebabCaseUpper => ToKebabCaseUpper(name),
+			_ => ToCamelCase(name) // Default/Unspecified → camelCase (preserve existing behavior)
+		};
 
-		return builder.ToImmutable();
-	}
-
-	private static string ToCamelCase(string name)
+	internal static string ToCamelCase(string name)
 	{
 		if (string.IsNullOrEmpty(name))
 			return name;
@@ -432,6 +409,58 @@ internal static class TypeAnalyzer
 
 		return char.ToLowerInvariant(name[0]) + name.Substring(1);
 	}
+
+	internal static string ToSnakeCaseLower(string name)
+	{
+		if (string.IsNullOrEmpty(name))
+			return name;
+
+		var sb = new StringBuilder();
+		for (var i = 0; i < name.Length; i++)
+		{
+			var c = name[i];
+			if (char.IsUpper(c))
+			{
+				if (i > 0)
+					sb.Append('_');
+				sb.Append(char.ToLowerInvariant(c));
+			}
+			else
+			{
+				sb.Append(c);
+			}
+		}
+
+		return sb.ToString();
+	}
+
+	internal static string ToSnakeCaseUpper(string name) => ToSnakeCaseLower(name).ToUpperInvariant();
+
+	internal static string ToKebabCaseLower(string name)
+	{
+		if (string.IsNullOrEmpty(name))
+			return name;
+
+		var sb = new StringBuilder();
+		for (var i = 0; i < name.Length; i++)
+		{
+			var c = name[i];
+			if (char.IsUpper(c))
+			{
+				if (i > 0)
+					sb.Append('-');
+				sb.Append(char.ToLowerInvariant(c));
+			}
+			else
+			{
+				sb.Append(c);
+			}
+		}
+
+		return sb.ToString();
+	}
+
+	internal static string ToKebabCaseUpper(string name) => ToKebabCaseLower(name).ToUpperInvariant();
 
 	private static (bool HasConfigureAnalysis, bool HasConfigureMappings, string? MappingsBuilderTypeName) DetectConfigureMethods(INamedTypeSymbol typeSymbol)
 	{
@@ -448,7 +477,6 @@ internal static class TypeAnalyzer
 
 		if (hasConfigureMappings && configureMappingsMethod != null)
 		{
-			// Extract the builder type name from the parameter type
 			var parameterType = configureMappingsMethod.Parameters[0].Type;
 			mappingsBuilderTypeName = parameterType.Name;
 		}

@@ -9,8 +9,7 @@ public class MappingGeneratorTests
 	[Test]
 	public void Index_GeneratesStaticMappingClass()
 	{
-		// The ElasticsearchContext class should be generated
-		var hash = LogEntry.ElasticsearchContext.Hash;
+		var hash = TestMappingContext.LogEntry.Hash;
 		hash.Should().NotBeNullOrEmpty();
 		hash.Should().HaveLength(16);
 	}
@@ -18,24 +17,23 @@ public class MappingGeneratorTests
 	[Test]
 	public void Index_GeneratesFieldConstants()
 	{
-		// Field constants should be generated from JsonPropertyName or camelCase
-		LogEntry.ElasticsearchContext.Fields.Timestamp.Should().Be("@timestamp");
-		LogEntry.ElasticsearchContext.Fields.Level.Should().Be("log.level");
-		LogEntry.ElasticsearchContext.Fields.Message.Should().Be("message");
-		LogEntry.ElasticsearchContext.Fields.StatusCode.Should().Be("statusCode");
+		TestMappingContext.LogEntry.Fields.Timestamp.Should().Be("@timestamp");
+		TestMappingContext.LogEntry.Fields.Level.Should().Be("log.level");
+		TestMappingContext.LogEntry.Fields.Message.Should().Be("message");
+		TestMappingContext.LogEntry.Fields.StatusCode.Should().Be("statusCode");
 	}
 
 	[Test]
 	public void Index_GeneratesIndexStrategy()
 	{
-		var strategy = LogEntry.ElasticsearchContext.IndexStrategy;
+		var strategy = TestMappingContext.LogEntry.IndexStrategy;
 		strategy.WriteTarget.Should().Be("logs-write");
 	}
 
 	[Test]
 	public void Index_GeneratesSearchStrategy()
 	{
-		var strategy = LogEntry.ElasticsearchContext.SearchStrategy;
+		var strategy = TestMappingContext.LogEntry.SearchStrategy;
 		strategy.Pattern.Should().Be("logs-*");
 		strategy.ReadAlias.Should().Be("logs-read");
 	}
@@ -43,7 +41,7 @@ public class MappingGeneratorTests
 	[Test]
 	public void Index_GeneratesSettingsJson()
 	{
-		var json = LogEntry.ElasticsearchContext.GetSettingsJson();
+		var json = TestMappingContext.LogEntry.GetSettingsJson();
 		json.Should().Contain("\"number_of_shards\": 3");
 		json.Should().Contain("\"number_of_replicas\": 2");
 	}
@@ -51,7 +49,7 @@ public class MappingGeneratorTests
 	[Test]
 	public void Index_GeneratesMappingJson()
 	{
-		var json = LogEntry.ElasticsearchContext.GetMappingJson();
+		var json = TestMappingContext.LogEntry.GetMappingJson();
 		json.Should().Contain("\"@timestamp\"");
 		json.Should().Contain("\"type\": \"date\"");
 		json.Should().Contain("\"type\": \"keyword\"");
@@ -64,7 +62,7 @@ public class MappingGeneratorTests
 	[Test]
 	public void Index_GeneratesIndexJson()
 	{
-		var json = LogEntry.ElasticsearchContext.GetIndexJson();
+		var json = TestMappingContext.LogEntry.GetIndexJson();
 		json.Should().Contain("\"settings\":");
 		json.Should().Contain("\"mappings\":");
 	}
@@ -72,19 +70,16 @@ public class MappingGeneratorTests
 	[Test]
 	public void Index_HashIsStable()
 	{
-		// Hash should be deterministic
-		var hash1 = LogEntry.ElasticsearchContext.Hash;
-		var hash2 = LogEntry.ElasticsearchContext.Hash;
+		var hash1 = TestMappingContext.LogEntry.Hash;
+		var hash2 = TestMappingContext.LogEntry.Hash;
 		hash1.Should().Be(hash2);
 	}
 
 	[Test]
 	public void Index_SeparateHashesProvided()
 	{
-		// Separate hashes for settings and mappings
-		var settingsHash = LogEntry.ElasticsearchContext.SettingsHash;
-		var mappingsHash = LogEntry.ElasticsearchContext.MappingsHash;
-		var combinedHash = LogEntry.ElasticsearchContext.Hash;
+		var settingsHash = TestMappingContext.LogEntry.SettingsHash;
+		var mappingsHash = TestMappingContext.LogEntry.MappingsHash;
 
 		settingsHash.Should().NotBeNullOrEmpty();
 		mappingsHash.Should().NotBeNullOrEmpty();
@@ -94,20 +89,20 @@ public class MappingGeneratorTests
 	[Test]
 	public void DataStream_GeneratesCorrectStrategy()
 	{
-		var indexStrategy = NginxAccessLog.ElasticsearchContext.IndexStrategy;
+		var indexStrategy = TestMappingContext.NginxAccessLog.IndexStrategy;
 		indexStrategy.DataStreamName.Should().Be("logs-nginx.access-production");
 		indexStrategy.Type.Should().Be("logs");
 		indexStrategy.Dataset.Should().Be("nginx.access");
 		indexStrategy.Namespace.Should().Be("production");
 
-		var searchStrategy = NginxAccessLog.ElasticsearchContext.SearchStrategy;
+		var searchStrategy = TestMappingContext.NginxAccessLog.SearchStrategy;
 		searchStrategy.Pattern.Should().Be("logs-nginx.access-*");
 	}
 
 	[Test]
 	public void SimpleDocument_InfersTypesFromClrTypes()
 	{
-		var json = SimpleDocument.ElasticsearchContext.GetMappingJson();
+		var json = TestMappingContext.SimpleDocument.GetMappingJson();
 		json.Should().Contain("\"name\": { \"type\": \"keyword\"");
 		json.Should().Contain("\"value\": { \"type\": \"integer\"");
 		json.Should().Contain("\"createdAt\": { \"type\": \"date\"");
@@ -116,7 +111,7 @@ public class MappingGeneratorTests
 	[Test]
 	public void AdvancedDocument_SupportsSpecializedTypes()
 	{
-		var json = AdvancedDocument.ElasticsearchContext.GetMappingJson();
+		var json = TestMappingContext.AdvancedDocument.GetMappingJson();
 		json.Should().Contain("\"type\": \"geo_point\"");
 		json.Should().Contain("\"type\": \"dense_vector\"");
 		json.Should().Contain("\"dims\": 384");
@@ -127,36 +122,15 @@ public class MappingGeneratorTests
 	}
 
 	[Test]
-	public void MappingConfig_AllowsFluentOverrides()
-	{
-		var config = LogEntry.MappingConfig()
-			.Message(f => f.Analyzer("english"));
-
-		var json = config.GetMappingJson();
-		json.Should().Contain("english");
-	}
-
-	[Test]
-	public void MappingConfig_ComputesHash()
-	{
-		var config = LogEntry.MappingConfig();
-		var hash = config.ComputeHash();
-		hash.Should().NotBeNullOrEmpty();
-		hash.Should().HaveLength(16);
-	}
-
-	[Test]
 	public void Index_GeneratesFieldMappingDictionaries()
 	{
-		// PropertyToField maps C# property names to ES|QL field names
-		var propertyToField = LogEntry.ElasticsearchContext.FieldMapping.PropertyToField;
+		var propertyToField = TestMappingContext.LogEntry.FieldMapping.PropertyToField;
 		propertyToField["Timestamp"].Should().Be("@timestamp");
 		propertyToField["Level"].Should().Be("log.level");
 		propertyToField["Message"].Should().Be("message");
 		propertyToField["StatusCode"].Should().Be("statusCode");
 
-		// FieldToProperty maps ES|QL field names to C# property names
-		var fieldToProperty = LogEntry.ElasticsearchContext.FieldMapping.FieldToProperty;
+		var fieldToProperty = TestMappingContext.LogEntry.FieldMapping.FieldToProperty;
 		fieldToProperty["@timestamp"].Should().Be("Timestamp");
 		fieldToProperty["log.level"].Should().Be("Level");
 		fieldToProperty["message"].Should().Be("Message");
@@ -166,8 +140,7 @@ public class MappingGeneratorTests
 	[Test]
 	public void Index_GeneratesIgnoredPropertiesSet()
 	{
-		// InternalId has [JsonIgnore] and should be in IgnoredProperties
-		var ignoredProperties = LogEntry.ElasticsearchContext.IgnoredProperties;
+		var ignoredProperties = TestMappingContext.LogEntry.IgnoredProperties;
 		ignoredProperties.Should().Contain("InternalId");
 		ignoredProperties.Should().NotContain("Timestamp");
 		ignoredProperties.Should().NotContain("Message");
@@ -176,19 +149,15 @@ public class MappingGeneratorTests
 	[Test]
 	public void Index_GeneratesGetPropertyMap()
 	{
-		// GetPropertyMap returns a dictionary for deserialization
-		var propertyMap = LogEntry.ElasticsearchContext.GetPropertyMap();
+		var propertyMap = TestMappingContext.LogEntry.GetPropertyMap();
 
-		// Should map by field name
 		propertyMap["@timestamp"].Name.Should().Be("Timestamp");
 		propertyMap["log.level"].Name.Should().Be("Level");
 		propertyMap["message"].Name.Should().Be("Message");
 
-		// Should also map by property name
 		propertyMap["Timestamp"].Name.Should().Be("Timestamp");
 		propertyMap["Level"].Name.Should().Be("Level");
 
-		// Ignored properties should not be in the map
 		propertyMap.Should().NotContainKey("InternalId");
 		propertyMap.Should().NotContainKey("internalId");
 	}
@@ -196,8 +165,49 @@ public class MappingGeneratorTests
 	[Test]
 	public void SimpleDocument_GeneratesEmptyIgnoredPropertiesSet()
 	{
-		// SimpleDocument has no [JsonIgnore] properties
-		var ignoredProperties = SimpleDocument.ElasticsearchContext.IgnoredProperties;
+		var ignoredProperties = TestMappingContext.SimpleDocument.IgnoredProperties;
 		ignoredProperties.Should().BeEmpty();
+	}
+
+	[Test]
+	public void Context_AllProperty_ContainsAllRegistrations()
+	{
+		var all = TestMappingContext.All;
+		all.Should().HaveCount(4);
+	}
+
+	[Test]
+	public void Context_AllProperty_ContainsValidContexts()
+	{
+		foreach (var ctx in TestMappingContext.All)
+		{
+			ctx.Hash.Should().NotBeNullOrEmpty();
+			ctx.GetSettingsJson().Should().NotBeNullOrEmpty();
+			ctx.GetMappingsJson().Should().NotBeNullOrEmpty();
+		}
+	}
+
+	[Test]
+	public void Context_ConfigureAnalysis_DelegateIsWired()
+	{
+		// LogEntry ConfigureAnalysis is on the context, delegate should still be set
+		TestMappingContext.LogEntry.Context.ConfigureAnalysis.Should().NotBeNull();
+	}
+
+	[Test]
+	public void Context_ConfigureAnalysis_ProducesAnalysisComponents()
+	{
+		// Verify analysis components are generated from context method
+		var builder = new Analysis.AnalysisBuilder();
+		var result = TestMappingContext.LogEntry.Context.ConfigureAnalysis!(builder);
+		result.Should().NotBeNull();
+	}
+
+	[Test]
+	public void Context_MixedStrategies_AllCompile()
+	{
+		TestMappingContext.All.Should().HaveCount(4);
+		foreach (var ctx in TestMappingContext.All)
+			ctx.Hash.Should().NotBeNullOrEmpty();
 	}
 }

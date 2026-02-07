@@ -15,8 +15,10 @@ namespace Elastic.Esql.Execution;
 /// <summary>
 /// Materializes ES|QL query results into C# objects.
 /// </summary>
-public class ResultMaterializer
+public class ResultMaterializer(FieldNameResolver? fieldNameResolver = null)
 {
+	private readonly FieldNameResolver _resolver = fieldNameResolver ?? new();
+
 	/// <summary>
 	/// Materializes query results to typed objects.
 	/// </summary>
@@ -75,10 +77,10 @@ public class ResultMaterializer
 		return map;
 	}
 
-	private static Dictionary<string, PropertyInfo> BuildPropertyMap<T>()
+	private Dictionary<string, PropertyInfo> BuildPropertyMap<T>()
 	{
 		// Try generated property map first (eliminates per-property reflection)
-		var generatedMap = FieldNameResolver.GetGeneratedPropertyMap(typeof(T));
+		var generatedMap = _resolver.GetGeneratedPropertyMap(typeof(T));
 		if (generatedMap != null)
 		{
 			// Wrap in case-insensitive dictionary for compatibility
@@ -92,14 +94,14 @@ public class ResultMaterializer
 		return BuildPropertyMapViaReflection<T>();
 	}
 
-	private static Dictionary<string, PropertyInfo> BuildPropertyMapViaReflection<T>()
+	private Dictionary<string, PropertyInfo> BuildPropertyMapViaReflection<T>()
 	{
 		var map = new Dictionary<string, PropertyInfo>(StringComparer.OrdinalIgnoreCase);
 		var properties = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance);
 
 		foreach (var prop in properties)
 		{
-			if (FieldNameResolver.IsIgnored(prop))
+			if (_resolver.IsIgnored(prop))
 				continue;
 
 			// Get the field name from JsonPropertyName or use camelCase

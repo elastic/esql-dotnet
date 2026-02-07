@@ -51,7 +51,7 @@ public class EsqlClient(EsqlClientSettings settings) : IDisposable
 	public async Task<List<T>> QueryAsync<T>(string esql, CancellationToken cancellationToken = default)
 	{
 		var response = await _executor.ExecuteAsync(esql, cancellationToken);
-		var materializer = new ResultMaterializer();
+		var materializer = new ResultMaterializer(new TypeMapping.FieldNameResolver(Settings.MappingContext));
 
 		var query = new QueryModel.EsqlQuery { ElementType = typeof(T) };
 		return materializer.Materialize<T>(response, query).ToList();
@@ -61,7 +61,7 @@ public class EsqlClient(EsqlClientSettings settings) : IDisposable
 	public async Task<List<T>> QueryAsync<T>(string esql, EsqlQueryOptions options, CancellationToken cancellationToken = default)
 	{
 		var response = await _executor.ExecuteAsync(esql, options, cancellationToken);
-		var materializer = new ResultMaterializer();
+		var materializer = new ResultMaterializer(new TypeMapping.FieldNameResolver(Settings.MappingContext));
 
 		var query = new QueryModel.EsqlQuery { ElementType = typeof(T) };
 		return materializer.Materialize<T>(response, query).ToList();

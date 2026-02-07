@@ -5,11 +5,12 @@
 namespace Elastic.Mapping;
 
 /// <summary>
-/// Specifies Elasticsearch index configuration for a type.
-/// Use for traditional indices with aliases, patterns, and shard configuration.
+/// Registers a type as an Elasticsearch index within an <see cref="ElasticsearchMappingContextAttribute"/> context.
+/// Applied to the context class, not the domain type.
 /// </summary>
-[AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct, AllowMultiple = false, Inherited = true)]
-public sealed class IndexAttribute : Attribute
+/// <typeparam name="T">The domain type to map to an Elasticsearch index.</typeparam>
+[AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
+public sealed class IndexAttribute<T> : Attribute where T : class
 {
 	/// <summary>Concrete index name (e.g., "projects").</summary>
 	public string? Name { get; init; }
@@ -37,4 +38,7 @@ public sealed class IndexAttribute : Attribute
 
 	/// <summary>Dynamic mapping behavior.</summary>
 	public bool Dynamic { get; init; } = true;
+
+	/// <summary>Optional static class containing ConfigureAnalysis/ConfigureMappings methods.</summary>
+	public Type? Configuration { get; init; }
 }

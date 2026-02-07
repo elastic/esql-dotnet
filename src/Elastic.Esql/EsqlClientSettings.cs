@@ -2,6 +2,7 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using Elastic.Mapping;
 using Elastic.Transport;
 
 namespace Elastic.Esql;
@@ -14,6 +15,9 @@ public class EsqlClientSettings
 
 	/// <summary>Default query options applied to all queries unless overridden.</summary>
 	public EsqlQueryDefaults Defaults { get; init; } = new();
+
+	/// <summary>The mapping context providing type metadata for field resolution.</summary>
+	public IElasticsearchMappingContext? MappingContext { get; init; }
 
 	/// <summary>Creates settings with a node URI.</summary>
 	public EsqlClientSettings(Uri nodeUri)
@@ -38,16 +42,18 @@ public class EsqlClientSettings
 	}
 
 	/// <summary>Creates in-memory settings for string generation only.</summary>
-	private EsqlClientSettings()
+	private EsqlClientSettings(IElasticsearchMappingContext? mappingContext = null)
 	{
 		var pool = new SingleNodePool(new Uri("http://localhost:9200"));
 		var config = new TransportConfiguration(pool, new InMemoryRequestInvoker());
 		Transport = new DistributedTransport(config);
+		MappingContext = mappingContext;
 	}
 
 	/// <summary>
 	/// Creates settings for in-memory/string generation only usage.
 	/// No actual Elasticsearch connection is made.
 	/// </summary>
-	public static EsqlClientSettings InMemory() => new();
+	public static EsqlClientSettings InMemory(IElasticsearchMappingContext? mappingContext = null) =>
+		new(mappingContext);
 }

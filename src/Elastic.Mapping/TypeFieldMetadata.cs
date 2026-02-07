@@ -1,0 +1,17 @@
+// Licensed to Elasticsearch B.V under one or more agreements.
+// Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
+// See the LICENSE file in the project root for more information
+
+using System.Reflection;
+
+namespace Elastic.Mapping;
+
+/// <summary>
+/// Metadata for a type's field mappings, discovered from generated code or reflection.
+/// </summary>
+public sealed record TypeFieldMetadata(
+	IReadOnlyDictionary<string, string> PropertyToField,
+	IReadOnlyCollection<string> IgnoredProperties,
+	string? SearchPattern,
+	Func<Dictionary<string, PropertyInfo>>? GetPropertyMapFunc
+);

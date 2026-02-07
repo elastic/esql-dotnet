@@ -9,7 +9,7 @@ public class StringFormattingTests
 	[Test]
 	public void FormatValue_String_ReturnsQuoted()
 	{
-		var result = EsqlTypeMapper.FormatValue("hello");
+		var result = EsqlFormatting.FormatValue("hello");
 
 		_ = result.Should().Be("\"hello\"");
 	}
@@ -17,7 +17,7 @@ public class StringFormattingTests
 	[Test]
 	public void FormatValue_EmptyString_ReturnsEmptyQuoted()
 	{
-		var result = EsqlTypeMapper.FormatValue("");
+		var result = EsqlFormatting.FormatValue("");
 
 		_ = result.Should().Be("\"\"");
 	}
@@ -25,7 +25,7 @@ public class StringFormattingTests
 	[Test]
 	public void FormatValue_StringWithQuotes_EscapesQuotes()
 	{
-		var result = EsqlTypeMapper.FormatValue("say \"hello\"");
+		var result = EsqlFormatting.FormatValue("say \"hello\"");
 
 		_ = result.Should().Be("\"say \\\"hello\\\"\"");
 	}
@@ -33,7 +33,7 @@ public class StringFormattingTests
 	[Test]
 	public void FormatValue_StringWithBackslash_EscapesBackslash()
 	{
-		var result = EsqlTypeMapper.FormatValue("path\\to\\file");
+		var result = EsqlFormatting.FormatValue("path\\to\\file");
 
 		_ = result.Should().Be("\"path\\\\to\\\\file\"");
 	}
@@ -41,7 +41,7 @@ public class StringFormattingTests
 	[Test]
 	public void FormatValue_StringWithNewline_EscapesNewline()
 	{
-		var result = EsqlTypeMapper.FormatValue("line1\nline2");
+		var result = EsqlFormatting.FormatValue("line1\nline2");
 
 		_ = result.Should().Be("\"line1\\nline2\"");
 	}
@@ -49,7 +49,7 @@ public class StringFormattingTests
 	[Test]
 	public void FormatValue_StringWithTab_EscapesTab()
 	{
-		var result = EsqlTypeMapper.FormatValue("col1\tcol2");
+		var result = EsqlFormatting.FormatValue("col1\tcol2");
 
 		_ = result.Should().Be("\"col1\\tcol2\"");
 	}

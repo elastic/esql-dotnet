@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information
 
 using System.Text.Json.Serialization;
+using Elastic.Examples.Domain;
 using Elastic.Mapping;
 using Elastic.Mapping.Analysis;
 using static Elastic.Mapping.Analysis.BuiltInAnalysis;
@@ -13,8 +14,7 @@ namespace Elastic.Examples.Domain.Models;
 /// Application metrics for monitoring and alerting.
 /// Demonstrates data stream pattern for metrics time-series data.
 /// </summary>
-[DataStream(Type = "metrics", Dataset = "ecommerce.app", Namespace = "production")]
-public partial class ApplicationMetric
+public class ApplicationMetric : IConfigureElasticsearch<ApplicationMetricMappingsBuilder>
 {
 	[JsonPropertyName("@timestamp")]
 	[Date(Format = "strict_date_optional_time")]

@@ -10,7 +10,7 @@ namespace Elastic.Esql.Execution;
 /// Represents an async ES|QL query that auto-cleans up on disposal.
 /// Implements IAsyncDisposable to automatically DELETE the async query.
 /// </summary>
-public sealed class EsqlAsyncQuery<T>(EsqlExecutor executor, EsqlResponse response) : IAsyncDisposable
+public sealed class EsqlAsyncQuery<T>(EsqlExecutor executor, EsqlResponse response, Elastic.Esql.TypeMapping.FieldNameResolver? fieldNameResolver = null) : IAsyncDisposable
 {
 	private bool _disposed;
 
@@ -33,7 +33,7 @@ public sealed class EsqlAsyncQuery<T>(EsqlExecutor executor, EsqlResponse respon
 			? await WaitForCompletionAsync(ct)
 			: response;
 
-		var materializer = new ResultMaterializer();
+		var materializer = new ResultMaterializer(fieldNameResolver);
 		var query = new EsqlQuery { ElementType = typeof(T) };
 		return materializer.Materialize<T>(finalResponse, query).ToList();
 	}

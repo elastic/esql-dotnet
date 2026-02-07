@@ -9,5 +9,9 @@ namespace Elastic.Esql.Tests;
 /// </summary>
 public abstract class EsqlTestBase
 {
-	protected static readonly EsqlClient Client = new(EsqlClientSettings.InMemory());
+	protected static readonly EsqlClient Client = new(
+		EsqlClientSettings.InMemory(EsqlTestMappingContext.Instance)
+	);
+
+	static EsqlTestBase() => Esql.Configure(EsqlTestMappingContext.Instance);
 }

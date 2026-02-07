@@ -20,12 +20,6 @@ internal static class ConfigureAnalysisParser
 	{
 		ct.ThrowIfCancellationRequested();
 
-		var analyzers = ImmutableArray.CreateBuilder<AnalysisComponentModel>();
-		var tokenizers = ImmutableArray.CreateBuilder<AnalysisComponentModel>();
-		var tokenFilters = ImmutableArray.CreateBuilder<AnalysisComponentModel>();
-		var charFilters = ImmutableArray.CreateBuilder<AnalysisComponentModel>();
-		var normalizers = ImmutableArray.CreateBuilder<AnalysisComponentModel>();
-
 		// Find the ConfigureAnalysis method
 		var configureAnalysisMethod = typeSymbol.GetMembers("ConfigureAnalysis")
 			.OfType<IMethodSymbol>()
@@ -34,8 +28,25 @@ internal static class ConfigureAnalysisParser
 		if (configureAnalysisMethod == null)
 			return AnalysisComponentsModel.Empty;
 
+		return ParseFromMethod(configureAnalysisMethod, ct);
+	}
+
+	/// <summary>
+	/// Parses analysis components from a specific method symbol.
+	/// Used when the method lives on a context class or configuration class.
+	/// </summary>
+	public static AnalysisComponentsModel ParseFromMethod(IMethodSymbol method, CancellationToken ct)
+	{
+		ct.ThrowIfCancellationRequested();
+
+		var analyzers = ImmutableArray.CreateBuilder<AnalysisComponentModel>();
+		var tokenizers = ImmutableArray.CreateBuilder<AnalysisComponentModel>();
+		var tokenFilters = ImmutableArray.CreateBuilder<AnalysisComponentModel>();
+		var charFilters = ImmutableArray.CreateBuilder<AnalysisComponentModel>();
+		var normalizers = ImmutableArray.CreateBuilder<AnalysisComponentModel>();
+
 		// Get the syntax for the method
-		var syntaxRef = configureAnalysisMethod.DeclaringSyntaxReferences.FirstOrDefault();
+		var syntaxRef = method.DeclaringSyntaxReferences.FirstOrDefault();
 		if (syntaxRef == null)
 			return AnalysisComponentsModel.Empty;
 

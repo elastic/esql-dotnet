@@ -122,7 +122,7 @@ public class EsqlQueryProvider(EsqlQueryContext context) : IQueryProvider
 		var esqlString = GenerateEsqlString(esqlQuery);
 
 		var response = await _executor.ExecuteAsync(esqlString, cancellationToken);
-		var materializer = new ResultMaterializer();
+		var materializer = new ResultMaterializer(Context.FieldNameResolver);
 
 		foreach (var item in materializer.Materialize<T>(response, esqlQuery))
 		{
@@ -186,15 +186,15 @@ public class EsqlQueryProvider(EsqlQueryContext context) : IQueryProvider
 		return false;
 	}
 
-	private static TResult MaterializeScalar<TResult>(EsqlResponse response)
+	private TResult MaterializeScalar<TResult>(EsqlResponse response)
 	{
-		var materializer = new ResultMaterializer();
+		var materializer = new ResultMaterializer(Context.FieldNameResolver);
 		return materializer.MaterializeScalar<TResult>(response);
 	}
 
 	private TResult MaterializeSingle<TResult>(EsqlResponse response, EsqlQuery query, Expression expression)
 	{
-		var materializer = new ResultMaterializer();
+		var materializer = new ResultMaterializer(Context.FieldNameResolver);
 		var items = materializer.Materialize<TResult>(response, query).ToList();
 
 		var methodName = (expression as MethodCallExpression)?.Method.Name ?? "";
@@ -213,7 +213,7 @@ public class EsqlQueryProvider(EsqlQueryContext context) : IQueryProvider
 
 	private System.Collections.IEnumerable MaterializeCollection(EsqlResponse response, Type elementType, EsqlQuery query)
 	{
-		var materializer = new ResultMaterializer();
+		var materializer = new ResultMaterializer(Context.FieldNameResolver);
 		var materializeMethod = typeof(ResultMaterializer)
 			.GetMethod(nameof(ResultMaterializer.Materialize))!
 			.MakeGenericMethod(elementType);

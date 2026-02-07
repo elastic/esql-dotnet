@@ -7,10 +7,20 @@ using Elastic.Mapping;
 
 namespace Elastic.Esql.Tests;
 
+// ============================================================================
+// MAPPING CONTEXT: registers all test types for ES|QL tests
+// ============================================================================
+
+[ElasticsearchMappingContext]
+[Index<LogEntry>(SearchPattern = "logs-*")]
+[Index<SimpleDocument>(Name = "simple-docs")]
+[Index<MetricDocument>(SearchPattern = "metrics-*")]
+[Index<EventDocument>(SearchPattern = "events-*")]
+public static partial class EsqlTestMappingContext;
+
 /// <summary>
 /// Primary test document type with various field types and attributes.
 /// </summary>
-[Index(SearchPattern = "logs-*")]
 public class LogEntry
 {
 	[JsonPropertyName("@timestamp")]
@@ -48,7 +58,6 @@ public class SimpleDocument
 /// <summary>
 /// Document with nullable properties.
 /// </summary>
-[Index(SearchPattern = "metrics-*")]
 public class MetricDocument
 {
 	public DateTime Timestamp { get; set; }
@@ -73,7 +82,6 @@ public enum LogLevel
 /// <summary>
 /// Document with enum property.
 /// </summary>
-[Index(SearchPattern = "events-*")]
 public class EventDocument
 {
 	public DateTime Timestamp { get; set; }

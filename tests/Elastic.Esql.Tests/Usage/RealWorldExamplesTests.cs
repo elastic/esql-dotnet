@@ -12,7 +12,7 @@ public class RealWorldExamplesTests : EsqlTestBase
 	[Test]
 	public void ErrorMonitoringDashboard()
 	{
-		var esql = Esql.From<LogEntry>()
+		var esql = Esql.InMemory<LogEntry>()
 			.Where(l => l.StatusCode >= 500)
 			.Where(l => l.Level == "ERROR")
 			.OrderByDescending(l => l.Timestamp)
@@ -32,7 +32,7 @@ public class RealWorldExamplesTests : EsqlTestBase
 	[Test]
 	public void SlowRequestAnalysis()
 	{
-		var esql = Esql.From<LogEntry>()
+		var esql = Esql.InMemory<LogEntry>()
 			.Where(l => l.Duration > 5000)
 			.OrderByDescending(l => l.Duration)
 			.Select(l => new { l.Message, l.Duration, l.Timestamp })
@@ -54,7 +54,7 @@ public class RealWorldExamplesTests : EsqlTestBase
 	public void FilteringByMultipleCriteria()
 	{
 		var esql = (
-			from l in Esql.From<LogEntry>()
+			from l in Esql.InMemory<LogEntry>()
 			where l.Level == "ERROR" || l.Level == "WARNING"
 			where l.StatusCode >= 400
 			orderby l.Timestamp descending
@@ -73,7 +73,7 @@ public class RealWorldExamplesTests : EsqlTestBase
 	[Test]
 	public void MetricsQuery()
 	{
-		var esql = Esql.From<MetricDocument>()
+		var esql = Esql.InMemory<MetricDocument>()
 			.Where(m => m.Name == "cpu_usage")
 			.Where(m => m.Value > 80)
 			.OrderByDescending(m => m.Timestamp)
