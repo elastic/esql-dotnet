@@ -36,7 +36,7 @@ public sealed class ElasticsearchFixture : IAsyncDisposable
 
 		var transportConfig = new TransportConfiguration(new Uri(url), new ApiKey(apiKey));
 		var transport = new DistributedTransport(transportConfig);
-		var esqlSettings = new EsqlClientSettings(transport, new Uri(url));
+		var esqlSettings = new EsqlClientSettings(transport);
 		EsqlClient = new EsqlClient(esqlSettings);
 	}
 

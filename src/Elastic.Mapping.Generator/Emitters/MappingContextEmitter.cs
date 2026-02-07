@@ -147,7 +147,14 @@ internal static class MappingContextEmitter
 		sb.AppendLine($"{indent}\t\tSettingsHash,");
 		sb.AppendLine($"{indent}\t\tMappingsHash,");
 		sb.AppendLine($"{indent}\t\tIndexStrategy,");
-		sb.AppendLine($"{indent}\t\tSearchStrategy");
+		sb.AppendLine($"{indent}\t\tSearchStrategy,");
+
+		// Add ConfigureAnalysis delegate if the type has the method
+		if (model.HasConfigureAnalysis)
+			sb.AppendLine($"{indent}\t\tConfigureAnalysis: global::{model.FullyQualifiedName}.ConfigureAnalysis");
+		else
+			sb.AppendLine($"{indent}\t\tConfigureAnalysis: null");
+
 		sb.AppendLine($"{indent}\t);");
 		sb.AppendLine();
 

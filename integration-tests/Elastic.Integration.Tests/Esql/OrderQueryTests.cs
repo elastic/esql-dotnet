@@ -81,7 +81,7 @@ public class OrderQueryTests : IntegrationTestBase
 			.ToListAsync();
 
 		var linqResults = TestData.Orders
-			.Where(o => o.TotalAmount >= 100 && o.TotalAmount <= 500)
+			.Where(o => o.TotalAmount is >= 100 and <= 500)
 			.ToList();
 
 		esqlResults.Should().HaveCount(linqResults.Count);

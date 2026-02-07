@@ -9,32 +9,32 @@ namespace Elastic.Integration.Tests.Infrastructure;
 /// </summary>
 public static class SharedFixture
 {
-	private static ElasticsearchFixture? _fixture;
-	private static readonly SemaphoreSlim _lock = new(1, 1);
-	private static bool _initialized;
+	private static ElasticsearchFixture? Fixture;
+	private static readonly SemaphoreSlim Lock = new(1, 1);
+	private static bool Initialized;
 
 	public static async Task<ElasticsearchFixture> GetFixtureAsync()
 	{
-		await _lock.WaitAsync();
+		await Lock.WaitAsync();
 		try
 		{
-			if (_initialized && _fixture != null)
-				return _fixture;
+			if (Initialized && Fixture != null)
+				return Fixture;
 
-			_fixture = await ElasticsearchFixture.CreateAsync();
+			Fixture = await ElasticsearchFixture.CreateAsync();
 
-			if (!_fixture.DataIngested)
+			if (!Fixture.DataIngested)
 			{
-				await IngestHelper.IngestAllTestDataAsync(_fixture);
-				_fixture.MarkDataIngested();
+				await IngestHelper.IngestAllTestDataAsync(Fixture);
+				Fixture.MarkDataIngested();
 			}
 
-			_initialized = true;
-			return _fixture;
+			Initialized = true;
+			return Fixture;
 		}
 		finally
 		{
-			_lock.Release();
+			Lock.Release();
 		}
 	}
 }

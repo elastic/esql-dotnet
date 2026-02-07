@@ -6,73 +6,41 @@ using Elastic.Transport;
 
 namespace Elastic.Esql;
 
-/// <summary>
-/// Settings for the ES|QL client.
-/// </summary>
+/// <summary>Settings for the ES|QL client.</summary>
 public class EsqlClientSettings
 {
-	/// <summary>
-	/// The Elasticsearch node URI.
-	/// </summary>
-	public Uri NodeUri { get; }
-
-	/// <summary>
-	/// The HTTP transport to use.
-	/// </summary>
+	/// <summary>The HTTP transport to use for all requests.</summary>
 	public ITransport Transport { get; }
 
-	/// <summary>
-	/// The default request timeout.
-	/// </summary>
-	public TimeSpan RequestTimeout { get; set; } = TimeSpan.FromMinutes(1);
+	/// <summary>Default query options applied to all queries unless overridden.</summary>
+	public EsqlQueryDefaults Defaults { get; init; } = new();
 
-	/// <summary>
-	/// Whether to include profile information in queries.
-	/// </summary>
-	public bool IncludeProfile { get; set; }
-
-	/// <summary>
-	/// Whether to use columnar format for responses.
-	/// </summary>
-	public bool Columnar { get; set; }
-
-	/// <summary>
-	/// Creates settings with a node URI.
-	/// </summary>
+	/// <summary>Creates settings with a node URI.</summary>
 	public EsqlClientSettings(Uri nodeUri)
 	{
-		NodeUri = nodeUri ?? throw new ArgumentNullException(nameof(nodeUri));
+		ArgumentNullException.ThrowIfNull(nodeUri);
 		var config = new TransportConfiguration(nodeUri);
 		Transport = new DistributedTransport(config);
 	}
 
-	/// <summary>
-	/// Creates settings with a custom transport.
-	/// </summary>
-	public EsqlClientSettings(ITransport transport, Uri nodeUri)
+	/// <summary>Creates settings with a custom transport.</summary>
+	public EsqlClientSettings(ITransport transport)
 	{
 		Transport = transport ?? throw new ArgumentNullException(nameof(transport));
-		NodeUri = nodeUri ?? throw new ArgumentNullException(nameof(nodeUri));
 	}
 
-	/// <summary>
-	/// Creates settings with a connection pool.
-	/// </summary>
+	/// <summary>Creates settings with a connection pool.</summary>
 	public EsqlClientSettings(NodePool nodePool)
 	{
 		ArgumentNullException.ThrowIfNull(nodePool);
 		var config = new TransportConfiguration(nodePool);
 		Transport = new DistributedTransport(config);
-		NodeUri = nodePool.Nodes.FirstOrDefault()?.Uri ?? new Uri("http://localhost:9200");
 	}
 
-	/// <summary>
-	/// Creates in-memory settings for string generation only.
-	/// </summary>
+	/// <summary>Creates in-memory settings for string generation only.</summary>
 	private EsqlClientSettings()
 	{
-		NodeUri = new Uri("http://localhost:9200");
-		var pool = new SingleNodePool(NodeUri);
+		var pool = new SingleNodePool(new Uri("http://localhost:9200"));
 		var config = new TransportConfiguration(pool, new InMemoryRequestInvoker());
 		Transport = new DistributedTransport(config);
 	}

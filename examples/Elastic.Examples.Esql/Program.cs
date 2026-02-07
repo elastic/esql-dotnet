@@ -29,7 +29,7 @@ WriteOutput($"[cyan]Elasticsearch:[/] {url}\n\n");
 
 // Create transport with authentication
 var transport = CreateTransport(url, apiKey);
-var settings = new EsqlClientSettings(transport, new Uri(url));
+var settings = new EsqlClientSettings(transport);
 using var client = new EsqlClient(settings);
 
 // Verify connection

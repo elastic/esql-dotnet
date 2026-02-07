@@ -10,6 +10,9 @@
     <Project Path="examples/Elastic.Examples.Ingest/Elastic.Examples.Ingest.csproj" />
     <Project Path="examples/Elastic.Examples.Mapping/Elastic.Examples.Mapping.csproj" />
   </Folder>
+  <Folder Name="/playground/">
+    <Project Path="playground/playground.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/Elastic.Esql/Elastic.Esql.csproj" />
     <Project Path="src/Elastic.Mapping.Generator/Elastic.Mapping.Generator.csproj" />

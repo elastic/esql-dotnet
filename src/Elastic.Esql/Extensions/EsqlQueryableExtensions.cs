@@ -189,4 +189,39 @@ public static class EsqlQueryableExtensions
 		string query) =>
 		// This will be handled by the WhereClauseVisitor when it sees EsqlFunctions.Match
 		queryable.Where(_ => Elastic.Esql.Functions.EsqlFunctions.Match(field, query));
+
+	/// <summary>Sets the timezone for this query.</summary>
+	public static IEsqlQueryable<T> WithTimeZone<T>(this IEsqlQueryable<T> queryable, string timeZone)
+	{
+		queryable.Context.QueryOptions = (queryable.Context.QueryOptions ?? new EsqlQueryOptions()) with { TimeZone = timeZone };
+		return queryable;
+	}
+
+	/// <summary>Sets the locale for this query.</summary>
+	public static IEsqlQueryable<T> WithLocale<T>(this IEsqlQueryable<T> queryable, string locale)
+	{
+		queryable.Context.QueryOptions = (queryable.Context.QueryOptions ?? new EsqlQueryOptions()) with { Locale = locale };
+		return queryable;
+	}
+
+	/// <summary>Sets parameters for this query (for ? placeholders in raw ES|QL).</summary>
+	public static IEsqlQueryable<T> WithParameters<T>(this IEsqlQueryable<T> queryable, params object[] parameters)
+	{
+		queryable.Context.QueryOptions = (queryable.Context.QueryOptions ?? new EsqlQueryOptions()) with { Parameters = parameters };
+		return queryable;
+	}
+
+	/// <summary>Includes profiling information in the response.</summary>
+	public static IEsqlQueryable<T> WithProfile<T>(this IEsqlQueryable<T> queryable)
+	{
+		queryable.Context.QueryOptions = (queryable.Context.QueryOptions ?? new EsqlQueryOptions()) with { IncludeProfile = true };
+		return queryable;
+	}
+
+	/// <summary>Sets columnar format for this query.</summary>
+	public static IEsqlQueryable<T> WithColumnar<T>(this IEsqlQueryable<T> queryable, bool columnar = true)
+	{
+		queryable.Context.QueryOptions = (queryable.Context.QueryOptions ?? new EsqlQueryOptions()) with { Columnar = columnar };
+		return queryable;
+	}
 }

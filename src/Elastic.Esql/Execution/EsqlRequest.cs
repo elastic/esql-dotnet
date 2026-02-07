@@ -44,4 +44,11 @@ public class EsqlRequest
 	[JsonPropertyName("locale")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? Locale { get; set; }
+
+	/// <summary>
+	/// Timezone for date operations.
+	/// </summary>
+	[JsonPropertyName("time_zone")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? TimeZone { get; set; }
 }

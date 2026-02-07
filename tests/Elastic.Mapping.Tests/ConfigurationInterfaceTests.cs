@@ -68,6 +68,27 @@ public class ConfigurationInterfaceTests
 		typeof(IHasAnalysisConfiguration).IsAssignableFrom(typeof(SimpleDocument)).Should().BeFalse();
 	}
 
+	[Test]
+	public void Context_ConfigureAnalysisDelegate_PopulatedForLogEntry()
+	{
+		// Verify the delegate is populated in the context for types with ConfigureAnalysis
+		var context = LogEntry.Context;
+		context.ConfigureAnalysis.Should().NotBeNull();
+
+		// Verify invoking the delegate works
+		var builder = context.ConfigureAnalysis!(new AnalysisBuilder());
+		builder.Should().NotBeNull();
+		builder.HasConfiguration.Should().BeTrue();
+	}
+
+	[Test]
+	public void Context_ConfigureAnalysisDelegate_NullForSimpleDocument()
+	{
+		// Verify the delegate is null for types without ConfigureAnalysis
+		var context = SimpleDocument.Context;
+		context.ConfigureAnalysis.Should().BeNull();
+	}
+
 	private static AnalysisBuilder InvokeConfigureAnalysisViaInterface<T>() where T : IHasAnalysisConfiguration =>
 		T.ConfigureAnalysis(new AnalysisBuilder());
 

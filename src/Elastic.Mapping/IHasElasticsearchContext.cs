@@ -2,6 +2,8 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using Elastic.Mapping.Analysis;
+
 namespace Elastic.Mapping;
 
 #if NET8_0_OR_GREATER
@@ -94,6 +96,7 @@ public interface IHasElasticsearchContext
 /// <param name="MappingsHash">Hash of mappings JSON only.</param>
 /// <param name="IndexStrategy">Write target configuration (alias, data stream name, date pattern).</param>
 /// <param name="SearchStrategy">Search target configuration (pattern, read alias).</param>
+/// <param name="ConfigureAnalysis">Optional delegate for configuring analysis settings at runtime.</param>
 public record ElasticsearchTypeContext(
 	Func<string> GetSettingsJson,
 	Func<string> GetMappingsJson,
@@ -102,5 +105,6 @@ public record ElasticsearchTypeContext(
 	string SettingsHash,
 	string MappingsHash,
 	IndexStrategy? IndexStrategy,
-	SearchStrategy? SearchStrategy
+	SearchStrategy? SearchStrategy,
+	Func<AnalysisBuilder, AnalysisBuilder>? ConfigureAnalysis = null
 );

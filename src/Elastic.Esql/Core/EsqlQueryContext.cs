@@ -33,4 +33,9 @@ public class EsqlQueryContext(EsqlClientSettings settings)
 	/// The cancellation token for query execution.
 	/// </summary>
 	public CancellationToken CancellationToken { get; set; } = CancellationToken.None;
+
+	/// <summary>
+	/// Per-query options that override client defaults.
+	/// </summary>
+	public EsqlQueryOptions? QueryOptions { get; set; }
 }

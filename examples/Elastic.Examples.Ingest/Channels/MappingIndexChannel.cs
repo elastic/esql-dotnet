@@ -58,6 +58,8 @@ public class MappingIndexChannel<T>(
 	private static MappingIndexChannelOptions<T> ConfigureOptions(MappingIndexChannelOptions<T> options)
 	{
 		// Auto-set IndexFormat from context if not explicitly set
+		// Note: For fixed index names (no date patterns), set IndexFormat explicitly
+		// in the options when creating the channel
 		if (string.IsNullOrEmpty(options.IndexFormat))
 		{
 			var writeTarget = options.Context.IndexStrategy?.WriteTarget ?? typeof(T).Name.ToLowerInvariant();
@@ -182,31 +184,13 @@ public class MappingIndexChannel<T>(
 
 	private AnalysisSettings? GetAnalysisSettings()
 	{
-		// Check if type T has a ConfigureAnalysis static method (implements IHasAnalysisConfiguration)
-		var configureMethod = typeof(T).GetMethod(
-			"ConfigureAnalysis",
-			System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static,
-			null,
-			[typeof(AnalysisBuilder)],
-			null
-		);
-
-		if (configureMethod == null)
+		var configure = _options.Context.ConfigureAnalysis;
+		if (configure == null)
 			return null;
 
-		try
-		{
-			var builder = new AnalysisBuilder();
-			var result = configureMethod.Invoke(null, [builder]);
-			if (result is AnalysisBuilder returnedBuilder)
-				return returnedBuilder.Build();
-		}
-		catch
-		{
-			// If reflection fails, continue without analysis
-		}
-
-		return null;
+		var builder = new AnalysisBuilder();
+		var result = configure(builder);
+		return result.Build();
 	}
 
 	private static string CreateIndexTemplateBody(string indexName, string componentTemplate, string hash)

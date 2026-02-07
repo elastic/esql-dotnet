@@ -65,7 +65,7 @@ public class ProductQueryTests : IntegrationTestBase
 			.ToListAsync();
 
 		var linqResults = TestData.Products
-			.Where(p => p.Price >= 100 && p.Price <= 500)
+			.Where(p => p.Price is >= 100 and <= 500)
 			.ToList();
 
 		esqlResults.Should().HaveCount(linqResults.Count);

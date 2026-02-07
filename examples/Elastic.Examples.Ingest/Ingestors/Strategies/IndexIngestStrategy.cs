@@ -143,7 +143,7 @@ public static class IndexIngestStrategy
 
 		// Create combined component template (settings + mappings together to pass analyzer validation)
 		callbacks.OnStatus($"Creating component template '{componentTemplateName}'...");
-		await CreateCombinedComponentTemplateAsync<T>(client, componentTemplateName, context.GetSettingsJson(), context.GetMappingsJson(), ct);
+		await CreateCombinedComponentTemplateAsync(client, componentTemplateName, context, ct);
 
 		callbacks.OnStatus($"Creating index template '{indexTemplateName}'...");
 		await CreateIndexTemplateAsync(client, indexTemplateName, componentTemplateName, context, ct);
@@ -186,15 +186,17 @@ public static class IndexIngestStrategy
 		return null;
 	}
 
-	private static async Task CreateCombinedComponentTemplateAsync<T>(
+	private static async Task CreateCombinedComponentTemplateAsync(
 		ElasticsearchClient client,
 		string name,
-		string settingsJson,
-		string mappingsJson,
-		CancellationToken ct) where T : class
+		ElasticsearchTypeContext context,
+		CancellationToken ct)
 	{
-		// Merge analysis settings from ConfigureAnalysis if the type implements IHasAnalysisConfiguration
-		var analysisSettings = GetAnalysisSettings<T>();
+		var settingsJson = context.GetSettingsJson();
+		var mappingsJson = context.GetMappingsJson();
+
+		// Merge analysis settings from ConfigureAnalysis delegate if available
+		var analysisSettings = GetAnalysisSettings(context);
 		if (analysisSettings?.HasConfiguration == true)
 			settingsJson = analysisSettings.MergeIntoSettings(settingsJson);
 
@@ -232,32 +234,15 @@ public static class IndexIngestStrategy
 		);
 	}
 
-	private static AnalysisSettings? GetAnalysisSettings<T>() where T : class
+	private static AnalysisSettings? GetAnalysisSettings(ElasticsearchTypeContext context)
 	{
-		var configureMethod = typeof(T).GetMethod(
-			"ConfigureAnalysis",
-			System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static,
-			null,
-			[typeof(AnalysisBuilder)],
-			null
-		);
-
-		if (configureMethod == null)
+		var configure = context.ConfigureAnalysis;
+		if (configure == null)
 			return null;
 
-		try
-		{
-			var builder = new AnalysisBuilder();
-			var result = configureMethod.Invoke(null, [builder]);
-			if (result is AnalysisBuilder returnedBuilder)
-				return returnedBuilder.Build();
-		}
-		catch
-		{
-			// If reflection fails, continue without analysis
-		}
-
-		return null;
+		var builder = new AnalysisBuilder();
+		var result = configure(builder);
+		return result.Build();
 	}
 
 	private static async Task CreateIndexTemplateAsync(
