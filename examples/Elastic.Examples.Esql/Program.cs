@@ -4,7 +4,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Elastic.Esql;
+using Elastic.Clients.Esql;
 using Elastic.Esql.Core;
 using Elastic.Esql.Execution;
 using Elastic.Esql.Extensions;

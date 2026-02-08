@@ -2,15 +2,16 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using Elastic.Esql.Execution;
 using Elastic.Esql.QueryModel;
 
-namespace Elastic.Esql.Execution;
+namespace Elastic.Clients.Esql.Execution;
 
 /// <summary>
 /// Represents an async ES|QL query that auto-cleans up on disposal.
 /// Implements IAsyncDisposable to automatically DELETE the async query.
 /// </summary>
-public sealed class EsqlAsyncQuery<T>(EsqlExecutor executor, EsqlResponse response, Elastic.Mapping.TypeFieldMetadataResolver? resolver = null) : IAsyncDisposable
+public sealed class EsqlAsyncQuery<T>(EsqlTransportExecutor executor, EsqlResponse response, Elastic.Mapping.TypeFieldMetadataResolver? resolver = null) : IAsyncDisposable
 {
 	private bool _disposed;
 

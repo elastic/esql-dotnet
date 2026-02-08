@@ -5,6 +5,7 @@
 using System.Collections;
 using System.Linq.Expressions;
 using Elastic.Esql.Generation;
+using Elastic.Mapping;
 
 namespace Elastic.Esql.Core;
 
@@ -14,6 +15,21 @@ namespace Elastic.Esql.Core;
 public class EsqlQueryable<T> : IEsqlQueryable<T>, IOrderedQueryable<T>
 {
 	private readonly EsqlQueryProvider _provider;
+
+	/// <summary>
+	/// Creates a translation-only queryable using reflection for field resolution.
+	/// </summary>
+	public EsqlQueryable() : this(new EsqlQueryProvider(new EsqlQueryContext()))
+	{
+	}
+
+	/// <summary>
+	/// Creates a translation-only queryable with an explicit mapping context for field resolution.
+	/// </summary>
+	public EsqlQueryable(IElasticsearchMappingContext? mappingContext)
+		: this(new EsqlQueryProvider(new EsqlQueryContext(mappingContext)))
+	{
+	}
 
 	/// <summary>
 	/// Creates a new queryable from a constant (root query).

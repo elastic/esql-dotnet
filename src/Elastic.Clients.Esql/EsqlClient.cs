@@ -2,18 +2,20 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using Elastic.Clients.Esql.Execution;
+using Elastic.Esql;
 using Elastic.Esql.Core;
 using Elastic.Esql.Execution;
 using Elastic.Esql.Extensions;
 using Elastic.Mapping;
 using Elastic.Transport;
 
-namespace Elastic.Esql;
+namespace Elastic.Clients.Esql;
 
 /// <summary>Main entry point for ES|QL queries.</summary>
 public class EsqlClient(EsqlClientSettings settings) : IDisposable
 {
-	private readonly EsqlExecutor _executor = new(settings);
+	private readonly EsqlTransportExecutor _executor = new(settings);
 	private bool _disposed;
 
 	/// <summary>Creates a new ES|QL client with the specified node URI.</summary>
@@ -39,7 +41,7 @@ public class EsqlClient(EsqlClientSettings settings) : IDisposable
 	/// <typeparam name="T">The document type. Should have EsqlIndex attribute or will use type name as index.</typeparam>
 	public IEsqlQueryable<T> Query<T>() where T : class
 	{
-		var context = new EsqlQueryContext(Settings);
+		var context = new EsqlQueryContext(Settings.MappingContext, _executor);
 		var provider = new EsqlQueryProvider(context);
 		return new EsqlQueryable<T>(provider);
 	}
@@ -47,7 +49,7 @@ public class EsqlClient(EsqlClientSettings settings) : IDisposable
 	/// <summary>Creates a strongly-typed queryable for the specified index pattern.</summary>
 	public IEsqlQueryable<T> Query<T>(string indexPattern) where T : class
 	{
-		var context = new EsqlQueryContext(Settings) { IndexPattern = indexPattern };
+		var context = new EsqlQueryContext(Settings.MappingContext, _executor) { IndexPattern = indexPattern };
 		var provider = new EsqlQueryProvider(context);
 		return new EsqlQueryable<T>(provider);
 	}
@@ -56,9 +58,9 @@ public class EsqlClient(EsqlClientSettings settings) : IDisposable
 	public async Task<List<T>> QueryAsync<T>(string esql, CancellationToken cancellationToken = default)
 	{
 		var response = await _executor.ExecuteAsync(esql, cancellationToken);
-		var materializer = new ResultMaterializer(new Mapping.TypeFieldMetadataResolver(Settings.MappingContext));
+		var materializer = new ResultMaterializer(new TypeFieldMetadataResolver(Settings.MappingContext));
 
-		var query = new QueryModel.EsqlQuery { ElementType = typeof(T) };
+		var query = new Elastic.Esql.QueryModel.EsqlQuery { ElementType = typeof(T) };
 		return materializer.Materialize<T>(response, query).ToList();
 	}
 
@@ -66,9 +68,9 @@ public class EsqlClient(EsqlClientSettings settings) : IDisposable
 	public async Task<List<T>> QueryAsync<T>(string esql, EsqlQueryOptions options, CancellationToken cancellationToken = default)
 	{
 		var response = await _executor.ExecuteAsync(esql, options, cancellationToken);
-		var materializer = new ResultMaterializer(new Mapping.TypeFieldMetadataResolver(Settings.MappingContext));
+		var materializer = new ResultMaterializer(new TypeFieldMetadataResolver(Settings.MappingContext));
 
-		var query = new QueryModel.EsqlQuery { ElementType = typeof(T) };
+		var query = new Elastic.Esql.QueryModel.EsqlQuery { ElementType = typeof(T) };
 		return materializer.Materialize<T>(response, query).ToList();
 	}
 
@@ -79,18 +81,6 @@ public class EsqlClient(EsqlClientSettings settings) : IDisposable
 	/// <summary>
 	/// Executes an ES|QL query using LINQ expression or query syntax.
 	/// </summary>
-	/// <example>
-	/// // Method syntax
-	/// await client.QueryAsync&lt;Log&gt;(q =&gt; q.Where(l =&gt; l.Level == "ERROR").Take(10));
-	///
-	/// // Query syntax
-	/// await client.QueryAsync&lt;Log&gt;(q =&gt;
-	///     from log in q
-	///     where log.Level == "ERROR"
-	///     orderby log.Timestamp descending
-	///     select log
-	/// );
-	/// </example>
 	public async Task<List<T>> QueryAsync<T>(
 		Func<IQueryable<T>, IQueryable<T>> query,
 		CancellationToken cancellationToken = default) where T : class

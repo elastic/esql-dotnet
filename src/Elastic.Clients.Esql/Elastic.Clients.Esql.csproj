@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
 		<TargetFramework>net10.0</TargetFramework>
@@ -7,6 +7,11 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+		<PackageReference Include="Elastic.Transport" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\Elastic.Esql\Elastic.Esql.csproj" />
 		<ProjectReference Include="..\Elastic.Mapping\Elastic.Mapping.csproj" />
 	</ItemGroup>
 

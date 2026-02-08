@@ -19,6 +19,7 @@
 		<ProjectReference Include="$(SolutionRoot)\aspire\aspire.csproj" />
 		<ProjectReference Include="$(SolutionRoot)\examples\Elastic.Examples.Ingest\Elastic.Examples.Ingest.csproj" />
 		<ProjectReference Include="$(SolutionRoot)\examples\Elastic.Examples.Domain\Elastic.Examples.Domain.csproj" />
+		<ProjectReference Include="$(SolutionRoot)\src\Elastic.Clients.Esql\Elastic.Clients.Esql.csproj" />
 		<ProjectReference Include="$(SolutionRoot)\src\Elastic.Esql\Elastic.Esql.csproj" />
 	</ItemGroup>
 

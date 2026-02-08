@@ -4,6 +4,7 @@
 
 using Aspire.Hosting;
 using Aspire.Hosting.Testing;
+using Elastic.Clients.Esql;
 using Elastic.Transport;
 
 namespace Elastic.Integration.Tests.Infrastructure;

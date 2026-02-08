@@ -2,10 +2,11 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using Elastic.Esql;
 using Elastic.Mapping;
 using Elastic.Transport;
 
-namespace Elastic.Esql;
+namespace Elastic.Clients.Esql;
 
 /// <summary>Settings for the ES|QL client.</summary>
 public class EsqlClientSettings

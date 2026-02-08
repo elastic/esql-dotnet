@@ -19,7 +19,6 @@ namespace Elastic.Esql.Core;
 /// </remarks>
 public class EsqlQueryProvider(EsqlQueryContext context) : IQueryProvider
 {
-	private readonly EsqlExecutor _executor = new(context.Settings);
 
 	/// <summary>
 	/// Gets the query context.
@@ -55,6 +54,7 @@ public class EsqlQueryProvider(EsqlQueryContext context) : IQueryProvider
 	/// </summary>
 	public async Task<TResult> ExecuteAsync<TResult>(Expression expression, CancellationToken cancellationToken)
 	{
+		var executor = Context.Executor ?? throw new InvalidOperationException("No query executor configured. Provide an IEsqlQueryExecutor to execute queries.");
 		var esqlQuery = TranslateExpression(expression);
 		var esqlString = GenerateEsqlString(esqlQuery);
 
@@ -64,19 +64,19 @@ public class EsqlQueryProvider(EsqlQueryContext context) : IQueryProvider
 		if (IsScalarResult(expression))
 		{
 			// Scalar aggregation (Count, Sum, etc.)
-			var response = await _executor.ExecuteAsync(esqlString, cancellationToken);
+			var response = await executor.ExecuteAsync(esqlString, cancellationToken);
 			return MaterializeScalar<TResult>(response);
 		}
 
 		if (IsSingleResult(expression))
 		{
 			// First, FirstOrDefault, Single, SingleOrDefault
-			var response = await _executor.ExecuteAsync(esqlString, cancellationToken);
+			var response = await executor.ExecuteAsync(esqlString, cancellationToken);
 			return MaterializeSingle<TResult>(response, esqlQuery, expression);
 		}
 
 		// Collection result
-		var collectionResponse = await _executor.ExecuteAsync(esqlString, cancellationToken);
+		var collectionResponse = await executor.ExecuteAsync(esqlString, cancellationToken);
 		var elementType = GetElementTypeFromResult(resultType);
 		var items = MaterializeCollection(collectionResponse, elementType, esqlQuery);
 
@@ -118,10 +118,11 @@ public class EsqlQueryProvider(EsqlQueryContext context) : IQueryProvider
 		Expression expression,
 		[System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
 	{
+		var executor = Context.Executor ?? throw new InvalidOperationException("No query executor configured. Provide an IEsqlQueryExecutor to execute queries.");
 		var esqlQuery = TranslateExpression(expression);
 		var esqlString = GenerateEsqlString(esqlQuery);
 
-		var response = await _executor.ExecuteAsync(esqlString, cancellationToken);
+		var response = await executor.ExecuteAsync(esqlString, cancellationToken);
 		var materializer = new ResultMaterializer(Context.MetadataResolver);
 
 		foreach (var item in materializer.Materialize<T>(response, esqlQuery))

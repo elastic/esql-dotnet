@@ -115,13 +115,14 @@ public static class EsqlQueryableExtensions
 		this IEsqlQueryable<T> queryable,
 		CancellationToken cancellationToken = default)
 	{
+		var executor = queryable.Context.Executor ?? throw new InvalidOperationException("No query executor configured. Provide an IEsqlQueryExecutor to execute queries.");
+
 		// For count, we need to use STATS COUNT(*)
 		var esql = queryable.ToEsqlString();
 
 		// Append STATS COUNT(*) to the query
 		var countQuery = esql + Environment.NewLine + "| STATS count = COUNT(*)";
 
-		var executor = new EsqlExecutor(queryable.Context.Settings);
 		var response = await executor.ExecuteAsync(countQuery, cancellationToken);
 
 		var materializer = new ResultMaterializer();

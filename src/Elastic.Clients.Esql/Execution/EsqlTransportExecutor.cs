@@ -4,13 +4,15 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Elastic.Esql;
+using Elastic.Esql.Execution;
 using Elastic.Transport;
 using HttpMethod = Elastic.Transport.HttpMethod;
 
-namespace Elastic.Esql.Execution;
+namespace Elastic.Clients.Esql.Execution;
 
-/// <summary>Executes ES|QL queries against Elasticsearch.</summary>
-public class EsqlExecutor(EsqlClientSettings settings)
+/// <summary>Executes ES|QL queries against Elasticsearch via HTTP transport.</summary>
+public class EsqlTransportExecutor(EsqlClientSettings settings) : IEsqlQueryExecutor
 {
 	private readonly EsqlClientSettings _settings = settings ?? throw new ArgumentNullException(nameof(settings));
 
@@ -23,17 +25,17 @@ public class EsqlExecutor(EsqlClientSettings settings)
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
 	};
 
-	/// <summary>Executes an ES|QL query and returns the response.</summary>
-	public async Task<EsqlResponse> ExecuteAsync(string query, CancellationToken cancellationToken = default) =>
-		await ExecuteAsync(query, null, cancellationToken);
+	/// <inheritdoc/>
+	public async Task<EsqlResponse> ExecuteAsync(string esql, CancellationToken cancellationToken = default) =>
+		await ExecuteAsync(esql, null, cancellationToken);
 
 	/// <summary>Executes an ES|QL query with options and returns the response.</summary>
-	public async Task<EsqlResponse> ExecuteAsync(string query, EsqlQueryOptions? options, CancellationToken cancellationToken = default)
+	public async Task<EsqlResponse> ExecuteAsync(string esql, EsqlQueryOptions? options, CancellationToken cancellationToken = default)
 	{
 		var defaults = _settings.Defaults;
 		var request = new EsqlRequest
 		{
-			Query = query,
+			Query = esql,
 			Columnar = options?.Columnar ?? defaults.Columnar,
 			Profile = options?.IncludeProfile ?? defaults.IncludeProfile,
 			Locale = options?.Locale ?? defaults.Locale,
@@ -64,7 +66,7 @@ public class EsqlExecutor(EsqlClientSettings settings)
 			: AsyncQueryEndpoint;
 
 		var response = await ExecuteEndpointAsync(endpoint, request, cancellationToken);
-		return new EsqlAsyncQuery<T>(this, response, new Mapping.TypeFieldMetadataResolver(_settings.MappingContext));
+		return new EsqlAsyncQuery<T>(this, response, new Elastic.Mapping.TypeFieldMetadataResolver(_settings.MappingContext));
 	}
 
 	/// <summary>Gets the status of an async query.</summary>
@@ -138,30 +140,4 @@ public class EsqlExecutor(EsqlClientSettings settings)
 
 	private static string FormatTimeSpan(TimeSpan ts) =>
 		ts.TotalMilliseconds < 1000 ? $"{(int)ts.TotalMilliseconds}ms" : $"{(int)ts.TotalSeconds}s";
-}
-
-/// <summary>Exception thrown when ES|QL query execution fails.</summary>
-public class EsqlExecutionException : Exception
-{
-	/// <summary>The response body from Elasticsearch.</summary>
-	public string? ResponseBody { get; }
-
-	/// <summary>The HTTP status code.</summary>
-	public int? StatusCode { get; }
-
-	public EsqlExecutionException(string message) : base(message)
-	{
-	}
-
-	public EsqlExecutionException(string message, string? responseBody, int? statusCode)
-		: base(message)
-	{
-		ResponseBody = responseBody;
-		StatusCode = statusCode;
-	}
-
-	public EsqlExecutionException(string message, Exception innerException)
-		: base(message, innerException)
-	{
-	}
 }

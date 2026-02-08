@@ -17,7 +17,7 @@
 // =============================================================================
 
 using Elastic.Clients.Elasticsearch;
-using Elastic.Esql;
+using Elastic.Clients.Esql;
 using Elastic.Examples.Ingest.Channels;
 using Elastic.Ingest.Elasticsearch;
 using Elastic.Transport;

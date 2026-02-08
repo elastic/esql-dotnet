@@ -2,6 +2,7 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using Elastic.Esql.Execution;
 using Elastic.Mapping;
 
 namespace Elastic.Esql.Core;
@@ -12,17 +13,17 @@ namespace Elastic.Esql.Core;
 /// <remarks>
 /// Creates a new query context.
 /// </remarks>
-public class EsqlQueryContext(EsqlClientSettings settings)
+public class EsqlQueryContext(IElasticsearchMappingContext? mappingContext = null, IEsqlQueryExecutor? executor = null)
 {
 	/// <summary>
-	/// The client settings.
+	/// The query executor. Null means translation-only mode.
 	/// </summary>
-	public EsqlClientSettings Settings { get; } = settings ?? throw new ArgumentNullException(nameof(settings));
+	public IEsqlQueryExecutor? Executor { get; } = executor;
 
 	/// <summary>
 	/// The metadata resolver for field name and type resolution.
 	/// </summary>
-	public TypeFieldMetadataResolver MetadataResolver { get; } = new(settings.MappingContext);
+	public TypeFieldMetadataResolver MetadataResolver { get; } = new(mappingContext);
 
 	/// <summary>
 	/// Explicit index pattern override. When set, this takes precedence over the type's EsqlIndex attribute.

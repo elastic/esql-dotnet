@@ -14,6 +14,7 @@
     <Project Path="playground/playground.csproj" />
   </Folder>
   <Folder Name="/src/">
+    <Project Path="src/Elastic.Clients.Esql/Elastic.Clients.Esql.csproj" />
     <Project Path="src/Elastic.Esql/Elastic.Esql.csproj" />
     <Project Path="src/Elastic.Mapping.Generator/Elastic.Mapping.Generator.csproj" />
     <Project Path="src/Elastic.Mapping/Elastic.Mapping.csproj" />
