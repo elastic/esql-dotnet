@@ -13,6 +13,7 @@ namespace Elastic.Esql.Translation;
 /// </summary>
 public class GroupByVisitor(EsqlQueryContext context) : ExpressionVisitor
 {
+	private const string SingleKeyMarker = "__single_key__";
 	private readonly EsqlQueryContext _context = context ?? throw new ArgumentNullException(nameof(context));
 
 	/// <summary>
@@ -34,7 +35,13 @@ public class GroupByVisitor(EsqlQueryContext context) : ExpressionVisitor
 	public StatsCommand Translate(LambdaExpression keySelector, LambdaExpression resultSelector)
 	{
 		var groupByFields = ExtractGroupByFields(keySelector.Body);
-		var aggregations = ExtractAggregationsFromResultSelector(resultSelector);
+		var keyPropertyNames = ExtractKeyPropertyNames(keySelector.Body);
+		var (aggregations, keyAliasMap) = ExtractAggregationsAndKeyAliases(resultSelector);
+
+		// Alias BY fields to match the result selector member names so that
+		// the ES|QL response column names align with the anonymous type parameters.
+		// Without this, dotted fields like "service.name" won't match "service" in the materializer.
+		ApplyByFieldAliases(groupByFields, keyPropertyNames, keyAliasMap);
 
 		// If grouping by a constant (like 1), there's no BY clause
 		var byFields = groupByFields.Count > 0 ? groupByFields : null;
@@ -77,12 +84,13 @@ public class GroupByVisitor(EsqlQueryContext context) : ExpressionVisitor
 		return fields;
 	}
 
-	private List<string> ExtractAggregationsFromResultSelector(LambdaExpression resultSelector)
+	private (List<string> aggregations, Dictionary<string, string> keyAliasMap) ExtractAggregationsAndKeyAliases(LambdaExpression resultSelector)
 	{
 		var aggregations = new List<string>();
+		var keyAliasMap = new Dictionary<string, string>();
 
 		// The result selector looks like: g => new { Level = g.Key, Count = g.Count() }
-		// Where g is IGrouping<TKey, TElement>
+		// or for composite keys: g => new { g.Key.Level, g.Key.StatusCode, Count = g.Count() }
 		if (resultSelector.Body is NewExpression newExpr && newExpr.Members != null)
 		{
 			for (var i = 0; i < newExpr.Arguments.Count; i++)
@@ -93,7 +101,8 @@ public class GroupByVisitor(EsqlQueryContext context) : ExpressionVisitor
 				var agg = TryExtractAggregation(arg, memberName);
 				if (agg != null)
 					aggregations.Add(agg);
-				// Skip non-aggregation expressions (like g.Key which references the group key)
+				else if (TryGetKeyPropertyName(arg, out var keyPropName))
+					keyAliasMap[keyPropName] = memberName;
 			}
 		}
 
@@ -101,7 +110,72 @@ public class GroupByVisitor(EsqlQueryContext context) : ExpressionVisitor
 		if (aggregations.Count == 0)
 			aggregations.Add("count = COUNT(*)");
 
-		return aggregations;
+		return (aggregations, keyAliasMap);
+	}
+
+	/// <summary>
+	/// Extracts the key property names from a composite GroupBy key selector.
+	/// Returns null for single-key GroupBy, or a list of property names for composite keys.
+	/// </summary>
+	private static List<string>? ExtractKeyPropertyNames(Expression expression) =>
+		expression is NewExpression { Members: not null } newExpr
+			? newExpr.Members.Select(m => m.Name).ToList()
+			: null;
+
+	private static void ApplyByFieldAliases(
+		List<string> groupByFields,
+		List<string>? keyPropertyNames,
+		Dictionary<string, string> keyAliasMap)
+	{
+		if (keyAliasMap.Count == 0 || groupByFields.Count == 0)
+			return;
+
+		if (keyPropertyNames == null)
+		{
+			// Single key: g.Key → sentinel key in map
+			if (keyAliasMap.TryGetValue(SingleKeyMarker, out var alias) && alias != groupByFields[0])
+				groupByFields[0] = $"{alias} = {groupByFields[0]}";
+		}
+		else
+		{
+			// Composite key: g.Key.PropertyName → property name as key in map
+			for (var i = 0; i < groupByFields.Count && i < keyPropertyNames.Count; i++)
+			{
+				if (keyAliasMap.TryGetValue(keyPropertyNames[i], out var alias) && alias != groupByFields[i])
+					groupByFields[i] = $"{alias} = {groupByFields[i]}";
+			}
+		}
+	}
+
+	private static bool TryGetKeyPropertyName(Expression expression, out string keyPropertyName)
+	{
+		switch (expression)
+		{
+			// g.Key (single key)
+			case MemberExpression { Member.Name: "Key" }:
+				keyPropertyName = SingleKeyMarker;
+				return true;
+
+			// Convert(g.Key)
+			case UnaryExpression { NodeType: ExpressionType.Convert, Operand: MemberExpression { Member.Name: "Key" } }:
+				keyPropertyName = SingleKeyMarker;
+				return true;
+
+			// g.Key.PropertyName (composite key)
+			case MemberExpression member when member.Expression is MemberExpression { Member.Name: "Key" }:
+				keyPropertyName = member.Member.Name;
+				return true;
+
+			// Convert(g.Key.PropertyName)
+			case UnaryExpression { NodeType: ExpressionType.Convert, Operand: MemberExpression composite }
+				when composite.Expression is MemberExpression { Member.Name: "Key" }:
+				keyPropertyName = composite.Member.Name;
+				return true;
+
+			default:
+				keyPropertyName = "";
+				return false;
+		}
 	}
 
 	private string? TryExtractAggregation(Expression expression, string resultName)

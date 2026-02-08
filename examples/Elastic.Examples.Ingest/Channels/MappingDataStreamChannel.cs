@@ -47,31 +47,29 @@ public class MappingDataStreamChannel<T>(
 
 	private static MappingDataStreamChannelOptions<T> ConfigureOptions(MappingDataStreamChannelOptions<T> options)
 	{
-		// Auto-set DataStream from context if not explicitly set
-		if (options.DataStream == null)
+		// Always set DataStream from context — the base class sets a default based on
+		// typeof(T).Name which won't match the configured data stream name or search patterns.
+		var strategy = options.Context.IndexStrategy;
+		if (strategy?.DataStreamName != null)
 		{
-			var strategy = options.Context.IndexStrategy;
-			if (strategy?.DataStreamName != null)
-			{
-				// Parse the data stream name (format: type-dataset-namespace)
-				var parts = strategy.DataStreamName.Split('-', 3);
-				if (parts.Length >= 2)
-				{
-					options.DataStream = new DataStreamName(
-						parts[0],
-						parts.Length > 1 ? parts[1] : "default",
-						parts.Length > 2 ? parts[2] : "default"
-					);
-				}
-			}
-			else if (strategy?.Type != null)
+			// Parse the data stream name (format: type-dataset-namespace)
+			var parts = strategy.DataStreamName.Split('-', 3);
+			if (parts.Length >= 2)
 			{
 				options.DataStream = new DataStreamName(
-					strategy.Type,
-					strategy.Dataset ?? "default",
-					strategy.Namespace ?? "default"
+					parts[0],
+					parts.Length > 1 ? parts[1] : "default",
+					parts.Length > 2 ? parts[2] : "default"
 				);
 			}
+		}
+		else if (strategy?.Type != null)
+		{
+			options.DataStream = new DataStreamName(
+				strategy.Type,
+				strategy.Dataset ?? "default",
+				strategy.Namespace ?? "default"
+			);
 		}
 		return options;
 	}

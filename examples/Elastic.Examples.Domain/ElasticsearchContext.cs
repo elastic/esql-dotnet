@@ -18,7 +18,7 @@ namespace Elastic.Examples.Domain;
 	WriteAlias = "products-write",
 	ReadAlias = "products-read",
 	SearchPattern = "products*",
-	RefreshInterval = "1s",
+	RefreshInterval = "5s",
 	Configuration = typeof(ProductConfiguration)
 )]
 [Index<Order>(

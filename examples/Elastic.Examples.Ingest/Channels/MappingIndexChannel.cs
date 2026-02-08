@@ -56,14 +56,10 @@ public class MappingIndexChannel<T>(
 
 	private static MappingIndexChannelOptions<T> ConfigureOptions(MappingIndexChannelOptions<T> options)
 	{
-		// Auto-set IndexFormat from context if not explicitly set
-		// Note: For fixed index names (no date patterns), set IndexFormat explicitly
-		// in the options when creating the channel
-		if (string.IsNullOrEmpty(options.IndexFormat))
-		{
-			var writeTarget = options.Context.IndexStrategy?.WriteTarget ?? typeof(T).Name.ToLowerInvariant();
-			options.IndexFormat = writeTarget;
-		}
+		// Always set IndexFormat from context — the base class sets a default based on
+		// typeof(T).Name which won't match the configured write target or search patterns.
+		var writeTarget = options.Context.IndexStrategy?.WriteTarget ?? typeof(T).Name.ToLowerInvariant();
+		options.IndexFormat = writeTarget;
 		return options;
 	}
 

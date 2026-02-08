@@ -17,7 +17,7 @@ public class MinMaxTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | STATS minDuration = MIN(duration) BY log.level
+            | STATS minDuration = MIN(duration) BY level = log.level
             """);
 	}
 
@@ -32,7 +32,7 @@ public class MinMaxTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | STATS maxDuration = MAX(duration) BY log.level
+            | STATS maxDuration = MAX(duration) BY level = log.level
             """);
 	}
 
@@ -52,7 +52,7 @@ public class MinMaxTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | STATS minDuration = MIN(duration), maxDuration = MAX(duration) BY log.level
+            | STATS minDuration = MIN(duration), maxDuration = MAX(duration) BY level = log.level
             """);
 	}
 
@@ -69,7 +69,7 @@ public class MinMaxTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE statusCode >= 400
-            | STATS minDuration = MIN(duration) BY log.level
+            | STATS minDuration = MIN(duration) BY level = log.level
             """);
 	}
 
@@ -84,7 +84,7 @@ public class MinMaxTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | STATS maxStatusCode = MAX(statusCode) BY log.level
+            | STATS maxStatusCode = MAX(statusCode) BY level = log.level
             """);
 	}
 }

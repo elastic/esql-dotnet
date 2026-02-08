@@ -17,7 +17,7 @@ public class SimpleGroupByTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | STATS count = COUNT(*) BY log.level
+            | STATS count = COUNT(*) BY level = log.level
             """);
 	}
 
@@ -32,7 +32,7 @@ public class SimpleGroupByTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | STATS totalDuration = SUM(duration) BY log.level
+            | STATS totalDuration = SUM(duration) BY level = log.level
             """);
 	}
 
@@ -47,7 +47,7 @@ public class SimpleGroupByTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | STATS avgDuration = AVG(duration) BY log.level
+            | STATS avgDuration = AVG(duration) BY level = log.level
             """);
 	}
 
@@ -62,7 +62,7 @@ public class SimpleGroupByTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | STATS minDuration = MIN(duration) BY log.level
+            | STATS minDuration = MIN(duration) BY level = log.level
             """);
 	}
 
@@ -77,7 +77,7 @@ public class SimpleGroupByTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | STATS maxDuration = MAX(duration) BY log.level
+            | STATS maxDuration = MAX(duration) BY level = log.level
             """);
 	}
 
@@ -98,7 +98,7 @@ public class SimpleGroupByTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | STATS count = COUNT(*), totalDuration = SUM(duration), avgDuration = AVG(duration) BY log.level
+            | STATS count = COUNT(*), totalDuration = SUM(duration), avgDuration = AVG(duration) BY level = log.level
             """);
 	}
 
@@ -115,7 +115,7 @@ public class SimpleGroupByTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE statusCode >= 400
-            | STATS count = COUNT(*) BY log.level
+            | STATS count = COUNT(*) BY level = log.level
             """);
 	}
 }

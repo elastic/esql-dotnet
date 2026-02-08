@@ -3,10 +3,12 @@
 // See the LICENSE file in the project root for more information
 
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Elastic.Esql;
 using Elastic.Esql.Core;
 using Elastic.Esql.Execution;
 using Elastic.Esql.Extensions;
+using Elastic.Examples.Domain;
 using Elastic.Examples.Domain.Models;
 using Elastic.Transport;
 using Microsoft.Extensions.Configuration;
@@ -15,7 +17,8 @@ using XenoAtom.Terminal;
 var jsonOptions = new JsonSerializerOptions
 {
 	WriteIndented = false,
-	PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+	PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+	Converters = { new JsonStringEnumConverter() }
 };
 
 Terminal.Title = "Elastic.Examples.Esql";
@@ -29,7 +32,10 @@ WriteOutput($"[cyan]Elasticsearch:[/] {url}\n\n");
 
 // Create transport with authentication
 var transport = CreateTransport(url, apiKey);
-var settings = new EsqlClientSettings(transport);
+var settings = new EsqlClientSettings(transport)
+{
+	MappingContext = ExampleElasticsearchContext.Instance
+};
 using var client = new EsqlClient(settings);
 
 // Verify connection
@@ -181,19 +187,21 @@ await RunQuerySection("Application Log Queries (Data Stream)", async () =>
 // ============================================================================
 await RunQuerySection("Application Metric Queries (Data Stream)", async () =>
 {
-	// Latest metrics
+	// Latest system metrics (filter for system metricset to get CPU/memory values)
 	await RunQuery(
-		"Latest metrics by host",
+		"Latest system metrics by host",
 		client.Query<ApplicationMetric>()
+			.Where(m => m.MetricSetName == "system")
 			.OrderByDescending(m => m.Timestamp)
 			.Select(m => new { m.HostName, m.CpuPercent, m.MemoryPercent, m.Timestamp })
 			.Take(5)
 	);
 
-	// Average resource usage
+	// Average resource usage (system metrics only)
 	await RunQuery(
 		"Average resource usage by host",
 		client.Query<ApplicationMetric>()
+			.Where(m => m.MetricSetName == "system")
 			.GroupBy(m => m.HostName)
 			.Select(g => new
 			{

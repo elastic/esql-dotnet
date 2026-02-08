@@ -172,24 +172,31 @@ static (string url, string apiKey) GetElasticsearchConfiguration()
 
 async Task CleanupIndicesAndTemplates(ElasticsearchClient client)
 {
-	// Data streams to delete
-	string[] dataStreams = ["logs-ecommerce.app-production", "metrics-ecommerce.app-production"];
+	// Data streams to delete (correct names + old incorrectly-named ones)
+	string[] dataStreams =
+	[
+		"logs-ecommerce.app-production", "metrics-ecommerce.app-production",
+		"applicationlog-generic-default", "applicationmetric-generic-default"
+	];
 
-	// Index patterns to delete
-	string[] indexPatterns = ["products*", "customers*", "orders-*"];
+	// Index patterns to delete (correct names + old incorrectly-named ones)
+	string[] indexPatterns = ["products*", "customers*", "orders-*", "product-*", "customer-*", "order-*"];
 
 	// Index templates to delete
 	string[] indexTemplates =
 	[
 		"products-write", "customers-write", "orders-write",
-		"logs-ecommerce.app-production", "metrics-ecommerce.app-production"
+		"logs-ecommerce.app-production", "metrics-ecommerce.app-production",
+		"product", "customer", "order", "applicationlog", "applicationmetric"
 	];
 
 	// Component templates to delete
 	string[] componentTemplates =
 	[
 		"products-write-write", "customers-write-write", "orders-write-write",
-		"logs-ecommerce.app-production-write", "metrics-ecommerce.app-production-write"
+		"logs-ecommerce.app-production-write", "metrics-ecommerce.app-production-write",
+		"product-write", "customer-write", "order-write",
+		"applicationlog-write", "applicationmetric-write"
 	];
 
 	// Delete data streams
