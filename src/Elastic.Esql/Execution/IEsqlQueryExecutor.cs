@@ -9,4 +9,8 @@ public interface IEsqlQueryExecutor
 {
 	/// <summary>Executes an ES|QL query and returns the response.</summary>
 	Task<EsqlResponse> ExecuteAsync(string esql, CancellationToken cancellationToken = default);
+
+	/// <summary>Executes an ES|QL query with named parameters and returns the response.</summary>
+	Task<EsqlResponse> ExecuteAsync(string esql, IReadOnlyList<object>? parameters, CancellationToken cancellationToken = default) =>
+		ExecuteAsync(esql, cancellationToken);
 }

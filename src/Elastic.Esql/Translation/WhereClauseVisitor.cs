@@ -47,7 +47,10 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 			_ = Visit(enumContext.Value.MemberSide);
 			var op = GetOperator(node.NodeType);
 			_ = _builder.Append(' ').Append(op).Append(' ');
-			_ = _builder.Append(FormatEnumValue(enumContext.Value.EnumType, enumContext.Value.ConstantValue));
+			var enumStringValue = GetEnumStringValue(enumContext.Value.EnumType, enumContext.Value.ConstantValue);
+			_ = _context.ParameterCollection is { } parameters && enumContext.Value.ParameterName is { } paramName
+				? _builder.Append('?').Append(parameters.Add(paramName, enumStringValue))
+				: _builder.Append(EsqlFormatting.FormatValue(enumStringValue));
 		}
 		else
 		{
@@ -63,7 +66,7 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 		return node;
 	}
 
-	private (Expression MemberSide, Type EnumType, object? ConstantValue)? GetEnumComparisonContext(BinaryExpression node)
+	private (Expression MemberSide, Type EnumType, object? ConstantValue, string? ParameterName)? GetEnumComparisonContext(BinaryExpression node)
 	{
 		// Only handle equality/inequality comparisons
 		if (node.NodeType is not (ExpressionType.Equal or ExpressionType.NotEqual))
@@ -75,7 +78,7 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 		{
 			var rightValue = TryGetConstantValue(node.Right);
 			if (rightValue != null && ShouldFormatEnumAsString(leftEnumType))
-				return (node.Left, leftEnumType, rightValue);
+				return (node.Left, leftEnumType, rightValue, GetParameterName(node.Right));
 		}
 
 		// Try right=member, left=constant
@@ -84,10 +87,26 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 		{
 			var leftValue = TryGetConstantValue(node.Left);
 			if (leftValue != null && ShouldFormatEnumAsString(rightEnumType))
-				return (node.Right, rightEnumType, leftValue);
+				return (node.Right, rightEnumType, leftValue, GetParameterName(node.Left));
 		}
 
 		return null;
+	}
+
+	private static string? GetParameterName(Expression expression)
+	{
+		// Unwrap Convert expressions
+		while (expression is UnaryExpression { NodeType: ExpressionType.Convert or ExpressionType.ConvertChecked } unary)
+			expression = unary.Operand;
+
+		return expression switch
+		{
+			// Direct closure: closureObj.fieldName
+			MemberExpression { Expression: ConstantExpression } member => member.Member.Name,
+			// Nested closure: closureObj.prop.field
+			MemberExpression { Expression: MemberExpression { Expression: ConstantExpression } } member => member.Member.Name,
+			_ => null
+		};
 	}
 
 	private static Type? GetEnumTypeFromExpression(Expression expr)
@@ -136,15 +155,14 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 		};
 	}
 
-	private static string FormatEnumValue(Type enumType, object? value)
+	private static string? GetEnumStringValue(Type enumType, object? value)
 	{
 		if (value == null)
-			return "null";
+			return null;
 
 		// Convert the value to the enum and get its name
 		var enumValue = Enum.ToObject(enumType, value);
-		var name = Enum.GetName(enumType, enumValue);
-		return EsqlFormatting.FormatValue(name ?? value.ToString() ?? "");
+		return Enum.GetName(enumType, enumValue) ?? value.ToString() ?? "";
 	}
 
 	protected override Expression VisitUnary(UnaryExpression node)
@@ -175,7 +193,7 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 		if (node.Expression is ConstantExpression constantExpression)
 		{
 			var value = GetMemberValue(node, constantExpression.Value);
-			_ = _builder.Append(EsqlFormatting.FormatValue(value));
+			AppendValueOrParameter(node.Member.Name, value);
 			return node;
 		}
 
@@ -185,7 +203,7 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 		{
 			var innerValue = GetMemberValue(innerMember, innerConstant.Value);
 			var value = GetMemberValue(node, innerValue);
-			_ = _builder.Append(EsqlFormatting.FormatValue(value));
+			AppendValueOrParameter(node.Member.Name, value);
 			return node;
 		}
 
@@ -757,6 +775,11 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 			PropertyInfo property => property.GetValue(null),
 			_ => throw new NotSupportedException($"Static member type {member.Member.GetType()} is not supported.")
 		};
+
+	private void AppendValueOrParameter(string name, object? value) =>
+		_ = _context.ParameterCollection is { } parameters
+			? _builder.Append('?').Append(parameters.Add(name, value))
+			: _builder.Append(EsqlFormatting.FormatValue(value));
 
 	private static string EscapeLikePattern(string value) =>
 		// Escape special characters in LIKE patterns

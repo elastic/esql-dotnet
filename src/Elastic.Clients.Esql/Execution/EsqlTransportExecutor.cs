@@ -27,7 +27,11 @@ public class EsqlTransportExecutor(EsqlClientSettings settings) : IEsqlQueryExec
 
 	/// <inheritdoc/>
 	public async Task<EsqlResponse> ExecuteAsync(string esql, CancellationToken cancellationToken = default) =>
-		await ExecuteAsync(esql, null, cancellationToken);
+		await ExecuteAsync(esql, (EsqlQueryOptions?)null, cancellationToken);
+
+	/// <inheritdoc/>
+	public async Task<EsqlResponse> ExecuteAsync(string esql, IReadOnlyList<object>? parameters, CancellationToken cancellationToken = default) =>
+		await ExecuteAsync(esql, parameters != null ? new EsqlQueryOptions { Parameters = parameters } : null, cancellationToken);
 
 	/// <summary>Executes an ES|QL query with options and returns the response.</summary>
 	public async Task<EsqlResponse> ExecuteAsync(string esql, EsqlQueryOptions? options, CancellationToken cancellationToken = default)

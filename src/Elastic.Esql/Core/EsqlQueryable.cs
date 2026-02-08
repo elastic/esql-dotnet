@@ -5,6 +5,7 @@
 using System.Collections;
 using System.Linq.Expressions;
 using Elastic.Esql.Generation;
+using Elastic.Esql.QueryModel;
 using Elastic.Mapping;
 
 namespace Elastic.Esql.Core;
@@ -62,11 +63,26 @@ public class EsqlQueryable<T> : IEsqlQueryable<T>, IOrderedQueryable<T>
 	public EsqlQueryContext Context => _provider.Context;
 
 	/// <inheritdoc/>
-	public string ToEsqlString()
+	public string ToEsqlString(bool inlineParameters = true)
 	{
+		if (!inlineParameters)
+			Context.ParameterCollection = new EsqlParameters();
+
 		var query = _provider.TranslateExpression(Expression);
 		var generator = new EsqlGenerator();
-		return generator.Generate(query);
+		var result = generator.Generate(query);
+		Context.ParameterCollection = null;
+		return result;
+	}
+
+	/// <inheritdoc/>
+	public EsqlParameters? GetParameters()
+	{
+		var parameters = new EsqlParameters();
+		Context.ParameterCollection = parameters;
+		_ = _provider.TranslateExpression(Expression);
+		Context.ParameterCollection = null;
+		return parameters.HasParameters ? parameters : null;
 	}
 
 	/// <summary>
@@ -81,7 +97,8 @@ public class EsqlQueryable<T> : IEsqlQueryable<T>, IOrderedQueryable<T>
 	IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
 	/// <inheritdoc/>
-	public IAsyncEnumerable<T> AsAsyncEnumerable(CancellationToken cancellationToken = default) => new AsyncEnumerableWrapper<T>(_provider.ExecuteStreamingAsync<T>(Expression, cancellationToken));
+	public IAsyncEnumerable<T> AsAsyncEnumerable(CancellationToken cancellationToken = default) =>
+		new AsyncEnumerableWrapper<T>(_provider.ExecuteStreamingAsync<T>(Expression, cancellationToken));
 
 	/// <summary>
 	/// Wrapper to expose async enumeration without implementing IAsyncEnumerable directly.

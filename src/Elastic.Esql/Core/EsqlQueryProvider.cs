@@ -55,8 +55,14 @@ public class EsqlQueryProvider(EsqlQueryContext context) : IQueryProvider
 	public async Task<TResult> ExecuteAsync<TResult>(Expression expression, CancellationToken cancellationToken)
 	{
 		var executor = Context.Executor ?? throw new InvalidOperationException("No query executor configured. Provide an IEsqlQueryExecutor to execute queries.");
+
+		var parameters = new EsqlParameters();
+		Context.ParameterCollection = parameters;
 		var esqlQuery = TranslateExpression(expression);
 		var esqlString = GenerateEsqlString(esqlQuery);
+		Context.ParameterCollection = null;
+
+		var paramList = parameters.HasParameters ? parameters.ToEsqlParams() : null;
 
 		// Determine if we're getting a single result or a collection
 		var resultType = typeof(TResult);
@@ -64,19 +70,19 @@ public class EsqlQueryProvider(EsqlQueryContext context) : IQueryProvider
 		if (IsScalarResult(expression))
 		{
 			// Scalar aggregation (Count, Sum, etc.)
-			var response = await executor.ExecuteAsync(esqlString, cancellationToken);
+			var response = await executor.ExecuteAsync(esqlString, paramList, cancellationToken);
 			return MaterializeScalar<TResult>(response);
 		}
 
 		if (IsSingleResult(expression))
 		{
 			// First, FirstOrDefault, Single, SingleOrDefault
-			var response = await executor.ExecuteAsync(esqlString, cancellationToken);
+			var response = await executor.ExecuteAsync(esqlString, paramList, cancellationToken);
 			return MaterializeSingle<TResult>(response, esqlQuery, expression);
 		}
 
 		// Collection result
-		var collectionResponse = await executor.ExecuteAsync(esqlString, cancellationToken);
+		var collectionResponse = await executor.ExecuteAsync(esqlString, paramList, cancellationToken);
 		var elementType = GetElementTypeFromResult(resultType);
 		var items = MaterializeCollection(collectionResponse, elementType, esqlQuery);
 
@@ -119,10 +125,15 @@ public class EsqlQueryProvider(EsqlQueryContext context) : IQueryProvider
 		[System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
 	{
 		var executor = Context.Executor ?? throw new InvalidOperationException("No query executor configured. Provide an IEsqlQueryExecutor to execute queries.");
+
+		var parameters = new EsqlParameters();
+		Context.ParameterCollection = parameters;
 		var esqlQuery = TranslateExpression(expression);
 		var esqlString = GenerateEsqlString(esqlQuery);
+		Context.ParameterCollection = null;
 
-		var response = await executor.ExecuteAsync(esqlString, cancellationToken);
+		var paramList = parameters.HasParameters ? parameters.ToEsqlParams() : null;
+		var response = await executor.ExecuteAsync(esqlString, paramList, cancellationToken);
 		var materializer = new ResultMaterializer(Context.MetadataResolver);
 
 		foreach (var item in materializer.Materialize<T>(response, esqlQuery))

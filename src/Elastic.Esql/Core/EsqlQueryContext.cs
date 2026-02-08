@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information
 
 using Elastic.Esql.Execution;
+using Elastic.Esql.QueryModel;
 using Elastic.Mapping;
 
 namespace Elastic.Esql.Core;
@@ -39,4 +40,9 @@ public class EsqlQueryContext(IElasticsearchMappingContext? mappingContext = nul
 	/// Per-query options that override client defaults.
 	/// </summary>
 	public EsqlQueryOptions? QueryOptions { get; set; }
+
+	/// <summary>
+	/// When non-null, captured variables are emitted as named parameters instead of inlined values.
+	/// </summary>
+	public EsqlParameters? ParameterCollection { get; set; }
 }

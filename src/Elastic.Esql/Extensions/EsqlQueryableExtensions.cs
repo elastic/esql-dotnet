@@ -118,12 +118,16 @@ public static class EsqlQueryableExtensions
 		var executor = queryable.Context.Executor ?? throw new InvalidOperationException("No query executor configured. Provide an IEsqlQueryExecutor to execute queries.");
 
 		// For count, we need to use STATS COUNT(*)
+		var parameters = new EsqlParameters();
+		queryable.Context.ParameterCollection = parameters;
 		var esql = queryable.ToEsqlString();
+		queryable.Context.ParameterCollection = null;
 
 		// Append STATS COUNT(*) to the query
 		var countQuery = esql + Environment.NewLine + "| STATS count = COUNT(*)";
 
-		var response = await executor.ExecuteAsync(countQuery, cancellationToken);
+		var paramList = parameters.HasParameters ? parameters.ToEsqlParams() : null;
+		var response = await executor.ExecuteAsync(countQuery, paramList, cancellationToken);
 
 		var materializer = new ResultMaterializer();
 		return materializer.MaterializeScalar<int>(response);
@@ -145,10 +149,10 @@ public static class EsqlQueryableExtensions
 	/// <summary>
 	/// Gets the ES|QL query string without executing.
 	/// </summary>
-	public static string ToEsqlString<T>(this IQueryable<T> queryable)
+	public static string ToEsqlString<T>(this IQueryable<T> queryable, bool inlineParameters = true)
 	{
 		if (queryable is IEsqlQueryable<T> esqlQueryable)
-			return esqlQueryable.ToEsqlString();
+			return esqlQueryable.ToEsqlString(inlineParameters);
 
 		throw new InvalidOperationException("Query is not an ES|QL query.");
 	}
