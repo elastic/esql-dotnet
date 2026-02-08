@@ -8,5 +8,4 @@ global using Elastic.Esql;
 global using Elastic.Esql.Core;
 global using Elastic.Esql.Extensions;
 global using Elastic.Esql.Functions;
-global using Elastic.Esql.TypeMapping;
 global using Elastic.Mapping;

@@ -9,8 +9,8 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json.Serialization;
 using Elastic.Esql.Core;
+using Elastic.Esql.Formatting;
 using Elastic.Esql.Functions;
-using Elastic.Esql.TypeMapping;
 
 namespace Elastic.Esql.Translation;
 
@@ -252,7 +252,7 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 		}
 
 		// Regular field access
-		var fieldName = _context.FieldNameResolver.Resolve(node.Member);
+		var fieldName = _context.MetadataResolver.Resolve(node.Member);
 		_ = _builder.Append(fieldName);
 
 		return node;
@@ -267,7 +267,7 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 				TranslateStaticDateTimeProperty(member),
 			MemberExpression member =>
 				// Field access like l.Timestamp
-				_context.FieldNameResolver.Resolve(member.Member),
+				_context.MetadataResolver.Resolve(member.Member),
 			MethodCallExpression methodCall when methodCall.Method.DeclaringType == typeof(EsqlFunctions) =>
 				TranslateEsqlFunctionForDateTime(methodCall),
 			_ => throw new NotSupportedException($"Expression type {expression.GetType().Name} is not supported for DateTime property access.")

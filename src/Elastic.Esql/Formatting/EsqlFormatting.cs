@@ -4,7 +4,7 @@
 
 using static System.Globalization.CultureInfo;
 
-namespace Elastic.Esql.TypeMapping;
+namespace Elastic.Esql.Formatting;
 
 /// <summary>
 /// Maps C# types to ES|QL types and formats values.

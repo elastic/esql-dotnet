@@ -2,7 +2,7 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-using Elastic.Esql.TypeMapping;
+using Elastic.Mapping;
 
 namespace Elastic.Esql.Core;
 
@@ -20,9 +20,9 @@ public class EsqlQueryContext(EsqlClientSettings settings)
 	public EsqlClientSettings Settings { get; } = settings ?? throw new ArgumentNullException(nameof(settings));
 
 	/// <summary>
-	/// The field name resolver.
+	/// The metadata resolver for field name and type resolution.
 	/// </summary>
-	public FieldNameResolver FieldNameResolver { get; } = new(settings.MappingContext);
+	public TypeFieldMetadataResolver MetadataResolver { get; } = new(settings.MappingContext);
 
 	/// <summary>
 	/// Explicit index pattern override. When set, this takes precedence over the type's EsqlIndex attribute.

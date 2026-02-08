@@ -5,15 +5,15 @@
 namespace Elastic.Esql.Tests.Usage;
 
 /// <summary>
-/// Tests for static Esql.From&lt;T&gt;() API with LINQ query syntax (from...where...select).
+/// Tests for Client.Query&lt;T&gt;() API with LINQ query syntax (from...where...select).
 /// </summary>
-public class StaticApiQuerySyntaxTests : EsqlTestBase
+public class QuerySyntaxTests : EsqlTestBase
 {
 	[Test]
 	public void SimpleFilter()
 	{
 		var esql = (
-			from l in Esql.InMemory<LogEntry>()
+			from l in Client.Query<LogEntry>()
 			where l.Level == "ERROR"
 			select l
 		).ToString();
@@ -29,7 +29,7 @@ public class StaticApiQuerySyntaxTests : EsqlTestBase
 	public void FilterWithOrderBy()
 	{
 		var esql = (
-			from l in Esql.InMemory<LogEntry>()
+			from l in Client.Query<LogEntry>()
 			where l.Level == "ERROR"
 			orderby l.Timestamp descending
 			select l
@@ -47,7 +47,7 @@ public class StaticApiQuerySyntaxTests : EsqlTestBase
 	public void MultipleWhereClause()
 	{
 		var esql = (
-			from l in Esql.InMemory<LogEntry>()
+			from l in Client.Query<LogEntry>()
 			where l.Level == "ERROR"
 			where l.Duration > 1000
 			select l
@@ -65,7 +65,7 @@ public class StaticApiQuerySyntaxTests : EsqlTestBase
 	public void Projection()
 	{
 		var esql = (
-			from l in Esql.InMemory<LogEntry>()
+			from l in Client.Query<LogEntry>()
 			where l.StatusCode >= 500
 			select new { l.Message, l.Duration }
 		).ToString();
@@ -82,7 +82,7 @@ public class StaticApiQuerySyntaxTests : EsqlTestBase
 	public void ExplicitIndexPattern()
 	{
 		var esql = (
-			from l in Esql.InMemory<LogEntry>("app-logs-*")
+			from l in Client.Query<LogEntry>("app-logs-*")
 			where l.Level == "WARNING"
 			orderby l.Timestamp descending
 			select l

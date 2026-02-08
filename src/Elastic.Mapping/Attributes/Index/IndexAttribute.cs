@@ -5,6 +5,26 @@
 namespace Elastic.Mapping;
 
 /// <summary>
+/// Marks a POCO as an Elasticsearch index for attribute-based discovery (without a mapping context).
+/// Applied directly to the domain type.
+/// </summary>
+[AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
+public sealed class IndexAttribute : Attribute
+{
+	/// <summary>Concrete index name (e.g., "projects").</summary>
+	public string? Name { get; init; }
+
+	/// <summary>Search pattern for queries (e.g., "logs-*").</summary>
+	public string? SearchPattern { get; init; }
+
+	/// <summary>ILM write alias (e.g., "logs-write").</summary>
+	public string? WriteAlias { get; init; }
+
+	/// <summary>ILM read alias (e.g., "logs-read").</summary>
+	public string? ReadAlias { get; init; }
+}
+
+/// <summary>
 /// Registers a type as an Elasticsearch index within an <see cref="ElasticsearchMappingContextAttribute"/> context.
 /// Applied to the context class, not the domain type.
 /// </summary>

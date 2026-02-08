@@ -27,9 +27,9 @@ public class OrderByVisitor(EsqlQueryContext context) : ExpressionVisitor
 	private string ExtractFieldName(Expression expression) =>
 		expression switch
 		{
-			MemberExpression member => _context.FieldNameResolver.Resolve(member.Member),
+			MemberExpression member => _context.MetadataResolver.Resolve(member.Member),
 			UnaryExpression { NodeType: ExpressionType.Convert, Operand: MemberExpression innerMember } =>
-				_context.FieldNameResolver.Resolve(innerMember.Member),
+				_context.MetadataResolver.Resolve(innerMember.Member),
 			MethodCallExpression methodCall => TranslateMethodCall(methodCall),
 			_ => throw new NotSupportedException($"Cannot extract field name from expression: {expression}")
 		};
@@ -42,7 +42,7 @@ public class OrderByVisitor(EsqlQueryContext context) : ExpressionVisitor
 		// String methods that can be used for sorting
 		if (declaringType == typeof(string) && methodCall.Object is MemberExpression member)
 		{
-			var fieldName = _context.FieldNameResolver.Resolve(member.Member);
+			var fieldName = _context.MetadataResolver.Resolve(member.Member);
 
 			return methodName switch
 			{

@@ -64,7 +64,7 @@ public class EsqlExecutor(EsqlClientSettings settings)
 			: AsyncQueryEndpoint;
 
 		var response = await ExecuteEndpointAsync(endpoint, request, cancellationToken);
-		return new EsqlAsyncQuery<T>(this, response, new TypeMapping.FieldNameResolver(_settings.MappingContext));
+		return new EsqlAsyncQuery<T>(this, response, new Mapping.TypeFieldMetadataResolver(_settings.MappingContext));
 	}
 
 	/// <summary>Gets the status of an async query.</summary>

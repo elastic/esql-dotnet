@@ -5,6 +5,27 @@
 namespace Elastic.Mapping;
 
 /// <summary>
+/// Marks a POCO as an Elasticsearch data stream for attribute-based discovery (without a mapping context).
+/// Applied directly to the domain type.
+/// Data streams follow the Elastic naming convention: {type}-{dataset}-{namespace}.
+/// </summary>
+[AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
+public sealed class DataStreamAttribute : Attribute
+{
+	/// <summary>Data stream type (e.g., "logs", "metrics", "traces", "synthetics").</summary>
+	public required string Type { get; init; }
+
+	/// <summary>Dataset identifier (e.g., "nginx.access", "system.cpu").</summary>
+	public required string Dataset { get; init; }
+
+	/// <summary>
+	/// Namespace for environment separation (e.g., "production", "development").
+	/// Defaults to "default".
+	/// </summary>
+	public string Namespace { get; init; } = "default";
+}
+
+/// <summary>
 /// Registers a type as an Elasticsearch data stream within an <see cref="ElasticsearchMappingContextAttribute"/> context.
 /// Applied to the context class, not the domain type.
 /// Data streams follow the Elastic naming convention: {type}-{dataset}-{namespace}.

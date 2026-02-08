@@ -6,7 +6,6 @@ using System.Linq.Expressions;
 using Elastic.Esql.Core;
 using Elastic.Esql.QueryModel;
 using Elastic.Esql.QueryModel.Commands;
-using Elastic.Esql.TypeMapping;
 
 namespace Elastic.Esql.Translation;
 
@@ -41,7 +40,7 @@ public class EsqlExpressionVisitor(EsqlQueryContext context) : ExpressionVisitor
 
 			// Use explicit index pattern from context if set, otherwise get from attribute or use type name
 			var indexPattern = _context.IndexPattern
-				?? _context.FieldNameResolver.GetIndexPattern(elementType)
+				?? _context.MetadataResolver.GetSearchPattern(elementType)
 				?? ToIndexName(elementType.Name);
 
 			_query.AddCommand(new FromCommand(indexPattern));
@@ -336,8 +335,8 @@ public class EsqlExpressionVisitor(EsqlQueryContext context) : ExpressionVisitor
 	private string ExtractFieldName(Expression expression) =>
 		expression switch
 		{
-			MemberExpression member => _context.FieldNameResolver.Resolve(member.Member),
-			UnaryExpression { Operand: MemberExpression innerMember } => _context.FieldNameResolver.Resolve(innerMember.Member),
+			MemberExpression member => _context.MetadataResolver.Resolve(member.Member),
+			UnaryExpression { Operand: MemberExpression innerMember } => _context.MetadataResolver.Resolve(innerMember.Member),
 			_ => throw new NotSupportedException($"Cannot extract field name from expression: {expression}")
 		};
 

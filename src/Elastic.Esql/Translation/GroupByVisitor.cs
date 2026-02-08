@@ -56,7 +56,7 @@ public class GroupByVisitor(EsqlQueryContext context) : ExpressionVisitor
 		switch (expression)
 		{
 			case MemberExpression member:
-				fields.Add(_context.FieldNameResolver.Resolve(member.Member));
+				fields.Add(_context.MetadataResolver.Resolve(member.Member));
 				break;
 
 			case NewExpression newExpr when newExpr.Members != null:
@@ -64,7 +64,7 @@ public class GroupByVisitor(EsqlQueryContext context) : ExpressionVisitor
 				foreach (var arg in newExpr.Arguments)
 				{
 					if (arg is MemberExpression memberArg)
-						fields.Add(_context.FieldNameResolver.Resolve(memberArg.Member));
+						fields.Add(_context.MetadataResolver.Resolve(memberArg.Member));
 				}
 
 				break;
@@ -231,9 +231,9 @@ public class GroupByVisitor(EsqlQueryContext context) : ExpressionVisitor
 	private string ExtractFieldFromLambdaBody(Expression body) =>
 		body switch
 		{
-			MemberExpression member => _context.FieldNameResolver.Resolve(member.Member),
+			MemberExpression member => _context.MetadataResolver.Resolve(member.Member),
 			UnaryExpression { NodeType: ExpressionType.Convert, Operand: MemberExpression innerMember } =>
-				_context.FieldNameResolver.Resolve(innerMember.Member),
+				_context.MetadataResolver.Resolve(innerMember.Member),
 			_ => "*"
 		};
 

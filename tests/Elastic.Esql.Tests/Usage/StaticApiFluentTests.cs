@@ -5,14 +5,14 @@
 namespace Elastic.Esql.Tests.Usage;
 
 /// <summary>
-/// Tests for static Esql.From&lt;T&gt;() API with fluent LINQ method syntax.
+/// Tests for Client.Query&lt;T&gt;() API with fluent LINQ method syntax.
 /// </summary>
-public class StaticApiFluentTests : EsqlTestBase
+public class FluentApiTests : EsqlTestBase
 {
 	[Test]
 	public void SimpleFilter()
 	{
-		var esql = Esql.InMemory<LogEntry>()
+		var esql = Client.Query<LogEntry>()
 			.Where(l => l.Level == "ERROR")
 			.ToString();
 
@@ -26,7 +26,7 @@ public class StaticApiFluentTests : EsqlTestBase
 	[Test]
 	public void FilterWithTake()
 	{
-		var esql = Esql.InMemory<LogEntry>()
+		var esql = Client.Query<LogEntry>()
 			.Where(l => l.Level == "ERROR")
 			.Take(10)
 			.ToString();
@@ -42,7 +42,7 @@ public class StaticApiFluentTests : EsqlTestBase
 	[Test]
 	public void FilterSortTake()
 	{
-		var esql = Esql.InMemory<LogEntry>()
+		var esql = Client.Query<LogEntry>()
 			.Where(l => l.StatusCode >= 500)
 			.OrderByDescending(l => l.Timestamp)
 			.Take(100)
@@ -60,7 +60,7 @@ public class StaticApiFluentTests : EsqlTestBase
 	[Test]
 	public void ExplicitIndexPattern()
 	{
-		var esql = Esql.InMemory<LogEntry>("my-custom-index-*")
+		var esql = Client.Query<LogEntry>("my-custom-index-*")
 			.Where(l => l.Level == "ERROR")
 			.Take(10)
 			.ToString();
@@ -76,7 +76,7 @@ public class StaticApiFluentTests : EsqlTestBase
 	[Test]
 	public void Projection()
 	{
-		var esql = Esql.InMemory<LogEntry>()
+		var esql = Client.Query<LogEntry>()
 			.Where(l => l.Level == "ERROR")
 			.Select(l => new { l.Message, l.Timestamp })
 			.ToString();

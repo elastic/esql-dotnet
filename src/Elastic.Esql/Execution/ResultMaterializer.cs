@@ -8,16 +8,16 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Elastic.Esql.QueryModel;
-using Elastic.Esql.TypeMapping;
+using Elastic.Mapping;
 
 namespace Elastic.Esql.Execution;
 
 /// <summary>
 /// Materializes ES|QL query results into C# objects.
 /// </summary>
-public class ResultMaterializer(FieldNameResolver? fieldNameResolver = null)
+public class ResultMaterializer(TypeFieldMetadataResolver? resolver = null)
 {
-	private readonly FieldNameResolver _resolver = fieldNameResolver ?? new();
+	private readonly TypeFieldMetadataResolver _resolver = resolver ?? new();
 
 	/// <summary>
 	/// Materializes query results to typed objects.

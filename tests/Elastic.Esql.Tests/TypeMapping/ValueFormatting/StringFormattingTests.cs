@@ -2,6 +2,8 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using Elastic.Esql.Formatting;
+
 namespace Elastic.Esql.Tests.TypeMapping.ValueFormatting;
 
 public class StringFormattingTests

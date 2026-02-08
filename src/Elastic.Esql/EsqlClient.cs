@@ -5,6 +5,7 @@
 using Elastic.Esql.Core;
 using Elastic.Esql.Execution;
 using Elastic.Esql.Extensions;
+using Elastic.Mapping;
 using Elastic.Transport;
 
 namespace Elastic.Esql;
@@ -26,6 +27,10 @@ public class EsqlClient(EsqlClientSettings settings) : IDisposable
 		: this(new EsqlClientSettings(nodePool))
 	{
 	}
+
+	/// <summary>Creates an in-memory client for string generation only.</summary>
+	public static EsqlClient InMemory(IElasticsearchMappingContext? mappingContext = null) =>
+		new(EsqlClientSettings.InMemory(mappingContext));
 
 	/// <summary>Gets the client settings.</summary>
 	public EsqlClientSettings Settings { get; } = settings ?? throw new ArgumentNullException(nameof(settings));
@@ -51,7 +56,7 @@ public class EsqlClient(EsqlClientSettings settings) : IDisposable
 	public async Task<List<T>> QueryAsync<T>(string esql, CancellationToken cancellationToken = default)
 	{
 		var response = await _executor.ExecuteAsync(esql, cancellationToken);
-		var materializer = new ResultMaterializer(new TypeMapping.FieldNameResolver(Settings.MappingContext));
+		var materializer = new ResultMaterializer(new Mapping.TypeFieldMetadataResolver(Settings.MappingContext));
 
 		var query = new QueryModel.EsqlQuery { ElementType = typeof(T) };
 		return materializer.Materialize<T>(response, query).ToList();
@@ -61,7 +66,7 @@ public class EsqlClient(EsqlClientSettings settings) : IDisposable
 	public async Task<List<T>> QueryAsync<T>(string esql, EsqlQueryOptions options, CancellationToken cancellationToken = default)
 	{
 		var response = await _executor.ExecuteAsync(esql, options, cancellationToken);
-		var materializer = new ResultMaterializer(new TypeMapping.FieldNameResolver(Settings.MappingContext));
+		var materializer = new ResultMaterializer(new Mapping.TypeFieldMetadataResolver(Settings.MappingContext));
 
 		var query = new QueryModel.EsqlQuery { ElementType = typeof(T) };
 		return materializer.Materialize<T>(response, query).ToList();

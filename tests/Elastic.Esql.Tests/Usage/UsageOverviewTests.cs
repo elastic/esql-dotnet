@@ -5,17 +5,15 @@
 namespace Elastic.Esql.Tests.Usage;
 
 /// <summary>
-/// Overview of all ES|QL query entry points with comprehensive examples.
+/// Overview of ES|QL query entry points with comprehensive examples.
 /// Each test demonstrates one entry point with a realistic, full-featured query.
 /// </summary>
 public class UsageOverviewTests : EsqlTestBase
 {
 	[Test]
-	public void StaticApi_Fluent_ComprehensiveExample()
+	public void Client_Fluent_ComprehensiveExample()
 	{
-		// Esql.From<T>() - Static entry point, fluent LINQ methods
-		// Best for: Quick string generation without client setup
-		var esql = Esql.InMemory<LogEntry>()
+		var esql = Client.Query<LogEntry>()
 			.Where(l => l.StatusCode >= 500)
 			.Where(l => l.Level == "ERROR")
 			.OrderByDescending(l => l.Timestamp)
@@ -33,12 +31,10 @@ public class UsageOverviewTests : EsqlTestBase
 	}
 
 	[Test]
-	public void StaticApi_QuerySyntax_ComprehensiveExample()
+	public void Client_QuerySyntax_ComprehensiveExample()
 	{
-		// Esql.From<T>() with LINQ query syntax (from...where...select)
-		// Best for: Complex queries that read more naturally in query syntax
 		var esql = (
-			from l in Esql.InMemory<LogEntry>()
+			from l in Client.Query<LogEntry>()
 			where l.Level == "ERROR" || l.Level == "WARNING"
 			where l.StatusCode >= 400
 			orderby l.Timestamp descending
@@ -56,10 +52,8 @@ public class UsageOverviewTests : EsqlTestBase
 	}
 
 	[Test]
-	public void EsqlClient_Fluent_ComprehensiveExample()
+	public void Client_Fluent_WithExplicitIndex()
 	{
-		// Client.Query<T>() - Client-based entry point for execution
-		// Best for: When you need to execute queries against Elasticsearch
 		var esql = Client.Query<LogEntry>()
 			.Where(l => l.StatusCode >= 500)
 			.OrderByDescending(l => l.Timestamp)
@@ -76,10 +70,8 @@ public class UsageOverviewTests : EsqlTestBase
 	}
 
 	[Test]
-	public void EsqlClient_QuerySyntax_ComprehensiveExample()
+	public void Client_QuerySyntax_WithProjection()
 	{
-		// Client.Query<T>() with LINQ query syntax
-		// Best for: Client-based queries with complex filtering
 		var esql = (
 			from l in Client.Query<LogEntry>()
 			where l.Level == "ERROR"
@@ -101,9 +93,7 @@ public class UsageOverviewTests : EsqlTestBase
 	[Test]
 	public void ExplicitIndexPattern_ComprehensiveExample()
 	{
-		// Esql.From<T>("custom-index") - Override the [EsqlIndex] attribute
-		// Best for: Querying same type across different indices
-		var esql = Esql.InMemory<LogEntry>("production-logs-*")
+		var esql = Client.Query<LogEntry>("production-logs-*")
 			.Where(l => l.Level == "ERROR")
 			.OrderByDescending(l => l.Timestamp)
 			.Take(100)

@@ -4,6 +4,7 @@
 
 using System.Linq.Expressions;
 using Elastic.Esql.Core;
+using Elastic.Esql.Formatting;
 using Elastic.Esql.Functions;
 
 namespace Elastic.Esql.Translation;
@@ -78,7 +79,7 @@ public class SelectProjectionVisitor(EsqlQueryContext context) : ExpressionVisit
 	protected override Expression VisitMember(MemberExpression node)
 	{
 		// Simple member access: x => x.Field (identity projection)
-		var fieldName = _context.FieldNameResolver.Resolve(node.Member);
+		var fieldName = _context.MetadataResolver.Resolve(node.Member);
 		_keepFields.Add(fieldName);
 
 		return node;
@@ -100,7 +101,7 @@ public class SelectProjectionVisitor(EsqlQueryContext context) : ExpressionVisit
 			else
 			{
 				// Simple field access
-				var sourceField = _context.FieldNameResolver.Resolve(memberExpr.Member);
+				var sourceField = _context.MetadataResolver.Resolve(memberExpr.Member);
 
 				if (sourceField == resultField)
 				{
@@ -139,7 +140,7 @@ public class SelectProjectionVisitor(EsqlQueryContext context) : ExpressionVisit
 		{
 			// Constant value
 			var resultField = ToCamelCase(resultName);
-			var value = TypeMapping.EsqlFormatting.FormatValue(constant.Value);
+			var value = EsqlFormatting.FormatValue(constant.Value);
 			_evalExpressions.Add($"{resultField} = {value}");
 		}
 	}
@@ -149,7 +150,7 @@ public class SelectProjectionVisitor(EsqlQueryContext context) : ExpressionVisit
 		{
 			BinaryExpression binary => TranslateBinary(binary),
 			MemberExpression member => TranslateMemberExpression(member),
-			ConstantExpression constant => TypeMapping.EsqlFormatting.FormatValue(constant.Value),
+			ConstantExpression constant => EsqlFormatting.FormatValue(constant.Value),
 			UnaryExpression { NodeType: ExpressionType.Convert, Operand: var operand } => TranslateExpression(operand),
 			MethodCallExpression methodCall => TranslateMethodCall(methodCall),
 			_ => throw new NotSupportedException($"Expression type {expression.GetType().Name} is not supported in projections.")
@@ -193,7 +194,7 @@ public class SelectProjectionVisitor(EsqlQueryContext context) : ExpressionVisit
 		}
 
 		// Regular field access
-		return _context.FieldNameResolver.Resolve(member.Member);
+		return _context.MetadataResolver.Resolve(member.Member);
 	}
 
 	private string TranslateBinary(BinaryExpression binary)
