@@ -10,11 +10,19 @@
 		<PackageTags>elasticsearch;mapping;source-generator;aot</PackageTags>
 	</PropertyGroup>
 
-	<!-- Include the generator as an analyzer -->
+	<!-- Include the generator as an analyzer (project-to-project) -->
 	<ItemGroup>
 		<ProjectReference Include="..\Elastic.Mapping.Generator\Elastic.Mapping.Generator.csproj"
 						  OutputItemType="Analyzer"
 						  ReferenceOutputAssembly="false" />
+	</ItemGroup>
+
+	<!-- Bundle the source generator into this package -->
+	<ItemGroup>
+		<None Include="$(ArtifactsPath)/bin/Elastic.Mapping.Generator/$(Configuration)/Elastic.Mapping.Generator.dll"
+			  Pack="true"
+			  PackagePath="analyzers/dotnet/cs"
+			  Visible="false" />
 	</ItemGroup>
 
 	<!-- Polyfills for netstandard2.0 -->
