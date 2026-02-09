@@ -138,3 +138,84 @@ public class Tag
 	public string Name { get; set; } = string.Empty;
 	public string Value { get; set; } = string.Empty;
 }
+
+// ============================================================================
+// EXTENDED MAPPING CONTEXT: tests Entity attribute options not covered above
+// ============================================================================
+
+[ElasticsearchMappingContext]
+[Entity<RollingIndex>(
+	Target = EntityTarget.Index,
+	Name = "rolling",
+	WriteAlias = "rolling-write",
+	SearchPattern = "rolling-*",
+	DatePattern = "yyyy.MM",
+	RefreshInterval = "5s",
+	Dynamic = false
+)]
+[Entity<GeoDocument>(Target = EntityTarget.Index, Name = "geo-docs")]
+[Entity<SimpleDocument>(Target = EntityTarget.Index, Name = "simple-semantic", Variant = "Semantic")]
+public static partial class ExtendedTestMappingContext;
+
+/// <summary>
+/// Test model for rolling index with date pattern, refresh interval, and dynamic=false.
+/// </summary>
+public class RollingIndex
+{
+	[Id]
+	public string Name { get; set; } = string.Empty;
+
+	[Timestamp]
+	public DateTimeOffset EventTime { get; set; }
+
+	public string Description { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Test model with explicit field type attributes that override CLR inference,
+/// plus [GeoShape] and [Object] field types.
+/// </summary>
+public class GeoDocument
+{
+	[Id]
+	public string Name { get; set; } = string.Empty;
+
+	[GeoShape]
+	public object? Boundary { get; set; }
+
+	[Object]
+	public object? Metadata { get; set; }
+
+	[Long]
+	public int Count { get; set; }
+
+	[Double]
+	public int Score { get; set; }
+
+	[Boolean]
+	public string? Active { get; set; }
+}
+
+// ============================================================================
+// STJ CONTEXT: tests JsonContext integration with naming policies
+// ============================================================================
+
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower)]
+[JsonSerializable(typeof(SnakeCaseDocument))]
+public partial class TestJsonContext : JsonSerializerContext;
+
+[ElasticsearchMappingContext(JsonContext = typeof(TestJsonContext))]
+[Entity<SnakeCaseDocument>(Target = EntityTarget.Index, Name = "snake-docs")]
+public static partial class StjTestMappingContext;
+
+/// <summary>
+/// Test model for STJ snake_case naming policy.
+/// Properties should be mapped to snake_case field names.
+/// </summary>
+public class SnakeCaseDocument
+{
+	public string FirstName { get; set; } = string.Empty;
+	public string LastName { get; set; } = string.Empty;
+	public int PageCount { get; set; }
+	public DateTime CreatedAt { get; set; }
+}

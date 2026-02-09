@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information
 
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Text.Json.Serialization;
 
@@ -96,6 +97,9 @@ public class TypeFieldMetadataResolver(IElasticsearchMappingContext? context = n
 		return jsonAttr?.Name ?? ToCamelCase(member.Name);
 	}
 
+#if NET8_0_OR_GREATER
+	[UnconditionalSuppressMessage("Trimming", "IL2070", Justification = "Fallback for non-generated types; source generator provides metadata for registered types.")]
+#endif
 	private static TypeFieldMetadata? DiscoverFromAttributes(Type type)
 	{
 		var map = new Dictionary<string, string>();

@@ -70,3 +70,56 @@ var esql = new EsqlQueryable<Product>(MyContext.Instance)
 ```
 
 No reflection anywhere in the pipeline.
+
+## Known limitations
+
+These are .NET runtime limitations with LINQ expression trees under AOT, not Elastic.Esql bugs.
+
+### `decimal` in WHERE clauses
+
+`decimal` defines comparison operators (`>`, `<`, `>=`, `<=`) as user-defined static methods (`op_GreaterThan`, etc.). When the C# compiler builds an expression tree for `.Where(p => p.Price > 100m)`, it calls `Expression.GreaterThan` which looks up these operators via reflection at runtime. Under AOT, this reflection lookup fails:
+
+```
+System.InvalidOperationException: The binary operator GreaterThan is not defined
+for the types 'System.Decimal' and 'System.Decimal'.
+```
+
+**Workaround**: Use `double` instead of `decimal` for numeric properties that appear in LINQ `Where` clauses. Primitive types like `int`, `long`, and `double` have built-in IL comparison instructions and do not require operator method lookup.
+
+### Anonymous type projections
+
+`.Select(x => new { x.A, x.B })` generates expression trees that use `Expression.New(ConstructorInfo, IEnumerable<Expression>, MemberInfo[])`. This overload carries `[RequiresUnreferencedCode]` because the trimmer may remove the property metadata referenced by the `MemberInfo[]` parameter.
+
+For query translation this is a false positive — `ToEsqlString()` only reads the expression tree, it never invokes the members at runtime. Two `Keep()` overloads provide AOT-friendlier alternatives:
+
+**Simple field selection (fully AOT-safe, no suppression needed):**
+
+```csharp
+var esql = queryable
+    .Keep(p => p.Name, p => p.Price)
+    .ToEsqlString();
+// FROM products* | KEEP name, price
+```
+
+Each lambda is a simple member access — no anonymous types, no `Expression.New`, no trim warnings.
+
+**Projection with aliases (still needs call-site suppression like Select):**
+
+```csharp
+[UnconditionalSuppressMessage("Trimming", "IL2026")]
+static string BuildQuery() =>
+    queryable
+        .Keep(p => new { p.Name, Total = p.Price })
+        .ToEsqlString();
+// FROM products* | EVAL total = price | KEEP name, total
+```
+
+The `Keep<T, TResult>` overload suppresses IL2026 internally, but the C# compiler still emits `Expression.New` at the call site, so the caller needs the suppression attribute.
+
+You can still use `.Select()` with the same suppression if you prefer:
+
+```csharp
+[UnconditionalSuppressMessage("Trimming", "IL2026")]
+static string BuildQuery() =>
+    queryable.Select(p => new { p.Name, p.Price }).ToEsqlString();
+```

@@ -4,6 +4,7 @@
 
 using Elastic.Esql.Execution;
 using Elastic.Esql.QueryModel;
+using Elastic.Esql.QueryModel.Commands;
 using Elastic.Mapping;
 
 namespace Elastic.Esql.Core;
@@ -45,4 +46,9 @@ public class EsqlQueryContext(IElasticsearchMappingContext? mappingContext = nul
 	/// When non-null, captured variables are emitted as named parameters instead of inlined values.
 	/// </summary>
 	public EsqlParameters? ParameterCollection { get; set; }
+
+	/// <summary>
+	/// Commands added by extension methods (Keep, Drop) that are appended after expression translation.
+	/// </summary>
+	public List<QueryCommand> PendingCommands { get; } = [];
 }

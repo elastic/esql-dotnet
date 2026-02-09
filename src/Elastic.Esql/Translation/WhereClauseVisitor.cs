@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information
 
 using System.Collections;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -673,6 +674,9 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 			_ => throw new NotSupportedException($"Operator {nodeType} is not supported.")
 		};
 
+#if NET8_0_OR_GREATER
+	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Expression compilation fallback for constant evaluation.")]
+#endif
 	private static object? GetConstantValue(Expression expression) =>
 		expression switch
 		{

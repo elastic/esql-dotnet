@@ -53,4 +53,58 @@ public class ConfigurationInterfaceTests
 		var context = TestMappingContext.SimpleDocument.Context;
 		context.ConfigureAnalysis.Should().BeNull();
 	}
+
+	[Test]
+	public void Instance_GetTypeMetadata_ReturnsContextForKnownType()
+	{
+		var metadata = TestMappingContext.Instance.GetTypeMetadata(typeof(LogEntry));
+
+		metadata.Should().NotBeNull();
+		metadata!.PropertyToField["Timestamp"].Should().Be("@timestamp");
+		metadata.SearchPattern.Should().Be("logs-*");
+	}
+
+	[Test]
+	public void Instance_GetTypeMetadata_ReturnsNullForUnknownType()
+	{
+		var metadata = TestMappingContext.Instance.GetTypeMetadata(typeof(string));
+
+		metadata.Should().BeNull();
+	}
+
+	[Test]
+	public void Instance_All_MatchesStaticAll()
+	{
+		var instanceAll = TestMappingContext.Instance.All;
+
+		instanceAll.Should().HaveCount(TestMappingContext.All.Count);
+	}
+
+	[Test]
+	public void TextFields_ContainsTextProperties()
+	{
+		var textFields = TestMappingContext.LogEntry.TextFields;
+
+		textFields.Should().Contain("Message");
+	}
+
+	[Test]
+	public void TextFields_ExcludesNonTextProperties()
+	{
+		var textFields = TestMappingContext.LogEntry.TextFields;
+
+		textFields.Should().NotContain("Level");
+		textFields.Should().NotContain("StatusCode");
+		textFields.Should().NotContain("IsError");
+		textFields.Should().NotContain("Timestamp");
+	}
+
+	[Test]
+	public void TextFields_EmptyWhenNoTextFields()
+	{
+		var textFields = TestMappingContext.NginxAccessLog.TextFields;
+
+		// NginxAccessLog has Path as [Text], so it should contain Path
+		textFields.Should().Contain("Path");
+	}
 }

@@ -2,10 +2,14 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Diagnostics.CodeAnalysis;
+using System.Linq.Expressions;
+using System.Reflection;
 using Elastic.Esql.Core;
 using Elastic.Esql.Execution;
 using Elastic.Esql.QueryModel;
 using Elastic.Esql.QueryModel.Commands;
+using Elastic.Esql.Translation;
 
 namespace Elastic.Esql.Extensions;
 
@@ -160,29 +164,92 @@ public static class EsqlQueryableExtensions
 	/// <summary>
 	/// Specifies fields to keep in the result (KEEP command).
 	/// </summary>
-	public static IEsqlQueryable<T> Keep<T>(
-		this IEsqlQueryable<T> queryable,
+	public static IQueryable<T> Keep<T>(
+		this IQueryable<T> queryable,
 		params string[] fields)
 	{
-		var query = ((EsqlQueryProvider)queryable.Provider).TranslateExpression(queryable.Expression);
-		query.AddCommand(new KeepCommand(fields));
+		AsEsqlQueryable(queryable).Context.PendingCommands.Add(new KeepCommand(fields));
+		return queryable;
+	}
 
-		// Create a new queryable with the modified query
-		// For now, we'll just return the same queryable - the KEEP will be handled in projection
+	/// <summary>
+	/// Specifies fields to keep using lambda selectors (KEEP command). Fully AOT-safe.
+	/// </summary>
+	public static IQueryable<T> Keep<T>(
+		this IQueryable<T> queryable,
+		params Expression<Func<T, object?>>[] fieldSelectors)
+	{
+		var esql = AsEsqlQueryable(queryable);
+		var fields = new string[fieldSelectors.Length];
+		for (var i = 0; i < fieldSelectors.Length; i++)
+		{
+			var member = ExtractMember(fieldSelectors[i]);
+			fields[i] = esql.Context.MetadataResolver.Resolve(member);
+		}
+
+		esql.Context.PendingCommands.Add(new KeepCommand(fields));
+		return queryable;
+	}
+
+	/// <summary>
+	/// Specifies fields to keep with optional aliases via a projection (KEEP/EVAL commands).
+	/// Anonymous type projections require <c>[UnconditionalSuppressMessage]</c> at the call site under AOT.
+	/// </summary>
+#if NET8_0_OR_GREATER
+	[UnconditionalSuppressMessage("Trimming", "IL2026",
+		Justification = "Expression tree is only read for query translation, members are not invoked at runtime.")]
+#endif
+	public static IQueryable<T> Keep<T, TResult>(
+		this IQueryable<T> queryable,
+		Expression<Func<T, TResult>> projection)
+	{
+		var esql = AsEsqlQueryable(queryable);
+		var projectionVisitor = new SelectProjectionVisitor(esql.Context);
+		var result = projectionVisitor.Translate(projection);
+
+		if (result.EvalExpressions.Count > 0)
+			esql.Context.PendingCommands.Add(new EvalCommand(result.EvalExpressions));
+
+		var keepFields = new List<string>(result.KeepFields);
+		foreach (var eval in result.EvalExpressions)
+		{
+			var aliasName = eval.Substring(0, eval.IndexOf(" =", StringComparison.Ordinal));
+			keepFields.Add(aliasName);
+		}
+
+		if (keepFields.Count > 0)
+			esql.Context.PendingCommands.Add(new KeepCommand(keepFields));
+
 		return queryable;
 	}
 
 	/// <summary>
 	/// Specifies fields to drop from the result (DROP command).
 	/// </summary>
-	public static IEsqlQueryable<T> Drop<T>(
-		this IEsqlQueryable<T> queryable,
+	public static IQueryable<T> Drop<T>(
+		this IQueryable<T> queryable,
 		params string[] fields)
 	{
-		var query = ((EsqlQueryProvider)queryable.Provider).TranslateExpression(queryable.Expression);
-		query.AddCommand(new DropCommand(fields));
-
+		AsEsqlQueryable(queryable).Context.PendingCommands.Add(new DropCommand(fields));
 		return queryable;
+	}
+
+	private static IEsqlQueryable<T> AsEsqlQueryable<T>(IQueryable<T> queryable) =>
+		queryable as IEsqlQueryable<T>
+		?? throw new InvalidOperationException("Query is not an ES|QL query.");
+
+	private static MemberInfo ExtractMember<T>(Expression<Func<T, object?>> selector)
+	{
+		var body = selector.Body;
+
+		// Unwrap Convert (boxing for value types)
+		if (body is UnaryExpression { NodeType: ExpressionType.Convert } unary)
+			body = unary.Operand;
+
+		if (body is MemberExpression member)
+			return member.Member;
+
+		throw new ArgumentException($"Expression must be a simple member access (e.g. x => x.Field), got: {selector.Body}");
 	}
 
 	/// <summary>

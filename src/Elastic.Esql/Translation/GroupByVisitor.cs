@@ -2,6 +2,7 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using System.Reflection;
 using Elastic.Esql.Core;
@@ -231,6 +232,9 @@ public class GroupByVisitor(EsqlQueryContext context) : ExpressionVisitor
 		};
 	}
 
+#if NET8_0_OR_GREATER
+	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Expression compilation fallback for aggregation constant arguments.")]
+#endif
 	private string? TryExtractEsqlAggregation(MethodCallExpression methodCall, string methodName, string resultName)
 	{
 		// EsqlFunctions aggregation methods follow the pattern:
@@ -287,6 +291,9 @@ public class GroupByVisitor(EsqlQueryContext context) : ExpressionVisitor
 		};
 	}
 
+#if NET8_0_OR_GREATER
+	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Expression compilation fallback for grouping function arguments.")]
+#endif
 	private string TranslateGroupingFunction(MethodCallExpression methodCall)
 	{
 		var declaringType = methodCall.Method.DeclaringType;

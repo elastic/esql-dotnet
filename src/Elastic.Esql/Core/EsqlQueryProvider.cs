@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information
 
 using System.Collections;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using Elastic.Esql.Execution;
 using Elastic.Esql.Generation;
@@ -53,6 +54,9 @@ public class EsqlQueryProvider(EsqlQueryContext context) : IQueryProvider
 	/// <summary>
 	/// Executes the query asynchronously.
 	/// </summary>
+#if NET8_0_OR_GREATER
+	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "MakeGenericType is required for LINQ provider collection materialization.")]
+#endif
 	public async Task<TResult> ExecuteAsync<TResult>(Expression expression, CancellationToken cancellationToken)
 	{
 		var executor = Context.Executor ?? throw new InvalidOperationException("No query executor configured. Provide an IEsqlQueryExecutor to execute queries.");
@@ -106,7 +110,16 @@ public class EsqlQueryProvider(EsqlQueryContext context) : IQueryProvider
 	public EsqlQuery TranslateExpression(Expression expression)
 	{
 		var visitor = new EsqlExpressionVisitor(Context);
-		return visitor.Translate(expression);
+		var query = visitor.Translate(expression);
+
+		if (Context.PendingCommands.Count > 0)
+		{
+			foreach (var command in Context.PendingCommands)
+				query.AddCommand(command);
+			Context.PendingCommands.Clear();
+		}
+
+		return query;
 	}
 
 	/// <summary>
@@ -224,6 +237,9 @@ public class EsqlQueryProvider(EsqlQueryContext context) : IQueryProvider
 		};
 	}
 
+#if NET8_0_OR_GREATER
+	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "MakeGenericMethod is required for LINQ provider materialization.")]
+#endif
 	private System.Collections.IEnumerable MaterializeCollection(EsqlResponse response, Type elementType, EsqlQuery query)
 	{
 		var materializer = new ResultMaterializer(Context.MetadataResolver);
