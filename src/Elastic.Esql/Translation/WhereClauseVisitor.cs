@@ -127,6 +127,12 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 		if (expr is not MemberExpression member)
 			return null;
 
+		// DateTime/DateTimeOffset properties like DayOfWeek return enums but translate to
+		// DATE_EXTRACT which produces integers — don't treat these as enum comparisons
+		var declaringType = member.Member.DeclaringType;
+		if (declaringType == typeof(DateTime) || declaringType == typeof(DateTimeOffset))
+			return null;
+
 		var memberType = member.Member switch
 		{
 			PropertyInfo prop => prop.PropertyType,

@@ -24,7 +24,7 @@ public static class ProductConfig
         .Price(f => f.DocValues(true));
 }
 
-[Index<Product>(Name = "products", Configuration = typeof(ProductConfig))]
+[Entity<Product>(Target = EntityTarget.Index, Name = "products", Configuration = typeof(ProductConfig))]
 ```
 
 The `ProductMappingsBuilder` is generated with a method for each property on the `Product` type (e.g., `.Name()`, `.Price()`, `.InStock()`), providing full IntelliSense.

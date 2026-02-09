@@ -22,8 +22,8 @@ public partial class MyJsonContext : JsonSerializerContext;
 
 // Link it to the mapping context
 [ElasticsearchMappingContext(JsonContext = typeof(MyJsonContext))]
-[Index<Product>(Name = "products")]
-[Index<Order>(Name = "orders")]
+[Entity<Product>(Target = EntityTarget.Index, Name = "products")]
+[Entity<Order>(Target = EntityTarget.Index, Name = "orders")]
 public static partial class MyContext;
 ```
 

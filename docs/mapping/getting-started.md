@@ -30,12 +30,12 @@ Properties without attributes are inferred from their CLR type. See [default typ
 
 ## 2. Register types in a mapping context
 
-Create a `static partial class` with the `[ElasticsearchMappingContext]` attribute and register types with `[Index<T>]` or `[DataStream<T>]`:
+Create a `static partial class` with the `[ElasticsearchMappingContext]` attribute and register types with `[Entity<T>]`:
 
 ```csharp
 [ElasticsearchMappingContext]
-[Index<Product>(Name = "products", SearchPattern = "products*")]
-[DataStream<ApplicationLog>(Type = "logs", Dataset = "myapp", Namespace = "production")]
+[Entity<Product>(Target = EntityTarget.Index, Name = "products", SearchPattern = "products*")]
+[Entity<ApplicationLog>(Target = EntityTarget.DataStream, Type = "logs", Dataset = "myapp", Namespace = "production")]
 public static partial class MyContext;
 ```
 
@@ -104,7 +104,8 @@ Properties without explicit attributes are inferred from their CLR type:
 ### Traditional index
 
 ```csharp
-[Index<Product>(
+[Entity<Product>(
+    Target = EntityTarget.Index,
     Name = "products",
     WriteAlias = "products-write",
     ReadAlias = "products-read",
@@ -117,7 +118,7 @@ Properties without explicit attributes are inferred from their CLR type:
 ### Rolling date index
 
 ```csharp
-[Index<Order>(Name = "orders", DatePattern = "yyyy.MM")]
+[Entity<Order>(Target = EntityTarget.Index, Name = "orders", DatePattern = "yyyy.MM")]
 // Write target: orders-2025.02
 // Search pattern: orders-*
 ```
@@ -125,7 +126,7 @@ Properties without explicit attributes are inferred from their CLR type:
 ### Data stream
 
 ```csharp
-[DataStream<ApplicationLog>(Type = "logs", Dataset = "ecommerce.app", Namespace = "production")]
+[Entity<ApplicationLog>(Target = EntityTarget.DataStream, Type = "logs", Dataset = "ecommerce.app", Namespace = "production")]
 // Data stream: logs-ecommerce.app-production
 // Search pattern: logs-ecommerce.app-*
 ```

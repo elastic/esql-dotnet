@@ -11,17 +11,17 @@ How LINQ operators map to [ES|QL commands](elasticsearch://reference/query-langu
 Every query starts with `FROM`. The source index pattern is resolved from your type registration:
 
 ```csharp
-// From [Index<T>] attribute
-[Index<Product>(Name = "products", SearchPattern = "products*")]
+// Index target
+[Entity<Product>(Target = EntityTarget.Index, Name = "products", SearchPattern = "products*")]
 
-// From [DataStream<T>] attribute
-[DataStream<AppLog>(Type = "logs", Dataset = "myapp", Namespace = "production")]
+// Data stream target
+[Entity<AppLog>(Target = EntityTarget.DataStream, Type = "logs", Dataset = "myapp", Namespace = "production")]
 ```
 
 | Registration | FROM output |
 |---|---|
-| `[Index<T>(SearchPattern = "logs-*")]` | `FROM logs-*` |
-| `[DataStream<T>(Type = "logs", Dataset = "myapp")]` | `FROM logs-myapp-*` |
+| `[Entity<T>(Target = EntityTarget.Index, SearchPattern = "logs-*")]` | `FROM logs-*` |
+| `[Entity<T>(Target = EntityTarget.DataStream, Type = "logs", Dataset = "myapp")]` | `FROM logs-myapp-*` |
 | No registration (convention) | `FROM {type-name}` |
 
 When using a mapping context, the search pattern is resolved from `SearchStrategy.Pattern`. Without a context, field names fall back to reflection with `[JsonPropertyName]` or camelCase convention.

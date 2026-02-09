@@ -12,7 +12,7 @@ For a context like:
 
 ```csharp
 [ElasticsearchMappingContext]
-[Index<Product>(Name = "products")]
+[Entity<Product>(Target = EntityTarget.Index, Name = "products")]
 public static partial class MyContext;
 ```
 
@@ -96,8 +96,13 @@ public record ElasticsearchTypeContext(
     string MappingsHash,
     IndexStrategy? IndexStrategy,
     SearchStrategy? SearchStrategy,
-    Func<AnalysisBuilder, AnalysisBuilder>? ConfigureAnalysis,
-    Type? MappedType
+    EntityTarget EntityTarget,
+    DataStreamMode DataStreamMode = DataStreamMode.Default,
+    Func<object, string?>? GetId = null,
+    Func<object, string?>? GetContentHash = null,
+    Func<object, DateTimeOffset?>? GetTimestamp = null,
+    Func<AnalysisBuilder, AnalysisBuilder>? ConfigureAnalysis = null,
+    Type? MappedType = null
 );
 ```
 

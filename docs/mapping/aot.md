@@ -60,7 +60,7 @@ public partial class MyJsonContext : JsonSerializerContext;
 
 // Elastic.Mapping source-generated mappings
 [ElasticsearchMappingContext(JsonContext = typeof(MyJsonContext))]
-[Index<Product>(Name = "products")]
+[Entity<Product>(Target = EntityTarget.Index, Name = "products")]
 public static partial class MyContext;
 
 // Elastic.Esql LINQ-to-ES|QL (expression tree visitor, no reflection)

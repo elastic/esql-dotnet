@@ -31,7 +31,7 @@ A source generator that turns POCOs into type-safe, pre-computed Elasticsearch m
 
 ```csharp
 [ElasticsearchMappingContext]
-[Index<Product>(Name = "products")]
+[Entity<Product>(Target = EntityTarget.Index, Name = "products")]
 public static partial class MyContext;
 
 // Type-safe field names - rename the property, these update automatically

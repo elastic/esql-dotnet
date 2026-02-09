@@ -23,7 +23,7 @@ public static class ProductConfig
             .MinGram(3).MaxGram(8));
 }
 
-[Index<Product>(Name = "products", Configuration = typeof(ProductConfig))]
+[Entity<Product>(Target = EntityTarget.Index, Name = "products", Configuration = typeof(ProductConfig))]
 ```
 
 ## AnalysisBuilder API
