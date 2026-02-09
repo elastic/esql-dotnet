@@ -30,5 +30,12 @@ internal sealed record TypeRegistration(
 	string? ConfigurationClassName,
 	string? ConfigureAnalysisReference,
 	bool HasConfigureMappings,
-	AnalysisComponentsModel AnalysisComponents
-);
+	AnalysisComponentsModel AnalysisComponents,
+	string? Variant = null
+)
+{
+	/// <summary>
+	/// The resolved property/resolver name: TypeName + Variant suffix (if any).
+	/// </summary>
+	public string ResolverName => string.IsNullOrEmpty(Variant) ? TypeName : $"{TypeName}{Variant}";
+}

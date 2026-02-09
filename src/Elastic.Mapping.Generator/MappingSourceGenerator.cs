@@ -199,7 +199,10 @@ public class MappingSourceGenerator : IIncrementalGenerator
 			configTypeSymbol = configType;
 		}
 
-		return BuildTypeRegistration(targetType, contextSymbol, stjConfig, indexConfig, dataStreamConfig, entityConfig, ingestProperties, configClassName, configTypeSymbol, ct);
+		// Extract Variant suffix
+		var variant = GetNamedArg<string>(attr, "Variant");
+
+		return BuildTypeRegistration(targetType, contextSymbol, stjConfig, indexConfig, dataStreamConfig, entityConfig, ingestProperties, configClassName, configTypeSymbol, variant, ct);
 	}
 
 	private static IngestPropertyModel AnalyzeIngestProperties(INamedTypeSymbol targetType)
@@ -251,6 +254,7 @@ public class MappingSourceGenerator : IIncrementalGenerator
 		IngestPropertyModel ingestProperties,
 		string? configClassName,
 		INamedTypeSymbol? configTypeSymbol,
+		string? variant,
 		CancellationToken ct)
 	{
 		var typeModel = TypeAnalyzer.Analyze(targetType, stjConfig, indexConfig, dataStreamConfig, ct);
@@ -271,16 +275,35 @@ public class MappingSourceGenerator : IIncrementalGenerator
 				.FirstOrDefault(m => m.IsStatic && m.Parameters.Length == 1);
 		}
 
-		// Check for Configure{TypeName}Analysis/Configure{TypeName}Mappings on the context class (priority 1)
+		// Check for Configure{ResolverName}Analysis/Configure{ResolverName}Mappings on the context class (priority 1)
+		// When a Variant is set, try the variant-suffixed name first, then fall back to TypeName
+		var resolverName = string.IsNullOrEmpty(variant) ? targetType.Name : $"{targetType.Name}{variant}";
+
 		var contextConfigureAnalysis = contextSymbol
-			.GetMembers($"Configure{targetType.Name}Analysis")
+			.GetMembers($"Configure{resolverName}Analysis")
 			.OfType<IMethodSymbol>()
 			.FirstOrDefault(m => m.IsStatic && m.Parameters.Length == 1);
 
+		if (contextConfigureAnalysis == null && !string.IsNullOrEmpty(variant))
+		{
+			contextConfigureAnalysis = contextSymbol
+				.GetMembers($"Configure{targetType.Name}Analysis")
+				.OfType<IMethodSymbol>()
+				.FirstOrDefault(m => m.IsStatic && m.Parameters.Length == 1);
+		}
+
 		var contextConfigureMappings = contextSymbol
-			.GetMembers($"Configure{targetType.Name}Mappings")
+			.GetMembers($"Configure{resolverName}Mappings")
 			.OfType<IMethodSymbol>()
 			.FirstOrDefault(m => m.IsStatic && m.Parameters.Length == 1);
+
+		if (contextConfigureMappings == null && !string.IsNullOrEmpty(variant))
+		{
+			contextConfigureMappings = contextSymbol
+				.GetMembers($"Configure{targetType.Name}Mappings")
+				.OfType<IMethodSymbol>()
+				.FirstOrDefault(m => m.IsStatic && m.Parameters.Length == 1);
+		}
 
 		// Check for ConfigureAnalysis/ConfigureMappings on the target type itself (priority 3 / fallback)
 		var hasConfigureAnalysisOnType = typeModel.HasConfigureAnalysis;
@@ -293,7 +316,7 @@ public class MappingSourceGenerator : IIncrementalGenerator
 
 		if (contextConfigureAnalysis != null)
 		{
-			configureAnalysisRef = $"global::{contextSymbol.ToDisplayString()}.Configure{targetType.Name}Analysis";
+			configureAnalysisRef = $"global::{contextSymbol.ToDisplayString()}.{contextConfigureAnalysis.Name}";
 			analysisComponents = ConfigureAnalysisParser.ParseFromMethod(contextConfigureAnalysis, ct);
 		}
 		else if (configClassAnalysis != null)
@@ -327,7 +350,8 @@ public class MappingSourceGenerator : IIncrementalGenerator
 			configClassName,
 			configureAnalysisRef,
 			hasConfigureMappings,
-			analysisComponents
+			analysisComponents,
+			variant
 		);
 	}
 
@@ -341,12 +365,12 @@ public class MappingSourceGenerator : IIncrementalGenerator
 		foreach (var reg in model.TypeRegistrations)
 		{
 			var mappingsBuilderSource = MappingsBuilderEmitter.EmitForContext(model, reg);
-			context.AddSource($"{model.ContextTypeName}.{reg.TypeName}MappingsBuilder.g.cs", mappingsBuilderSource);
+			context.AddSource($"{model.ContextTypeName}.{reg.ResolverName}MappingsBuilder.g.cs", mappingsBuilderSource);
 
 			// Generate analysis names if there are analysis components
 			var analysisNamesSource = AnalysisNamesEmitter.EmitForContext(model, reg);
 			if (analysisNamesSource != null)
-				context.AddSource($"{model.ContextTypeName}.{reg.TypeName}Analysis.g.cs", analysisNamesSource);
+				context.AddSource($"{model.ContextTypeName}.{reg.ResolverName}Analysis.g.cs", analysisNamesSource);
 		}
 	}
 

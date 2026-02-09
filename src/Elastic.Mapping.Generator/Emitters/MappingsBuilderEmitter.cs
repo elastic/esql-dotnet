@@ -47,7 +47,7 @@ internal static class MappingsBuilderEmitter
 			sb.AppendLine();
 		}
 
-		EmitMappingsBuilderClass(sb, reg.TypeModel, reg.TypeName, reg.AnalysisComponents);
+		EmitMappingsBuilderClass(sb, reg.TypeModel, reg.ResolverName, reg.AnalysisComponents);
 
 		return sb.ToString();
 	}

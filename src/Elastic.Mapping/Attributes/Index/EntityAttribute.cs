@@ -97,4 +97,10 @@ public sealed class EntityAttribute<T> : Attribute where T : class
 
 	/// <summary>Optional static class containing ConfigureAnalysis/ConfigureMappings methods.</summary>
 	public Type? Configuration { get; init; }
+
+	/// <summary>
+	/// Optional variant suffix for registering multiple entities of the same type with different configurations.
+	/// When set, the resolver property name becomes <c>{TypeName}{Variant}</c> (e.g., "KnowledgeArticleSemantic").
+	/// </summary>
+	public string? Variant { get; init; }
 }

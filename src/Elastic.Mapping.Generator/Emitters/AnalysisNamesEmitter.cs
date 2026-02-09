@@ -31,7 +31,7 @@ internal static class AnalysisNamesEmitter
 			sb.AppendLine();
 		}
 
-		EmitAnalysisClass(sb, "", reg.TypeName, reg.AnalysisComponents);
+		EmitAnalysisClass(sb, "", reg.ResolverName, reg.AnalysisComponents);
 
 		return sb.ToString();
 	}

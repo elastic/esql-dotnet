@@ -48,15 +48,15 @@ internal static class ContextEmitter
 		// Emit static resolver properties
 		foreach (var reg in model.TypeRegistrations)
 		{
-			sb.AppendLine($"\t/// <summary>Elasticsearch resolver for {reg.TypeName}.</summary>");
-			sb.AppendLine($"\tpublic static {reg.TypeName}Resolver {reg.TypeName} {{ get; }} = new();");
+			sb.AppendLine($"\t/// <summary>Elasticsearch resolver for {reg.ResolverName}.</summary>");
+			sb.AppendLine($"\tpublic static {reg.ResolverName}Resolver {reg.ResolverName} {{ get; }} = new();");
 			sb.AppendLine();
 		}
 
 		// Emit All property
 		sb.AppendLine("\t/// <summary>All registered Elasticsearch type contexts.</summary>");
 		sb.Append("\tpublic static global::System.Collections.Generic.IReadOnlyList<global::Elastic.Mapping.ElasticsearchTypeContext> All { get; } =\n\t\t[");
-		var typeNames = model.TypeRegistrations.Select(r => $"{r.TypeName}.Context").ToList();
+		var typeNames = model.TypeRegistrations.Select(r => $"{r.ResolverName}.Context").ToList();
 		sb.Append(string.Join(", ", typeNames));
 		sb.AppendLine("];");
 		sb.AppendLine();
@@ -85,8 +85,8 @@ internal static class ContextEmitter
 		var mappingsHash = SharedEmitterHelpers.ComputeHash(mappingsJson);
 		var combinedHash = SharedEmitterHelpers.ComputeHash(indexJson);
 
-		sb.AppendLine($"{indent}/// <summary>Generated Elasticsearch resolver for {reg.TypeName}.</summary>");
-		sb.AppendLine($"{indent}public sealed class {reg.TypeName}Resolver");
+		sb.AppendLine($"{indent}/// <summary>Generated Elasticsearch resolver for {reg.ResolverName}.</summary>");
+		sb.AppendLine($"{indent}public sealed class {reg.ResolverName}Resolver");
 		sb.AppendLine($"{indent}{{");
 
 		// Hashes as instance properties backed by constants
@@ -223,7 +223,7 @@ internal static class ContextEmitter
 		foreach (var reg in model.TypeRegistrations)
 		{
 			sb.AppendLine($"{indent}\t\tif (type == typeof(global::{reg.TypeFullyQualifiedName}))");
-			sb.AppendLine($"{indent}\t\t\treturn {model.ContextTypeName}.{reg.TypeName}.GetTypeFieldMetadata();");
+			sb.AppendLine($"{indent}\t\t\treturn {model.ContextTypeName}.{reg.ResolverName}.GetTypeFieldMetadata();");
 		}
 
 		sb.AppendLine($"{indent}\t\treturn null;");
