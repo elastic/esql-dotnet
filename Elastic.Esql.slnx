@@ -37,4 +37,5 @@
     <File Path="IMPLEMENTATION_PLAN.md" />
   </Folder>
   <Project Path="aspire/aspire.csproj" />
+  <Project Path="docs/docs.csproj" />
 </Solution>

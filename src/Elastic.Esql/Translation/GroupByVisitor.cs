@@ -5,6 +5,8 @@
 using System.Linq.Expressions;
 using System.Reflection;
 using Elastic.Esql.Core;
+using Elastic.Esql.Formatting;
+using Elastic.Esql.Functions;
 using Elastic.Esql.QueryModel.Commands;
 
 namespace Elastic.Esql.Translation;
@@ -66,6 +68,8 @@ public class GroupByVisitor(EsqlQueryContext context) : ExpressionVisitor
 				{
 					if (arg is MemberExpression memberArg)
 						fields.Add(ResolveWithKeyword(memberArg.Member));
+					else if (arg is MethodCallExpression methodArg)
+						fields.Add(TranslateGroupingFunction(methodArg));
 				}
 
 				break;
@@ -76,6 +80,11 @@ public class GroupByVisitor(EsqlQueryContext context) : ExpressionVisitor
 
 			case ConstantExpression:
 				// Grouping by constant (like 1) means no grouping fields - just aggregate all
+				break;
+
+			case MethodCallExpression methodCall:
+				// Grouping by function: EsqlFunctions.Bucket(l.Duration, 10)
+				fields.Add(TranslateGroupingFunction(methodCall));
 				break;
 
 			default:
@@ -185,6 +194,11 @@ public class GroupByVisitor(EsqlQueryContext context) : ExpressionVisitor
 			return null;
 
 		var methodName = methodCall.Method.Name;
+		var declaringType = methodCall.Method.DeclaringType;
+
+		// Check for EsqlFunctions aggregation methods
+		if (declaringType == typeof(EsqlFunctions))
+			return TryExtractEsqlAggregation(methodCall, methodName, resultName);
 
 		// LINQ aggregation methods are extension methods:
 		// g.Count() → Enumerable.Count(g)
@@ -215,6 +229,84 @@ public class GroupByVisitor(EsqlQueryContext context) : ExpressionVisitor
 			"Max" => $"{resultName} = MAX({fieldExpr})",
 			_ => null
 		};
+	}
+
+	private string? TryExtractEsqlAggregation(MethodCallExpression methodCall, string methodName, string resultName)
+	{
+		// EsqlFunctions aggregation methods follow the pattern:
+		// EsqlFunctions.CountDistinct(g, l => l.Field)
+		// First arg is the source (group), second is the field selector, optional third+ are extra args
+
+		string ExtractField(int selectorIndex)
+		{
+			if (methodCall.Arguments.Count > selectorIndex)
+				return ExtractFieldFromSelector(methodCall.Arguments[selectorIndex]);
+			return "*";
+		}
+
+		string? ExtractConstantArg(int index)
+		{
+			if (methodCall.Arguments.Count <= index)
+				return null;
+			var arg = methodCall.Arguments[index];
+			var value = arg switch
+			{
+				ConstantExpression c => c.Value,
+				UnaryExpression { NodeType: ExpressionType.Convert, Operand: ConstantExpression c2 } => c2.Value,
+				MemberExpression member when member.Expression is ConstantExpression ce =>
+					member.Member switch
+					{
+						System.Reflection.FieldInfo fi => fi.GetValue(ce.Value),
+						System.Reflection.PropertyInfo pi => pi.GetValue(ce.Value),
+						_ => null
+					},
+				_ => Expression.Lambda(arg).Compile().DynamicInvoke()
+			};
+			return value?.ToString();
+		}
+
+		var fieldExpr = ExtractField(1);
+
+		return methodName switch
+		{
+			"CountDistinct" => $"{resultName} = COUNT_DISTINCT({fieldExpr})",
+			"Median" => $"{resultName} = MEDIAN({fieldExpr})",
+			"MedianAbsoluteDeviation" => $"{resultName} = MEDIAN_ABSOLUTE_DEVIATION({fieldExpr})",
+			"Percentile" => $"{resultName} = PERCENTILE({fieldExpr}, {ExtractConstantArg(2)})",
+			"StdDev" => $"{resultName} = STD_DEV({fieldExpr})",
+			"Variance" => $"{resultName} = VARIANCE({fieldExpr})",
+			"WeightedAvg" => $"{resultName} = WEIGHTED_AVG({fieldExpr}, {ExtractField(2)})",
+			"Top" => $"{resultName} = TOP({fieldExpr}, {ExtractConstantArg(2)}, {EsqlFormatting.FormatValue(ExtractConstantArg(3))})",
+			"Values" => $"{resultName} = VALUES({fieldExpr})",
+			"First" => $"{resultName} = FIRST({fieldExpr})",
+			"Last" => $"{resultName} = LAST({fieldExpr})",
+			"Sample" => $"{resultName} = SAMPLE({fieldExpr})",
+			"Absent" => $"{resultName} = ABSENT({fieldExpr})",
+			"Present" => $"{resultName} = PRESENT({fieldExpr})",
+			_ => null
+		};
+	}
+
+	private string TranslateGroupingFunction(MethodCallExpression methodCall)
+	{
+		var declaringType = methodCall.Method.DeclaringType;
+		if (declaringType != typeof(EsqlFunctions))
+			throw new NotSupportedException($"Only EsqlFunctions grouping methods are supported, got {declaringType?.Name}.{methodCall.Method.Name}.");
+
+		var methodName = methodCall.Method.Name;
+
+		string Translate(Expression e) =>
+			e switch
+			{
+				MemberExpression member => ResolveWithKeyword(member.Member),
+				ConstantExpression constant => EsqlFormatting.FormatValue(constant.Value),
+				UnaryExpression { NodeType: ExpressionType.Convert, Operand: MemberExpression innerMember } =>
+					ResolveWithKeyword(innerMember.Member),
+				_ => EsqlFormatting.FormatValue(Expression.Lambda(e).Compile().DynamicInvoke())
+			};
+
+		var result = EsqlFunctionTranslator.TryTranslate(methodName, Translate, methodCall.Arguments);
+		return result ?? throw new NotSupportedException($"Grouping function {methodName} is not supported.");
 	}
 
 	private string ExtractFieldFromSelector(Expression selector)

@@ -1,0 +1,8 @@
+toc:
+  - file: index.md
+  - file: getting-started.md
+  - file: system-text-json.md
+  - file: aot.md
+  - file: analysis.md
+  - file: mappings-configuration.md
+  - file: source-generation.md

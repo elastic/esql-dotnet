@@ -92,8 +92,9 @@ public class SelectProjectionVisitor(EsqlQueryContext context) : ExpressionVisit
 			var declaringType = memberExpr.Member.DeclaringType;
 			var resultField = ToCamelCase(resultName);
 
-			// Check if this is a DateTime/DateTimeOffset property access (like l.Timestamp.Year)
-			if (declaringType == typeof(DateTime) || declaringType == typeof(DateTimeOffset))
+			// Check if this is a DateTime/DateTimeOffset property or string.Length access
+			if (declaringType == typeof(DateTime) || declaringType == typeof(DateTimeOffset)
+				|| (declaringType == typeof(string) && memberExpr.Member.Name == "Length"))
 			{
 				var expr = TranslateMemberExpression(memberExpr);
 				_evalExpressions.Add($"{resultField} = {expr}");
@@ -161,7 +162,7 @@ public class SelectProjectionVisitor(EsqlQueryContext context) : ExpressionVisit
 		var declaringType = member.Member.DeclaringType;
 		var memberName = member.Member.Name;
 
-		// Handle DateTime/DateTimeOffset static properties
+		// Handle static member access
 		if (member.Expression == null)
 		{
 			if (declaringType == typeof(DateTime) || declaringType == typeof(DateTimeOffset))
@@ -172,6 +173,14 @@ public class SelectProjectionVisitor(EsqlQueryContext context) : ExpressionVisit
 					"Today" => "DATE_TRUNC(\"day\", NOW())",
 					_ => throw new NotSupportedException($"DateTime property {memberName} is not supported in projections.")
 				};
+			}
+
+			// Math constants: Math.E, Math.PI, Math.Tau
+			if (declaringType == typeof(Math))
+			{
+				var mathConst = EsqlFunctionTranslator.TryTranslateMathConstant(memberName);
+				if (mathConst != null)
+					return mathConst;
 			}
 		}
 
@@ -191,6 +200,13 @@ public class SelectProjectionVisitor(EsqlQueryContext context) : ExpressionVisit
 				"DayOfYear" => $"DATE_EXTRACT(\"day_of_year\", {dateExpr})",
 				_ => throw new NotSupportedException($"DateTime property {memberName} is not supported in projections.")
 			};
+		}
+
+		// Handle string.Length property → LENGTH(field)
+		if (declaringType == typeof(string) && memberName == "Length")
+		{
+			var strExpr = TranslateExpression(member.Expression!);
+			return $"LENGTH({strExpr})";
 		}
 
 		// Regular field access
@@ -213,21 +229,23 @@ public class SelectProjectionVisitor(EsqlQueryContext context) : ExpressionVisit
 
 		// Check for EsqlFunctions marker methods
 		if (declaringType == typeof(EsqlFunctions))
-			return TranslateEsqlFunction(methodCall);
+		{
+			var result = EsqlFunctionTranslator.TryTranslate(methodName, TranslateExpression, methodCall.Arguments);
+			return result ?? throw new NotSupportedException($"ES|QL function {methodName} is not supported in projections.");
+		}
 
 		if (declaringType == typeof(string))
 		{
 			var target = TranslateExpression(methodCall.Object!);
 
+			// Try shared translator first
+			var result = EsqlFunctionTranslator.TryTranslateString(methodName, TranslateExpression, target, methodCall.Arguments);
+			if (result != null)
+				return result;
+
+			// Fall back to string-specific methods not in the shared translator
 			return methodName switch
 			{
-				"ToLower" or "ToLowerInvariant" => $"TO_LOWER({target})",
-				"ToUpper" or "ToUpperInvariant" => $"TO_UPPER({target})",
-				"Trim" => $"TRIM({target})",
-				"Substring" when methodCall.Arguments.Count == 1 =>
-					$"SUBSTRING({target}, {TranslateExpression(methodCall.Arguments[0])})",
-				"Substring" when methodCall.Arguments.Count == 2 =>
-					$"SUBSTRING({target}, {TranslateExpression(methodCall.Arguments[0])}, {TranslateExpression(methodCall.Arguments[1])})",
 				// get_Chars is the indexer method: s[i] → SUBSTRING(s, i+1, 1)
 				// ES|QL SUBSTRING uses 1-based indexing, C# uses 0-based
 				"get_Chars" => TranslateStringIndexer(target, methodCall.Arguments[0]),
@@ -237,112 +255,11 @@ public class SelectProjectionVisitor(EsqlQueryContext context) : ExpressionVisit
 
 		if (declaringType == typeof(Math))
 		{
-			return methodName switch
-			{
-				"Abs" => $"ABS({TranslateExpression(methodCall.Arguments[0])})",
-				"Ceiling" => $"CEIL({TranslateExpression(methodCall.Arguments[0])})",
-				"Floor" => $"FLOOR({TranslateExpression(methodCall.Arguments[0])})",
-				"Round" when methodCall.Arguments.Count == 1 => $"ROUND({TranslateExpression(methodCall.Arguments[0])})",
-				"Round" when methodCall.Arguments.Count == 2 => $"ROUND({TranslateExpression(methodCall.Arguments[0])}, {TranslateExpression(methodCall.Arguments[1])})",
-				"Max" => $"GREATEST({TranslateExpression(methodCall.Arguments[0])}, {TranslateExpression(methodCall.Arguments[1])})",
-				"Min" => $"LEAST({TranslateExpression(methodCall.Arguments[0])}, {TranslateExpression(methodCall.Arguments[1])})",
-				"Pow" => $"POW({TranslateExpression(methodCall.Arguments[0])}, {TranslateExpression(methodCall.Arguments[1])})",
-				"Sqrt" => $"SQRT({TranslateExpression(methodCall.Arguments[0])})",
-				"Log" when methodCall.Arguments.Count == 1 => $"LOG({TranslateExpression(methodCall.Arguments[0])})",
-				"Log10" => $"LOG10({TranslateExpression(methodCall.Arguments[0])})",
-				_ => throw new NotSupportedException($"Math method {methodName} is not supported in projections.")
-			};
+			var result = EsqlFunctionTranslator.TryTranslateMath(methodName, TranslateExpression, methodCall.Arguments);
+			return result ?? throw new NotSupportedException($"Math method {methodName} is not supported in projections.");
 		}
 
 		throw new NotSupportedException($"Method {declaringType?.Name}.{methodName} is not supported in projections.");
-	}
-
-	private string TranslateEsqlFunction(MethodCallExpression methodCall)
-	{
-		var methodName = methodCall.Method.Name;
-
-		return methodName switch
-		{
-			// Date/Time Functions
-			"Now" => "NOW()",
-			"DateTrunc" => $"DATE_TRUNC({TranslateExpression(methodCall.Arguments[0])}, {TranslateExpression(methodCall.Arguments[1])})",
-			"DateFormat" => $"DATE_FORMAT({TranslateExpression(methodCall.Arguments[0])}, {TranslateExpression(methodCall.Arguments[1])})",
-
-			// String Functions
-			"Length" => $"LENGTH({TranslateExpression(methodCall.Arguments[0])})",
-			"Substring" when methodCall.Arguments.Count == 2 =>
-				$"SUBSTRING({TranslateExpression(methodCall.Arguments[0])}, {TranslateExpression(methodCall.Arguments[1])})",
-			"Substring" when methodCall.Arguments.Count == 3 =>
-				$"SUBSTRING({TranslateExpression(methodCall.Arguments[0])}, {TranslateExpression(methodCall.Arguments[1])}, {TranslateExpression(methodCall.Arguments[2])})",
-			"Trim" => $"TRIM({TranslateExpression(methodCall.Arguments[0])})",
-			"ToLower" => $"TO_LOWER({TranslateExpression(methodCall.Arguments[0])})",
-			"ToUpper" => $"TO_UPPER({TranslateExpression(methodCall.Arguments[0])})",
-			"Concat" => TranslateConcat(methodCall),
-
-			// Null Handling
-			"Coalesce" => TranslateCoalesce(methodCall),
-			"IsNull" => $"{TranslateExpression(methodCall.Arguments[0])} IS NULL",
-			"IsNotNull" => $"{TranslateExpression(methodCall.Arguments[0])} IS NOT NULL",
-
-			// Math Functions
-			"Abs" => $"ABS({TranslateExpression(methodCall.Arguments[0])})",
-			"Ceil" => $"CEIL({TranslateExpression(methodCall.Arguments[0])})",
-			"Floor" => $"FLOOR({TranslateExpression(methodCall.Arguments[0])})",
-			"Round" when methodCall.Arguments.Count == 1 =>
-				$"ROUND({TranslateExpression(methodCall.Arguments[0])})",
-			"Round" when methodCall.Arguments.Count == 2 =>
-				$"ROUND({TranslateExpression(methodCall.Arguments[0])}, {TranslateExpression(methodCall.Arguments[1])})",
-
-			// Pattern Matching
-			"Match" => $"MATCH({TranslateExpression(methodCall.Arguments[0])}, {TranslateExpression(methodCall.Arguments[1])})",
-			"Like" => $"{TranslateExpression(methodCall.Arguments[0])} LIKE {TranslateExpression(methodCall.Arguments[1])}",
-			"Rlike" => $"{TranslateExpression(methodCall.Arguments[0])} RLIKE {TranslateExpression(methodCall.Arguments[1])}",
-
-			// IP Functions
-			"CidrMatch" => $"CIDR_MATCH({TranslateExpression(methodCall.Arguments[0])}, {TranslateExpression(methodCall.Arguments[1])})",
-
-			_ => throw new NotSupportedException($"ES|QL function {methodName} is not supported in projections.")
-		};
-	}
-
-	private string TranslateConcat(MethodCallExpression methodCall)
-	{
-		// Concat takes params string[] - could be passed as array or as individual arguments
-		var args = new List<string>();
-
-		foreach (var arg in methodCall.Arguments)
-		{
-			if (arg is NewArrayExpression newArray)
-			{
-				// params array: Concat(new[] { a, b, c })
-				foreach (var elem in newArray.Expressions)
-					args.Add(TranslateExpression(elem));
-			}
-			else
-				args.Add(TranslateExpression(arg));
-		}
-
-		return $"CONCAT({string.Join(", ", args)})";
-	}
-
-	private string TranslateCoalesce(MethodCallExpression methodCall)
-	{
-		// Coalesce takes params T[] - could be passed as array or as individual arguments
-		var args = new List<string>();
-
-		foreach (var arg in methodCall.Arguments)
-		{
-			if (arg is NewArrayExpression newArray)
-			{
-				// params array: Coalesce(new[] { a, b, c })
-				foreach (var elem in newArray.Expressions)
-					args.Add(TranslateExpression(elem));
-			}
-			else
-				args.Add(TranslateExpression(arg));
-		}
-
-		return $"COALESCE({string.Join(", ", args)})";
 	}
 
 	private string TranslateStringIndexer(string target, Expression indexExpression)

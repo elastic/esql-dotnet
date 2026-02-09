@@ -1,0 +1,7 @@
+project: elastic-esql
+cross_links:
+  - elasticsearch
+toc:
+  - file: index.md
+  - toc: esql
+  - toc: mapping

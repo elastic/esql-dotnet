@@ -237,9 +237,29 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 				}
 			}
 
+			// Math constants: Math.E, Math.PI, Math.Tau
+			if (declaringType == typeof(Math))
+			{
+				var mathConst = EsqlFunctionTranslator.TryTranslateMathConstant(memberName);
+				if (mathConst != null)
+				{
+					_ = _builder.Append(mathConst);
+					return node;
+				}
+			}
+
 			// For other static members, evaluate the value
 			var value = GetStaticMemberValue(node);
 			_ = _builder.Append(EsqlFormatting.FormatValue(value));
+			return node;
+		}
+
+		// Handle string.Length property → LENGTH(field)
+		if (node.Member.DeclaringType == typeof(string) && node.Member.Name == "Length")
+		{
+			_ = _builder.Append("LENGTH(");
+			_ = Visit(node.Expression!);
+			_ = _builder.Append(')');
 			return node;
 		}
 
@@ -343,6 +363,10 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 		if (declaringType == typeof(string))
 			return VisitStringMethod(node);
 
+		// Math methods
+		if (declaringType == typeof(Math))
+			return VisitMathMethod(node);
+
 		// Enumerable methods (Contains for IN operator)
 		if (declaringType == typeof(Enumerable) ||
 			(declaringType?.IsGenericType == true &&
@@ -402,169 +426,67 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 	{
 		var methodName = node.Method.Name;
 
+		// Special handling for functions that need keyword suffix suppression
 		switch (methodName)
 		{
-			case "Now":
-				_ = _builder.Append("NOW()");
-				break;
-
 			case "Match":
-				_ = _builder.Append("MATCH(");
+			case "MatchPhrase":
+				_ = _builder.Append(methodName == "Match" ? "MATCH(" : "MATCH_PHRASE(");
 				_suppressKeywordSuffix = true;
 				_ = Visit(node.Arguments[0]);
 				_suppressKeywordSuffix = false;
 				_ = _builder.Append(", ");
 				_ = Visit(node.Arguments[1]);
 				_ = _builder.Append(')');
-				break;
-
-			case "Like":
-				_ = Visit(node.Arguments[0]);
-				_ = _builder.Append(" LIKE ");
-				_ = Visit(node.Arguments[1]);
-				break;
-
-			case "Rlike":
-				_ = Visit(node.Arguments[0]);
-				_ = _builder.Append(" RLIKE ");
-				_ = Visit(node.Arguments[1]);
-				break;
+				return node;
 
 			case "IsNull":
 				_suppressKeywordSuffix = true;
 				_ = Visit(node.Arguments[0]);
 				_suppressKeywordSuffix = false;
 				_ = _builder.Append(" IS NULL");
-				break;
+				return node;
 
 			case "IsNotNull":
 				_suppressKeywordSuffix = true;
 				_ = Visit(node.Arguments[0]);
 				_suppressKeywordSuffix = false;
 				_ = _builder.Append(" IS NOT NULL");
-				break;
-
-			case "DateTrunc":
-				_ = _builder.Append("DATE_TRUNC(");
-				_ = Visit(node.Arguments[0]);
-				_ = _builder.Append(", ");
-				_ = Visit(node.Arguments[1]);
-				_ = _builder.Append(')');
-				break;
-
-			case "DateFormat":
-				_ = _builder.Append("DATE_FORMAT(");
-				_ = Visit(node.Arguments[0]);
-				_ = _builder.Append(", ");
-				_ = Visit(node.Arguments[1]);
-				_ = _builder.Append(')');
-				break;
-
-			case "Length":
-				_ = _builder.Append("LENGTH(");
-				_ = Visit(node.Arguments[0]);
-				_ = _builder.Append(')');
-				break;
-
-			case "Substring":
-				_ = _builder.Append("SUBSTRING(");
-				_ = Visit(node.Arguments[0]);
-				_ = _builder.Append(", ");
-				_ = Visit(node.Arguments[1]);
-				if (node.Arguments.Count > 2)
-				{
-					_ = _builder.Append(", ");
-					_ = Visit(node.Arguments[2]);
-				}
-
-				_ = _builder.Append(')');
-				break;
-
-			case "Trim":
-				_ = _builder.Append("TRIM(");
-				_ = Visit(node.Arguments[0]);
-				_ = _builder.Append(')');
-				break;
-
-			case "ToLower":
-				_ = _builder.Append("TO_LOWER(");
-				_ = Visit(node.Arguments[0]);
-				_ = _builder.Append(')');
-				break;
-
-			case "ToUpper":
-				_ = _builder.Append("TO_UPPER(");
-				_ = Visit(node.Arguments[0]);
-				_ = _builder.Append(')');
-				break;
-
-			case "Concat":
-				_ = _builder.Append("CONCAT(");
-				for (var i = 0; i < node.Arguments.Count; i++)
-				{
-					if (i > 0)
-						_ = _builder.Append(", ");
-					_ = Visit(node.Arguments[i]);
-				}
-
-				_ = _builder.Append(')');
-				break;
-
-			case "Coalesce":
-				_ = _builder.Append("COALESCE(");
-				for (var i = 0; i < node.Arguments.Count; i++)
-				{
-					if (i > 0)
-						_ = _builder.Append(", ");
-					_ = Visit(node.Arguments[i]);
-				}
-
-				_ = _builder.Append(')');
-				break;
-
-			case "Abs":
-				_ = _builder.Append("ABS(");
-				_ = Visit(node.Arguments[0]);
-				_ = _builder.Append(')');
-				break;
-
-			case "Ceil":
-				_ = _builder.Append("CEIL(");
-				_ = Visit(node.Arguments[0]);
-				_ = _builder.Append(')');
-				break;
-
-			case "Floor":
-				_ = _builder.Append("FLOOR(");
-				_ = Visit(node.Arguments[0]);
-				_ = _builder.Append(')');
-				break;
-
-			case "Round":
-				_ = _builder.Append("ROUND(");
-				_ = Visit(node.Arguments[0]);
-				if (node.Arguments.Count > 1)
-				{
-					_ = _builder.Append(", ");
-					_ = Visit(node.Arguments[1]);
-				}
-
-				_ = _builder.Append(')');
-				break;
-
-			case "CidrMatch":
-				_ = _builder.Append("CIDR_MATCH(");
-				_ = Visit(node.Arguments[0]);
-				_ = _builder.Append(", ");
-				_ = Visit(node.Arguments[1]);
-				_ = _builder.Append(')');
-				break;
-
-			default:
-				throw new NotSupportedException($"ES|QL function {methodName} is not supported.");
+				return node;
 		}
 
-		return node;
+		// Delegate to shared translator
+		var result = EsqlFunctionTranslator.TryTranslate(methodName, TranslateSubExpression, node.Arguments);
+		if (result != null)
+		{
+			_ = _builder.Append(result);
+			return node;
+		}
+
+		throw new NotSupportedException($"ES|QL function {methodName} is not supported.");
+	}
+
+	private Expression VisitMathMethod(MethodCallExpression node)
+	{
+		var methodName = node.Method.Name;
+		var result = EsqlFunctionTranslator.TryTranslateMath(methodName, TranslateSubExpression, node.Arguments);
+		if (result != null)
+		{
+			_ = _builder.Append(result);
+			return node;
+		}
+
+		throw new NotSupportedException($"Math method {methodName} is not supported.");
+	}
+
+	private string TranslateSubExpression(Expression expression)
+	{
+		var saved = _builder.ToString();
+		_ = _builder.Clear();
+		_ = Visit(expression);
+		var result = _builder.ToString();
+		_ = _builder.Clear().Append(saved);
+		return result;
 	}
 
 	private Expression VisitStringMethod(MethodCallExpression node)
@@ -595,40 +517,6 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 				_ = _builder.Append(" LIKE ");
 				var endsValue = GetConstantValue(node.Arguments[0]);
 				_ = _builder.Append("\"*").Append(EscapeLikePattern(endsValue?.ToString() ?? "")).Append('"');
-				break;
-
-			case "ToLower":
-			case "ToLowerInvariant":
-				_ = _builder.Append("TO_LOWER(");
-				_ = Visit(node.Object!);
-				_ = _builder.Append(')');
-				break;
-
-			case "ToUpper":
-			case "ToUpperInvariant":
-				_ = _builder.Append("TO_UPPER(");
-				_ = Visit(node.Object!);
-				_ = _builder.Append(')');
-				break;
-
-			case "Trim":
-				_ = _builder.Append("TRIM(");
-				_ = Visit(node.Object!);
-				_ = _builder.Append(')');
-				break;
-
-			case "Substring":
-				_ = _builder.Append("SUBSTRING(");
-				_ = Visit(node.Object!);
-				_ = _builder.Append(", ");
-				_ = Visit(node.Arguments[0]);
-				if (node.Arguments.Count > 1)
-				{
-					_ = _builder.Append(", ");
-					_ = Visit(node.Arguments[1]);
-				}
-
-				_ = _builder.Append(')');
 				break;
 
 			case "IsNullOrEmpty":
@@ -667,6 +555,18 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 				break;
 
 			default:
+				// Try shared string translator for TrimStart, TrimEnd, Replace, IndexOf, Split, etc.
+				if (node.Object != null)
+				{
+					var target = TranslateSubExpression(node.Object);
+					var result = EsqlFunctionTranslator.TryTranslateString(methodName, TranslateSubExpression, target, node.Arguments);
+					if (result != null)
+					{
+						_ = _builder.Append(result);
+						break;
+					}
+				}
+
 				throw new NotSupportedException($"String method {methodName} is not supported.");
 		}
 
