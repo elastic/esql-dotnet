@@ -39,6 +39,28 @@ public class TypeFieldMetadataResolver(IElasticsearchMappingContext? context = n
 	public Dictionary<string, PropertyInfo>? GetGeneratedPropertyMap(Type type) =>
 		GetTypeMetadata(type)?.GetPropertyMapFunc?.Invoke();
 
+	/// <summary>Checks if a member's field is a text type (requires .keyword for exact-match operations).</summary>
+	public bool IsTextField(MemberInfo member)
+	{
+		var metadata = GetTypeMetadata(member.DeclaringType);
+		if (metadata?.TextFields != null)
+			return metadata.TextFields.Contains(member.Name);
+
+		// Reflection fallback: string type without [Keyword] attribute
+		var memberType = member switch
+		{
+			PropertyInfo prop => prop.PropertyType,
+			FieldInfo field => field.FieldType,
+			_ => null
+		};
+
+		if (memberType == null)
+			return false;
+
+		var underlying = Nullable.GetUnderlyingType(memberType) ?? memberType;
+		return underlying == typeof(string) && member.GetCustomAttribute<KeywordAttribute>() == null;
+	}
+
 	/// <summary>Gets which resolution path was used for a type.</summary>
 	public MetadataSource? GetResolutionSource(Type type) =>
 		GetTypeMetadata(type)?.Source;
@@ -78,6 +100,7 @@ public class TypeFieldMetadataResolver(IElasticsearchMappingContext? context = n
 	{
 		var map = new Dictionary<string, string>();
 		var ignored = new HashSet<string>();
+		var textFields = new HashSet<string>();
 
 		foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
 		{
@@ -89,12 +112,17 @@ public class TypeFieldMetadataResolver(IElasticsearchMappingContext? context = n
 
 			var jsonName = prop.GetCustomAttribute<JsonPropertyNameAttribute>();
 			map[prop.Name] = jsonName?.Name ?? ToCamelCase(prop.Name);
+
+			// String without [Keyword] → text field
+			var propType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+			if (propType == typeof(string) && prop.GetCustomAttribute<KeywordAttribute>() == null)
+				_ = textFields.Add(prop.Name);
 		}
 
 		if (map.Count == 0)
 			return null;
 
-		return new TypeFieldMetadata(map, ignored, DiscoverSearchPattern(type), null, MetadataSource.Attributes);
+		return new TypeFieldMetadata(map, ignored, DiscoverSearchPattern(type), null, MetadataSource.Attributes, textFields);
 	}
 
 	private static string? DiscoverSearchPattern(Type type)

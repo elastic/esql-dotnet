@@ -19,7 +19,7 @@ public class FluentApiTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE log.level == "ERROR"
+            | WHERE log.level.keyword == "ERROR"
             """);
 	}
 
@@ -34,7 +34,7 @@ public class FluentApiTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE log.level == "ERROR"
+            | WHERE log.level.keyword == "ERROR"
             | LIMIT 10
             """);
 	}
@@ -68,7 +68,7 @@ public class FluentApiTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM my-custom-index-*
-            | WHERE log.level == "ERROR"
+            | WHERE log.level.keyword == "ERROR"
             | LIMIT 10
             """);
 	}
@@ -84,7 +84,7 @@ public class FluentApiTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE log.level == "ERROR"
+            | WHERE log.level.keyword == "ERROR"
             | KEEP message
             | EVAL timestamp = @timestamp
             """);

@@ -17,7 +17,7 @@ public class CamelCaseTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE message == "test"
+            | WHERE message.keyword == "test"
             """);
 	}
 

@@ -16,7 +16,7 @@ public class RlikeTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE message RLIKE "error|warning"
+            | WHERE message.keyword RLIKE "error|warning"
             """);
 	}
 
@@ -30,7 +30,7 @@ public class RlikeTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE message RLIKE "^[A-Z]{3}-\\d{4}"
+            | WHERE message.keyword RLIKE "^[A-Z]{3}-\\d{4}"
             """);
 	}
 }

@@ -50,7 +50,7 @@ public class ParameterizedQueryTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
 			FROM logs-*
-			| WHERE log.level == ?level
+			| WHERE log.level.keyword == ?level
 			""");
 	}
 
@@ -131,7 +131,7 @@ public class ParameterizedQueryTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
 			FROM logs-*
-			| WHERE (statusCode >= ?minStatus AND log.level == ?level)
+			| WHERE (statusCode >= ?minStatus AND log.level.keyword == ?level)
 			""");
 	}
 
@@ -242,7 +242,7 @@ public class ParameterizedQueryTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
 			FROM logs-*
-			| WHERE message LIKE "*error*"
+			| WHERE message.keyword LIKE "*error*"
 			""");
 	}
 

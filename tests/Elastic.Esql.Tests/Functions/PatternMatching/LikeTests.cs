@@ -16,7 +16,7 @@ public class LikeTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE message LIKE "ERROR*"
+            | WHERE message.keyword LIKE "ERROR*"
             """);
 	}
 
@@ -30,7 +30,7 @@ public class LikeTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE message LIKE "*failed"
+            | WHERE message.keyword LIKE "*failed"
             """);
 	}
 
@@ -44,7 +44,7 @@ public class LikeTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE message LIKE "*timeout*"
+            | WHERE message.keyword LIKE "*timeout*"
             """);
 	}
 }

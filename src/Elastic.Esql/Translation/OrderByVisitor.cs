@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information
 
 using System.Linq.Expressions;
+using System.Reflection;
 using Elastic.Esql.Core;
 using Elastic.Esql.QueryModel.Commands;
 
@@ -27,12 +28,20 @@ public class OrderByVisitor(EsqlQueryContext context) : ExpressionVisitor
 	private string ExtractFieldName(Expression expression) =>
 		expression switch
 		{
-			MemberExpression member => _context.MetadataResolver.Resolve(member.Member),
+			MemberExpression member => ResolveWithKeyword(member.Member),
 			UnaryExpression { NodeType: ExpressionType.Convert, Operand: MemberExpression innerMember } =>
-				_context.MetadataResolver.Resolve(innerMember.Member),
+				ResolveWithKeyword(innerMember.Member),
 			MethodCallExpression methodCall => TranslateMethodCall(methodCall),
 			_ => throw new NotSupportedException($"Cannot extract field name from expression: {expression}")
 		};
+
+	private string ResolveWithKeyword(MemberInfo member)
+	{
+		var fieldName = _context.MetadataResolver.Resolve(member);
+		if (_context.MetadataResolver.IsTextField(member))
+			fieldName += ".keyword";
+		return fieldName;
+	}
 
 	private string TranslateMethodCall(MethodCallExpression methodCall)
 	{
@@ -42,7 +51,7 @@ public class OrderByVisitor(EsqlQueryContext context) : ExpressionVisitor
 		// String methods that can be used for sorting
 		if (declaringType == typeof(string) && methodCall.Object is MemberExpression member)
 		{
-			var fieldName = _context.MetadataResolver.Resolve(member.Member);
+			var fieldName = ResolveWithKeyword(member.Member);
 
 			return methodName switch
 			{

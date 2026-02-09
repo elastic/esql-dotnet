@@ -21,6 +21,7 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 {
 	private readonly EsqlQueryContext _context = context ?? throw new ArgumentNullException(nameof(context));
 	private readonly StringBuilder _builder = new();
+	private bool _suppressKeywordSuffix;
 
 	/// <summary>
 	/// Translates a predicate expression to an ES|QL condition string.
@@ -54,10 +55,18 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 		}
 		else
 		{
+			// Null checks don't need .keyword — null applies to the whole field
+			var isNullCheck = IsNullConstant(node.Left) || IsNullConstant(node.Right);
+			if (isNullCheck)
+				_suppressKeywordSuffix = true;
+
 			_ = Visit(node.Left);
 			var op = GetOperator(node.NodeType);
 			_ = _builder.Append(' ').Append(op).Append(' ');
 			_ = Visit(node.Right);
+
+			if (isNullCheck)
+				_suppressKeywordSuffix = false;
 		}
 
 		if (isLogicalOperator)
@@ -271,6 +280,8 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 
 		// Regular field access
 		var fieldName = _context.MetadataResolver.Resolve(node.Member);
+		if (!_suppressKeywordSuffix && _context.MetadataResolver.IsTextField(node.Member))
+			fieldName += ".keyword";
 		_ = _builder.Append(fieldName);
 
 		return node;
@@ -399,7 +410,9 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 
 			case "Match":
 				_ = _builder.Append("MATCH(");
+				_suppressKeywordSuffix = true;
 				_ = Visit(node.Arguments[0]);
+				_suppressKeywordSuffix = false;
 				_ = _builder.Append(", ");
 				_ = Visit(node.Arguments[1]);
 				_ = _builder.Append(')');
@@ -418,12 +431,16 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 				break;
 
 			case "IsNull":
+				_suppressKeywordSuffix = true;
 				_ = Visit(node.Arguments[0]);
+				_suppressKeywordSuffix = false;
 				_ = _builder.Append(" IS NULL");
 				break;
 
 			case "IsNotNull":
+				_suppressKeywordSuffix = true;
 				_ = Visit(node.Arguments[0]);
+				_suppressKeywordSuffix = false;
 				_ = _builder.Append(" IS NOT NULL");
 				break;
 
@@ -780,6 +797,9 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 		_ = _context.ParameterCollection is { } parameters
 			? _builder.Append('?').Append(parameters.Add(name, value))
 			: _builder.Append(EsqlFormatting.FormatValue(value));
+
+	private static bool IsNullConstant(Expression expression) =>
+		expression is ConstantExpression { Value: null };
 
 	private static string EscapeLikePattern(string value) =>
 		// Escape special characters in LIKE patterns

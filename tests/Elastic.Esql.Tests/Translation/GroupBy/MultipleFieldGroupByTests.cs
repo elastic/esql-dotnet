@@ -17,7 +17,7 @@ public class MultipleFieldGroupByTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | STATS count = COUNT(*) BY level = log.level, statusCode
+            | STATS count = COUNT(*) BY level = log.level.keyword, statusCode
             """);
 	}
 
@@ -32,7 +32,7 @@ public class MultipleFieldGroupByTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | STATS totalDuration = SUM(duration) BY level = log.level, statusCode
+            | STATS totalDuration = SUM(duration) BY level = log.level.keyword, statusCode
             """);
 	}
 
@@ -53,7 +53,7 @@ public class MultipleFieldGroupByTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | STATS count = COUNT(*), avgDuration = AVG(duration) BY level = log.level, statusCode
+            | STATS count = COUNT(*), avgDuration = AVG(duration) BY level = log.level.keyword, statusCode
             """);
 	}
 }

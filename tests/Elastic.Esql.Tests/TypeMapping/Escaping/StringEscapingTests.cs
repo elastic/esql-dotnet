@@ -16,7 +16,7 @@ public class StringEscapingTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE message == "He said \"hello\""
+            | WHERE message.keyword == "He said \"hello\""
             """);
 	}
 
@@ -30,7 +30,7 @@ public class StringEscapingTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE message == "C:\\Users\\test"
+            | WHERE message.keyword == "C:\\Users\\test"
             """);
 	}
 
@@ -44,7 +44,7 @@ public class StringEscapingTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE message == "line1\nline2"
+            | WHERE message.keyword == "line1\nline2"
             """);
 	}
 
@@ -58,7 +58,7 @@ public class StringEscapingTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE message == "col1\tcol2"
+            | WHERE message.keyword == "col1\tcol2"
             """);
 	}
 }

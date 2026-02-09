@@ -17,7 +17,7 @@ public class AttributeTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE log.level == "ERROR"
+            | WHERE log.level.keyword == "ERROR"
             """);
 	}
 

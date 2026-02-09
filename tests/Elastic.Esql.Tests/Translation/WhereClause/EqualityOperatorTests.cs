@@ -16,7 +16,7 @@ public class EqualityOperatorTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE log.level == "ERROR"
+            | WHERE log.level.keyword == "ERROR"
             """);
 	}
 
@@ -30,7 +30,7 @@ public class EqualityOperatorTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE log.level != "DEBUG"
+            | WHERE log.level.keyword != "DEBUG"
             """);
 	}
 }

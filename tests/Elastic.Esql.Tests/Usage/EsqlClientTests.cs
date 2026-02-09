@@ -19,7 +19,7 @@ public class EsqlClientTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE log.level == "ERROR"
+            | WHERE log.level.keyword == "ERROR"
             """);
 	}
 
@@ -52,7 +52,7 @@ public class EsqlClientTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM custom-index-*
-            | WHERE log.level == "ERROR"
+            | WHERE log.level.keyword == "ERROR"
             | LIMIT 10
             """);
 	}
@@ -69,7 +69,7 @@ public class EsqlClientTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE log.level == "ERROR"
+            | WHERE log.level.keyword == "ERROR"
             """);
 	}
 
@@ -87,7 +87,7 @@ public class EsqlClientTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE log.level == "ERROR"
+            | WHERE log.level.keyword == "ERROR"
             | WHERE duration > 500
             | SORT @timestamp DESC
             | KEEP message, duration

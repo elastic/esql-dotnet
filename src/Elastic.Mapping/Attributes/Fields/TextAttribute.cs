@@ -6,7 +6,7 @@ namespace Elastic.Mapping;
 
 /// <summary>
 /// Marks a property as a full-text searchable text field.
-/// String properties default to keyword; use this attribute for full-text search.
+/// String properties default to text with a .keyword sub-field; use this attribute to customize text field options.
 /// </summary>
 [AttributeUsage(AttributeTargets.Property, AllowMultiple = false, Inherited = true)]
 public sealed class TextAttribute : Attribute

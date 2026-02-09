@@ -17,7 +17,7 @@ public class SumAvgTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | STATS totalDuration = SUM(duration) BY level = log.level
+            | STATS totalDuration = SUM(duration) BY level = log.level.keyword
             """);
 	}
 
@@ -32,7 +32,7 @@ public class SumAvgTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | STATS avgDuration = AVG(duration) BY level = log.level
+            | STATS avgDuration = AVG(duration) BY level = log.level.keyword
             """);
 	}
 
@@ -49,7 +49,7 @@ public class SumAvgTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE statusCode >= 400
-            | STATS totalDuration = SUM(duration) BY level = log.level
+            | STATS totalDuration = SUM(duration) BY level = log.level.keyword
             """);
 	}
 
@@ -65,8 +65,8 @@ public class SumAvgTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE log.level == "ERROR"
-            | STATS avgDuration = AVG(duration) BY level = log.level
+            | WHERE log.level.keyword == "ERROR"
+            | STATS avgDuration = AVG(duration) BY level = log.level.keyword
             """);
 	}
 
@@ -81,7 +81,7 @@ public class SumAvgTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | STATS totalStatusCodes = SUM(statusCode) BY level = log.level
+            | STATS totalStatusCodes = SUM(statusCode) BY level = log.level.keyword
             """);
 	}
 }

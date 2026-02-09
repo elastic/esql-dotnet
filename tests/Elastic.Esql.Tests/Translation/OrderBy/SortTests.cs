@@ -45,7 +45,7 @@ public class SortTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | SORT log.level
+            | SORT log.level.keyword
             | SORT @timestamp
             """);
 	}
@@ -61,7 +61,7 @@ public class SortTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | SORT log.level
+            | SORT log.level.keyword
             | SORT @timestamp DESC
             """);
 	}

@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information
 
 using System.Linq.Expressions;
+using System.Reflection;
 using Elastic.Esql.Core;
 using Elastic.Esql.QueryModel;
 using Elastic.Esql.QueryModel.Commands;
@@ -335,10 +336,18 @@ public class EsqlExpressionVisitor(EsqlQueryContext context) : ExpressionVisitor
 	private string ExtractFieldName(Expression expression) =>
 		expression switch
 		{
-			MemberExpression member => _context.MetadataResolver.Resolve(member.Member),
-			UnaryExpression { Operand: MemberExpression innerMember } => _context.MetadataResolver.Resolve(innerMember.Member),
+			MemberExpression member => ResolveWithKeyword(member.Member),
+			UnaryExpression { Operand: MemberExpression innerMember } => ResolveWithKeyword(innerMember.Member),
 			_ => throw new NotSupportedException($"Cannot extract field name from expression: {expression}")
 		};
+
+	private string ResolveWithKeyword(MemberInfo member)
+	{
+		var fieldName = _context.MetadataResolver.Resolve(member);
+		if (_context.MetadataResolver.IsTextField(member))
+			fieldName += ".keyword";
+		return fieldName;
+	}
 
 	private static string ToIndexName(string typeName)
 	{

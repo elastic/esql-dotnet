@@ -18,7 +18,7 @@ public class QuerySyntaxTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE log.level == "ERROR"
+            | WHERE log.level.keyword == "ERROR"
             """);
 	}
 
@@ -35,7 +35,7 @@ public class QuerySyntaxTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE log.level == "ERROR"
+            | WHERE log.level.keyword == "ERROR"
             | SORT @timestamp DESC
             """);
 	}
@@ -72,7 +72,7 @@ public class QuerySyntaxTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE log.level == "ERROR"
+            | WHERE log.level.keyword == "ERROR"
             | WHERE duration > 1000
             """);
 	}
@@ -89,7 +89,7 @@ public class QuerySyntaxTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | SORT log.level
+            | SORT log.level.keyword
             | SORT @timestamp DESC
             """);
 	}
@@ -108,7 +108,7 @@ public class QuerySyntaxTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE log.level == "ERROR"
+            | WHERE log.level.keyword == "ERROR"
             | WHERE duration > 500
             | SORT @timestamp DESC
             | KEEP message, duration

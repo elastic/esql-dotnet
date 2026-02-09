@@ -46,7 +46,7 @@ public class TakeTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE log.level == "ERROR"
+            | WHERE log.level.keyword == "ERROR"
             | SORT @timestamp DESC
             | LIMIT 10
             """);

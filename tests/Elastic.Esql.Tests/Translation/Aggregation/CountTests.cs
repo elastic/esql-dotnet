@@ -33,7 +33,7 @@ public class CountTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE log.level == "ERROR"
+            | WHERE log.level.keyword == "ERROR"
             | STATS errorCount = COUNT(*)
             """);
 	}
@@ -50,7 +50,7 @@ public class CountTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE (log.level == "ERROR" AND statusCode >= 500)
+            | WHERE (log.level.keyword == "ERROR" AND statusCode >= 500)
             | STATS count = COUNT(*)
             """);
 	}

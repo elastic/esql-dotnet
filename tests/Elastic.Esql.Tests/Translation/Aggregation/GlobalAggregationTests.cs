@@ -104,7 +104,7 @@ public class GlobalAggregationTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE log.level == "ERROR"
+            | WHERE log.level.keyword == "ERROR"
             | STATS errorCount = COUNT(*), avgDuration = AVG(duration)
             """);
 	}

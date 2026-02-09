@@ -103,7 +103,7 @@ public class MappingGeneratorTests
 	public void SimpleDocument_InfersTypesFromClrTypes()
 	{
 		var json = TestMappingContext.SimpleDocument.GetMappingJson();
-		json.Should().Contain("\"name\": { \"type\": \"keyword\"");
+		json.Should().Contain("\"name\": { \"type\": \"text\"");
 		json.Should().Contain("\"value\": { \"type\": \"integer\"");
 		json.Should().Contain("\"createdAt\": { \"type\": \"date\"");
 	}

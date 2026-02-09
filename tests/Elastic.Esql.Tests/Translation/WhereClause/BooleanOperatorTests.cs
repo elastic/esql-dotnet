@@ -16,7 +16,7 @@ public class BooleanOperatorTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE (log.level == "ERROR" AND statusCode >= 500)
+            | WHERE (log.level.keyword == "ERROR" AND statusCode >= 500)
             """);
 	}
 
@@ -30,7 +30,7 @@ public class BooleanOperatorTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE (log.level == "ERROR" OR log.level == "CRITICAL")
+            | WHERE (log.level.keyword == "ERROR" OR log.level.keyword == "CRITICAL")
             """);
 	}
 
@@ -44,7 +44,7 @@ public class BooleanOperatorTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE NOT log.level == "DEBUG"
+            | WHERE NOT log.level.keyword == "DEBUG"
             """);
 	}
 
@@ -58,7 +58,7 @@ public class BooleanOperatorTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE ((log.level == "ERROR" OR log.level == "CRITICAL") AND statusCode >= 500)
+            | WHERE ((log.level.keyword == "ERROR" OR log.level.keyword == "CRITICAL") AND statusCode >= 500)
             """);
 	}
 

@@ -6,7 +6,7 @@ namespace Elastic.Mapping;
 
 /// <summary>
 /// Configures a keyword field for exact-match searching.
-/// String properties default to keyword, so this is only needed to customize options.
+/// String properties default to text; use this attribute to map a string as a pure keyword field without a text mapping.
 /// </summary>
 [AttributeUsage(AttributeTargets.Property, AllowMultiple = false, Inherited = true)]
 public sealed class KeywordAttribute : Attribute

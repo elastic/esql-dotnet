@@ -69,15 +69,31 @@ internal static class SharedEmitterHelpers
 			var prop = props[i];
 			var isLast = i == props.Count - 1;
 
-			sb.Append($"\t\t\t\"{prop.FieldName}\": {{ \"type\": \"{prop.FieldType}\"");
-
-			foreach (var opt in prop.Options)
+			if (prop.FieldType == FieldTypes.Text)
 			{
-				var jsonKey = ToSnakeCase(opt.Key);
-				sb.Append($", \"{jsonKey}\": {opt.Value}");
+				sb.Append($"\t\t\t\"{prop.FieldName}\": {{ \"type\": \"text\"");
+
+				foreach (var opt in prop.Options)
+				{
+					var jsonKey = ToSnakeCase(opt.Key);
+					sb.Append($", \"{jsonKey}\": {opt.Value}");
+				}
+
+				sb.Append(", \"fields\": { \"keyword\": { \"type\": \"keyword\", \"ignore_above\": 256 } } }");
+			}
+			else
+			{
+				sb.Append($"\t\t\t\"{prop.FieldName}\": {{ \"type\": \"{prop.FieldType}\"");
+
+				foreach (var opt in prop.Options)
+				{
+					var jsonKey = ToSnakeCase(opt.Key);
+					sb.Append($", \"{jsonKey}\": {opt.Value}");
+				}
+
+				sb.Append(" }");
 			}
 
-			sb.Append(" }");
 			sb.AppendLine(isLast ? "" : ",");
 		}
 
@@ -210,6 +226,28 @@ internal static class SharedEmitterHelpers
 		}
 
 		sb.AppendLine($"{indent}}};");
+	}
+
+	public static void EmitTextFieldsSet(StringBuilder sb, TypeMappingModel model, string indent)
+	{
+		var textProps = model.Properties
+			.Where(p => !p.IsIgnored && p.FieldType == FieldTypes.Text)
+			.ToList();
+
+		sb.AppendLine();
+		sb.AppendLine($"{indent}/// <summary>Property names that map to text fields.</summary>");
+		sb.Append($"{indent}public global::System.Collections.Generic.IReadOnlySet<string> TextFields {{ get; }} = ");
+
+		if (textProps.Count == 0)
+			sb.AppendLine("new global::System.Collections.Generic.HashSet<string>();");
+		else
+		{
+			sb.AppendLine("new global::System.Collections.Generic.HashSet<string>");
+			sb.AppendLine($"{indent}{{");
+			foreach (var prop in textProps)
+				sb.AppendLine($"{indent}\t\"{prop.PropertyName}\",");
+			sb.AppendLine($"{indent}}};");
+		}
 	}
 
 	public static string ToCamelCase(string name)

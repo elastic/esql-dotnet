@@ -24,5 +24,6 @@ public sealed record TypeFieldMetadata(
 	IReadOnlyCollection<string> IgnoredProperties,
 	string? SearchPattern,
 	Func<Dictionary<string, PropertyInfo>>? GetPropertyMapFunc,
-	MetadataSource Source = MetadataSource.Context
+	MetadataSource Source = MetadataSource.Context,
+	IReadOnlyCollection<string>? TextFields = null
 );

@@ -332,16 +332,17 @@ internal static class TypeAnalyzer
 
 	private static string InferFieldType(ITypeSymbol type, IPropertySymbol? property, StjContextConfig? stjConfig)
 	{
-		// Unwrap nullable
+		// Unwrap nullable value types (e.g. int?, bool?)
 		if (type is INamedTypeSymbol namedType &&
 			namedType.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
 			type = namedType.TypeArguments[0];
 
-		var typeName = type.ToDisplayString();
+		// Use WithNullableAnnotation to strip nullable reference type annotations (e.g. string? → string)
+		var typeName = type.WithNullableAnnotation(NullableAnnotation.NotAnnotated).ToDisplayString();
 
 		return typeName switch
 		{
-			"string" => FieldTypes.Keyword,
+			"string" => FieldTypes.Text,
 			"int" or "System.Int32" => FieldTypes.Integer,
 			"long" or "System.Int64" => FieldTypes.Long,
 			"short" or "System.Int16" => FieldTypes.Short,

@@ -19,7 +19,7 @@ public class StringMethodTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE message LIKE "*error*"
+            | WHERE message.keyword LIKE "*error*"
             """);
 	}
 
@@ -33,7 +33,7 @@ public class StringMethodTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE message LIKE "Error:*"
+            | WHERE message.keyword LIKE "Error:*"
             """);
 	}
 
@@ -47,7 +47,7 @@ public class StringMethodTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE message LIKE "*failed"
+            | WHERE message.keyword LIKE "*failed"
             """);
 	}
 
@@ -61,7 +61,7 @@ public class StringMethodTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE TO_LOWER(log.level) == "error"
+            | WHERE TO_LOWER(log.level.keyword) == "error"
             """);
 	}
 
@@ -75,7 +75,7 @@ public class StringMethodTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE TO_UPPER(log.level) == "ERROR"
+            | WHERE TO_UPPER(log.level.keyword) == "ERROR"
             """);
 	}
 
@@ -89,7 +89,7 @@ public class StringMethodTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE TRIM(message) == "test"
+            | WHERE TRIM(message.keyword) == "test"
             """);
 	}
 }

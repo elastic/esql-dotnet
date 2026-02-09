@@ -23,7 +23,7 @@ public class RealWorldExamplesTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE statusCode >= 500
-            | WHERE log.level == "ERROR"
+            | WHERE log.level.keyword == "ERROR"
             | SORT @timestamp DESC
             | LIMIT 100
             """);
@@ -64,7 +64,7 @@ public class RealWorldExamplesTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE (log.level == "ERROR" OR log.level == "WARNING")
+            | WHERE (log.level.keyword == "ERROR" OR log.level.keyword == "WARNING")
             | WHERE statusCode >= 400
             | SORT @timestamp DESC
             """);
@@ -83,7 +83,7 @@ public class RealWorldExamplesTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM metrics-*
-            | WHERE name == "cpu_usage"
+            | WHERE name.keyword == "cpu_usage"
             | WHERE value > 80
             | SORT timestamp DESC
             | LIMIT 100

@@ -24,7 +24,7 @@ public class UsageOverviewTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE statusCode >= 500
-            | WHERE log.level == "ERROR"
+            | WHERE log.level.keyword == "ERROR"
             | SORT @timestamp DESC
             | LIMIT 100
             """);
@@ -44,7 +44,7 @@ public class UsageOverviewTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE (log.level == "ERROR" OR log.level == "WARNING")
+            | WHERE (log.level.keyword == "ERROR" OR log.level.keyword == "WARNING")
             | WHERE statusCode >= 400
             | SORT @timestamp DESC
             | KEEP message, duration
@@ -83,7 +83,7 @@ public class UsageOverviewTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE log.level == "ERROR"
+            | WHERE log.level.keyword == "ERROR"
             | WHERE duration > 500
             | SORT @timestamp DESC
             | KEEP message, duration
@@ -102,7 +102,7 @@ public class UsageOverviewTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM production-logs-*
-            | WHERE log.level == "ERROR"
+            | WHERE log.level.keyword == "ERROR"
             | SORT @timestamp DESC
             | LIMIT 100
             """);

@@ -73,7 +73,7 @@ public class StringIndexTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE SUBSTRING(message, 0, 1) == "E"
+            | WHERE SUBSTRING(message.keyword, 0, 1) == "E"
             """);
 	}
 
@@ -88,7 +88,7 @@ public class StringIndexTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE SUBSTRING(message, 3, 1) == "O"
+            | WHERE SUBSTRING(message.keyword, 3, 1) == "O"
             """);
 	}
 
@@ -102,7 +102,7 @@ public class StringIndexTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE SUBSTRING(message, 0, 5) == "ERROR"
+            | WHERE SUBSTRING(message.keyword, 0, 5) == "ERROR"
             """);
 	}
 
@@ -116,7 +116,7 @@ public class StringIndexTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE SUBSTRING(message, 0, 4) == "INFO"
+            | WHERE SUBSTRING(message.keyword, 0, 4) == "INFO"
             """);
 	}
 }

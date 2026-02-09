@@ -145,6 +145,7 @@ internal static class ContextEmitter
 		SharedEmitterHelpers.EmitFieldMappingClass(sb, typeModel, indent + "\t");
 		SharedEmitterHelpers.EmitIgnoredProperties(sb, typeModel, indent + "\t");
 		SharedEmitterHelpers.EmitGetPropertyMap(sb, typeModel, typeFqn, indent + "\t");
+		SharedEmitterHelpers.EmitTextFieldsSet(sb, typeModel, indent + "\t");
 
 		// GetTypeFieldMetadata method
 		sb.AppendLine();
@@ -153,7 +154,8 @@ internal static class ContextEmitter
 		sb.AppendLine($"{indent}\t\tFieldMapping.PropertyToField,");
 		sb.AppendLine($"{indent}\t\tIgnoredProperties,");
 		sb.AppendLine($"{indent}\t\tSearchStrategy.Pattern,");
-		sb.AppendLine($"{indent}\t\tGetPropertyMap");
+		sb.AppendLine($"{indent}\t\tGetPropertyMap,");
+		sb.AppendLine($"{indent}\t\tTextFields: TextFields");
 		sb.AppendLine($"{indent}\t);");
 
 		sb.AppendLine($"{indent}}}");

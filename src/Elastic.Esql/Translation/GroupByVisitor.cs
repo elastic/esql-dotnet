@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information
 
 using System.Linq.Expressions;
+using System.Reflection;
 using Elastic.Esql.Core;
 using Elastic.Esql.QueryModel.Commands;
 
@@ -56,7 +57,7 @@ public class GroupByVisitor(EsqlQueryContext context) : ExpressionVisitor
 		switch (expression)
 		{
 			case MemberExpression member:
-				fields.Add(_context.MetadataResolver.Resolve(member.Member));
+				fields.Add(ResolveWithKeyword(member.Member));
 				break;
 
 			case NewExpression newExpr when newExpr.Members != null:
@@ -64,7 +65,7 @@ public class GroupByVisitor(EsqlQueryContext context) : ExpressionVisitor
 				foreach (var arg in newExpr.Arguments)
 				{
 					if (arg is MemberExpression memberArg)
-						fields.Add(_context.MetadataResolver.Resolve(memberArg.Member));
+						fields.Add(ResolveWithKeyword(memberArg.Member));
 				}
 
 				break;
@@ -231,11 +232,19 @@ public class GroupByVisitor(EsqlQueryContext context) : ExpressionVisitor
 	private string ExtractFieldFromLambdaBody(Expression body) =>
 		body switch
 		{
-			MemberExpression member => _context.MetadataResolver.Resolve(member.Member),
+			MemberExpression member => ResolveWithKeyword(member.Member),
 			UnaryExpression { NodeType: ExpressionType.Convert, Operand: MemberExpression innerMember } =>
-				_context.MetadataResolver.Resolve(innerMember.Member),
+				ResolveWithKeyword(innerMember.Member),
 			_ => "*"
 		};
+
+	private string ResolveWithKeyword(MemberInfo member)
+	{
+		var fieldName = _context.MetadataResolver.Resolve(member);
+		if (_context.MetadataResolver.IsTextField(member))
+			fieldName += ".keyword";
+		return fieldName;
+	}
 
 	private static bool IsAggregationMethod(string methodName) => methodName is "Count" or "LongCount" or "Sum" or "Average" or "Min" or "Max";
 

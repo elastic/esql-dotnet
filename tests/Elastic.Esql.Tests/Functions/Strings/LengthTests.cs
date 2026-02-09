@@ -16,7 +16,7 @@ public class LengthTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE LENGTH(message) > 100
+            | WHERE LENGTH(message.keyword) > 100
             """);
 	}
 
