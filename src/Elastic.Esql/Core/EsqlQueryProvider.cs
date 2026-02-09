@@ -41,7 +41,8 @@ public class EsqlQueryProvider(EsqlQueryContext context) : IQueryProvider
 	{
 		var elementType = GetElementType(expression.Type);
 		var executeMethod = typeof(EsqlQueryProvider)
-			.GetMethod(nameof(Execute), 1, [typeof(Expression)])!
+			.GetMethods()
+			.Single(m => m.Name == nameof(Execute) && m.IsGenericMethodDefinition)
 			.MakeGenericMethod(elementType);
 		return executeMethod.Invoke(this, [expression]);
 	}

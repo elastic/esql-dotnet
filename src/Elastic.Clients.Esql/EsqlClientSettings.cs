@@ -23,22 +23,18 @@ public class EsqlClientSettings
 	/// <summary>Creates settings with a node URI.</summary>
 	public EsqlClientSettings(Uri nodeUri)
 	{
-		ArgumentNullException.ThrowIfNull(nodeUri);
-		var config = new TransportConfiguration(nodeUri);
+		var config = new TransportConfiguration(nodeUri ?? throw new ArgumentNullException(nameof(nodeUri)));
 		Transport = new DistributedTransport(config);
 	}
 
 	/// <summary>Creates settings with a custom transport.</summary>
-	public EsqlClientSettings(ITransport transport)
-	{
+	public EsqlClientSettings(ITransport transport) =>
 		Transport = transport ?? throw new ArgumentNullException(nameof(transport));
-	}
 
 	/// <summary>Creates settings with a connection pool.</summary>
 	public EsqlClientSettings(NodePool nodePool)
 	{
-		ArgumentNullException.ThrowIfNull(nodePool);
-		var config = new TransportConfiguration(nodePool);
+		var config = new TransportConfiguration(nodePool ?? throw new ArgumentNullException(nameof(nodePool)));
 		Transport = new DistributedTransport(config);
 	}
 

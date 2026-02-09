@@ -22,8 +22,10 @@ public static class EsqlFormatting
 			bool b => b ? "true" : "false",
 			DateTime dt => FormatDateTime(dt),
 			DateTimeOffset dto => FormatDateTime(dto.UtcDateTime),
+#if NET6_0_OR_GREATER
 			DateOnly d => $"\"{d:yyyy-MM-dd}\"",
 			TimeOnly t => $"\"{t:HH:mm:ss}\"",
+#endif
 			TimeSpan ts => FormatTimeSpan(ts),
 			char c => FormatString(c.ToString()),
 			byte or sbyte or short or ushort or int or uint or long or ulong => value.ToString()!,

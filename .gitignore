@@ -8,6 +8,7 @@
 !.claude/settings.json
 !.claude/skills/
 IMPLEMENTATION_PLAN.md
+build/output
 
 # User-specific files
 *.rsuser

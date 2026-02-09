@@ -424,7 +424,7 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 	private Expression AppendTimeInterval(object? value, string unit)
 	{
 		// Format as ES|QL time interval (e.g., "1 hour", "30 minutes")
-		_ = _builder.Append(CultureInfo.InvariantCulture, $"{value} {unit}");
+		_ = _builder.AppendFormat(CultureInfo.InvariantCulture, "{0} {1}", value, unit);
 		return Expression.Empty();
 	}
 
@@ -596,8 +596,8 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 				var amount = GetConstantValue(node.Arguments[0]);
 				var unit = methodName.Replace("Add", "").ToLowerInvariant();
 				_ = amount is double d and < 0
-					? _builder.Append(CultureInfo.InvariantCulture, $" - {Math.Abs(d)} {unit}")
-					: _builder.Append(CultureInfo.InvariantCulture, $" + {amount} {unit}");
+					? _builder.AppendFormat(CultureInfo.InvariantCulture, " - {0} {1}", Math.Abs(d), unit)
+					: _builder.AppendFormat(CultureInfo.InvariantCulture, " + {0} {1}", amount, unit);
 				_ = _builder.Append(')');
 				break;
 

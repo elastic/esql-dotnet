@@ -126,12 +126,12 @@ public class ResultMaterializer(TypeFieldMetadataResolver? resolver = null)
 	{
 		var instance = Activator.CreateInstance<T>();
 
-		foreach (var (fieldName, columnIndex) in columnMap)
+		foreach (var kvp in columnMap)
 		{
-			if (propertyMap.TryGetValue(fieldName, out var property))
+			if (propertyMap.TryGetValue(kvp.Key, out var property))
 			{
-				var value = row[columnIndex];
-				var columnType = columns[columnIndex].Type;
+				var value = row[kvp.Value];
+				var columnType = columns[kvp.Value].Type;
 				var convertedValue = ConvertValue(value, columnType, property.PropertyType);
 
 				property.SetValue(instance, convertedValue);
@@ -255,6 +255,7 @@ public class ResultMaterializer(TypeFieldMetadataResolver? resolver = null)
 				return new DateTimeOffset(Convert.ToDateTime(value, CultureInfo.InvariantCulture));
 			}
 
+#if NET6_0_OR_GREATER
 			if (underlyingType == typeof(DateOnly))
 			{
 				if (value is string s)
@@ -270,6 +271,7 @@ public class ResultMaterializer(TypeFieldMetadataResolver? resolver = null)
 					return TimeOnly.Parse(s, CultureInfo.InvariantCulture);
 				return TimeOnly.FromDateTime(Convert.ToDateTime(value, CultureInfo.InvariantCulture));
 			}
+#endif
 
 			// Guid
 			if (underlyingType == typeof(Guid))
