@@ -38,7 +38,11 @@
     <File Path="Directory.Packages.props" />
     <File Path="IMPLEMENTATION_PLAN.md" />
   </Folder>
-  <Project Path="build/scripts/scripts.fsproj" />
   <Project Path="aspire/aspire.csproj" />
+  <Project Path="build/scripts/scripts.fsproj">
+    <Build Solution="Debug|Any CPU" Project="false" />
+    <Build Solution="Release|x64" Project="false" />
+    <Build Solution="Release|x86" Project="false" />
+  </Project>
   <Project Path="docs/docs.csproj" />
 </Solution>
