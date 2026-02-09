@@ -36,7 +36,7 @@ internal sealed record TypeMappingModel(
 }
 
 /// <summary>
-/// Represents [Index] attribute configuration.
+/// Represents [Entity] attribute configuration for Index targets.
 /// </summary>
 internal sealed record IndexConfigModel(
 	string? Name,
@@ -51,7 +51,7 @@ internal sealed record IndexConfigModel(
 );
 
 /// <summary>
-/// Represents [DataStream] attribute configuration.
+/// Represents [Entity] attribute configuration for DataStream targets.
 /// </summary>
 internal sealed record DataStreamConfigModel(
 	string Type,
@@ -62,3 +62,23 @@ internal sealed record DataStreamConfigModel(
 	public string FullName => $"{Type}-{Dataset}-{Namespace}";
 	public string SearchPattern => $"{Type}-{Dataset}-*";
 }
+
+/// <summary>
+/// Represents the entity target and data stream mode from [Entity&lt;T&gt;].
+/// </summary>
+internal sealed record EntityConfigModel(
+	string EntityTarget,
+	string DataStreamMode
+);
+
+/// <summary>
+/// Tracks which properties have [Id], [ContentHash], [Timestamp] attributes.
+/// </summary>
+internal sealed record IngestPropertyModel(
+	string? IdPropertyName,
+	string? IdPropertyType,
+	string? ContentHashPropertyName,
+	string? ContentHashPropertyType,
+	string? TimestampPropertyName,
+	string? TimestampPropertyType
+);

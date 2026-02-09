@@ -7,7 +7,7 @@ namespace Elastic.Mapping;
 /// <summary>
 /// Marks a static partial class as an Elasticsearch mapping context.
 /// The source generator will generate resolver classes and metadata for all types
-/// registered via <see cref="IndexAttribute{T}"/> and <see cref="DataStreamAttribute{T}"/>.
+/// registered via <see cref="EntityAttribute{T}"/>.
 /// </summary>
 /// <remarks>
 /// Optionally link a <see cref="System.Text.Json.Serialization.JsonSerializerContext"/>

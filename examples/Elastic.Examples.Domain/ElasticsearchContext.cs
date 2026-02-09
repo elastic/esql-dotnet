@@ -13,7 +13,8 @@ namespace Elastic.Examples.Domain;
 /// Elasticsearch mapping context for all example domain types.
 /// </summary>
 [ElasticsearchMappingContext]
-[Index<Product>(
+[Entity<Product>(
+	Target = EntityTarget.Index,
 	Name = "products",
 	WriteAlias = "products-write",
 	ReadAlias = "products-read",
@@ -21,20 +22,22 @@ namespace Elastic.Examples.Domain;
 	RefreshInterval = "5s",
 	Configuration = typeof(ProductConfiguration)
 )]
-[Index<Order>(
+[Entity<Order>(
+	Target = EntityTarget.Index,
 	WriteAlias = "orders-write",
 	ReadAlias = "orders-read",
 	SearchPattern = "orders-*",
 	DatePattern = "yyyy.MM"
 )]
-[Index<Customer>(
+[Entity<Customer>(
+	Target = EntityTarget.Index,
 	Name = "customers",
 	WriteAlias = "customers-write",
 	SearchPattern = "customers*",
 	Dynamic = false
 )]
-[DataStream<ApplicationLog>(Type = "logs", Dataset = "ecommerce.app", Namespace = "production")]
-[DataStream<ApplicationMetric>(Type = "metrics", Dataset = "ecommerce.app", Namespace = "production")]
+[Entity<ApplicationLog>(Target = EntityTarget.DataStream, Type = "logs", Dataset = "ecommerce.app", Namespace = "production")]
+[Entity<ApplicationMetric>(Target = EntityTarget.DataStream, Type = "metrics", Dataset = "ecommerce.app", Namespace = "production")]
 public static partial class ExampleElasticsearchContext
 {
 	// =========================================================================

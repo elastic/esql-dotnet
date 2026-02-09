@@ -17,7 +17,7 @@ internal sealed record ContextMappingModel(
 );
 
 /// <summary>
-/// Represents a single type registration within a context (Index or DataStream).
+/// Represents a single type registration within a context (via [Entity&lt;T&gt;]).
 /// </summary>
 internal sealed record TypeRegistration(
 	string TypeName,
@@ -25,6 +25,8 @@ internal sealed record TypeRegistration(
 	TypeMappingModel TypeModel,
 	IndexConfigModel? IndexConfig,
 	DataStreamConfigModel? DataStreamConfig,
+	EntityConfigModel EntityConfig,
+	IngestPropertyModel IngestProperties,
 	string? ConfigurationClassName,
 	string? ConfigureAnalysisReference,
 	bool HasConfigureMappings,

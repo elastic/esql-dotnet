@@ -12,16 +12,16 @@ namespace Elastic.Esql.Tests;
 // ============================================================================
 
 [ElasticsearchMappingContext]
-[Index<LogEntry>(SearchPattern = "logs-*")]
-[Index<SimpleDocument>(Name = "simple-docs")]
-[Index<MetricDocument>(SearchPattern = "metrics-*")]
-[Index<EventDocument>(SearchPattern = "events-*")]
+[Entity<LogEntry>(Target = EntityTarget.Index, SearchPattern = "logs-*")]
+[Entity<SimpleDocument>(Target = EntityTarget.Index, Name = "simple-docs")]
+[Entity<MetricDocument>(Target = EntityTarget.Index, SearchPattern = "metrics-*")]
+[Entity<EventDocument>(Target = EntityTarget.Index, SearchPattern = "events-*")]
 public static partial class EsqlTestMappingContext;
 
 /// <summary>
 /// Primary test document type with various field types and attributes.
 /// </summary>
-[Index(SearchPattern = "logs-*")]
+[Entity(Target = EntityTarget.Index, SearchPattern = "logs-*")]
 public class LogEntry
 {
 	[JsonPropertyName("@timestamp")]
@@ -49,7 +49,7 @@ public class LogEntry
 /// <summary>
 /// Simple document type without attributes for default naming tests.
 /// </summary>
-[Index(Name = "simple-docs")]
+[Entity(Target = EntityTarget.Index, Name = "simple-docs")]
 public class SimpleDocument
 {
 	public string Name { get; set; } = string.Empty;
@@ -60,7 +60,7 @@ public class SimpleDocument
 /// <summary>
 /// Document with nullable properties.
 /// </summary>
-[Index(SearchPattern = "metrics-*")]
+[Entity(Target = EntityTarget.Index, SearchPattern = "metrics-*")]
 public class MetricDocument
 {
 	public DateTime Timestamp { get; set; }
@@ -85,7 +85,7 @@ public enum LogLevel
 /// <summary>
 /// Document with enum property.
 /// </summary>
-[Index(SearchPattern = "events-*")]
+[Entity(Target = EntityTarget.Index, SearchPattern = "events-*")]
 public class EventDocument
 {
 	public DateTime Timestamp { get; set; }

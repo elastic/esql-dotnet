@@ -20,8 +20,12 @@ namespace Elastic.Mapping.Generator;
 public class MappingSourceGenerator : IIncrementalGenerator
 {
 	private const string ElasticsearchMappingContextAttributeName = "Elastic.Mapping.ElasticsearchMappingContextAttribute";
-	private const string IndexAttributePrefix = "Elastic.Mapping.IndexAttribute<";
-	private const string DataStreamAttributePrefix = "Elastic.Mapping.DataStreamAttribute<";
+	private const string EntityAttributePrefix = "Elastic.Mapping.EntityAttribute<";
+
+	// Ingest property attribute names
+	private const string IdAttributeName = "Elastic.Mapping.IdAttribute";
+	private const string ContentHashAttributeName = "Elastic.Mapping.ContentHashAttribute";
+	private const string TimestampAttributeName = "Elastic.Mapping.TimestampAttribute";
 
 	public void Initialize(IncrementalGeneratorInitializationContext context)
 	{
@@ -88,7 +92,7 @@ public class MappingSourceGenerator : IIncrementalGenerator
 		// Analyze STJ context if provided
 		var stjConfig = StjContextAnalyzer.Analyze(jsonContextSymbol);
 
-		// Collect type registrations from [Index<T>] and [DataStream<T>] attributes
+		// Collect type registrations from [Entity<T>] attributes
 		var registrations = ImmutableArray.CreateBuilder<TypeRegistration>();
 
 		foreach (var attr in contextSymbol.GetAttributes())
@@ -99,15 +103,9 @@ public class MappingSourceGenerator : IIncrementalGenerator
 			if (attrClassName == null)
 				continue;
 
-			if (attrClassName.StartsWith(IndexAttributePrefix, StringComparison.Ordinal))
+			if (attrClassName.StartsWith(EntityAttributePrefix, StringComparison.Ordinal))
 			{
-				var registration = ProcessIndexAttribute(attr, contextSymbol, stjConfig, ct);
-				if (registration != null)
-					registrations.Add(registration);
-			}
-			else if (attrClassName.StartsWith(DataStreamAttributePrefix, StringComparison.Ordinal))
-			{
-				var registration = ProcessDataStreamAttribute(attr, contextSymbol, stjConfig, ct);
+				var registration = ProcessEntityAttribute(attr, contextSymbol, stjConfig, ct);
 				if (registration != null)
 					registrations.Add(registration);
 			}
@@ -124,30 +122,74 @@ public class MappingSourceGenerator : IIncrementalGenerator
 		);
 	}
 
-	private static TypeRegistration? ProcessIndexAttribute(
+	private static TypeRegistration? ProcessEntityAttribute(
 		AttributeData attr,
 		INamedTypeSymbol contextSymbol,
 		StjContextConfig? stjConfig,
 		CancellationToken ct)
 	{
-		// Extract T from IndexAttribute<T>
+		// Extract T from EntityAttribute<T>
 		var typeArg = attr.AttributeClass?.TypeArguments.FirstOrDefault();
 		if (typeArg is not INamedTypeSymbol targetType)
 			return null;
 
-		var indexConfig = new IndexConfigModel(
-			GetNamedArg<string>(attr, "Name"),
-			GetNamedArg<string>(attr, "WriteAlias"),
-			GetNamedArg<string>(attr, "ReadAlias"),
-			GetNamedArg<string>(attr, "DatePattern"),
-			GetNamedArg<string>(attr, "SearchPattern"),
-			GetNamedArg<int>(attr, "Shards", -1),
-			GetNamedArg<int>(attr, "Replicas", -1),
-			GetNamedArg<string>(attr, "RefreshInterval"),
-			GetNamedArg<bool>(attr, "Dynamic", true)
-		);
+		// Read EntityTarget enum value
+		var targetValue = GetNamedEnumArg(attr, "Target", "Index");
+		var dataStreamModeValue = GetNamedEnumArg(attr, "DataStreamMode", "Default");
 
-		// Extract Configuration class reference (keep the symbol for method detection)
+		var entityConfig = new EntityConfigModel(targetValue, dataStreamModeValue);
+
+		// Build IndexConfig or DataStreamConfig based on target
+		IndexConfigModel? indexConfig = null;
+		DataStreamConfigModel? dataStreamConfig = null;
+
+		if (targetValue == "DataStream" || targetValue == "WiredStream")
+		{
+			var type = GetNamedArg<string>(attr, "Type");
+			var dataset = GetNamedArg<string>(attr, "Dataset");
+
+			if (!string.IsNullOrEmpty(type) && !string.IsNullOrEmpty(dataset))
+			{
+				dataStreamConfig = new DataStreamConfigModel(
+					type!,
+					dataset!,
+					GetNamedArg<string>(attr, "Namespace") ?? "default"
+				);
+			}
+
+			// DataStream targets can still have index-like settings
+			indexConfig = new IndexConfigModel(
+				GetNamedArg<string>(attr, "Name"),
+				GetNamedArg<string>(attr, "WriteAlias"),
+				GetNamedArg<string>(attr, "ReadAlias"),
+				GetNamedArg<string>(attr, "DatePattern"),
+				GetNamedArg<string>(attr, "SearchPattern"),
+				GetNamedArg<int>(attr, "Shards", -1),
+				GetNamedArg<int>(attr, "Replicas", -1),
+				GetNamedArg<string>(attr, "RefreshInterval"),
+				GetNamedArg<bool>(attr, "Dynamic", true)
+			);
+		}
+		else
+		{
+			// Index target
+			indexConfig = new IndexConfigModel(
+				GetNamedArg<string>(attr, "Name"),
+				GetNamedArg<string>(attr, "WriteAlias"),
+				GetNamedArg<string>(attr, "ReadAlias"),
+				GetNamedArg<string>(attr, "DatePattern"),
+				GetNamedArg<string>(attr, "SearchPattern"),
+				GetNamedArg<int>(attr, "Shards", -1),
+				GetNamedArg<int>(attr, "Replicas", -1),
+				GetNamedArg<string>(attr, "RefreshInterval"),
+				GetNamedArg<bool>(attr, "Dynamic", true)
+			);
+		}
+
+		// Detect [Id], [ContentHash], [Timestamp] on target type properties
+		var ingestProperties = AnalyzeIngestProperties(targetType);
+
+		// Extract Configuration class reference
 		string? configClassName = null;
 		INamedTypeSymbol? configTypeSymbol = null;
 		var configArg = attr.NamedArguments.FirstOrDefault(a => a.Key == "Configuration");
@@ -157,43 +199,46 @@ public class MappingSourceGenerator : IIncrementalGenerator
 			configTypeSymbol = configType;
 		}
 
-		return BuildTypeRegistration(targetType, contextSymbol, stjConfig, indexConfig, null, configClassName, configTypeSymbol, ct);
+		return BuildTypeRegistration(targetType, contextSymbol, stjConfig, indexConfig, dataStreamConfig, entityConfig, ingestProperties, configClassName, configTypeSymbol, ct);
 	}
 
-	private static TypeRegistration? ProcessDataStreamAttribute(
-		AttributeData attr,
-		INamedTypeSymbol contextSymbol,
-		StjContextConfig? stjConfig,
-		CancellationToken ct)
+	private static IngestPropertyModel AnalyzeIngestProperties(INamedTypeSymbol targetType)
 	{
-		// Extract T from DataStreamAttribute<T>
-		var typeArg = attr.AttributeClass?.TypeArguments.FirstOrDefault();
-		if (typeArg is not INamedTypeSymbol targetType)
-			return null;
+		string? idPropName = null, idPropType = null;
+		string? contentHashPropName = null, contentHashPropType = null;
+		string? timestampPropName = null, timestampPropType = null;
 
-		var type = GetNamedArg<string>(attr, "Type");
-		var dataset = GetNamedArg<string>(attr, "Dataset");
-
-		if (string.IsNullOrEmpty(type) || string.IsNullOrEmpty(dataset))
-			return null;
-
-		var dataStreamConfig = new DataStreamConfigModel(
-			type!,
-			dataset!,
-			GetNamedArg<string>(attr, "Namespace") ?? "default"
-		);
-
-		// Extract Configuration class reference (keep the symbol for method detection)
-		string? configClassName = null;
-		INamedTypeSymbol? configTypeSymbol = null;
-		var configArg = attr.NamedArguments.FirstOrDefault(a => a.Key == "Configuration");
-		if (configArg.Key != null && configArg.Value.Value is INamedTypeSymbol configType)
+		foreach (var member in targetType.GetMembers())
 		{
-			configClassName = configType.ToDisplayString();
-			configTypeSymbol = configType;
+			if (member is not IPropertySymbol prop)
+				continue;
+
+			foreach (var propAttr in prop.GetAttributes())
+			{
+				var attrName = propAttr.AttributeClass?.ToDisplayString();
+				if (attrName == IdAttributeName)
+				{
+					idPropName = prop.Name;
+					idPropType = prop.Type.ToDisplayString();
+				}
+				else if (attrName == ContentHashAttributeName)
+				{
+					contentHashPropName = prop.Name;
+					contentHashPropType = prop.Type.ToDisplayString();
+				}
+				else if (attrName == TimestampAttributeName)
+				{
+					timestampPropName = prop.Name;
+					timestampPropType = prop.Type.ToDisplayString();
+				}
+			}
 		}
 
-		return BuildTypeRegistration(targetType, contextSymbol, stjConfig, null, dataStreamConfig, configClassName, configTypeSymbol, ct);
+		return new IngestPropertyModel(
+			idPropName, idPropType,
+			contentHashPropName, contentHashPropType,
+			timestampPropName, timestampPropType
+		);
 	}
 
 	private static TypeRegistration? BuildTypeRegistration(
@@ -202,6 +247,8 @@ public class MappingSourceGenerator : IIncrementalGenerator
 		StjContextConfig? stjConfig,
 		IndexConfigModel? indexConfig,
 		DataStreamConfigModel? dataStreamConfig,
+		EntityConfigModel entityConfig,
+		IngestPropertyModel ingestProperties,
 		string? configClassName,
 		INamedTypeSymbol? configTypeSymbol,
 		CancellationToken ct)
@@ -275,6 +322,8 @@ public class MappingSourceGenerator : IIncrementalGenerator
 			typeModel,
 			indexConfig,
 			dataStreamConfig,
+			entityConfig,
+			ingestProperties,
 			configClassName,
 			configureAnalysisRef,
 			hasConfigureMappings,
@@ -308,5 +357,29 @@ public class MappingSourceGenerator : IIncrementalGenerator
 			return defaultValue;
 
 		return arg.Value.Value is T value ? value : defaultValue;
+	}
+
+	private static string GetNamedEnumArg(AttributeData attr, string name, string defaultValue)
+	{
+		var arg = attr.NamedArguments.FirstOrDefault(a => a.Key == name);
+		if (arg.Key == null)
+			return defaultValue;
+
+		// Enum values come as int, need to get the field name
+		if (arg.Value.Value is int intValue)
+		{
+			var enumType = arg.Value.Type;
+			if (enumType != null)
+			{
+				foreach (var member in enumType.GetMembers())
+				{
+					if (member is IFieldSymbol field && field.HasConstantValue && field.ConstantValue is int fieldVal && fieldVal == intValue)
+						return field.Name;
+				}
+			}
+			return intValue.ToString();
+		}
+
+		return defaultValue;
 	}
 }

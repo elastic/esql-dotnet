@@ -11,16 +11,22 @@ namespace Elastic.Mapping.Tests;
 // ============================================================================
 
 [ElasticsearchMappingContext]
-[Index<LogEntry>(
+[Entity<LogEntry>(
+	Target = EntityTarget.Index,
 	WriteAlias = "logs-write",
 	ReadAlias = "logs-read",
 	SearchPattern = "logs-*",
 	Shards = 3,
 	Replicas = 2
 )]
-[DataStream<NginxAccessLog>(Type = "logs", Dataset = "nginx.access", Namespace = "production")]
-[Index<SimpleDocument>(Name = "simple-docs")]
-[Index<AdvancedDocument>(Name = "advanced-docs")]
+[Entity<NginxAccessLog>(
+	Target = EntityTarget.DataStream,
+	Type = "logs",
+	Dataset = "nginx.access",
+	Namespace = "production"
+)]
+[Entity<SimpleDocument>(Target = EntityTarget.Index, Name = "simple-docs")]
+[Entity<AdvancedDocument>(Target = EntityTarget.Index, Name = "advanced-docs")]
 public static partial class TestMappingContext
 {
 	/// <summary>Configures LogEntry-specific analysis settings (context-level).</summary>
@@ -44,6 +50,7 @@ public static partial class TestMappingContext
 public class LogEntry
 {
 	[JsonPropertyName("@timestamp")]
+	[Timestamp]
 	public DateTime Timestamp { get; set; }
 
 	[JsonPropertyName("log.level")]
@@ -73,6 +80,7 @@ public class NginxAccessLog
 {
 	[JsonPropertyName("@timestamp")]
 	[Date(Format = "strict_date_optional_time")]
+	[Timestamp]
 	public DateTime Timestamp { get; set; }
 
 	[Text(Analyzer = "standard")]
@@ -89,6 +97,7 @@ public class NginxAccessLog
 /// </summary>
 public class SimpleDocument
 {
+	[Id]
 	public string Name { get; set; } = string.Empty;
 	public int Value { get; set; }
 	public DateTime CreatedAt { get; set; }
@@ -99,6 +108,7 @@ public class SimpleDocument
 /// </summary>
 public class AdvancedDocument
 {
+	[Id]
 	public string Title { get; set; } = string.Empty;
 
 	[GeoPoint]
@@ -115,6 +125,9 @@ public class AdvancedDocument
 
 	[Nested]
 	public List<Tag>? Tags { get; set; }
+
+	[ContentHash]
+	public string? Hash { get; set; }
 }
 
 /// <summary>

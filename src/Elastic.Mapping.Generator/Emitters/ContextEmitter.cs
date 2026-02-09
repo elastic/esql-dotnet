@@ -95,7 +95,7 @@ internal static class ContextEmitter
 		sb.AppendLine($"{indent}\tprivate const string _mappingsHash = \"{mappingsHash}\";");
 		sb.AppendLine();
 
-		// Context instance
+		// Context instance - now includes EntityTarget, DataStreamMode, and accessor delegates
 		sb.AppendLine($"{indent}\t/// <summary>Elasticsearch context metadata.</summary>");
 		sb.AppendLine($"{indent}\tpublic global::Elastic.Mapping.ElasticsearchTypeContext Context {{ get; }} = new(");
 		sb.AppendLine($"{indent}\t\t_GetSettingsJson,");
@@ -109,12 +109,24 @@ internal static class ContextEmitter
 		sb.AppendLine(",");
 		sb.AppendLine($"{indent}\t\tnew global::Elastic.Mapping.SearchStrategy()");
 		EmitSearchStrategyInit(sb, reg, indent + "\t\t");
+		sb.AppendLine(",");
+
+		// EntityTarget (required)
+		sb.AppendLine($"{indent}\t\tglobal::Elastic.Mapping.EntityTarget.{reg.EntityConfig.EntityTarget},");
+
+		// DataStreamMode
+		sb.AppendLine($"{indent}\t\tDataStreamMode: global::Elastic.Mapping.DataStreamMode.{reg.EntityConfig.DataStreamMode},");
+
+		// Accessor delegates for [Id], [ContentHash], [Timestamp]
+		EmitAccessorDelegate(sb, reg.IngestProperties.IdPropertyName, typeFqn, "GetId", false, indent + "\t\t");
+		EmitAccessorDelegate(sb, reg.IngestProperties.ContentHashPropertyName, typeFqn, "GetContentHash", false, indent + "\t\t");
+		EmitTimestampDelegate(sb, reg.IngestProperties.TimestampPropertyName, reg.IngestProperties.TimestampPropertyType, typeFqn, indent + "\t\t");
 
 		// ConfigureAnalysis delegate
 		if (reg.ConfigureAnalysisReference != null)
-			sb.AppendLine($",\n{indent}\t\tConfigureAnalysis: {reg.ConfigureAnalysisReference},");
+			sb.AppendLine($"{indent}\t\tConfigureAnalysis: {reg.ConfigureAnalysisReference},");
 		else
-			sb.AppendLine($",\n{indent}\t\tConfigureAnalysis: null,");
+			sb.AppendLine($"{indent}\t\tConfigureAnalysis: null,");
 
 		// MappedType
 		sb.AppendLine($"{indent}\t\tMappedType: typeof(global::{typeFqn})");
@@ -159,6 +171,44 @@ internal static class ContextEmitter
 		sb.AppendLine($"{indent}\t);");
 
 		sb.AppendLine($"{indent}}}");
+	}
+
+	private static void EmitAccessorDelegate(StringBuilder sb, string? propertyName, string typeFqn, string paramName, bool isLast, string indent)
+	{
+		if (propertyName != null)
+		{
+			var comma = isLast ? "" : ",";
+			sb.AppendLine($"{indent}{paramName}: static (obj) => ((global::{typeFqn})obj).{propertyName}?.ToString(){comma}");
+		}
+		else
+		{
+			var comma = isLast ? "" : ",";
+			sb.AppendLine($"{indent}{paramName}: null{comma}");
+		}
+	}
+
+	private static void EmitTimestampDelegate(StringBuilder sb, string? propertyName, string? propertyType, string typeFqn, string indent)
+	{
+		if (propertyName != null && propertyType != null)
+		{
+			// Handle different timestamp types - convert to DateTimeOffset?
+			if (propertyType == "System.DateTimeOffset" || propertyType == "System.DateTimeOffset?")
+			{
+				sb.AppendLine($"{indent}GetTimestamp: static (obj) => ((global::{typeFqn})obj).{propertyName},");
+			}
+			else if (propertyType == "System.DateTime" || propertyType == "System.DateTime?")
+			{
+				sb.AppendLine($"{indent}GetTimestamp: static (obj) => {{ var v = ((global::{typeFqn})obj).{propertyName}; return new global::System.DateTimeOffset(v); }},");
+			}
+			else
+			{
+				sb.AppendLine($"{indent}GetTimestamp: null,");
+			}
+		}
+		else
+		{
+			sb.AppendLine($"{indent}GetTimestamp: null,");
+		}
 	}
 
 	private static void EmitMappingContextClass(StringBuilder sb, ContextMappingModel model, string indent)

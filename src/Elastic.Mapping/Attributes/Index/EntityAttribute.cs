@@ -5,13 +5,16 @@
 namespace Elastic.Mapping;
 
 /// <summary>
-/// Marks a POCO as an Elasticsearch index for attribute-based discovery (without a mapping context).
+/// Marks a POCO as an Elasticsearch entity for attribute-based discovery (without a mapping context).
 /// Applied directly to the domain type.
 /// </summary>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
-public sealed class IndexAttribute : Attribute
+public sealed class EntityAttribute : Attribute
 {
-	/// <summary>Concrete index name (e.g., "projects").</summary>
+	/// <summary>The Elasticsearch target type.</summary>
+	public EntityTarget Target { get; init; } = EntityTarget.Index;
+
+	/// <summary>Concrete index or data stream name.</summary>
 	public string? Name { get; init; }
 
 	/// <summary>Search pattern for queries (e.g., "logs-*").</summary>
@@ -25,15 +28,48 @@ public sealed class IndexAttribute : Attribute
 }
 
 /// <summary>
-/// Registers a type as an Elasticsearch index within an <see cref="ElasticsearchMappingContextAttribute"/> context.
+/// Registers a type as an Elasticsearch entity within an <see cref="ElasticsearchMappingContextAttribute"/> context.
 /// Applied to the context class, not the domain type.
+/// Replaces the separate <c>[Index&lt;T&gt;]</c> and <c>[DataStream&lt;T&gt;]</c> attributes with a single
+/// unified attribute where <see cref="Target"/> controls the indexing strategy.
 /// </summary>
-/// <typeparam name="T">The domain type to map to an Elasticsearch index.</typeparam>
+/// <typeparam name="T">The domain type to map to an Elasticsearch entity.</typeparam>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
-public sealed class IndexAttribute<T> : Attribute where T : class
+public sealed class EntityAttribute<T> : Attribute where T : class
 {
-	/// <summary>Concrete index name (e.g., "projects").</summary>
+	/// <summary>
+	/// The Elasticsearch target type. Determines how this entity is indexed.
+	/// Defaults to <see cref="EntityTarget.Index"/>.
+	/// </summary>
+	public EntityTarget Target { get; init; } = EntityTarget.Index;
+
+	/// <summary>
+	/// Concrete index or data stream name (e.g., "products").
+	/// For data streams, if not set, the name is derived from <see cref="Type"/>-<see cref="Dataset"/>-<see cref="Namespace"/>.
+	/// </summary>
 	public string? Name { get; init; }
+
+	// --- Data stream properties (used when Target is DataStream or WiredStream) ---
+
+	/// <summary>Data stream type (e.g., "logs", "metrics", "traces", "synthetics").</summary>
+	public string? Type { get; init; }
+
+	/// <summary>Dataset identifier (e.g., "nginx.access", "system.cpu").</summary>
+	public string? Dataset { get; init; }
+
+	/// <summary>
+	/// Namespace for environment separation (e.g., "production", "development").
+	/// Defaults to "default".
+	/// </summary>
+	public string Namespace { get; init; } = "default";
+
+	/// <summary>
+	/// Data stream mode for specialized data stream types.
+	/// Only applicable when <see cref="Target"/> is <see cref="EntityTarget.DataStream"/>.
+	/// </summary>
+	public DataStreamMode DataStreamMode { get; init; } = DataStreamMode.Default;
+
+	// --- Index properties (used when Target is Index) ---
 
 	/// <summary>ILM write alias (e.g., "logs-write").</summary>
 	public string? WriteAlias { get; init; }

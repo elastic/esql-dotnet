@@ -13,7 +13,7 @@ namespace Playground.Models;
 /// Elasticsearch mapping context for the playground.
 /// </summary>
 [ElasticsearchMappingContext]
-[Index<SupportTicket>(Name = "support-tickets", SearchPattern = "support-tickets*")]
+[Entity<SupportTicket>(Target = EntityTarget.Index, Name = "support-tickets", SearchPattern = "support-tickets*")]
 public static partial class PlaygroundMappingContext
 {
 	/// <summary>Configures SupportTicket-specific analysis settings.</summary>

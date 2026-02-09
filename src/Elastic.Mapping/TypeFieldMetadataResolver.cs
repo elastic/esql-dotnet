@@ -127,13 +127,9 @@ public class TypeFieldMetadataResolver(IElasticsearchMappingContext? context = n
 
 	private static string? DiscoverSearchPattern(Type type)
 	{
-		var indexAttr = type.GetCustomAttribute<IndexAttribute>();
-		if (indexAttr != null)
-			return indexAttr.SearchPattern ?? indexAttr.ReadAlias;
-
-		var dsAttr = type.GetCustomAttribute<DataStreamAttribute>();
-		if (dsAttr != null)
-			return $"{dsAttr.Type}-{dsAttr.Dataset}-*";
+		var entityAttr = type.GetCustomAttribute<EntityAttribute>();
+		if (entityAttr != null)
+			return entityAttr.SearchPattern ?? entityAttr.ReadAlias;
 
 		return null;
 	}
