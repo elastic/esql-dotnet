@@ -29,6 +29,13 @@
     <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.1.0" />
     <PackageVersion Include="Aspire.Hosting.Testing" Version="13.1.0" />
 
+    <!-- Build infrastructure -->
+    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
+    <PackageVersion Include="Argu" Version="6.2.5" />
+    <PackageVersion Include="Bullseye" Version="6.0.0" />
+    <PackageVersion Include="Proc" Version="0.11.0" />
+    <PackageVersion Include="Fake.Tools.Git" Version="6.0.0" />
+
     <!-- Ingest example dependencies -->
     <PackageVersion Include="Elastic.Clients.Elasticsearch" Version="8.17.0" />
     <PackageVersion Include="Elastic.Ingest.Elasticsearch" Version="0.17.1" />

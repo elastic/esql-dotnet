@@ -9,6 +9,8 @@
     <Project Path="examples/Elastic.Examples.Esql/Elastic.Examples.Esql.csproj" />
     <Project Path="examples/Elastic.Examples.Ingest/Elastic.Examples.Ingest.csproj" />
     <Project Path="examples/Elastic.Examples.Mapping/Elastic.Examples.Mapping.csproj" />
+    <Project Path="examples/mapping-aot-smoketest/mapping-aot-smoketest.csproj" />
+    <Project Path="examples/esql-aot-smoketest/esql-aot-smoketest.csproj" />
   </Folder>
   <Folder Name="/playground/">
     <Project Path="playground/playground.csproj" />
@@ -36,6 +38,7 @@
     <File Path="Directory.Packages.props" />
     <File Path="IMPLEMENTATION_PLAN.md" />
   </Folder>
+  <Project Path="build/scripts/scripts.fsproj" />
   <Project Path="aspire/aspire.csproj" />
   <Project Path="docs/docs.csproj" />
 </Solution>

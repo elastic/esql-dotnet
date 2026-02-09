@@ -1,15 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
-    <Authors>Elastic and contributors</Authors>
-    <Copyright>Elasticsearch BV</Copyright>
-    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
-    <RepositoryUrl>https://github.com/elastic/esql-dotnet</RepositoryUrl>
-    <PackageProjectUrl>https://github.com/elastic/esql-dotnet</PackageProjectUrl>
-    <PackageReleaseNotes>https://github.com/elastic/esql-dotnet/releases</PackageReleaseNotes>
-  </PropertyGroup>
-  
-  <PropertyGroup>
     <IsPackable>False</IsPackable>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <MinVerDefaultPreReleaseIdentifiers>canary.0</MinVerDefaultPreReleaseIdentifiers>
@@ -23,15 +14,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>$(SolutionRoot)/build/keys/keypair.snk</AssemblyOriginatorKeyFile>
   </PropertyGroup>
 
   <ItemGroup>
     <Using Include="System.Threading.CancellationToken" Alias="Cancel" />
   </ItemGroup>
-  <!-- MinVer Configuration -->
-  <PropertyGroup>
-    <MinVerDefaultPreReleaseIdentifiers>canary.0</MinVerDefaultPreReleaseIdentifiers>
-    <MinVerMinimumMajorMinor>0.1</MinVerMinimumMajorMinor>
-  </PropertyGroup>
-  
 </Project>
