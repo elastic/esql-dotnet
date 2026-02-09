@@ -2,6 +2,7 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -94,6 +95,9 @@ public class ResultMaterializer(TypeFieldMetadataResolver? resolver = null)
 		return BuildPropertyMapViaReflection<T>();
 	}
 
+#if NET8_0_OR_GREATER
+	[UnconditionalSuppressMessage("Trimming", "IL2090", Justification = "Fallback for non-generated types; generated context provides metadata.")]
+#endif
 	private Dictionary<string, PropertyInfo> BuildPropertyMapViaReflection<T>()
 	{
 		var map = new Dictionary<string, PropertyInfo>(StringComparer.OrdinalIgnoreCase);
@@ -118,6 +122,9 @@ public class ResultMaterializer(TypeFieldMetadataResolver? resolver = null)
 		return map;
 	}
 
+#if NET8_0_OR_GREATER
+	[UnconditionalSuppressMessage("Trimming", "IL2091", Justification = "Activator.CreateInstance<T> required for object materialization.")]
+#endif
 	private static T MaterializeObject<T>(
 		List<object?> row,
 		Dictionary<string, int> columnMap,
@@ -141,6 +148,9 @@ public class ResultMaterializer(TypeFieldMetadataResolver? resolver = null)
 		return instance;
 	}
 
+#if NET8_0_OR_GREATER
+	[UnconditionalSuppressMessage("Trimming", "IL2090", Justification = "GetConstructors required for anonymous type materialization.")]
+#endif
 	private static T MaterializeAnonymous<T>(
 		List<object?> row,
 		Dictionary<string, int> columnMap,
@@ -312,6 +322,9 @@ public class ResultMaterializer(TypeFieldMetadataResolver? resolver = null)
 			_ => element.GetRawText()
 		};
 
+#if NET8_0_OR_GREATER
+	[UnconditionalSuppressMessage("Trimming", "IL2067", Justification = "Only called for value types which always have parameterless constructors.")]
+#endif
 	private static object? GetDefault(Type type) => type.IsValueType ? Activator.CreateInstance(type) : null;
 
 	private static string ToCamelCase(string name)

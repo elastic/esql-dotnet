@@ -24,7 +24,7 @@
 
 	<!-- Bundle the source generator into this package -->
 	<ItemGroup>
-		<None Include="$(ArtifactsPath)/bin/Elastic.Mapping.Generator/$(Configuration)/Elastic.Mapping.Generator.dll"
+		<None Include="$(ArtifactsPath)/bin/Elastic.Mapping.Generator/$(Configuration.ToLowerInvariant())/Elastic.Mapping.Generator.dll"
 			  Pack="true"
 			  PackagePath="analyzers/dotnet/cs"
 			  Visible="false" />
