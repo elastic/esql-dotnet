@@ -1,0 +1,96 @@
+name: Always be deploying
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+env:
+  ARTIFACTS: 'build/output/*.nupkg'
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 1
+
+    - run: |
+        git fetch --prune --unshallow --tags
+        echo exit code $?
+        git tag --list
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v5
+      with:
+        global-json-file: ./global.json
+
+    - name: Build
+      run: ./build.sh build -s true
+
+    - name: Test
+      run: ./build.sh test -s true
+
+    - name: Generate local nuget packages
+      run: ./build.sh generatepackages -s true
+
+    - name: "Validate *.npkg files"
+      run: ./build.sh validatepackages -s true
+
+    - name: "Inspect public API changes"
+      run: ./build.sh generateapichanges -s true
+
+    - uses: actions/upload-artifact@v6
+      with:
+        name: build
+        path: build/output/
+
+  release:
+    runs-on: ubuntu-latest
+    needs: [ build ]
+    permissions:
+      artifact-metadata: write
+      attestations: write
+      contents: write
+      id-token: write
+      issues: write
+      packages: write
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 1
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v5
+      with:
+          global-json-file: ./global.json
+
+    - uses: actions/download-artifact@v7
+      with:
+        name: build
+        path: build/output
+
+    - name: Generate release notes for tag
+      run: ./build.sh generatereleasenotes -s true --token ${{secrets.GITHUB_TOKEN}}
+
+    - name: Create or update release for tag on github
+      run: ./build.sh createreleaseongithub -s true --token ${{secrets.GITHUB_TOKEN}}
+
+    - uses: actions/attest-build-provenance@v3
+      with:
+        subject-path: '${{ github.workspace }}/${{ env.ARTIFACTS }}'
+
+    # Get a short-lived NuGet API key
+    - name: NuGet login (OIDC → temp API key)
+      uses: NuGet/login@d22cc5f58ff5b88bf9bd452535b4335137e24544 # v1
+      id: login
+      with:
+        user: ${{ secrets.NUGET_USER }}
+
+    - name: Release to nuget.org
+      run: dotnet nuget push '${{ env.ARTIFACTS }}' -k ${{steps.login.outputs.NUGET_API_KEY}} -s https://api.nuget.org/v3/index.json --skip-duplicate --no-symbols

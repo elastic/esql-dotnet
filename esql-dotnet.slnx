@@ -38,6 +38,7 @@
     <File Path="Directory.Packages.props" />
     <File Path="IMPLEMENTATION_PLAN.md" />
   </Folder>
+  <Project Path=".github/.github.csproj" />
   <Project Path="aspire/aspire.csproj" />
   <Project Path="build/scripts/scripts.fsproj">
     <Build Solution="Debug|Any CPU" Project="false" />
