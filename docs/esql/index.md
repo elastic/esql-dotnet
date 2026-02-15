@@ -121,6 +121,18 @@ See the [functions reference](functions-reference.md) for the complete list and 
 .Select(l => new { Root = Math.Sqrt(l.Value) })             // EVAL root = SQRT(value)
 ```
 
+### LLM completion
+
+```csharp
+// Pipeline: retrieve docs, send to LLM
+.Completion(l => l.Message, InferenceEndpoints.OpenAi.Gpt41, column: "analysis")
+
+// Standalone: prompt without an index
+CompletionQuery.Generate("Tell me about Elasticsearch", InferenceEndpoints.Anthropic.Claude46Opus)
+```
+
+See the [COMPLETION docs](completion.md) for pipeline patterns, standalone completions, and well-known endpoint constants.
+
 ### ES|QL-specific functions
 
 ```csharp

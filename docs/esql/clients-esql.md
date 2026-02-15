@@ -109,6 +109,20 @@ var results = await client.Query<Product>("products-*")
     .ToListAsync();
 ```
 
+## Standalone completion
+
+`CompletionAsync<T>()` executes a standalone `ROW + COMPLETION` query for LLM inference without querying an index:
+
+```csharp
+var results = await client.CompletionAsync<CompletionResult>(
+    "Summarize the benefits of Elasticsearch",
+    InferenceEndpoints.OpenAi.Gpt41,
+    column: "answer"
+);
+```
+
+See the [COMPLETION docs](completion.md) for pipeline patterns, well-known endpoints, and the `CompletionQuery` static factory.
+
 ## Scalar and single-value queries
 
 ```csharp

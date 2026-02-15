@@ -1,5 +1,6 @@
 toc:
   - file: index.md
   - file: clients-esql.md
+  - file: completion.md
   - file: functions-reference.md
   - file: linq-translation.md

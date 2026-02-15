@@ -191,6 +191,26 @@ query.Select(l => new { Status = l.StatusCode >= 500 ? "error" : "ok" })
 // | EVAL status = CASE(statusCode >= 500, "error", "ok")
 ```
 
+## COMPLETION - LLM inference
+
+`.Completion()` translates to the ES|QL `COMPLETION` command. It sends a field to a configured inference endpoint and returns the result as a new column. See the [COMPLETION docs](completion.md) for full details.
+
+```csharp
+query
+    .Completion(l => l.Message, InferenceEndpoints.OpenAi.Gpt41, column: "analysis")
+```
+
+```
+FROM logs-*
+| COMPLETION analysis = message WITH { "inference_id" : ".openai-gpt-4.1-completion" }
+```
+
+The lambda overload resolves field names from your mapping context. A string overload is also available for raw field names:
+
+```csharp
+query.Completion("message", "my-custom-endpoint", column: "result")
+```
+
 ## Named parameterization
 
 Captured C# variables can be parameterized instead of inlined:
