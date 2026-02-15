@@ -30,4 +30,6 @@ public interface ICommandVisitor
 	void Visit(LimitCommand command);
 	void Visit(KeepCommand command);
 	void Visit(DropCommand command);
+	void Visit(CompletionCommand command);
+	void Visit(RowCommand command);
 }
