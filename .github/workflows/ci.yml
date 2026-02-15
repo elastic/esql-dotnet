@@ -11,8 +11,6 @@ on:
       - '.editorconfig'
     branches:
       - main
-    tags:
-      - "*.*.*"
 
 permissions:
   contents: read
