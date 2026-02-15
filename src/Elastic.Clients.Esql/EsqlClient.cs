@@ -143,6 +143,23 @@ public class EsqlClient(EsqlClientSettings settings) : IDisposable
 		return await _executor.ExecuteAsyncAsync<T>(request, cancellationToken);
 	}
 
+	/// <summary>
+	/// Executes a standalone ROW + COMPLETION query for LLM inference.
+	/// </summary>
+	/// <param name="prompt">The prompt text.</param>
+	/// <param name="inferenceId">The inference endpoint ID.</param>
+	/// <param name="column">Optional output column name.</param>
+	/// <param name="cancellationToken">Cancellation token.</param>
+	public async Task<List<T>> CompletionAsync<T>(
+		string prompt,
+		string inferenceId,
+		string? column = null,
+		CancellationToken cancellationToken = default)
+	{
+		var esql = CompletionQuery.Generate(prompt, inferenceId, column);
+		return await QueryAsync<T>(esql, cancellationToken);
+	}
+
 	/// <summary>Gets the status of an async query.</summary>
 	public async Task<EsqlResponse> GetAsyncQueryStatusAsync(string queryId, CancellationToken cancellationToken = default) =>
 		await _executor.GetAsyncStatusAsync(queryId, cancellationToken);

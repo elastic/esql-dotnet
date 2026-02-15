@@ -91,6 +91,18 @@ public class EsqlGenerator : ICommandVisitor
 			AppendCommand($"DROP {string.Join(", ", command.Fields)}");
 	}
 
+	public void Visit(CompletionCommand command)
+	{
+		var columnAssignment = command.Column != null ? $"{command.Column} = " : "";
+		AppendCommand($"COMPLETION {columnAssignment}{command.Prompt} WITH {{ \"inference_id\" : \"{command.InferenceId}\" }}");
+	}
+
+	public void Visit(RowCommand command)
+	{
+		if (command.Expressions.Count > 0)
+			AppendCommand($"ROW {string.Join(", ", command.Expressions)}");
+	}
+
 	/// <summary>
 	/// Escapes an identifier for ES|QL if needed.
 	/// </summary>
@@ -137,7 +149,8 @@ public class EsqlGenerator : ICommandVisitor
 			"FROM", "WHERE", "EVAL", "STATS", "SORT", "LIMIT", "KEEP", "DROP",
 			"BY", "AS", "AND", "OR", "NOT", "IN", "LIKE", "RLIKE", "IS", "NULL",
 			"TRUE", "FALSE", "ASC", "DESC", "NULLS", "FIRST", "LAST",
-			"ROW", "SHOW", "META", "METADATA", "MV_EXPAND", "RENAME", "DISSECT", "GROK", "ENRICH"
+			"ROW", "SHOW", "META", "METADATA", "MV_EXPAND", "RENAME", "DISSECT", "GROK", "ENRICH",
+			"COMPLETION"
 		};
 
 		return keywords.Contains(identifier);

@@ -234,11 +234,46 @@ public static class EsqlQueryableExtensions
 		return queryable;
 	}
 
+	/// <summary>
+	/// Adds a COMPLETION command using a string field name as the prompt.
+	/// </summary>
+	public static IQueryable<T> Completion<T>(
+		this IQueryable<T> queryable,
+		string prompt,
+		string inferenceId,
+		string? column = null)
+	{
+		AsEsqlQueryable(queryable).Context.PendingCommands.Add(new CompletionCommand(prompt, inferenceId, column));
+		return queryable;
+	}
+
+	/// <summary>
+	/// Adds a COMPLETION command using a lambda selector as the prompt field.
+	/// </summary>
+	public static IQueryable<T> Completion<T>(
+		this IQueryable<T> queryable,
+		Expression<Func<T, string>> promptSelector,
+		string inferenceId,
+		string? column = null)
+	{
+		var esql = AsEsqlQueryable(queryable);
+		var member = ExtractMember(promptSelector);
+		var fieldName = esql.Context.MetadataResolver.Resolve(member);
+		esql.Context.PendingCommands.Add(new CompletionCommand(fieldName, inferenceId, column));
+		return queryable;
+	}
+
 	private static IEsqlQueryable<T> AsEsqlQueryable<T>(IQueryable<T> queryable) =>
 		queryable as IEsqlQueryable<T>
 		?? throw new InvalidOperationException("Query is not an ES|QL query.");
 
-	private static MemberInfo ExtractMember<T>(Expression<Func<T, object?>> selector)
+	private static MemberInfo ExtractMember<T>(Expression<Func<T, object?>> selector) =>
+		ExtractMember((LambdaExpression)selector);
+
+	private static MemberInfo ExtractMember<T>(Expression<Func<T, string>> selector) =>
+		ExtractMember((LambdaExpression)selector);
+
+	private static MemberInfo ExtractMember(LambdaExpression selector)
 	{
 		var body = selector.Body;
 

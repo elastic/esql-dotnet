@@ -58,4 +58,14 @@ public class EsqlQuery
 	/// Gets all SORT commands.
 	/// </summary>
 	public IEnumerable<SortCommand> SortCommands => _commands.OfType<SortCommand>();
+
+	/// <summary>
+	/// Gets the ROW command if present.
+	/// </summary>
+	public RowCommand? Row => _commands.OfType<RowCommand>().FirstOrDefault();
+
+	/// <summary>
+	/// Gets all COMPLETION commands.
+	/// </summary>
+	public IEnumerable<CompletionCommand> CompletionCommands => _commands.OfType<CompletionCommand>();
 }
