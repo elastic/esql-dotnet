@@ -2,16 +2,16 @@
 
 Type-safe Elasticsearch development for .NET. Write LINQ, get [ES|QL](elasticsearch://reference/query-languages/esql.md). Define mappings in C#, get AOT-ready source-generated infrastructure.
 
-## Elastic.Esql
+## ES|QL LINQ
 
-A pure translation library that converts C# LINQ expressions into Elasticsearch ES|QL query strings. No HTTP dependencies, no transport layer. Just query generation.
+Write C# LINQ expressions, get ES|QL query strings. Two packages: `Elastic.Clients.Esql` for query execution against a cluster, and `Elastic.Esql` for translation only.
 
 ```csharp
-var esql = new EsqlQueryable<LogEntry>()
+var results = await client.Query<LogEntry>()
     .Where(l => l.Level == "ERROR" && l.Duration > 1000)
     .OrderByDescending(l => l.Timestamp)
     .Take(50)
-    .ToString();
+    .ToListAsync();
 ```
 
 Produces:
@@ -23,7 +23,7 @@ FROM logs-*
 | LIMIT 50
 ```
 
-[Get started with Elastic.Esql →](esql/index.md)
+[Get started with ES|QL LINQ →](esql/index.md)
 
 ## Elastic.Mapping
 
@@ -51,8 +51,8 @@ MyContext.Product.Fields.Price  // "price"
 
 ## Packages
 
-| Package | Description |
-|---------|-------------|
-| `Elastic.Mapping` | Source-generated Elasticsearch mappings (includes the generator) |
-| `Elastic.Esql` | LINQ-to-ES|QL translation library |
-| `Elastic.Clients.Esql` | ES|QL execution via the official Elasticsearch .NET client |
+| Package                | Description                                                       |
+|------------------------|-------------------------------------------------------------------|
+| `Elastic.Mapping`      | Source-generated Elasticsearch mappings (includes the generator)  |
+| `Elastic.Esql`         | [LINQ-to-ES\|QL translation library](esql/package-translation.md) |
+| `Elastic.Clients.Esql` | [ES\|QL execution via Elastic.Transport](esql/package-client.md)  |

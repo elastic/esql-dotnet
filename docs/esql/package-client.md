@@ -1,8 +1,8 @@
 ---
-navigation_title: Clients.Esql
+navigation_title: Client Package
 ---
 
-# Elastic.Clients.Esql
+# Using the Elastic.Clients.Esql package
 
 `Elastic.Clients.Esql` adds query execution to Elastic.Esql. It connects LINQ-based query translation to a real Elasticsearch cluster via `Elastic.Transport`, handling HTTP communication, authentication, and result materialization.
 

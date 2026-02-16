@@ -18,11 +18,11 @@ Every query starts with `FROM`. The source index pattern is resolved from your t
 [Entity<AppLog>(Target = EntityTarget.DataStream, Type = "logs", Dataset = "myapp", Namespace = "production")]
 ```
 
-| Registration | FROM output |
-|---|---|
-| `[Entity<T>(Target = EntityTarget.Index, SearchPattern = "logs-*")]` | `FROM logs-*` |
+| Registration                                                                      | FROM output         |
+|-----------------------------------------------------------------------------------|---------------------|
+| `[Entity<T>(Target = EntityTarget.Index, SearchPattern = "logs-*")]`              | `FROM logs-*`       |
 | `[Entity<T>(Target = EntityTarget.DataStream, Type = "logs", Dataset = "myapp")]` | `FROM logs-myapp-*` |
-| No registration (convention) | `FROM {type-name}` |
+| No registration (convention)                                                      | `FROM {type-name}`  |
 
 When using a mapping context, the search pattern is resolved from `SearchStrategy.Pattern`. Without a context, field names fall back to reflection with `[JsonPropertyName]` or camelCase convention.
 
