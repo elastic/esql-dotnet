@@ -9,7 +9,7 @@ Complete mapping of [ES|QL functions and operators](elasticsearch://reference/qu
 ## Aggregation functions
 
 Aggregations run inside `.GroupBy(...).Select(...)` or as terminal operators like `.Count()`.
-See [STATS...BY aggregation](linq-translation.md#statsbyaggregation) for details on the GroupBy pattern.
+See [STATS...BY aggregation](linq-translation.md##stats...by-aggregation) for details on the GroupBy pattern.
 
 ```csharp
 var topLevels = client.Query<LogEntry>()
@@ -90,7 +90,7 @@ DateTime properties translate to `DATE_EXTRACT`. Arithmetic methods like `.AddDa
 ## Grouping functions
 
 Grouping uses standard LINQ `.GroupBy()`. ES|QL-specific grouping functions are available through `EsqlFunctions`.
-See [STATS...BY aggregation](linq-translation.md#statsbyaggregation) for the full GroupBy pattern.
+See [STATS...BY aggregation](linq-translation.md##stats...by-aggregation) for the full GroupBy pattern.
 
 ```csharp
 .GroupBy(l => EsqlFunctions.Bucket(l.Duration, 10))
