@@ -56,10 +56,10 @@ internal sealed record IndexConfigModel(
 internal sealed record DataStreamConfigModel(
 	string Type,
 	string Dataset,
-	string Namespace
+	string? Namespace
 )
 {
-	public string FullName => $"{Type}-{Dataset}-{Namespace}";
+	public string? FullName => Namespace != null ? $"{Type}-{Dataset}-{Namespace}" : null;
 	public string SearchPattern => $"{Type}-{Dataset}-*";
 }
 
@@ -79,6 +79,7 @@ internal sealed record IngestPropertyModel(
 	string? IdPropertyType,
 	string? ContentHashPropertyName,
 	string? ContentHashPropertyType,
+	string? ContentHashFieldName,
 	string? TimestampPropertyName,
 	string? TimestampPropertyType
 );

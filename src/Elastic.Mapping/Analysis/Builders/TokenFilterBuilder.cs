@@ -543,8 +543,10 @@ public sealed class SynonymFilterBuilder
 	private readonly TokenFilterBuilder _parent;
 	private List<string>? _synonyms;
 	private string? _synonymsPath;
+	private string? _synonymsSet;
 	private bool _expand = true;
 	private bool _lenient;
+	private bool? _updateable;
 
 	internal SynonymFilterBuilder(TokenFilterBuilder parent) => _parent = parent;
 
@@ -562,6 +564,13 @@ public sealed class SynonymFilterBuilder
 		return this;
 	}
 
+	/// <summary>Sets the synonyms set name (for API-managed synonym sets).</summary>
+	public SynonymFilterBuilder SynonymsSet(string synonymsSet)
+	{
+		_synonymsSet = synonymsSet;
+		return this;
+	}
+
 	/// <summary>Sets whether to expand synonyms.</summary>
 	public SynonymFilterBuilder Expand(bool expand)
 	{
@@ -576,14 +585,23 @@ public sealed class SynonymFilterBuilder
 		return this;
 	}
 
+	/// <summary>Sets whether this filter is updateable at search time.</summary>
+	public SynonymFilterBuilder Updateable(bool updateable = true)
+	{
+		_updateable = updateable;
+		return this;
+	}
+
 	/// <summary>Implicit conversion finalizes the builder and returns the parent.</summary>
 	public static implicit operator TokenFilterBuilder(SynonymFilterBuilder builder)
 	{
 		builder._parent.SetDefinition(new SynonymFilterDefinition(
 			builder._synonyms,
 			builder._synonymsPath,
+			builder._synonymsSet,
 			builder._expand,
-			builder._lenient
+			builder._lenient,
+			builder._updateable
 		));
 		return builder._parent;
 	}
@@ -595,8 +613,10 @@ public sealed class SynonymGraphFilterBuilder
 	private readonly TokenFilterBuilder _parent;
 	private List<string>? _synonyms;
 	private string? _synonymsPath;
+	private string? _synonymsSet;
 	private bool _expand = true;
 	private bool _lenient;
+	private bool? _updateable;
 
 	internal SynonymGraphFilterBuilder(TokenFilterBuilder parent) => _parent = parent;
 
@@ -614,6 +634,13 @@ public sealed class SynonymGraphFilterBuilder
 		return this;
 	}
 
+	/// <summary>Sets the synonyms set name (for API-managed synonym sets).</summary>
+	public SynonymGraphFilterBuilder SynonymsSet(string synonymsSet)
+	{
+		_synonymsSet = synonymsSet;
+		return this;
+	}
+
 	/// <summary>Sets whether to expand synonyms.</summary>
 	public SynonymGraphFilterBuilder Expand(bool expand)
 	{
@@ -628,14 +655,23 @@ public sealed class SynonymGraphFilterBuilder
 		return this;
 	}
 
+	/// <summary>Sets whether this filter is updateable at search time.</summary>
+	public SynonymGraphFilterBuilder Updateable(bool updateable = true)
+	{
+		_updateable = updateable;
+		return this;
+	}
+
 	/// <summary>Implicit conversion finalizes the builder and returns the parent.</summary>
 	public static implicit operator TokenFilterBuilder(SynonymGraphFilterBuilder builder)
 	{
 		builder._parent.SetDefinition(new SynonymGraphFilterDefinition(
 			builder._synonyms,
 			builder._synonymsPath,
+			builder._synonymsSet,
 			builder._expand,
-			builder._lenient
+			builder._lenient,
+			builder._updateable
 		));
 		return builder._parent;
 	}

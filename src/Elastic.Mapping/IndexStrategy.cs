@@ -31,9 +31,23 @@ public sealed class IndexStrategy
 
 	/// <summary>
 	/// Gets the effective write target, resolving data stream or alias.
+	/// When <see cref="DataStreamName"/> is null but <see cref="Type"/> and <see cref="Dataset"/>
+	/// are set, resolves the namespace from environment variables via
+	/// <see cref="ElasticsearchTypeContext.ResolveDefaultNamespace"/>.
 	/// </summary>
-	public string GetWriteTarget() =>
-		DataStreamName ?? WriteTarget ?? throw new InvalidOperationException("No write target configured");
+	public string GetWriteTarget()
+	{
+		if (DataStreamName != null)
+			return DataStreamName;
+
+		if (Type != null && Dataset != null)
+		{
+			var ns = Namespace ?? ElasticsearchTypeContext.ResolveDefaultNamespace();
+			return $"{Type}-{Dataset}-{ns}";
+		}
+
+		return WriteTarget ?? throw new InvalidOperationException("No write target configured");
+	}
 
 	/// <summary>
 	/// Gets the write target with optional date formatting.
