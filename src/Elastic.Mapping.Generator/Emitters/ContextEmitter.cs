@@ -247,21 +247,11 @@ internal static class ContextEmitter
 		if (reg.DataStreamConfig != null)
 		{
 			var ds = reg.DataStreamConfig;
-			sb.AppendLine($"{indent}\tDataStreamName = \"{ds.FullName}\",");
-			sb.AppendLine($"{indent}\tType = \"{ds.Type}\",");
-			sb.AppendLine($"{indent}\tDataset = \"{ds.Dataset}\",");
-			sb.AppendLine($"{indent}\tNamespace = \"{ds.Namespace}\",");
+			EmitDataStreamProperties(sb, ds, indent);
 		}
 		else if (reg.IndexConfig != null)
 		{
-			var idx = reg.IndexConfig;
-			if (!string.IsNullOrEmpty(idx.WriteAlias))
-				sb.AppendLine($"{indent}\tWriteTarget = \"{idx.WriteAlias}\",");
-			else if (!string.IsNullOrEmpty(idx.Name))
-				sb.AppendLine($"{indent}\tWriteTarget = \"{idx.Name}\",");
-
-			if (!string.IsNullOrEmpty(idx.DatePattern))
-				sb.AppendLine($"{indent}\tDatePattern = \"{idx.DatePattern}\",");
+			EmitIndexProperties(sb, reg.IndexConfig, indent);
 		}
 
 		sb.AppendLine($"{indent}}};");
@@ -280,12 +270,7 @@ internal static class ContextEmitter
 		}
 		else if (reg.IndexConfig != null)
 		{
-			var idx = reg.IndexConfig;
-			if (!string.IsNullOrEmpty(idx.SearchPattern))
-				sb.AppendLine($"{indent}\tPattern = \"{idx.SearchPattern}\",");
-
-			if (!string.IsNullOrEmpty(idx.ReadAlias))
-				sb.AppendLine($"{indent}\tReadAlias = \"{idx.ReadAlias}\",");
+			EmitSearchProperties(sb, reg.IndexConfig, indent);
 		}
 
 		sb.AppendLine($"{indent}}};");
@@ -299,21 +284,11 @@ internal static class ContextEmitter
 		if (reg.DataStreamConfig != null)
 		{
 			var ds = reg.DataStreamConfig;
-			sb.AppendLine($"{indent}\tDataStreamName = \"{ds.FullName}\",");
-			sb.AppendLine($"{indent}\tType = \"{ds.Type}\",");
-			sb.AppendLine($"{indent}\tDataset = \"{ds.Dataset}\",");
-			sb.AppendLine($"{indent}\tNamespace = \"{ds.Namespace}\",");
+			EmitDataStreamProperties(sb, ds, indent);
 		}
 		else if (reg.IndexConfig != null)
 		{
-			var idx = reg.IndexConfig;
-			if (!string.IsNullOrEmpty(idx.WriteAlias))
-				sb.AppendLine($"{indent}\tWriteTarget = \"{idx.WriteAlias}\",");
-			else if (!string.IsNullOrEmpty(idx.Name))
-				sb.AppendLine($"{indent}\tWriteTarget = \"{idx.Name}\",");
-
-			if (!string.IsNullOrEmpty(idx.DatePattern))
-				sb.AppendLine($"{indent}\tDatePattern = \"{idx.DatePattern}\",");
+			EmitIndexProperties(sb, reg.IndexConfig, indent);
 		}
 
 		sb.Append($"{indent}}}");
@@ -329,15 +304,42 @@ internal static class ContextEmitter
 		}
 		else if (reg.IndexConfig != null)
 		{
-			var idx = reg.IndexConfig;
-			if (!string.IsNullOrEmpty(idx.SearchPattern))
-				sb.AppendLine($"{indent}\tPattern = \"{idx.SearchPattern}\",");
-
-			if (!string.IsNullOrEmpty(idx.ReadAlias))
-				sb.AppendLine($"{indent}\tReadAlias = \"{idx.ReadAlias}\",");
+			EmitSearchProperties(sb, reg.IndexConfig, indent);
 		}
 
 		sb.Append($"{indent}}}");
+	}
+
+	private static void EmitDataStreamProperties(StringBuilder sb, DataStreamConfigModel ds, string indent)
+	{
+		if (ds.FullName != null)
+			sb.AppendLine($"{indent}\tDataStreamName = \"{ds.FullName}\",");
+
+		sb.AppendLine($"{indent}\tType = \"{ds.Type}\",");
+		sb.AppendLine($"{indent}\tDataset = \"{ds.Dataset}\",");
+
+		if (ds.Namespace != null)
+			sb.AppendLine($"{indent}\tNamespace = \"{ds.Namespace}\",");
+	}
+
+	private static void EmitIndexProperties(StringBuilder sb, IndexConfigModel idx, string indent)
+	{
+		if (!string.IsNullOrEmpty(idx.WriteAlias))
+			sb.AppendLine($"{indent}\tWriteTarget = \"{idx.WriteAlias}\",");
+		else if (!string.IsNullOrEmpty(idx.Name))
+			sb.AppendLine($"{indent}\tWriteTarget = \"{idx.Name}\",");
+
+		if (!string.IsNullOrEmpty(idx.DatePattern))
+			sb.AppendLine($"{indent}\tDatePattern = \"{idx.DatePattern}\",");
+	}
+
+	private static void EmitSearchProperties(StringBuilder sb, IndexConfigModel idx, string indent)
+	{
+		if (!string.IsNullOrEmpty(idx.SearchPattern))
+			sb.AppendLine($"{indent}\tPattern = \"{idx.SearchPattern}\",");
+
+		if (!string.IsNullOrEmpty(idx.ReadAlias))
+			sb.AppendLine($"{indent}\tReadAlias = \"{idx.ReadAlias}\",");
 	}
 
 	private static void EmitJsonMethods(StringBuilder sb, string settingsJson, string mappingsJson, string indexJson, string indent)

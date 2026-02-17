@@ -153,7 +153,7 @@ public class MappingSourceGenerator : IIncrementalGenerator
 				dataStreamConfig = new DataStreamConfigModel(
 					type!,
 					dataset!,
-					GetNamedArg<string>(attr, "Namespace") ?? "default"
+					GetNamedArg<string>(attr, "Namespace")
 				);
 			}
 

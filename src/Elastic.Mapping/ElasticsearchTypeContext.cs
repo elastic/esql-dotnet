@@ -94,13 +94,13 @@ public record ElasticsearchTypeContext(
 	/// <summary>
 	/// Resolves the default namespace from environment variables in priority order:
 	/// <c>DOTNET_ENVIRONMENT</c> &gt; <c>ASPNETCORE_ENVIRONMENT</c> &gt; <c>ENVIRONMENT</c>,
-	/// falling back to <c>"default"</c>.
+	/// falling back to <c>"development"</c>.
 	/// </summary>
 	public static string ResolveDefaultNamespace() =>
 		Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT")
 		?? Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
 		?? Environment.GetEnvironmentVariable("ENVIRONMENT")
-		?? "default";
+		?? "development";
 
 	/// <summary>
 	/// Returns a copy of this context with the namespace resolved from environment variables.

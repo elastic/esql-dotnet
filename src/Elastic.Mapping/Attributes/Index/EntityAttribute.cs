@@ -59,11 +59,11 @@ public sealed class EntityAttribute<T> : Attribute where T : class
 
 	/// <summary>
 	/// Namespace for environment separation (e.g., "production", "development").
-	/// Defaults to "default". At runtime, use <see cref="ElasticsearchTypeContext.WithEnvironmentNamespace"/>
-	/// to resolve from environment variables (<c>DOTNET_ENVIRONMENT</c> &gt; <c>ASPNETCORE_ENVIRONMENT</c>
-	/// &gt; <c>ENVIRONMENT</c>, falling back to "default").
+	/// When omitted, the namespace is resolved at runtime from environment variables:
+	/// <c>DOTNET_ENVIRONMENT</c> &gt; <c>ASPNETCORE_ENVIRONMENT</c> &gt; <c>ENVIRONMENT</c>,
+	/// falling back to <c>"development"</c>. Set explicitly to override this behavior.
 	/// </summary>
-	public string Namespace { get; init; } = "default";
+	public string? Namespace { get; init; }
 
 	/// <summary>
 	/// Data stream mode for specialized data stream types.
