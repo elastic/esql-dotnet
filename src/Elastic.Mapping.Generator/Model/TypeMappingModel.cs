@@ -79,6 +79,7 @@ internal sealed record IngestPropertyModel(
 	string? IdPropertyType,
 	string? ContentHashPropertyName,
 	string? ContentHashPropertyType,
+	string? ContentHashFieldName,
 	string? TimestampPropertyName,
 	string? TimestampPropertyType
 );

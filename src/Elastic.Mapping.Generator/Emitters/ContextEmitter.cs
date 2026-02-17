@@ -120,6 +120,13 @@ internal static class ContextEmitter
 		// Accessor delegates for [Id], [ContentHash], [Timestamp]
 		EmitAccessorDelegate(sb, reg.IngestProperties.IdPropertyName, typeFqn, "GetId", false, indent + "\t\t");
 		EmitAccessorDelegate(sb, reg.IngestProperties.ContentHashPropertyName, typeFqn, "GetContentHash", false, indent + "\t\t");
+
+		// ContentHashFieldName
+		if (reg.IngestProperties.ContentHashFieldName != null)
+			sb.AppendLine($"{indent}\t\tContentHashFieldName: \"{reg.IngestProperties.ContentHashFieldName}\",");
+		else
+			sb.AppendLine($"{indent}\t\tContentHashFieldName: null,");
+
 		EmitTimestampDelegate(sb, reg.IngestProperties.TimestampPropertyName, reg.IngestProperties.TimestampPropertyType, typeFqn, indent + "\t\t");
 
 		// ConfigureAnalysis delegate

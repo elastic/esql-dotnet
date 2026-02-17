@@ -222,8 +222,10 @@ public sealed record PatternReplaceFilterDefinition(
 public sealed record SynonymFilterDefinition(
 	IReadOnlyList<string>? Synonyms = null,
 	string? SynonymsPath = null,
+	string? SynonymsSet = null,
 	bool Expand = true,
-	bool Lenient = false
+	bool Lenient = false,
+	bool? Updateable = null
 ) : ITokenFilterDefinition
 {
 	public JsonObject ToJson()
@@ -236,11 +238,17 @@ public sealed record SynonymFilterDefinition(
 		if (SynonymsPath != null)
 			obj["synonyms_path"] = SynonymsPath;
 
+		if (SynonymsSet != null)
+			obj["synonyms_set"] = SynonymsSet;
+
 		if (!Expand)
 			obj["expand"] = false;
 
 		if (Lenient)
 			obj["lenient"] = true;
+
+		if (Updateable == true)
+			obj["updateable"] = true;
 
 		return obj;
 	}
@@ -250,8 +258,10 @@ public sealed record SynonymFilterDefinition(
 public sealed record SynonymGraphFilterDefinition(
 	IReadOnlyList<string>? Synonyms = null,
 	string? SynonymsPath = null,
+	string? SynonymsSet = null,
 	bool Expand = true,
-	bool Lenient = false
+	bool Lenient = false,
+	bool? Updateable = null
 ) : ITokenFilterDefinition
 {
 	public JsonObject ToJson()
@@ -264,11 +274,17 @@ public sealed record SynonymGraphFilterDefinition(
 		if (SynonymsPath != null)
 			obj["synonyms_path"] = SynonymsPath;
 
+		if (SynonymsSet != null)
+			obj["synonyms_set"] = SynonymsSet;
+
 		if (!Expand)
 			obj["expand"] = false;
 
 		if (Lenient)
 			obj["lenient"] = true;
+
+		if (Updateable == true)
+			obj["updateable"] = true;
 
 		return obj;
 	}

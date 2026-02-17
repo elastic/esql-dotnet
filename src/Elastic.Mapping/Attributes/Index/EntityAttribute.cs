@@ -59,7 +59,9 @@ public sealed class EntityAttribute<T> : Attribute where T : class
 
 	/// <summary>
 	/// Namespace for environment separation (e.g., "production", "development").
-	/// Defaults to "default".
+	/// Defaults to "default". At runtime, use <see cref="ElasticsearchTypeContext.WithEnvironmentNamespace"/>
+	/// to resolve from environment variables (<c>DOTNET_ENVIRONMENT</c> &gt; <c>ASPNETCORE_ENVIRONMENT</c>
+	/// &gt; <c>ENVIRONMENT</c>, falling back to "default").
 	/// </summary>
 	public string Namespace { get; init; } = "default";
 

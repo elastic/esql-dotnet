@@ -187,7 +187,7 @@ public class MappingSourceGenerator : IIncrementalGenerator
 		}
 
 		// Detect [Id], [ContentHash], [Timestamp] on target type properties
-		var ingestProperties = AnalyzeIngestProperties(targetType);
+		var ingestProperties = AnalyzeIngestProperties(targetType, stjConfig);
 
 		// Extract Configuration class reference
 		string? configClassName = null;
@@ -205,10 +205,12 @@ public class MappingSourceGenerator : IIncrementalGenerator
 		return BuildTypeRegistration(targetType, contextSymbol, stjConfig, indexConfig, dataStreamConfig, entityConfig, ingestProperties, configClassName, configTypeSymbol, variant, ct);
 	}
 
-	private static IngestPropertyModel AnalyzeIngestProperties(INamedTypeSymbol targetType)
+	private const string JsonPropertyNameAttributeName = "System.Text.Json.Serialization.JsonPropertyNameAttribute";
+
+	private static IngestPropertyModel AnalyzeIngestProperties(INamedTypeSymbol targetType, StjContextConfig? stjConfig = null)
 	{
 		string? idPropName = null, idPropType = null;
-		string? contentHashPropName = null, contentHashPropType = null;
+		string? contentHashPropName = null, contentHashPropType = null, contentHashFieldName = null;
 		string? timestampPropName = null, timestampPropType = null;
 
 		foreach (var member in targetType.GetMembers())
@@ -228,6 +230,15 @@ public class MappingSourceGenerator : IIncrementalGenerator
 				{
 					contentHashPropName = prop.Name;
 					contentHashPropType = prop.Type.ToDisplayString();
+
+					// Resolve the JSON field name from [JsonPropertyName] or naming policy
+					contentHashFieldName = prop.GetAttributes()
+						.Where(a => a.AttributeClass?.ToDisplayString() == JsonPropertyNameAttributeName)
+						.Select(a => a.ConstructorArguments.FirstOrDefault().Value as string)
+						.FirstOrDefault()
+						?? Analysis.TypeAnalyzer.ApplyNamingPolicy(
+							prop.Name,
+							stjConfig?.PropertyNamingPolicy ?? Model.NamingPolicy.Unspecified);
 				}
 				else if (attrName == TimestampAttributeName)
 				{
@@ -239,7 +250,7 @@ public class MappingSourceGenerator : IIncrementalGenerator
 
 		return new IngestPropertyModel(
 			idPropName, idPropType,
-			contentHashPropName, contentHashPropType,
+			contentHashPropName, contentHashPropType, contentHashFieldName,
 			timestampPropName, timestampPropType
 		);
 	}
