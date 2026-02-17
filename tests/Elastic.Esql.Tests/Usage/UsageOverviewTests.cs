@@ -13,9 +13,10 @@ public class UsageOverviewTests : EsqlTestBase
 	[Test]
 	public void Client_Fluent_ComprehensiveExample()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.StatusCode >= 500)
-			.Where(l => l.Level == "ERROR")
+			.Where(l => l.Level.MultiField("keyword") == "ERROR")
 			.OrderByDescending(l => l.Timestamp)
 			.Take(100)
 			.ToString();
@@ -27,15 +28,16 @@ public class UsageOverviewTests : EsqlTestBase
             | WHERE log.level.keyword == "ERROR"
             | SORT @timestamp DESC
             | LIMIT 100
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Client_QuerySyntax_ComprehensiveExample()
 	{
 		var esql = (
-			from l in Client.Query<LogEntry>()
-			where l.Level == "ERROR" || l.Level == "WARNING"
+			from l in CreateQuery<LogEntry>()
+				.From("logs-*")
+			where l.Level.MultiField("keyword") == "ERROR" || l.Level.MultiField("keyword") == "WARNING"
 			where l.StatusCode >= 400
 			orderby l.Timestamp descending
 			select new { l.Message, l.Duration }
@@ -48,13 +50,14 @@ public class UsageOverviewTests : EsqlTestBase
             | WHERE statusCode >= 400
             | SORT @timestamp DESC
             | KEEP message, duration
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Client_Fluent_WithExplicitIndex()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.StatusCode >= 500)
 			.OrderByDescending(l => l.Timestamp)
 			.Take(50)
@@ -66,15 +69,16 @@ public class UsageOverviewTests : EsqlTestBase
             | WHERE statusCode >= 500
             | SORT @timestamp DESC
             | LIMIT 50
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Client_QuerySyntax_WithProjection()
 	{
 		var esql = (
-			from l in Client.Query<LogEntry>()
-			where l.Level == "ERROR"
+			from l in CreateQuery<LogEntry>()
+				.From("logs-*")
+			where l.Level.MultiField("keyword") == "ERROR"
 			where l.Duration > 500
 			orderby l.Timestamp descending
 			select new { l.Message, l.Duration }
@@ -87,14 +91,15 @@ public class UsageOverviewTests : EsqlTestBase
             | WHERE duration > 500
             | SORT @timestamp DESC
             | KEEP message, duration
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void ExplicitIndexPattern_ComprehensiveExample()
 	{
-		var esql = Client.Query<LogEntry>("production-logs-*")
-			.Where(l => l.Level == "ERROR")
+		var esql = CreateQuery<LogEntry>()
+			.From("production-logs-*")
+			.Where(l => l.Level.MultiField("keyword") == "ERROR")
 			.OrderByDescending(l => l.Timestamp)
 			.Take(100)
 			.ToString();
@@ -105,6 +110,6 @@ public class UsageOverviewTests : EsqlTestBase
             | WHERE log.level.keyword == "ERROR"
             | SORT @timestamp DESC
             | LIMIT 100
-            """);
+            """.NativeLineEndings());
 	}
 }

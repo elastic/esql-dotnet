@@ -9,28 +9,30 @@ public class EqualityOperatorTests : EsqlTestBase
 	[Test]
 	public void Where_EqualityOperator_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.Where(l => l.Level == "ERROR")
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Level.MultiField("keyword") == "ERROR")
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
             | WHERE log.level.keyword == "ERROR"
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Where_NotEqualOperator_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.Where(l => l.Level != "DEBUG")
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Level.MultiField("keyword") != "DEBUG")
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
             | WHERE log.level.keyword != "DEBUG"
-            """);
+            """.NativeLineEndings());
 	}
 }

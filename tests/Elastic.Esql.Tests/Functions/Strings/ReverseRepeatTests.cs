@@ -9,7 +9,8 @@ public class ReverseRepeatTests : EsqlTestBase
 	[Test]
 	public void Reverse_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.Reverse(l.Message) })
 			.ToString();
 
@@ -17,13 +18,14 @@ public class ReverseRepeatTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = REVERSE(message)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Repeat_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.Repeat(l.Message, 3) })
 			.ToString();
 
@@ -31,13 +33,14 @@ public class ReverseRepeatTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = REPEAT(message, 3)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Space_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.Space(10) })
 			.ToString();
 
@@ -45,6 +48,6 @@ public class ReverseRepeatTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = SPACE(10)
-            """);
+            """.NativeLineEndings());
 	}
 }

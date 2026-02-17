@@ -9,7 +9,8 @@ public class DateTimeArithmeticTests : EsqlTestBase
 	[Test]
 	public void DateTime_AddHours_Negative_GeneratesSubtraction()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.Timestamp > DateTime.UtcNow.AddHours(-1))
 			.ToString();
 
@@ -17,13 +18,14 @@ public class DateTimeArithmeticTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE @timestamp > (NOW() - 1 hours)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void DateTime_AddDays_Negative_GeneratesSubtraction()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.Timestamp > DateTime.UtcNow.AddDays(-7))
 			.ToString();
 
@@ -31,13 +33,14 @@ public class DateTimeArithmeticTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE @timestamp > (NOW() - 7 days)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void DateTime_AddMinutes_Negative_GeneratesSubtraction()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.Timestamp > DateTime.UtcNow.AddMinutes(-30))
 			.ToString();
 
@@ -45,13 +48,14 @@ public class DateTimeArithmeticTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE @timestamp > (NOW() - 30 minutes)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void DateTime_AddSeconds_Negative_GeneratesSubtraction()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.Timestamp > DateTime.UtcNow.AddSeconds(-60))
 			.ToString();
 
@@ -59,13 +63,14 @@ public class DateTimeArithmeticTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE @timestamp > (NOW() - 60 seconds)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void DateTime_AddHours_Positive_GeneratesAddition()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.Timestamp < DateTime.UtcNow.AddHours(24))
 			.ToString();
 
@@ -73,13 +78,14 @@ public class DateTimeArithmeticTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE @timestamp < (NOW() + 24 hours)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void DateTime_AddDays_Positive_GeneratesAddition()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.Timestamp < DateTime.UtcNow.AddDays(30))
 			.ToString();
 
@@ -87,13 +93,14 @@ public class DateTimeArithmeticTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE @timestamp < (NOW() + 30 days)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void DateTime_BetweenRange_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.Timestamp >= DateTime.UtcNow.AddDays(-7) && l.Timestamp <= DateTime.UtcNow)
 			.ToString();
 
@@ -101,6 +108,6 @@ public class DateTimeArithmeticTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE (@timestamp >= (NOW() - 7 days) AND @timestamp <= NOW())
-            """);
+            """.NativeLineEndings());
 	}
 }

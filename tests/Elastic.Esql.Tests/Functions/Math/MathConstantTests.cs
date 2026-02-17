@@ -9,7 +9,8 @@ public class MathConstantTests : EsqlTestBase
 	[Test]
 	public void E_EsqlFunction_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.E() })
 			.ToString();
 
@@ -17,13 +18,14 @@ public class MathConstantTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = E()
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Pi_EsqlFunction_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.Pi() })
 			.ToString();
 
@@ -31,13 +33,14 @@ public class MathConstantTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = PI()
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Tau_EsqlFunction_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.Tau() })
 			.ToString();
 
@@ -45,7 +48,7 @@ public class MathConstantTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = TAU()
-            """);
+            """.NativeLineEndings());
 	}
 
 	// Note: Math.E, Math.PI, Math.Tau are const fields, so the C# compiler inlines their

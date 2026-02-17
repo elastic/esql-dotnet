@@ -10,22 +10,24 @@ public class CamelCaseTests : EsqlTestBase
 	public void Property_NoAttribute_UsesCamelCase()
 	{
 		// LogEntry.Message has no attribute, should become "message"
-		var esql = Client.Query<LogEntry>()
-			.Where(l => l.Message == "test")
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message.MultiField("keyword") == "test")
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
             | WHERE message.keyword == "test"
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Property_StatusCode_UsesCamelCase()
 	{
 		// LogEntry.StatusCode should become "statusCode"
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.StatusCode == 200)
 			.ToString();
 
@@ -33,14 +35,15 @@ public class CamelCaseTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE statusCode == 200
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Property_Duration_UsesCamelCase()
 	{
 		// LogEntry.Duration should become "duration"
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.Duration > 1000)
 			.ToString();
 
@@ -48,6 +51,6 @@ public class CamelCaseTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE duration > 1000
-            """);
+            """.NativeLineEndings());
 	}
 }

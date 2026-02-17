@@ -9,7 +9,8 @@ public class TakeTests : EsqlTestBase
 	[Test]
 	public void Take_GeneratesLimit()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Take(10)
 			.ToString();
 
@@ -17,13 +18,14 @@ public class TakeTests : EsqlTestBase
 			"""
             FROM logs-*
             | LIMIT 10
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Take_One_GeneratesLimitOne()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Take(1)
 			.ToString();
 
@@ -31,14 +33,15 @@ public class TakeTests : EsqlTestBase
 			"""
             FROM logs-*
             | LIMIT 1
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Where_OrderBy_Take_GeneratesCorrectOrder()
 	{
-		var esql = Client.Query<LogEntry>()
-			.Where(l => l.Level == "ERROR")
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Level.MultiField("keyword") == "ERROR")
 			.OrderByDescending(l => l.Timestamp)
 			.Take(10)
 			.ToString();
@@ -49,6 +52,6 @@ public class TakeTests : EsqlTestBase
             | WHERE log.level.keyword == "ERROR"
             | SORT @timestamp DESC
             | LIMIT 10
-            """);
+            """.NativeLineEndings());
 	}
 }

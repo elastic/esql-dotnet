@@ -10,7 +10,8 @@ public class TrimTests : EsqlTestBase
 
 	public void Trim_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { TrimmedMessage = EsqlFunctions.Trim(l.Message) })
 			.ToString();
 
@@ -18,6 +19,6 @@ public class TrimTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL trimmedMessage = TRIM(message)
-            """);
+            """.NativeLineEndings());
 	}
 }

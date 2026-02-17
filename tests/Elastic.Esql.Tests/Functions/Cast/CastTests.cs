@@ -9,84 +9,90 @@ public class CastTests : EsqlTestBase
 	[Test]
 	public void CastToInteger_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.CastToInteger(l.Duration) })
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
-            FROM logs-*
-            | EVAL val = duration::integer
-            """);
+			FROM logs-*
+			| EVAL val = duration::integer
+			""".NativeLineEndings());
 	}
 
 	[Test]
 	public void CastToLong_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.CastToLong(l.Duration) })
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
-            FROM logs-*
-            | EVAL val = duration::long
-            """);
+			FROM logs-*
+			| EVAL val = duration::long
+			""".NativeLineEndings());
 	}
 
 	[Test]
 	public void CastToDouble_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.CastToDouble(l.StatusCode) })
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
-            FROM logs-*
-            | EVAL val = statusCode::double
-            """);
+			FROM logs-*
+			| EVAL val = statusCode::double
+			""".NativeLineEndings());
 	}
 
 	[Test]
 	public void CastToBoolean_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.CastToBoolean(l.StatusCode) })
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
-            FROM logs-*
-            | EVAL val = statusCode::boolean
-            """);
+			FROM logs-*
+			| EVAL val = statusCode::boolean
+			""".NativeLineEndings());
 	}
 
 	[Test]
 	public void CastToKeyword_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.CastToKeyword(l.StatusCode) })
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
-            FROM logs-*
-            | EVAL val = statusCode::keyword
-            """);
+			FROM logs-*
+			| EVAL val = statusCode::keyword
+			""".NativeLineEndings());
 	}
 
 	[Test]
 	public void CastToInteger_InWhere_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => EsqlFunctions.CastToInteger(l.Duration) > 100)
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
-            FROM logs-*
-            | WHERE duration::integer > 100
-            """);
+			FROM logs-*
+			| WHERE duration::integer > 100
+			""".NativeLineEndings());
 	}
 }

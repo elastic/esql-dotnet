@@ -9,63 +9,53 @@ namespace Elastic.Esql.QueryModel;
 /// <summary>
 /// Represents an intermediate ES|QL query model.
 /// </summary>
-public class EsqlQuery
+/// <param name="elementType">The element type.</param>
+/// <param name="commands">The ESQL query commands.</param>
+/// <param name="parameters">The ESQL query parameters.</param>
+public class EsqlQuery(Type elementType, IReadOnlyList<QueryCommand> commands, EsqlParameters? parameters)
 {
-	private readonly List<QueryCommand> _commands = [];
-
 	/// <summary>
 	/// The element type of the query results.
 	/// </summary>
-	public Type? ElementType { get; set; }
+	public Type ElementType { get; } = elementType ?? throw new ArgumentNullException(nameof(elementType));
 
 	/// <summary>
 	/// The commands in this query.
 	/// </summary>
-	public IReadOnlyList<QueryCommand> Commands => _commands;
+	public IReadOnlyList<QueryCommand> Commands { get; } = commands ?? throw new ArgumentNullException(nameof(commands));
 
 	/// <summary>
-	/// Adds a command to the query.
+	/// Gets the collection of ESQL query parameters.
 	/// </summary>
-	public void AddCommand(QueryCommand command) => _commands.Add(command);
-
-	/// <summary>
-	/// Creates a copy of this query.
-	/// </summary>
-	public EsqlQuery Clone()
-	{
-		var clone = new EsqlQuery { ElementType = ElementType };
-		foreach (var command in _commands)
-			clone._commands.Add(command);
-		return clone;
-	}
+	public EsqlParameters? Parameters { get; } = parameters;
 
 	/// <summary>
 	/// Gets the FROM command if present.
 	/// </summary>
-	public FromCommand? From => _commands.OfType<FromCommand>().FirstOrDefault();
+	public FromCommand? From => Commands.OfType<FromCommand>().FirstOrDefault();
 
 	/// <summary>
 	/// Gets all WHERE commands.
 	/// </summary>
-	public IEnumerable<WhereCommand> WhereCommands => _commands.OfType<WhereCommand>();
+	public IEnumerable<WhereCommand> WhereCommands => Commands.OfType<WhereCommand>();
 
 	/// <summary>
 	/// Gets the LIMIT command if present.
 	/// </summary>
-	public LimitCommand? Limit => _commands.OfType<LimitCommand>().LastOrDefault();
+	public LimitCommand? Limit => Commands.OfType<LimitCommand>().LastOrDefault();
 
 	/// <summary>
 	/// Gets all SORT commands.
 	/// </summary>
-	public IEnumerable<SortCommand> SortCommands => _commands.OfType<SortCommand>();
+	public IEnumerable<SortCommand> SortCommands => Commands.OfType<SortCommand>();
 
 	/// <summary>
 	/// Gets the ROW command if present.
 	/// </summary>
-	public RowCommand? Row => _commands.OfType<RowCommand>().FirstOrDefault();
+	public RowCommand? Row => Commands.OfType<RowCommand>().FirstOrDefault();
 
 	/// <summary>
 	/// Gets all COMPLETION commands.
 	/// </summary>
-	public IEnumerable<CompletionCommand> CompletionCommands => _commands.OfType<CompletionCommand>();
+	public IEnumerable<CompletionCommand> CompletionCommands => Commands.OfType<CompletionCommand>();
 }

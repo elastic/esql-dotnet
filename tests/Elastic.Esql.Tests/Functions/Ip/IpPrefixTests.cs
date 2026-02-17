@@ -9,7 +9,8 @@ public class IpPrefixTests : EsqlTestBase
 	[Test]
 	public void IpPrefix_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Prefix = EsqlFunctions.IpPrefix(l.ClientIp!, 24, 4) })
 			.ToString();
 
@@ -17,20 +18,21 @@ public class IpPrefixTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL prefix = IP_PREFIX(clientIp, 24, 4)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void IpPrefix_InWhere_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.Where(l => EsqlFunctions.IpPrefix(l.ClientIp!, 24, 4) == "10.0.0.0")
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => EsqlFunctions.IpPrefix(l.ClientIp!.MultiField("keyword"), 24, 4) == "10.0.0.0")
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
             | WHERE IP_PREFIX(clientIp.keyword, 24, 4) == "10.0.0.0"
-            """);
+            """.NativeLineEndings());
 	}
 }

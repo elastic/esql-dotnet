@@ -9,7 +9,8 @@ public class DateTimeNowTests : EsqlTestBase
 	[Test]
 	public void DateTime_UtcNow_InWhere_GeneratesNow()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.Timestamp > DateTime.UtcNow.AddHours(-1))
 			.ToString();
 
@@ -17,13 +18,14 @@ public class DateTimeNowTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE @timestamp > (NOW() - 1 hours)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void DateTime_Now_InWhere_GeneratesNow()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.Timestamp > DateTime.Now.AddDays(-7))
 			.ToString();
 
@@ -31,13 +33,14 @@ public class DateTimeNowTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE @timestamp > (NOW() - 7 days)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void DateTime_Today_InWhere_GeneratesDateTruncNow()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.Timestamp >= DateTime.Today)
 			.ToString();
 
@@ -45,13 +48,14 @@ public class DateTimeNowTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE @timestamp >= DATE_TRUNC("day", NOW())
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void EsqlFunction_Now_WithSubtraction_GeneratesNow()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.Timestamp > EsqlFunctions.Now() - TimeSpan.FromMinutes(30))
 			.ToString();
 
@@ -59,13 +63,14 @@ public class DateTimeNowTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE @timestamp > NOW() - 30 minutes
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void DateTime_UtcNow_Comparison_GeneratesNow()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.Timestamp < DateTime.UtcNow)
 			.ToString();
 
@@ -73,13 +78,14 @@ public class DateTimeNowTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE @timestamp < NOW()
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void DateTime_Now_InSelect_GeneratesNow()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { l.Message, CurrentTime = EsqlFunctions.Now() })
 			.ToString();
 
@@ -88,6 +94,6 @@ public class DateTimeNowTests : EsqlTestBase
             FROM logs-*
             | KEEP message
             | EVAL currentTime = NOW()
-            """);
+            """.NativeLineEndings());
 	}
 }

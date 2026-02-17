@@ -9,7 +9,8 @@ public class LtrimRtrimTests : EsqlTestBase
 	[Test]
 	public void Ltrim_EsqlFunction_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.Ltrim(l.Message) })
 			.ToString();
 
@@ -17,13 +18,14 @@ public class LtrimRtrimTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = LTRIM(message)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Rtrim_EsqlFunction_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.Rtrim(l.Message) })
 			.ToString();
 
@@ -31,13 +33,14 @@ public class LtrimRtrimTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = RTRIM(message)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void TrimStart_Native_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = l.Message.TrimStart() })
 			.ToString();
 
@@ -45,13 +48,14 @@ public class LtrimRtrimTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = LTRIM(message)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void TrimEnd_Native_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = l.Message.TrimEnd() })
 			.ToString();
 
@@ -59,34 +63,36 @@ public class LtrimRtrimTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = RTRIM(message)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void TrimStart_InWhere_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.Where(l => l.Message.TrimStart() == "hello")
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message.MultiField("keyword").TrimStart() == "hello")
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
             | WHERE LTRIM(message.keyword) == "hello"
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void TrimEnd_InWhere_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.Where(l => l.Message.TrimEnd() == "hello")
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message.MultiField("keyword").TrimEnd() == "hello")
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
             | WHERE RTRIM(message.keyword) == "hello"
-            """);
+            """.NativeLineEndings());
 	}
 }

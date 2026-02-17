@@ -9,7 +9,8 @@ public class DayMonthNameTests : EsqlTestBase
 	[Test]
 	public void DayName_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Day = EsqlFunctions.DayName(l.Timestamp) })
 			.ToString();
 
@@ -17,13 +18,14 @@ public class DayMonthNameTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL day = DAY_NAME(@timestamp)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void MonthName_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Month = EsqlFunctions.MonthName(l.Timestamp) })
 			.ToString();
 
@@ -31,13 +33,14 @@ public class DayMonthNameTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL month = MONTH_NAME(@timestamp)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void DayName_InWhere_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => EsqlFunctions.DayName(l.Timestamp) == "Monday")
 			.ToString();
 
@@ -45,6 +48,6 @@ public class DayMonthNameTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE DAY_NAME(@timestamp) == "Monday"
-            """);
+            """.NativeLineEndings());
 	}
 }

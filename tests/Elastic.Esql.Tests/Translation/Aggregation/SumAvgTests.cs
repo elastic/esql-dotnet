@@ -9,8 +9,9 @@ public class SumAvgTests : EsqlTestBase
 	[Test]
 	public void Sum_Field_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.GroupBy(l => l.Level)
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.GroupBy(l => l.Level.MultiField("keyword"))
 			.Select(g => new { Level = g.Key, TotalDuration = g.Sum(l => l.Duration) })
 			.ToString();
 
@@ -18,14 +19,15 @@ public class SumAvgTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS totalDuration = SUM(duration) BY level = log.level.keyword
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Average_Field_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.GroupBy(l => l.Level)
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.GroupBy(l => l.Level.MultiField("keyword"))
 			.Select(g => new { Level = g.Key, AvgDuration = g.Average(l => l.Duration) })
 			.ToString();
 
@@ -33,15 +35,16 @@ public class SumAvgTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS avgDuration = AVG(duration) BY level = log.level.keyword
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Sum_WithFilter_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.StatusCode >= 400)
-			.GroupBy(l => l.Level)
+			.GroupBy(l => l.Level.MultiField("keyword"))
 			.Select(g => new { Level = g.Key, TotalDuration = g.Sum(l => l.Duration) })
 			.ToString();
 
@@ -50,15 +53,16 @@ public class SumAvgTests : EsqlTestBase
             FROM logs-*
             | WHERE statusCode >= 400
             | STATS totalDuration = SUM(duration) BY level = log.level.keyword
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Average_WithFilter_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.Where(l => l.Level == "ERROR")
-			.GroupBy(l => l.Level)
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Level.MultiField("keyword") == "ERROR")
+			.GroupBy(l => l.Level.MultiField("keyword"))
 			.Select(g => new { Level = g.Key, AvgDuration = g.Average(l => l.Duration) })
 			.ToString();
 
@@ -67,14 +71,15 @@ public class SumAvgTests : EsqlTestBase
             FROM logs-*
             | WHERE log.level.keyword == "ERROR"
             | STATS avgDuration = AVG(duration) BY level = log.level.keyword
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Sum_IntegerField_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.GroupBy(l => l.Level)
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.GroupBy(l => l.Level.MultiField("keyword"))
 			.Select(g => new { Level = g.Key, TotalStatusCodes = g.Sum(l => l.StatusCode) })
 			.ToString();
 
@@ -82,6 +87,6 @@ public class SumAvgTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS totalStatusCodes = SUM(statusCode) BY level = log.level.keyword
-            """);
+            """.NativeLineEndings());
 	}
 }

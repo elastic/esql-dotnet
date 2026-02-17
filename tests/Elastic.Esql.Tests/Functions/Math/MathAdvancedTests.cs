@@ -9,7 +9,8 @@ public class MathAdvancedTests : EsqlTestBase
 	[Test]
 	public void Cbrt_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.Cbrt(l.Duration) })
 			.ToString();
 
@@ -17,13 +18,14 @@ public class MathAdvancedTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = CBRT(duration)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void MathCbrt_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = System.Math.Cbrt(l.Duration) })
 			.ToString();
 
@@ -31,13 +33,14 @@ public class MathAdvancedTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = CBRT(duration)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Exp_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.Exp(l.Duration) })
 			.ToString();
 
@@ -45,13 +48,14 @@ public class MathAdvancedTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = EXP(duration)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void MathExp_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = System.Math.Exp(l.Duration) })
 			.ToString();
 
@@ -59,13 +63,14 @@ public class MathAdvancedTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = EXP(duration)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Hypot_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.Hypot(l.Duration, l.StatusCode) })
 			.ToString();
 
@@ -73,13 +78,14 @@ public class MathAdvancedTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = HYPOT(duration, statusCode)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Signum_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.Signum(l.Duration) })
 			.ToString();
 
@@ -87,13 +93,14 @@ public class MathAdvancedTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = SIGNUM(duration)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void MathSign_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = System.Math.Sign(l.Duration) })
 			.ToString();
 
@@ -101,13 +108,14 @@ public class MathAdvancedTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = SIGNUM(duration)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void CopySign_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.CopySign(l.Duration, l.StatusCode) })
 			.ToString();
 
@@ -115,13 +123,14 @@ public class MathAdvancedTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = COPY_SIGN(duration, statusCode)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void ScaleB_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.ScaleB(l.Duration, 3) })
 			.ToString();
 
@@ -129,13 +138,14 @@ public class MathAdvancedTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = SCALB(duration, 3)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void RoundTo_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.RoundTo(l.Duration, 2) })
 			.ToString();
 
@@ -143,13 +153,14 @@ public class MathAdvancedTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = ROUND_TO(duration, 2)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Exp_InWhere_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => EsqlFunctions.Exp(l.Duration) > 100)
 			.ToString();
 
@@ -157,13 +168,14 @@ public class MathAdvancedTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE EXP(duration) > 100
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void MathExp_InWhere_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => System.Math.Exp(l.Duration) > 100)
 			.ToString();
 
@@ -171,6 +183,6 @@ public class MathAdvancedTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE EXP(duration) > 100
-            """);
+            """.NativeLineEndings());
 	}
 }

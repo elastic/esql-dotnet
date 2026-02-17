@@ -149,9 +149,10 @@ public class ResultMaterializer(TypeFieldMetadataResolver? resolver = null)
 	}
 
 #if NET8_0_OR_GREATER
-	[UnconditionalSuppressMessage("Trimming", "IL2090", Justification = "GetConstructors required for anonymous type materialization.")]
-#endif
+	private static T MaterializeAnonymous<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T>(
+#else
 	private static T MaterializeAnonymous<T>(
+#endif
 		List<object?> row,
 		Dictionary<string, int> columnMap,
 		List<EsqlColumn> columns)

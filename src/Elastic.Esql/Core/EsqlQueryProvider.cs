@@ -2,250 +2,183 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-using System.Collections;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
-using Elastic.Esql.Execution;
-using Elastic.Esql.Generation;
+using System.Reflection;
+using Elastic.Esql.FieldMetadataResolver;
 using Elastic.Esql.QueryModel;
 using Elastic.Esql.Translation;
+using Elastic.Esql.Validation;
 
 namespace Elastic.Esql.Core;
 
 /// <summary>
 /// Query provider that translates LINQ expressions to ES|QL.
 /// </summary>
-/// <remarks>
-/// Creates a new query provider.
-/// </remarks>
-public class EsqlQueryProvider(EsqlQueryContext context) : IQueryProvider
+public class EsqlQueryProvider(IEsqlFieldMetadataResolver fieldMetadataResolver) : IQueryProvider
 {
-
 	/// <summary>
-	/// Gets the query context.
+	/// The resolver for field metadata resolution.
 	/// </summary>
-	public EsqlQueryContext Context { get; } = context ?? throw new ArgumentNullException(nameof(context));
+	public IEsqlFieldMetadataResolver FieldMetadataResolver { get; } = fieldMetadataResolver;
 
 	/// <inheritdoc/>
+	[RequiresDynamicCode("The native code for this instantiation might not be available at runtime.")]
+	[RequiresUnreferencedCode("If some of the generic arguments are annotated (either with DynamicallyAccessedMembersAttribute, or generic constraints), trimming can't validate that the requirements of those annotations are met.")]
 	public IQueryable CreateQuery(Expression expression)
 	{
-		var elementType = GetElementType(expression.Type);
+		Verify.NotNull(expression);
+
+		var elementType = GetElementType(expression.Type)
+						  ?? throw new ArgumentException("Expression does not represent a queryable sequence.", nameof(expression));
+
 		var queryableType = typeof(EsqlQueryable<>).MakeGenericType(elementType);
-		return (IQueryable)Activator.CreateInstance(queryableType, this, expression)!;
+
+		try
+		{
+			return (IQueryable)Activator.CreateInstance(queryableType, this, expression)!;
+		}
+		catch (TargetInvocationException ex)
+		{
+			throw ex.InnerException ?? ex;
+		}
 	}
 
 	/// <inheritdoc/>
-	public IQueryable<TElement> CreateQuery<TElement>(Expression expression) => new EsqlQueryable<TElement>(this, expression);
+	public IQueryable<TElement> CreateQuery<TElement>(Expression expression)
+	{
+		Verify.NotNull(expression);
+
+		return new EsqlQueryable<TElement>(this, expression);
+	}
 
 	/// <inheritdoc/>
+	[RequiresDynamicCode("The native code for this instantiation might not be available at runtime.")]
+	[RequiresUnreferencedCode("If some of the generic arguments are annotated (either with DynamicallyAccessedMembersAttribute, or generic constraints), trimming can't validate that the requirements of those annotations are met.")]
 	public object? Execute(Expression expression)
 	{
-		var elementType = GetElementType(expression.Type);
+		Verify.NotNull(expression);
+
+		var elementType = GetElementType(expression.Type)
+						  ?? throw new ArgumentException("Expression does not represent a queryable sequence.", nameof(expression));
+
 		var executeMethod = typeof(EsqlQueryProvider)
 			.GetMethods()
-			.Single(m => m.Name == nameof(Execute) && m.IsGenericMethodDefinition)
+			.Single(m => m is { Name: nameof(Execute), IsGenericMethodDefinition: true })
 			.MakeGenericMethod(elementType);
 		return executeMethod.Invoke(this, [expression]);
 	}
 
 	/// <inheritdoc/>
-	public TResult Execute<TResult>(Expression expression) => ExecuteAsync<TResult>(expression, CancellationToken.None).GetAwaiter().GetResult();
+	public virtual TResult Execute<TResult>(Expression expression)
+	{
+		Verify.NotNull(expression);
+
+		return ExecuteAsync<TResult>(expression, CancellationToken.None).GetAwaiter().GetResult();
+	}
+
+	/// <summary>Asynchronously executes the strongly-typed query represented by a specified expression tree.</summary>
+	/// <param name="expression">An expression tree that represents a LINQ query.</param>
+	/// <param name="cancellationToken">The cancellation token.</param>
+	/// <typeparam name="TResult">The type of the value that results from executing the query.</typeparam>
+	/// <returns>The value that results from executing the specified query.</returns>
+	public virtual Task<TResult> ExecuteAsync<TResult>(Expression expression, CancellationToken cancellationToken) =>
+		throw new InvalidOperationException($"This '{nameof(EsqlQueryProvider)}' implementation does not support query execution.");
 
 	/// <summary>
-	/// Executes the query asynchronously.
+	/// Executes the specified query expression asynchronously and returns the results as a stream of elements.
 	/// </summary>
+	/// <typeparam name="T">The type of the elements returned by the query.</typeparam>
+	/// <param name="expression">An expression representing the query to execute.</param>
+	/// <param name="cancellationToken">A cancellation token that can be used to cancel the asynchronous operation.</param>
+	/// <returns>An asynchronous stream of elements of type <typeparamref name="T"/> resulting from the execution of the query.</returns>
+	public virtual IAsyncEnumerable<T> ExecuteStreamingAsync<T>(Expression expression, CancellationToken cancellationToken) =>
+		throw new InvalidOperationException($"This '{nameof(EsqlQueryProvider)}' implementation does not support query execution.");
+
+	/// <summary>
+	/// Translates the specified LINQ expression into an equivalent ESQL query representation.
+	/// </summary>
+	/// <param name="expression">The LINQ expression to translate.</param>
+	/// <param name="inlineParameters">Set <see langword="true"/> to inline captured variables instead of translating them to <c>?name</c> placeholders.</param>
+	/// <returns>An <see cref="EsqlQuery"/> object representing the translated ESQL query.</returns>
+	public EsqlQuery TranslateExpression(Expression expression, bool inlineParameters)
+	{
 #if NET8_0_OR_GREATER
-	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "MakeGenericType is required for LINQ provider collection materialization.")]
+		ArgumentNullException.ThrowIfNull(expression);
+#else
+		if (expression is null)
+			throw new ArgumentNullException(nameof(expression));
 #endif
-	public async Task<TResult> ExecuteAsync<TResult>(Expression expression, CancellationToken cancellationToken)
-	{
-		var executor = Context.Executor ?? throw new InvalidOperationException("No query executor configured. Provide an IEsqlQueryExecutor to execute queries.");
 
-		var parameters = new EsqlParameters();
-		Context.ParameterCollection = parameters;
-		var esqlQuery = TranslateExpression(expression);
-		var esqlString = GenerateEsqlString(esqlQuery);
-		Context.ParameterCollection = null;
+		var visitor = new EsqlExpressionVisitor(this, null /* TODO: Implement */, inlineParameters);
 
-		var paramList = parameters.HasParameters ? parameters.ToEsqlParams() : null;
-
-		// Determine if we're getting a single result or a collection
-		var resultType = typeof(TResult);
-
-		if (IsScalarResult(expression))
-		{
-			// Scalar aggregation (Count, Sum, etc.)
-			var response = await executor.ExecuteAsync(esqlString, paramList, cancellationToken);
-			return MaterializeScalar<TResult>(response);
-		}
-
-		if (IsSingleResult(expression))
-		{
-			// First, FirstOrDefault, Single, SingleOrDefault
-			var response = await executor.ExecuteAsync(esqlString, paramList, cancellationToken);
-			return MaterializeSingle<TResult>(response, esqlQuery, expression);
-		}
-
-		// Collection result
-		var collectionResponse = await executor.ExecuteAsync(esqlString, paramList, cancellationToken);
-		var elementType = GetElementTypeFromResult(resultType);
-		var items = MaterializeCollection(collectionResponse, elementType, esqlQuery);
-
-		// Convert to the expected result type
-		if (resultType.IsGenericType && resultType.GetGenericTypeDefinition() == typeof(List<>))
-		{
-			var listType = typeof(List<>).MakeGenericType(elementType);
-			var list = (IList)Activator.CreateInstance(listType)!;
-			foreach (var item in items)
-				_ = list.Add(item);
-			return (TResult)list;
-		}
-
-		return (TResult)items;
+		return visitor.Translate(expression);
 	}
 
 	/// <summary>
-	/// Translates a LINQ expression to an ES|QL query model.
+	/// Determines the element-type of a queryable type.
 	/// </summary>
-	public EsqlQuery TranslateExpression(Expression expression)
+	/// <param name="type">The queryable type to determine the element-type for.</param>
+	/// <returns>The element-type if the specified type is a supported queryable type or <see langword="null"/>, if not.</returns>
+	protected static Type? GetElementType([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)] Type type)
 	{
-		var visitor = new EsqlExpressionVisitor(Context);
-		var query = visitor.Translate(expression);
+		Verify.NotNull(type);
 
-		if (Context.PendingCommands.Count > 0)
+		if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(IQueryable<>))
 		{
-			foreach (var command in Context.PendingCommands)
-				query.AddCommand(command);
-			Context.PendingCommands.Clear();
-		}
-
-		return query;
-	}
-
-	/// <summary>
-	/// Generates an ES|QL string from a query model.
-	/// </summary>
-	public string GenerateEsqlString(EsqlQuery query)
-	{
-		var generator = new EsqlGenerator();
-		return generator.Generate(query);
-	}
-
-	/// <summary>
-	/// Gets an async enumerable for streaming results.
-	/// </summary>
-	public async IAsyncEnumerable<T> ExecuteStreamingAsync<T>(
-		Expression expression,
-		[System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
-	{
-		var executor = Context.Executor ?? throw new InvalidOperationException("No query executor configured. Provide an IEsqlQueryExecutor to execute queries.");
-
-		var parameters = new EsqlParameters();
-		Context.ParameterCollection = parameters;
-		var esqlQuery = TranslateExpression(expression);
-		var esqlString = GenerateEsqlString(esqlQuery);
-		Context.ParameterCollection = null;
-
-		var paramList = parameters.HasParameters ? parameters.ToEsqlParams() : null;
-		var response = await executor.ExecuteAsync(esqlString, paramList, cancellationToken);
-		var materializer = new ResultMaterializer(Context.MetadataResolver);
-
-		foreach (var item in materializer.Materialize<T>(response, esqlQuery))
-		{
-			cancellationToken.ThrowIfCancellationRequested();
-			yield return item;
-		}
-	}
-
-	private static Type GetElementType(Type type)
-	{
-		if (type.IsGenericType)
-		{
-			var genericDef = type.GetGenericTypeDefinition();
-			if (genericDef == typeof(IQueryable<>) ||
-				genericDef == typeof(IEnumerable<>) ||
-				genericDef == typeof(IAsyncEnumerable<>))
-				return type.GetGenericArguments()[0];
+			return type.GetGenericArguments()[0];
 		}
 
 		foreach (var iface in type.GetInterfaces())
 		{
-			if (iface.IsGenericType && iface.GetGenericTypeDefinition() == typeof(IEnumerable<>))
+			if (iface.IsGenericType && iface.GetGenericTypeDefinition() == typeof(IQueryable<>))
 				return iface.GetGenericArguments()[0];
 		}
 
-		return type;
+		return null;
 	}
 
-	private static Type GetElementTypeFromResult(Type resultType)
+	/// <summary>
+	/// Determines whether the specified expression represents a scalar LINQ result operation.
+	/// </summary>
+	/// <param name="expression">The expression to evaluate.</param>
+	/// <returns><see langword="true"/> if the expression is a method call corresponding to a scalar LINQ result operation or <see langword="false"/>, if not.</returns>
+	protected static bool IsScalarResult(Expression expression)
 	{
-		if (resultType.IsGenericType)
+		Verify.NotNull(expression);
+
+		return expression is MethodCallExpression
 		{
-			var genericDef = resultType.GetGenericTypeDefinition();
-			if (genericDef == typeof(List<>) ||
-				genericDef == typeof(IEnumerable<>) ||
-				genericDef == typeof(IList<>) ||
-				genericDef == typeof(ICollection<>))
-				return resultType.GetGenericArguments()[0];
-		}
-
-		return resultType;
-	}
-
-	private static bool IsScalarResult(Expression expression)
-	{
-		if (expression is MethodCallExpression methodCall)
-		{
-			var methodName = methodCall.Method.Name;
-			return methodName is "Count" or "LongCount" or "Sum" or "Average" or "Min" or "Max" or "Any" or "All";
-		}
-		return false;
-	}
-
-	private static bool IsSingleResult(Expression expression)
-	{
-		if (expression is MethodCallExpression methodCall)
-		{
-			var methodName = methodCall.Method.Name;
-			return methodName is "First" or "FirstOrDefault" or "Single" or "SingleOrDefault" or "Last" or "LastOrDefault";
-		}
-		return false;
-	}
-
-	private TResult MaterializeScalar<TResult>(EsqlResponse response)
-	{
-		var materializer = new ResultMaterializer(Context.MetadataResolver);
-		return materializer.MaterializeScalar<TResult>(response);
-	}
-
-	private TResult MaterializeSingle<TResult>(EsqlResponse response, EsqlQuery query, Expression expression)
-	{
-		var materializer = new ResultMaterializer(Context.MetadataResolver);
-		var items = materializer.Materialize<TResult>(response, query).ToList();
-
-		var methodName = (expression as MethodCallExpression)?.Method.Name ?? "";
-
-		return methodName switch
-		{
-			"First" => items.First(),
-			"FirstOrDefault" => items.FirstOrDefault()!,
-			"Single" => items.Single(),
-			"SingleOrDefault" => items.SingleOrDefault()!,
-			"Last" => items.Last(),
-			"LastOrDefault" => items.LastOrDefault()!,
-			_ => items.FirstOrDefault()!
+			Method.Name:
+			nameof(Enumerable.Count) or
+			nameof(Enumerable.LongCount) or
+			nameof(Enumerable.Sum) or
+			nameof(Enumerable.Average) or
+			nameof(Enumerable.Min) or
+			nameof(Enumerable.Max) or
+			nameof(Enumerable.Any) or
+			nameof(Enumerable.All)
 		};
 	}
 
-#if NET8_0_OR_GREATER
-	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "MakeGenericMethod is required for LINQ provider materialization.")]
-#endif
-	private System.Collections.IEnumerable MaterializeCollection(EsqlResponse response, Type elementType, EsqlQuery query)
+	/// <summary>
+	/// Determines whether the specified expression represents a method call that returns a single result from a sequence.
+	/// </summary>
+	/// <param name="expression">The expression to evaluate.</param>
+	/// <returns><see langword="true"/> if the expression represents a method call that returns a single result or <see langword="false"/>, if not.</returns>
+	protected static bool IsSingleResult(Expression expression)
 	{
-		var materializer = new ResultMaterializer(Context.MetadataResolver);
-		var materializeMethod = typeof(ResultMaterializer)
-			.GetMethod(nameof(ResultMaterializer.Materialize))!
-			.MakeGenericMethod(elementType);
-		return (System.Collections.IEnumerable)materializeMethod.Invoke(materializer, [response, query])!;
+		Verify.NotNull(expression);
+
+		return expression is MethodCallExpression
+		{
+			Method.Name:
+			nameof(Enumerable.First) or
+			nameof(Enumerable.FirstOrDefault) or
+			nameof(Enumerable.Single) or
+			nameof(Enumerable.SingleOrDefault) or
+			nameof(Enumerable.Last) or
+			nameof(Enumerable.LastOrDefault)
+		};
 	}
 }

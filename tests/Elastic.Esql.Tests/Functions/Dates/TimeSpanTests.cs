@@ -9,7 +9,8 @@ public class TimeSpanTests : EsqlTestBase
 	[Test]
 	public void TimeSpan_FromHours_InWhere_GeneratesTimeInterval()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.Timestamp > EsqlFunctions.Now() - TimeSpan.FromHours(1))
 			.ToString();
 
@@ -17,13 +18,14 @@ public class TimeSpanTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE @timestamp > NOW() - 1 hours
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void TimeSpan_FromDays_InWhere_GeneratesTimeInterval()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.Timestamp > EsqlFunctions.Now() - TimeSpan.FromDays(7))
 			.ToString();
 
@@ -31,13 +33,14 @@ public class TimeSpanTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE @timestamp > NOW() - 7 days
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void TimeSpan_FromMinutes_InWhere_GeneratesTimeInterval()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.Timestamp > EsqlFunctions.Now() - TimeSpan.FromMinutes(30))
 			.ToString();
 
@@ -45,13 +48,14 @@ public class TimeSpanTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE @timestamp > NOW() - 30 minutes
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void TimeSpan_FromSeconds_InWhere_GeneratesTimeInterval()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.Timestamp > EsqlFunctions.Now() - TimeSpan.FromSeconds(60))
 			.ToString();
 
@@ -59,13 +63,14 @@ public class TimeSpanTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE @timestamp > NOW() - 60 seconds
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void TimeSpan_FromMilliseconds_InWhere_GeneratesTimeInterval()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.Timestamp > EsqlFunctions.Now() - TimeSpan.FromMilliseconds(500))
 			.ToString();
 
@@ -73,13 +78,14 @@ public class TimeSpanTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE @timestamp > NOW() - 500 milliseconds
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void TimeSpan_LargeValue_InWhere_GeneratesTimeInterval()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.Timestamp > EsqlFunctions.Now() - TimeSpan.FromDays(30))
 			.ToString();
 
@@ -87,13 +93,14 @@ public class TimeSpanTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE @timestamp > NOW() - 30 days
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void TimeSpan_Addition_InWhere_GeneratesTimeInterval()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.Timestamp < EsqlFunctions.Now() + TimeSpan.FromHours(24))
 			.ToString();
 
@@ -101,6 +108,6 @@ public class TimeSpanTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE @timestamp < NOW() + 24 hours
-            """);
+            """.NativeLineEndings());
 	}
 }

@@ -121,7 +121,7 @@ var results = await client.CompletionAsync<CompletionResult>(
 );
 ```
 
-See the [COMPLETION docs](completion.md) for pipeline patterns, well-known endpoints, and the `CompletionQuery` static factory.
+See the [COMPLETION docs](completion.md) for pipeline patterns, well-known endpoints, and the `Row()` + `Completion()` API.
 
 ## Scalar and single-value queries
 

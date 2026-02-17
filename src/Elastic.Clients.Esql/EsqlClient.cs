@@ -50,7 +50,7 @@ public class EsqlClient(EsqlClientSettings settings) : IDisposable
 	public IEsqlQueryable<T> Query<T>(string indexPattern) where T : class
 	{
 		var context = new EsqlQueryContext(Settings.MappingContext, _executor) { IndexPattern = indexPattern };
-		var provider = new EsqlQueryProvider(context);
+		var provider = new EsqlQueryProvider<>(context);
 		return new EsqlQueryable<T>(provider);
 	}
 
@@ -154,9 +154,12 @@ public class EsqlClient(EsqlClientSettings settings) : IDisposable
 		string prompt,
 		string inferenceId,
 		string? column = null,
-		CancellationToken cancellationToken = default)
+		CancellationToken cancellationToken = default) where T : class
 	{
-		var esql = CompletionQuery.Generate(prompt, inferenceId, column);
+		var esql = Query<T>()
+			.Row(() => new { prompt })
+			.Completion("prompt", inferenceId, column)
+			.ToEsqlString();
 		return await QueryAsync<T>(esql, cancellationToken);
 	}
 

@@ -11,7 +11,8 @@ public class CapturedVariableTests : EsqlTestBase
 	{
 		var threshold = 500;
 
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.StatusCode >= threshold)
 			.ToString();
 
@@ -19,7 +20,7 @@ public class CapturedVariableTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE statusCode >= 500
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
@@ -27,15 +28,16 @@ public class CapturedVariableTests : EsqlTestBase
 	{
 		var level = "ERROR";
 
-		var esql = Client.Query<LogEntry>()
-			.Where(l => l.Level == level)
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Level.MultiField("keyword") == level)
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
             | WHERE log.level.keyword == "ERROR"
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
@@ -43,7 +45,8 @@ public class CapturedVariableTests : EsqlTestBase
 	{
 		var cutoff = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.Timestamp > cutoff)
 			.ToString();
 
@@ -51,6 +54,6 @@ public class CapturedVariableTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE @timestamp > "2024-01-01T00:00:00.000Z"
-            """);
+            """.NativeLineEndings());
 	}
 }

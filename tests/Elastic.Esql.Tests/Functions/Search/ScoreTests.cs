@@ -9,7 +9,8 @@ public class ScoreTests : EsqlTestBase
 	[Test]
 	public void Score_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Relevance = EsqlFunctions.Score() })
 			.ToString();
 
@@ -17,13 +18,14 @@ public class ScoreTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL relevance = SCORE()
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Score_InWhere_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => EsqlFunctions.Score() > 0.5)
 			.ToString();
 
@@ -31,6 +33,6 @@ public class ScoreTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE SCORE() > 0.5
-            """);
+            """.NativeLineEndings());
 	}
 }

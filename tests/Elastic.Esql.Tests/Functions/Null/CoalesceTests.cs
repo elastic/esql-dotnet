@@ -10,7 +10,8 @@ public class CoalesceTests : EsqlTestBase
 
 	public void Coalesce_TwoFields_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Msg = EsqlFunctions.Coalesce(l.Message, "N/A") })
 			.ToString();
 
@@ -18,6 +19,6 @@ public class CoalesceTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL msg = COALESCE(message, "N/A")
-            """);
+            """.NativeLineEndings());
 	}
 }

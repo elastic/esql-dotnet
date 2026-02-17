@@ -9,7 +9,8 @@ public class IsNullTests : EsqlTestBase
 	[Test]
 	public void IsNull_InWhere_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => EsqlFunctions.IsNull(l.Message))
 			.ToString();
 
@@ -17,13 +18,14 @@ public class IsNullTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE message IS NULL
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void IsNotNull_InWhere_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => EsqlFunctions.IsNotNull(l.Message))
 			.ToString();
 
@@ -31,6 +33,6 @@ public class IsNullTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE message IS NOT NULL
-            """);
+            """.NativeLineEndings());
 	}
 }

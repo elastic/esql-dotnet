@@ -10,7 +10,8 @@ public class DateFormatTests : EsqlTestBase
 
 	public void DateFormat_Iso_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { FormattedDate = EsqlFunctions.DateFormat(l.Timestamp, "yyyy-MM-dd") })
 			.ToString();
 
@@ -18,6 +19,6 @@ public class DateFormatTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL formattedDate = DATE_FORMAT(@timestamp, "yyyy-MM-dd")
-            """);
+            """.NativeLineEndings());
 	}
 }

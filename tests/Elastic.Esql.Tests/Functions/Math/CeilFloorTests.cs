@@ -10,7 +10,8 @@ public class CeilFloorTests : EsqlTestBase
 
 	public void Ceil_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { CeiledDuration = EsqlFunctions.Ceil(l.Duration) })
 			.ToString();
 
@@ -18,14 +19,15 @@ public class CeilFloorTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL ceiledDuration = CEIL(duration)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 
 	public void Floor_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { FlooredDuration = EsqlFunctions.Floor(l.Duration) })
 			.ToString();
 
@@ -33,6 +35,6 @@ public class CeilFloorTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL flooredDuration = FLOOR(duration)
-            """);
+            """.NativeLineEndings());
 	}
 }

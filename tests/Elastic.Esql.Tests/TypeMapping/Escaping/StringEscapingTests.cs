@@ -9,56 +9,60 @@ public class StringEscapingTests : EsqlTestBase
 	[Test]
 	public void String_WithQuotes_EscapesCorrectly()
 	{
-		var esql = Client.Query<LogEntry>()
-			.Where(l => l.Message == "He said \"hello\"")
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message.MultiField("keyword") == "He said \"hello\"")
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
             | WHERE message.keyword == "He said \"hello\""
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void String_WithBackslash_EscapesCorrectly()
 	{
-		var esql = Client.Query<LogEntry>()
-			.Where(l => l.Message == "C:\\Users\\test")
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message.MultiField("keyword") == "C:\\Users\\test")
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
             | WHERE message.keyword == "C:\\Users\\test"
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void String_WithNewline_EscapesCorrectly()
 	{
-		var esql = Client.Query<LogEntry>()
-			.Where(l => l.Message == "line1\nline2")
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message.MultiField("keyword") == "line1\nline2")
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
             | WHERE message.keyword == "line1\nline2"
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void String_WithTab_EscapesCorrectly()
 	{
-		var esql = Client.Query<LogEntry>()
-			.Where(l => l.Message == "col1\tcol2")
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message.MultiField("keyword") == "col1\tcol2")
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
             | WHERE message.keyword == "col1\tcol2"
-            """);
+            """.NativeLineEndings());
 	}
 }

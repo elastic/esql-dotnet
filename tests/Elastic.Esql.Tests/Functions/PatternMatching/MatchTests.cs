@@ -9,7 +9,8 @@ public class MatchTests : EsqlTestBase
 	[Test]
 	public void Match_InWhere_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => EsqlFunctions.Match(l.Message, "error"))
 			.ToString();
 
@@ -17,13 +18,14 @@ public class MatchTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE MATCH(message, "error")
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Match_WithPhrase_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => EsqlFunctions.Match(l.Message, "connection timeout"))
 			.ToString();
 
@@ -31,6 +33,6 @@ public class MatchTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE MATCH(message, "connection timeout")
-            """);
+            """.NativeLineEndings());
 	}
 }
