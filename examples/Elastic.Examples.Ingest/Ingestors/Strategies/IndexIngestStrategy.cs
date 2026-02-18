@@ -200,16 +200,8 @@ public static class IndexIngestStrategy
 		if (analysisSettings?.HasConfiguration == true)
 			settingsJson = analysisSettings.MergeIntoSettings(settingsJson);
 
-		using var settingsDoc = JsonDocument.Parse(settingsJson);
-		using var mappingsDoc = JsonDocument.Parse(mappingsJson);
-
-		var settingsContent = settingsDoc.RootElement.TryGetProperty("settings", out var s)
-			? JsonNode.Parse(s.GetRawText())
-			: new JsonObject();
-
-		var mappingsContent = mappingsDoc.RootElement.TryGetProperty("mappings", out var m)
-			? JsonNode.Parse(m.GetRawText())
-			: new JsonObject();
+		var settingsContent = JsonNode.Parse(settingsJson);
+		var mappingsContent = JsonNode.Parse(mappingsJson);
 
 		var template = new JsonObject
 		{

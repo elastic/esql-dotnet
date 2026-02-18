@@ -30,23 +30,22 @@ internal static class SharedEmitterHelpers
 	{
 		var sb = new StringBuilder();
 		sb.AppendLine("{");
-		sb.AppendLine("\t\"settings\": {");
 
 		var idx = model.IndexConfig;
 		var settingsList = new List<string>();
 
 		if (idx != null && idx.Shards > 0)
-			settingsList.Add($"\t\t\"number_of_shards\": {idx.Shards}");
+			settingsList.Add($"\t\"number_of_shards\": {idx.Shards}");
 
 		if (idx != null && idx.Replicas >= 0)
-			settingsList.Add($"\t\t\"number_of_replicas\": {idx.Replicas}");
+			settingsList.Add($"\t\"number_of_replicas\": {idx.Replicas}");
 
 		if (idx != null && !string.IsNullOrEmpty(idx.RefreshInterval))
-			settingsList.Add($"\t\t\"refresh_interval\": \"{idx.RefreshInterval}\"");
+			settingsList.Add($"\t\"refresh_interval\": \"{idx.RefreshInterval}\"");
 
-		sb.AppendLine(string.Join(",\n", settingsList));
+		if (settingsList.Count > 0)
+			sb.AppendLine(string.Join(",\n", settingsList));
 
-		sb.AppendLine("\t}");
 		sb.Append("}");
 
 		return sb.ToString();
@@ -56,12 +55,11 @@ internal static class SharedEmitterHelpers
 	{
 		var sb = new StringBuilder();
 		sb.AppendLine("{");
-		sb.AppendLine("\t\"mappings\": {");
 
 		if (model.IndexConfig != null && !model.IndexConfig.Dynamic)
-			sb.AppendLine("\t\t\"dynamic\": false,");
+			sb.AppendLine("\t\"dynamic\": false,");
 
-		sb.AppendLine("\t\t\"properties\": {");
+		sb.AppendLine("\t\"properties\": {");
 
 		var props = model.Properties.Where(p => !p.IsIgnored).ToList();
 		for (var i = 0; i < props.Count; i++)
@@ -71,7 +69,7 @@ internal static class SharedEmitterHelpers
 
 			if (prop.FieldType == FieldTypes.Text)
 			{
-				sb.Append($"\t\t\t\"{prop.FieldName}\": {{ \"type\": \"text\"");
+				sb.Append($"\t\t\"{prop.FieldName}\": {{ \"type\": \"text\"");
 
 				foreach (var opt in prop.Options)
 				{
@@ -83,7 +81,7 @@ internal static class SharedEmitterHelpers
 			}
 			else
 			{
-				sb.Append($"\t\t\t\"{prop.FieldName}\": {{ \"type\": \"{prop.FieldType}\"");
+				sb.Append($"\t\t\"{prop.FieldName}\": {{ \"type\": \"{prop.FieldType}\"");
 
 				foreach (var opt in prop.Options)
 				{
@@ -97,7 +95,6 @@ internal static class SharedEmitterHelpers
 			sb.AppendLine(isLast ? "" : ",");
 		}
 
-		sb.AppendLine("\t\t}");
 		sb.AppendLine("\t}");
 		sb.Append("}");
 
@@ -108,13 +105,8 @@ internal static class SharedEmitterHelpers
 	{
 		var sb = new StringBuilder();
 		sb.AppendLine("{");
-
-		var settingsContent = ExtractJsonContent(settingsJson, "settings");
-		sb.AppendLine($"\t\"settings\": {settingsContent},");
-
-		var mappingsContent = ExtractJsonContent(mappingsJson, "mappings");
-		sb.AppendLine($"\t\"mappings\": {mappingsContent}");
-
+		sb.AppendLine($"\t\"settings\": {settingsJson},");
+		sb.AppendLine($"\t\"mappings\": {mappingsJson}");
 		sb.Append("}");
 
 		return sb.ToString();

@@ -47,23 +47,16 @@ public sealed class MappingOverrides
 		if (!HasConfiguration)
 			return mappingsJson;
 
-		var node = JsonNode.Parse(mappingsJson) ?? new JsonObject();
-		var mappings = node["mappings"]?.AsObject();
-
-		if (mappings == null)
-		{
-			mappings = [];
-			node.AsObject()["mappings"] = mappings;
-		}
+		var node = JsonNode.Parse(mappingsJson)?.AsObject() ?? [];
 
 		// Merge field overrides into properties
 		if (Fields.Count > 0)
 		{
-			var properties = mappings["properties"]?.AsObject();
+			var properties = node["properties"]?.AsObject();
 			if (properties == null)
 			{
 				properties = [];
-				mappings["properties"] = properties;
+				node["properties"] = properties;
 			}
 
 			foreach (var kvp in Fields)
@@ -73,11 +66,11 @@ public sealed class MappingOverrides
 		// Merge runtime fields
 		if (RuntimeFields.Count > 0)
 		{
-			var runtime = mappings["runtime"]?.AsObject();
+			var runtime = node["runtime"]?.AsObject();
 			if (runtime == null)
 			{
 				runtime = [];
-				mappings["runtime"] = runtime;
+				node["runtime"] = runtime;
 			}
 
 			foreach (var kvp in RuntimeFields)
@@ -87,11 +80,11 @@ public sealed class MappingOverrides
 		// Merge dynamic templates
 		if (DynamicTemplates.Count > 0)
 		{
-			var templates = mappings["dynamic_templates"]?.AsArray();
+			var templates = node["dynamic_templates"]?.AsArray();
 			if (templates == null)
 			{
 				templates = [];
-				mappings["dynamic_templates"] = templates;
+				node["dynamic_templates"] = templates;
 			}
 
 			foreach (var template in DynamicTemplates)
