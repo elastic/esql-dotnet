@@ -9,7 +9,8 @@ public class KqlQstrTests : EsqlTestBase
 	[Test]
 	public void Kql_InWhere_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => EsqlFunctions.Kql("level:error AND message:timeout"))
 			.ToString();
 
@@ -17,13 +18,14 @@ public class KqlQstrTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE KQL("level:error AND message:timeout")
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Qstr_InWhere_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => EsqlFunctions.Qstr("message:error"))
 			.ToString();
 
@@ -31,6 +33,6 @@ public class KqlQstrTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE QSTR("message:error")
-            """);
+            """.NativeLineEndings());
 	}
 }

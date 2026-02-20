@@ -9,7 +9,8 @@ public class CountTests : EsqlTestBase
 	[Test]
 	public void Count_All_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.GroupBy(l => 1)
 			.Select(g => new { Total = g.Count() })
 			.ToString();
@@ -18,14 +19,15 @@ public class CountTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS total = COUNT(*)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Count_WithFilter_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.Where(l => l.Level == "ERROR")
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Level.MultiField("keyword") == "ERROR")
 			.GroupBy(l => 1)
 			.Select(g => new { ErrorCount = g.Count() })
 			.ToString();
@@ -35,14 +37,15 @@ public class CountTests : EsqlTestBase
             FROM logs-*
             | WHERE log.level.keyword == "ERROR"
             | STATS errorCount = COUNT(*)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Count_WithMultipleFilters_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.Where(l => l.Level == "ERROR" && l.StatusCode >= 500)
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Level.MultiField("keyword") == "ERROR" && l.StatusCode >= 500)
 			.GroupBy(l => 1)
 			.Select(g => new { Count = g.Count() })
 			.ToString();
@@ -52,13 +55,14 @@ public class CountTests : EsqlTestBase
             FROM logs-*
             | WHERE (log.level.keyword == "ERROR" AND statusCode >= 500)
             | STATS count = COUNT(*)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void LongCount_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.GroupBy(l => 1)
 			.Select(g => new { Total = g.LongCount() })
 			.ToString();
@@ -67,6 +71,6 @@ public class CountTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS total = COUNT(*)
-            """);
+            """.NativeLineEndings());
 	}
 }

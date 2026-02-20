@@ -9,8 +9,9 @@ public class SimpleGroupByTests : EsqlTestBase
 	[Test]
 	public void GroupBy_SingleField_WithCount_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.GroupBy(l => l.Level)
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.GroupBy(l => l.Level.MultiField("keyword"))
 			.Select(g => new { Level = g.Key, Count = g.Count() })
 			.ToString();
 
@@ -18,14 +19,15 @@ public class SimpleGroupByTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS count = COUNT(*) BY level = log.level.keyword
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void GroupBy_SingleField_WithSum_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.GroupBy(l => l.Level)
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.GroupBy(l => l.Level.MultiField("keyword"))
 			.Select(g => new { Level = g.Key, TotalDuration = g.Sum(l => l.Duration) })
 			.ToString();
 
@@ -33,14 +35,15 @@ public class SimpleGroupByTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS totalDuration = SUM(duration) BY level = log.level.keyword
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void GroupBy_SingleField_WithAverage_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.GroupBy(l => l.Level)
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.GroupBy(l => l.Level.MultiField("keyword"))
 			.Select(g => new { Level = g.Key, AvgDuration = g.Average(l => l.Duration) })
 			.ToString();
 
@@ -48,14 +51,15 @@ public class SimpleGroupByTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS avgDuration = AVG(duration) BY level = log.level.keyword
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void GroupBy_SingleField_WithMin_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.GroupBy(l => l.Level)
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.GroupBy(l => l.Level.MultiField("keyword"))
 			.Select(g => new { Level = g.Key, MinDuration = g.Min(l => l.Duration) })
 			.ToString();
 
@@ -63,14 +67,15 @@ public class SimpleGroupByTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS minDuration = MIN(duration) BY level = log.level.keyword
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void GroupBy_SingleField_WithMax_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.GroupBy(l => l.Level)
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.GroupBy(l => l.Level.MultiField("keyword"))
 			.Select(g => new { Level = g.Key, MaxDuration = g.Max(l => l.Duration) })
 			.ToString();
 
@@ -78,14 +83,15 @@ public class SimpleGroupByTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS maxDuration = MAX(duration) BY level = log.level.keyword
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void GroupBy_SingleField_WithMultipleAggregations_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.GroupBy(l => l.Level)
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.GroupBy(l => l.Level.MultiField("keyword"))
 			.Select(g => new
 			{
 				Level = g.Key,
@@ -99,15 +105,16 @@ public class SimpleGroupByTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS count = COUNT(*), totalDuration = SUM(duration), avgDuration = AVG(duration) BY level = log.level.keyword
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void GroupBy_WithWhere_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.StatusCode >= 400)
-			.GroupBy(l => l.Level)
+			.GroupBy(l => l.Level.MultiField("keyword"))
 			.Select(g => new { Level = g.Key, Count = g.Count() })
 			.ToString();
 
@@ -116,6 +123,6 @@ public class SimpleGroupByTests : EsqlTestBase
             FROM logs-*
             | WHERE statusCode >= 400
             | STATS count = COUNT(*) BY level = log.level.keyword
-            """);
+            """.NativeLineEndings());
 	}
 }

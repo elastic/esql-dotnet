@@ -3,8 +3,8 @@
 // See the LICENSE file in the project root for more information
 
 using System.Linq.Expressions;
-using System.Reflection;
 using Elastic.Esql.Core;
+using Elastic.Esql.Extensions;
 using Elastic.Esql.QueryModel.Commands;
 
 namespace Elastic.Esql.Translation;
@@ -12,9 +12,9 @@ namespace Elastic.Esql.Translation;
 /// <summary>
 /// Translates LINQ OrderBy expressions to ES|QL SORT commands.
 /// </summary>
-public class OrderByVisitor(EsqlQueryContext context) : ExpressionVisitor
+internal sealed class OrderByVisitor(EsqlTranslationContext context) : ExpressionVisitor
 {
-	private readonly EsqlQueryContext _context = context ?? throw new ArgumentNullException(nameof(context));
+	private readonly EsqlTranslationContext _context = context ?? throw new ArgumentNullException(nameof(context));
 
 	/// <summary>
 	/// Translates an OrderBy key selector to a SortField.
@@ -28,20 +28,10 @@ public class OrderByVisitor(EsqlQueryContext context) : ExpressionVisitor
 	private string ExtractFieldName(Expression expression) =>
 		expression switch
 		{
-			MemberExpression member => ResolveWithKeyword(member.Member),
-			UnaryExpression { NodeType: ExpressionType.Convert, Operand: MemberExpression innerMember } =>
-				ResolveWithKeyword(innerMember.Member),
-			MethodCallExpression methodCall => TranslateMethodCall(methodCall),
-			_ => throw new NotSupportedException($"Cannot extract field name from expression: {expression}")
+			MethodCallExpression methodCall when methodCall.Method.DeclaringType != typeof(GeneralPurposeExtensions) =>
+				TranslateMethodCall(methodCall),
+			_ => expression.ResolveFieldName(_context.FieldMetadataResolver)
 		};
-
-	private string ResolveWithKeyword(MemberInfo member)
-	{
-		var fieldName = _context.MetadataResolver.Resolve(member);
-		if (_context.MetadataResolver.IsTextField(member))
-			fieldName += ".keyword";
-		return fieldName;
-	}
 
 	private string TranslateMethodCall(MethodCallExpression methodCall)
 	{
@@ -49,9 +39,9 @@ public class OrderByVisitor(EsqlQueryContext context) : ExpressionVisitor
 		var declaringType = methodCall.Method.DeclaringType;
 
 		// String methods that can be used for sorting
-		if (declaringType == typeof(string) && methodCall.Object is MemberExpression member)
+		if (declaringType == typeof(string) && methodCall.Object is not null)
 		{
-			var fieldName = ResolveWithKeyword(member.Member);
+			var fieldName = methodCall.Object.ResolveFieldName(_context.FieldMetadataResolver);
 
 			return methodName switch
 			{

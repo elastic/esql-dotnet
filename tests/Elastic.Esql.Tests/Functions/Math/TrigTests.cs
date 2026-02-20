@@ -9,7 +9,8 @@ public class TrigTests : EsqlTestBase
 	[Test]
 	public void Acos_InWhere_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => EsqlFunctions.Acos(l.Duration) > 0)
 			.ToString();
 
@@ -17,13 +18,14 @@ public class TrigTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE ACOS(duration) > 0
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Acos_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.Acos(l.Duration) })
 			.ToString();
 
@@ -31,13 +33,14 @@ public class TrigTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = ACOS(duration)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void MathAcos_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = System.Math.Acos(l.Duration) })
 			.ToString();
 
@@ -45,13 +48,14 @@ public class TrigTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = ACOS(duration)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void MathAcos_InWhere_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => System.Math.Acos(l.Duration) > 0)
 			.ToString();
 
@@ -59,13 +63,14 @@ public class TrigTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE ACOS(duration) > 0
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Asin_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.Asin(l.Duration) })
 			.ToString();
 
@@ -73,13 +78,14 @@ public class TrigTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = ASIN(duration)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Atan_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.Atan(l.Duration) })
 			.ToString();
 
@@ -87,13 +93,14 @@ public class TrigTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = ATAN(duration)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Atan2_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.Atan2(l.Duration, l.StatusCode) })
 			.ToString();
 
@@ -101,13 +108,14 @@ public class TrigTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = ATAN2(duration, statusCode)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void MathAtan2_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = System.Math.Atan2(l.Duration, l.StatusCode) })
 			.ToString();
 
@@ -115,13 +123,14 @@ public class TrigTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = ATAN2(duration, statusCode)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Cos_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.Cos(l.Duration) })
 			.ToString();
 
@@ -129,13 +138,14 @@ public class TrigTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = COS(duration)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Cosh_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.Cosh(l.Duration) })
 			.ToString();
 
@@ -143,13 +153,14 @@ public class TrigTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = COSH(duration)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Sin_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.Sin(l.Duration) })
 			.ToString();
 
@@ -157,13 +168,14 @@ public class TrigTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = SIN(duration)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Sinh_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.Sinh(l.Duration) })
 			.ToString();
 
@@ -171,13 +183,14 @@ public class TrigTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = SINH(duration)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Tan_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.Tan(l.Duration) })
 			.ToString();
 
@@ -185,13 +198,14 @@ public class TrigTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = TAN(duration)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Tanh_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.Tanh(l.Duration) })
 			.ToString();
 
@@ -199,6 +213,6 @@ public class TrigTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = TANH(duration)
-            """);
+            """.NativeLineEndings());
 	}
 }

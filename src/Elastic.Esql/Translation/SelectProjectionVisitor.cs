@@ -12,16 +12,16 @@ namespace Elastic.Esql.Translation;
 /// <summary>
 /// Translates LINQ Select projections to ES|QL KEEP/EVAL commands.
 /// </summary>
-public class SelectProjectionVisitor(EsqlQueryContext context) : ExpressionVisitor
+internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : ExpressionVisitor
 {
-	private readonly EsqlQueryContext _context = context ?? throw new ArgumentNullException(nameof(context));
+	private readonly EsqlTranslationContext _context = context ?? throw new ArgumentNullException(nameof(context));
 	private readonly List<string> _keepFields = [];
 	private readonly List<string> _evalExpressions = [];
 
 	/// <summary>
 	/// Result of projection translation.
 	/// </summary>
-	public class ProjectionResult
+	public sealed class ProjectionResult
 	{
 		public IReadOnlyList<string> KeepFields { get; init; } = [];
 		public IReadOnlyList<string> EvalExpressions { get; init; } = [];
@@ -79,7 +79,7 @@ public class SelectProjectionVisitor(EsqlQueryContext context) : ExpressionVisit
 	protected override Expression VisitMember(MemberExpression node)
 	{
 		// Simple member access: x => x.Field (identity projection)
-		var fieldName = _context.MetadataResolver.Resolve(node.Member);
+		var fieldName = _context.FieldMetadataResolver.GetFieldName(node.Member.DeclaringType!, node.Member);
 		_keepFields.Add(fieldName);
 
 		return node;
@@ -102,7 +102,7 @@ public class SelectProjectionVisitor(EsqlQueryContext context) : ExpressionVisit
 			else
 			{
 				// Simple field access
-				var sourceField = _context.MetadataResolver.Resolve(memberExpr.Member);
+				var sourceField = _context.FieldMetadataResolver.GetFieldName(memberExpr.Member.DeclaringType!, memberExpr.Member);
 
 				if (sourceField == resultField)
 				{
@@ -210,7 +210,7 @@ public class SelectProjectionVisitor(EsqlQueryContext context) : ExpressionVisit
 		}
 
 		// Regular field access
-		return _context.MetadataResolver.Resolve(member.Member);
+		return _context.FieldMetadataResolver.GetFieldName(member.Member.DeclaringType!, member.Member);
 	}
 
 	private string TranslateBinary(BinaryExpression binary)

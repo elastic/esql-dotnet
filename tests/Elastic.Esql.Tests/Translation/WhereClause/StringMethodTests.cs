@@ -12,84 +12,90 @@ public class StringMethodTests : EsqlTestBase
 	[Test]
 	public void Where_StringContains_GeneratesLike()
 	{
-		var esql = Client.Query<LogEntry>()
-			.Where(l => l.Message.Contains("error"))
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message.MultiField("keyword").Contains("error"))
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
             | WHERE message.keyword LIKE "*error*"
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Where_StringStartsWith_GeneratesLike()
 	{
-		var esql = Client.Query<LogEntry>()
-			.Where(l => l.Message.StartsWith("Error:"))
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message.MultiField("keyword").StartsWith("Error:"))
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
             | WHERE message.keyword LIKE "Error:*"
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Where_StringEndsWith_GeneratesLike()
 	{
-		var esql = Client.Query<LogEntry>()
-			.Where(l => l.Message.EndsWith("failed"))
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message.MultiField("keyword").EndsWith("failed"))
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
             | WHERE message.keyword LIKE "*failed"
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Where_StringToLower_GeneratesToLower()
 	{
-		var esql = Client.Query<LogEntry>()
-			.Where(l => l.Level.ToLowerInvariant() == "error")
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Level.MultiField("keyword").ToLowerInvariant() == "error")
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
             | WHERE TO_LOWER(log.level.keyword) == "error"
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Where_StringToUpper_GeneratesToUpper()
 	{
-		var esql = Client.Query<LogEntry>()
-			.Where(l => l.Level.ToUpperInvariant() == "ERROR")
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Level.MultiField("keyword").ToUpperInvariant() == "ERROR")
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
             | WHERE TO_UPPER(log.level.keyword) == "ERROR"
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Where_StringTrim_GeneratesTrim()
 	{
-		var esql = Client.Query<LogEntry>()
-			.Where(l => l.Message.Trim() == "test")
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message.MultiField("keyword").Trim() == "test")
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
             | WHERE TRIM(message.keyword) == "test"
-            """);
+            """.NativeLineEndings());
 	}
 }

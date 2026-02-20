@@ -9,7 +9,8 @@ public class DateParseTests : EsqlTestBase
 	[Test]
 	public void DateParse_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Parsed = EsqlFunctions.DateParse("yyyy-MM-dd", l.Message) })
 			.ToString();
 
@@ -17,6 +18,6 @@ public class DateParseTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL parsed = DATE_PARSE("yyyy-MM-dd", message)
-            """);
+            """.NativeLineEndings());
 	}
 }

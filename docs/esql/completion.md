@@ -93,22 +93,19 @@ FROM logs-*
 
 ## Standalone COMPLETION
 
-`CompletionQuery.Generate()` creates a standalone `ROW + COMPLETION` pipeline for sending a prompt without querying an index:
+Use `.Row()` to create a standalone `ROW + COMPLETION` pipeline for sending a prompt without querying an index. The `Row()` extension method accepts an anonymous object — property names become column names and values are automatically escaped:
 
 ```csharp
-var esql = CompletionQuery.Generate(
-    "Tell me about Elasticsearch",
-    InferenceEndpoints.Anthropic.Claude46Opus,
-    column: "answer"
-);
+var esql = client.Query<CompletionResult>()
+    .Row(() => new { prompt = "Tell me about Elasticsearch" })
+    .Completion("prompt", InferenceEndpoints.Anthropic.Claude46Opus, column: "answer")
+    .ToString();
 ```
 
 ```
 ROW prompt = "Tell me about Elasticsearch"
 | COMPLETION answer = prompt WITH { "inference_id" : ".anthropic-claude-4.6-opus-completion" }
 ```
-
-The prompt text is automatically escaped for ES|QL string literals.
 
 ### Client convenience method
 
@@ -150,8 +147,9 @@ FROM logs-*
 The `ROW` source command produces a row with literal values. It is primarily used with `COMPLETION` for standalone prompts, but is available as a general-purpose command:
 
 ```csharp
-var query = new EsqlQuery();
-query.AddCommand(new RowCommand("a = 1", "b = \"hello\""));
+var esql = client.Query<MyType>()
+    .Row(() => new { a = 1, b = "hello" })
+    .ToString();
 ```
 
 ```
@@ -164,14 +162,9 @@ ROW a = 1, b = "hello"
 
 | Method | Description |
 |---|---|
+| `.Row(Expression<Func<object>> columns)` | Produces a row with literal values (ROW command) |
 | `.Completion(string prompt, string inferenceId, string? column)` | Adds a COMPLETION command with a string field name |
 | `.Completion(Expression<Func<T, string>> prompt, string inferenceId, string? column)` | Adds a COMPLETION command with a type-safe lambda selector |
-
-### Static factories
-
-| Method | Description |
-|---|---|
-| `CompletionQuery.Generate(string prompt, string inferenceId, string? column)` | Generates a standalone `ROW + COMPLETION` ES\|QL string |
 
 ### Client methods
 

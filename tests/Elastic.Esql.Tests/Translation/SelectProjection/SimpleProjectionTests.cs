@@ -9,7 +9,8 @@ public class SimpleProjectionTests : EsqlTestBase
 	[Test]
 	public void Select_SingleField_GeneratesKeep()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => l.Message)
 			.ToString();
 
@@ -17,13 +18,14 @@ public class SimpleProjectionTests : EsqlTestBase
 			"""
             FROM logs-*
             | KEEP message
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Select_AnonymousType_SimpleFields_GeneratesKeepAndEval()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { l.Level, l.Message })
 			.ToString();
 
@@ -33,13 +35,14 @@ public class SimpleProjectionTests : EsqlTestBase
             FROM logs-*
             | KEEP message
             | EVAL level = log.level
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Select_AnonymousType_RenamedField_GeneratesEval()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { LogLevel = l.Level, l.Message })
 			.ToString();
 
@@ -48,6 +51,6 @@ public class SimpleProjectionTests : EsqlTestBase
             FROM logs-*
             | KEEP message
             | EVAL logLevel = log.level
-            """);
+            """.NativeLineEndings());
 	}
 }

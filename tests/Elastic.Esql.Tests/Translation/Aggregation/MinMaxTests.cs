@@ -9,8 +9,9 @@ public class MinMaxTests : EsqlTestBase
 	[Test]
 	public void Min_Field_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.GroupBy(l => l.Level)
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.GroupBy(l => l.Level.MultiField("keyword"))
 			.Select(g => new { Level = g.Key, MinDuration = g.Min(l => l.Duration) })
 			.ToString();
 
@@ -18,14 +19,15 @@ public class MinMaxTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS minDuration = MIN(duration) BY level = log.level.keyword
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Max_Field_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.GroupBy(l => l.Level)
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.GroupBy(l => l.Level.MultiField("keyword"))
 			.Select(g => new { Level = g.Key, MaxDuration = g.Max(l => l.Duration) })
 			.ToString();
 
@@ -33,14 +35,15 @@ public class MinMaxTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS maxDuration = MAX(duration) BY level = log.level.keyword
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void MinMax_Combined_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.GroupBy(l => l.Level)
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.GroupBy(l => l.Level.MultiField("keyword"))
 			.Select(g => new
 			{
 				Level = g.Key,
@@ -53,15 +56,16 @@ public class MinMaxTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS minDuration = MIN(duration), maxDuration = MAX(duration) BY level = log.level.keyword
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Min_WithFilter_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.StatusCode >= 400)
-			.GroupBy(l => l.Level)
+			.GroupBy(l => l.Level.MultiField("keyword"))
 			.Select(g => new { Level = g.Key, MinDuration = g.Min(l => l.Duration) })
 			.ToString();
 
@@ -70,14 +74,15 @@ public class MinMaxTests : EsqlTestBase
             FROM logs-*
             | WHERE statusCode >= 400
             | STATS minDuration = MIN(duration) BY level = log.level.keyword
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Max_IntegerField_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.GroupBy(l => l.Level)
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.GroupBy(l => l.Level.MultiField("keyword"))
 			.Select(g => new { Level = g.Key, MaxStatusCode = g.Max(l => l.StatusCode) })
 			.ToString();
 
@@ -85,6 +90,6 @@ public class MinMaxTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS maxStatusCode = MAX(statusCode) BY level = log.level.keyword
-            """);
+            """.NativeLineEndings());
 	}
 }

@@ -9,7 +9,8 @@ public class NullCheckTests : EsqlTestBase
 	[Test]
 	public void Where_EqualsNull_GeneratesComparison()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.ClientIp == null)
 			.ToString();
 
@@ -17,13 +18,14 @@ public class NullCheckTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE clientIp == null
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Where_NotEqualsNull_GeneratesComparison()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.ClientIp != null)
 			.ToString();
 
@@ -31,6 +33,6 @@ public class NullCheckTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE clientIp != null
-            """);
+            """.NativeLineEndings());
 	}
 }

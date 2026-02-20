@@ -9,7 +9,8 @@ public class HashTests : EsqlTestBase
 	[Test]
 	public void Hash_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.Hash("sha256", l.Message) })
 			.ToString();
 
@@ -17,13 +18,14 @@ public class HashTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = HASH("sha256", message)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Md5_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.Md5(l.Message) })
 			.ToString();
 
@@ -31,13 +33,14 @@ public class HashTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = MD5(message)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Sha1_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.Sha1(l.Message) })
 			.ToString();
 
@@ -45,13 +48,14 @@ public class HashTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = SHA1(message)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Sha256_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.Sha256(l.Message) })
 			.ToString();
 
@@ -59,6 +63,6 @@ public class HashTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = SHA256(message)
-            """);
+            """.NativeLineEndings());
 	}
 }

@@ -9,7 +9,8 @@ public class AbsTests : EsqlTestBase
 	[Test]
 	public void Abs_InWhere_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => EsqlFunctions.Abs(l.Duration) > 100)
 			.ToString();
 
@@ -17,14 +18,15 @@ public class AbsTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE ABS(duration) > 100
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 
 	public void Abs_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { AbsDuration = EsqlFunctions.Abs(l.Duration) })
 			.ToString();
 
@@ -32,6 +34,6 @@ public class AbsTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL absDuration = ABS(duration)
-            """);
+            """.NativeLineEndings());
 	}
 }

@@ -9,7 +9,8 @@ public class NowTests : EsqlTestBase
 	[Test]
 	public void Now_InWhere_GeneratesNow()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.Timestamp > EsqlFunctions.Now())
 			.ToString();
 
@@ -17,13 +18,14 @@ public class NowTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE @timestamp > NOW()
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Now_LessThan_GeneratesNow()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.Timestamp < EsqlFunctions.Now())
 			.ToString();
 
@@ -31,6 +33,6 @@ public class NowTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE @timestamp < NOW()
-            """);
+            """.NativeLineEndings());
 	}
 }

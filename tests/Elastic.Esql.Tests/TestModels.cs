@@ -3,7 +3,6 @@
 // See the LICENSE file in the project root for more information
 
 using System.Text.Json.Serialization;
-using Elastic.Mapping;
 
 namespace Elastic.Esql.Tests;
 
@@ -11,17 +10,15 @@ namespace Elastic.Esql.Tests;
 // MAPPING CONTEXT: registers all test types for ES|QL tests
 // ============================================================================
 
-[ElasticsearchMappingContext]
-[Entity<LogEntry>(Target = EntityTarget.Index, SearchPattern = "logs-*")]
-[Entity<SimpleDocument>(Target = EntityTarget.Index, Name = "simple-docs")]
-[Entity<MetricDocument>(Target = EntityTarget.Index, SearchPattern = "metrics-*")]
-[Entity<EventDocument>(Target = EntityTarget.Index, SearchPattern = "events-*")]
-public static partial class EsqlTestMappingContext;
+[JsonSerializable(typeof(LogEntry))]
+[JsonSerializable(typeof(SimpleDocument))]
+[JsonSerializable(typeof(MetricDocument))]
+[JsonSerializable(typeof(EventDocument))]
+public sealed partial class EsqlTestMappingContext : JsonSerializerContext;
 
 /// <summary>
 /// Primary test document type with various field types and attributes.
 /// </summary>
-[Entity(Target = EntityTarget.Index, SearchPattern = "logs-*")]
 public class LogEntry
 {
 	[JsonPropertyName("@timestamp")]
@@ -49,7 +46,6 @@ public class LogEntry
 /// <summary>
 /// Simple document type without attributes for default naming tests.
 /// </summary>
-[Entity(Target = EntityTarget.Index, Name = "simple-docs")]
 public class SimpleDocument
 {
 	public string Name { get; set; } = string.Empty;
@@ -60,7 +56,6 @@ public class SimpleDocument
 /// <summary>
 /// Document with nullable properties.
 /// </summary>
-[Entity(Target = EntityTarget.Index, SearchPattern = "metrics-*")]
 public class MetricDocument
 {
 	public DateTime Timestamp { get; set; }
@@ -85,7 +80,6 @@ public enum LogLevel
 /// <summary>
 /// Document with enum property.
 /// </summary>
-[Entity(Target = EntityTarget.Index, SearchPattern = "events-*")]
 public class EventDocument
 {
 	public DateTime Timestamp { get; set; }

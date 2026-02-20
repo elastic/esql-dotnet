@@ -6,7 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Elastic.Clients.Esql;
 using Elastic.Esql.Core;
-using Elastic.Esql.Execution;
+using Elastic.Clients.Esql.Execution;
 using Elastic.Esql.Extensions;
 using Elastic.Examples.Domain;
 using Elastic.Examples.Domain.Models;

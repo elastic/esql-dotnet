@@ -11,7 +11,8 @@ public class ParameterizedQueryTests : EsqlTestBase
 	{
 		var threshold = 500;
 
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.StatusCode >= threshold)
 			.ToEsqlString();
 
@@ -19,7 +20,7 @@ public class ParameterizedQueryTests : EsqlTestBase
 			"""
 			FROM logs-*
 			| WHERE statusCode >= 500
-			""");
+			""".NativeLineEndings());
 	}
 
 	[Test]
@@ -27,7 +28,8 @@ public class ParameterizedQueryTests : EsqlTestBase
 	{
 		var threshold = 500;
 
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.StatusCode >= threshold)
 			.ToEsqlString(inlineParameters: false);
 
@@ -35,7 +37,7 @@ public class ParameterizedQueryTests : EsqlTestBase
 			"""
 			FROM logs-*
 			| WHERE statusCode >= ?threshold
-			""");
+			""".NativeLineEndings());
 	}
 
 	[Test]
@@ -43,15 +45,16 @@ public class ParameterizedQueryTests : EsqlTestBase
 	{
 		var level = "ERROR";
 
-		var esql = Client.Query<LogEntry>()
-			.Where(l => l.Level == level)
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Level.MultiField("keyword") == level)
 			.ToEsqlString(inlineParameters: false);
 
 		_ = esql.Should().Be(
 			"""
 			FROM logs-*
 			| WHERE log.level.keyword == ?level
-			""");
+			""".NativeLineEndings());
 	}
 
 	[Test]
@@ -59,7 +62,8 @@ public class ParameterizedQueryTests : EsqlTestBase
 	{
 		var cutoff = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.Timestamp > cutoff)
 			.ToEsqlString(inlineParameters: false);
 
@@ -67,7 +71,7 @@ public class ParameterizedQueryTests : EsqlTestBase
 			"""
 			FROM logs-*
 			| WHERE @timestamp > ?cutoff
-			""");
+			""".NativeLineEndings());
 	}
 
 	[Test]
@@ -75,7 +79,8 @@ public class ParameterizedQueryTests : EsqlTestBase
 	{
 		var maxDuration = 1000.5;
 
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.Duration > maxDuration)
 			.ToEsqlString(inlineParameters: false);
 
@@ -83,7 +88,7 @@ public class ParameterizedQueryTests : EsqlTestBase
 			"""
 			FROM logs-*
 			| WHERE duration > ?maxDuration
-			""");
+			""".NativeLineEndings());
 	}
 
 	[Test]
@@ -91,7 +96,8 @@ public class ParameterizedQueryTests : EsqlTestBase
 	{
 		var errorOnly = true;
 
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.IsError == errorOnly)
 			.ToEsqlString(inlineParameters: false);
 
@@ -99,7 +105,7 @@ public class ParameterizedQueryTests : EsqlTestBase
 			"""
 			FROM logs-*
 			| WHERE isError == ?errorOnly
-			""");
+			""".NativeLineEndings());
 	}
 
 	[Test]
@@ -107,7 +113,8 @@ public class ParameterizedQueryTests : EsqlTestBase
 	{
 		var level = LogLevel.Error;
 
-		var esql = Client.Query<EventDocument>()
+		var esql = CreateQuery<EventDocument>()
+			.From("events-*")
 			.Where(e => e.Level == level)
 			.ToEsqlString(inlineParameters: false);
 
@@ -115,7 +122,7 @@ public class ParameterizedQueryTests : EsqlTestBase
 			"""
 			FROM events-*
 			| WHERE level == ?level
-			""");
+			""".NativeLineEndings());
 	}
 
 	[Test]
@@ -124,15 +131,16 @@ public class ParameterizedQueryTests : EsqlTestBase
 		var minStatus = 400;
 		var level = "ERROR";
 
-		var esql = Client.Query<LogEntry>()
-			.Where(l => l.StatusCode >= minStatus && l.Level == level)
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.StatusCode >= minStatus && l.Level.MultiField("keyword") == level)
 			.ToEsqlString(inlineParameters: false);
 
 		_ = esql.Should().Be(
 			"""
 			FROM logs-*
 			| WHERE (statusCode >= ?minStatus AND log.level.keyword == ?level)
-			""");
+			""".NativeLineEndings());
 	}
 
 	[Test]
@@ -141,7 +149,8 @@ public class ParameterizedQueryTests : EsqlTestBase
 		var value = 100;
 		var value2 = 200;
 
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.StatusCode >= value && l.StatusCode <= value2)
 			.ToEsqlString(inlineParameters: false);
 
@@ -151,7 +160,7 @@ public class ParameterizedQueryTests : EsqlTestBase
 			"""
 			FROM logs-*
 			| WHERE (statusCode >= ?value AND statusCode <= ?value2)
-			""");
+			""".NativeLineEndings());
 	}
 
 	[Test]
@@ -160,7 +169,8 @@ public class ParameterizedQueryTests : EsqlTestBase
 		// Both WHERE clauses use the same variable pattern
 		var threshold = 100;
 
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.StatusCode >= threshold)
 			.Where(l => l.StatusCode <= threshold)
 			.ToEsqlString(inlineParameters: false);
@@ -170,7 +180,7 @@ public class ParameterizedQueryTests : EsqlTestBase
 			FROM logs-*
 			| WHERE statusCode >= ?threshold
 			| WHERE statusCode <= ?threshold_2
-			""");
+			""".NativeLineEndings());
 	}
 
 	[Test]
@@ -178,7 +188,8 @@ public class ParameterizedQueryTests : EsqlTestBase
 	{
 		var config = new { MaxRetries = 3 };
 
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.StatusCode == config.MaxRetries)
 			.ToEsqlString(inlineParameters: false);
 
@@ -186,7 +197,7 @@ public class ParameterizedQueryTests : EsqlTestBase
 			"""
 			FROM logs-*
 			| WHERE statusCode == ?MaxRetries
-			""");
+			""".NativeLineEndings());
 	}
 
 	[Test]
@@ -195,8 +206,9 @@ public class ParameterizedQueryTests : EsqlTestBase
 		var threshold = 500;
 		var level = "ERROR";
 
-		var queryable = (IEsqlQueryable<LogEntry>)Client.Query<LogEntry>()
-			.Where(l => l.StatusCode >= threshold && l.Level == level);
+		var queryable = (IEsqlQueryable<LogEntry>)CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.StatusCode >= threshold && l.Level.MultiField("keyword") == level);
 
 		var parameters = queryable.GetParameters();
 
@@ -209,7 +221,8 @@ public class ParameterizedQueryTests : EsqlTestBase
 	[Test]
 	public void GetParameters_NoVariables_ReturnsNull()
 	{
-		var queryable = (IEsqlQueryable<LogEntry>)Client.Query<LogEntry>()
+		var queryable = (IEsqlQueryable<LogEntry>)CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.StatusCode >= 500);
 
 		var parameters = queryable.GetParameters();
@@ -222,7 +235,8 @@ public class ParameterizedQueryTests : EsqlTestBase
 	{
 		var level = LogLevel.Error;
 
-		var queryable = (IEsqlQueryable<EventDocument>)Client.Query<EventDocument>()
+		var queryable = (IEsqlQueryable<EventDocument>)CreateQuery<EventDocument>()
+			.From("events-*")
 			.Where(e => e.Level == level);
 
 		var parameters = queryable.GetParameters();
@@ -234,8 +248,9 @@ public class ParameterizedQueryTests : EsqlTestBase
 	[Test]
 	public void ToEsqlString_Parameterized_LikePatternStaysInlined()
 	{
-		var esql = Client.Query<LogEntry>()
-			.Where(l => l.Message.Contains("error"))
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message.MultiField("keyword").Contains("error"))
 			.ToEsqlString(inlineParameters: false);
 
 		// LIKE patterns stay inlined, they are not captured variables
@@ -243,13 +258,14 @@ public class ParameterizedQueryTests : EsqlTestBase
 			"""
 			FROM logs-*
 			| WHERE message.keyword LIKE "*error*"
-			""");
+			""".NativeLineEndings());
 	}
 
 	[Test]
 	public void ToEsqlString_Parameterized_StaticMemberStaysInlined()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.Timestamp > DateTime.UtcNow)
 			.ToEsqlString(inlineParameters: false);
 
@@ -258,7 +274,7 @@ public class ParameterizedQueryTests : EsqlTestBase
 			"""
 			FROM logs-*
 			| WHERE @timestamp > NOW()
-			""");
+			""".NativeLineEndings());
 	}
 
 	[Test]
@@ -267,8 +283,9 @@ public class ParameterizedQueryTests : EsqlTestBase
 		var threshold = 500;
 		var level = "ERROR";
 
-		var queryable = (IEsqlQueryable<LogEntry>)Client.Query<LogEntry>()
-			.Where(l => l.StatusCode >= threshold && l.Level == level);
+		var queryable = (IEsqlQueryable<LogEntry>)CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.StatusCode >= threshold && l.Level.MultiField("keyword") == level);
 
 		var parameters = queryable.GetParameters();
 		var esqlParams = parameters!.ToEsqlParams();
@@ -283,7 +300,8 @@ public class ParameterizedQueryTests : EsqlTestBase
 	{
 		var threshold = 500;
 
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.StatusCode >= threshold)
 			.ToString();
 
@@ -291,6 +309,6 @@ public class ParameterizedQueryTests : EsqlTestBase
 			"""
 			FROM logs-*
 			| WHERE statusCode >= 500
-			""");
+			""".NativeLineEndings());
 	}
 }

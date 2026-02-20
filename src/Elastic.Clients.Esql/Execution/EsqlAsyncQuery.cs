@@ -2,7 +2,6 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-using Elastic.Esql.Execution;
 using Elastic.Esql.QueryModel;
 
 namespace Elastic.Clients.Esql.Execution;
@@ -35,7 +34,7 @@ public sealed class EsqlAsyncQuery<T>(EsqlTransportExecutor executor, EsqlRespon
 			: response;
 
 		var materializer = new ResultMaterializer(resolver);
-		var query = new EsqlQuery { ElementType = typeof(T) };
+		var query = new EsqlQuery(typeof(T), [], null);
 		return materializer.Materialize<T>(finalResponse, query).ToList();
 	}
 

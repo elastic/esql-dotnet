@@ -9,7 +9,8 @@ public class BucketTests : EsqlTestBase
 	[Test]
 	public void Bucket_IntegerBuckets_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.GroupBy(l => EsqlFunctions.Bucket(l.Duration, 10))
 			.Select(g => new { Bucket = g.Key, Count = g.Count() })
 			.ToString();
@@ -18,13 +19,14 @@ public class BucketTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS count = COUNT(*) BY bucket = BUCKET(duration, 10)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Bucket_StringSpan_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.GroupBy(l => EsqlFunctions.Bucket(l.Duration, "100"))
 			.Select(g => new { Bucket = g.Key, Count = g.Count() })
 			.ToString();
@@ -33,13 +35,14 @@ public class BucketTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS count = COUNT(*) BY bucket = BUCKET(duration, "100")
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void TBucket_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.GroupBy(l => EsqlFunctions.TBucket(l.Timestamp, "1 hour"))
 			.Select(g => new { Bucket = g.Key, Count = g.Count() })
 			.ToString();
@@ -48,6 +51,6 @@ public class BucketTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS count = COUNT(*) BY bucket = TBUCKET(@timestamp, "1 hour")
-            """);
+            """.NativeLineEndings());
 	}
 }

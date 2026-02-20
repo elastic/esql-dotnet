@@ -10,7 +10,8 @@ public class DateTruncTests : EsqlTestBase
 
 	public void DateTrunc_Hour_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Hour = EsqlFunctions.DateTrunc("hour", l.Timestamp) })
 			.ToString();
 
@@ -18,14 +19,15 @@ public class DateTruncTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL hour = DATE_TRUNC("hour", @timestamp)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 
 	public void DateTrunc_Day_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Day = EsqlFunctions.DateTrunc("day", l.Timestamp) })
 			.ToString();
 
@@ -33,6 +35,6 @@ public class DateTruncTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL day = DATE_TRUNC("day", @timestamp)
-            """);
+            """.NativeLineEndings());
 	}
 }

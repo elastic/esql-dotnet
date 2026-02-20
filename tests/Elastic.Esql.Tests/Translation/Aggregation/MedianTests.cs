@@ -9,8 +9,9 @@ public class MedianTests : EsqlTestBase
 	[Test]
 	public void Median_InGroupBy_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.GroupBy(l => l.Level)
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.GroupBy(l => l.Level.MultiField("keyword"))
 			.Select(g => new
 			{
 				Level = g.Key,
@@ -22,14 +23,15 @@ public class MedianTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS medianDuration = MEDIAN(duration) BY level = log.level.keyword
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void MedianAbsoluteDeviation_InGroupBy_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.GroupBy(l => l.Level)
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.GroupBy(l => l.Level.MultiField("keyword"))
 			.Select(g => new
 			{
 				Level = g.Key,
@@ -41,6 +43,6 @@ public class MedianTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS mad = MEDIAN_ABSOLUTE_DEVIATION(duration) BY level = log.level.keyword
-            """);
+            """.NativeLineEndings());
 	}
 }

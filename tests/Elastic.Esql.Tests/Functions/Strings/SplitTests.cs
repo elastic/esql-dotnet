@@ -9,7 +9,8 @@ public class SplitTests : EsqlTestBase
 	[Test]
 	public void Split_EsqlFunction_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.Split(l.Message, ",") })
 			.ToString();
 
@@ -17,13 +18,14 @@ public class SplitTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = SPLIT(message, ",")
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Split_Native_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = l.Message.Split(",") })
 			.ToString();
 
@@ -31,6 +33,6 @@ public class SplitTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = SPLIT(message, ",")
-            """);
+            """.NativeLineEndings());
 	}
 }

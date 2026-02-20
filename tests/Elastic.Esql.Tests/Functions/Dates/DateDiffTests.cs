@@ -9,7 +9,8 @@ public class DateDiffTests : EsqlTestBase
 	[Test]
 	public void DateDiff_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Diff = EsqlFunctions.DateDiff("day", l.Timestamp, EsqlFunctions.Now()) })
 			.ToString();
 
@@ -17,13 +18,14 @@ public class DateDiffTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL diff = DATE_DIFF("day", @timestamp, NOW())
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void DateDiff_InWhere_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => EsqlFunctions.DateDiff("hour", l.Timestamp, EsqlFunctions.Now()) < 24)
 			.ToString();
 
@@ -31,6 +33,6 @@ public class DateDiffTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE DATE_DIFF("hour", @timestamp, NOW()) < 24
-            """);
+            """.NativeLineEndings());
 	}
 }

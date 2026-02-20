@@ -10,19 +10,20 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json.Serialization;
 using Elastic.Esql.Core;
+using Elastic.Esql.Extensions;
 using Elastic.Esql.Formatting;
 using Elastic.Esql.Functions;
+using Elastic.Esql.QueryModel;
 
 namespace Elastic.Esql.Translation;
 
 /// <summary>
 /// Translates LINQ predicate expressions to ES|QL WHERE conditions.
 /// </summary>
-public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
+internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : ExpressionVisitor
 {
-	private readonly EsqlQueryContext _context = context ?? throw new ArgumentNullException(nameof(context));
+	private readonly EsqlTranslationContext _context = context ?? throw new ArgumentNullException(nameof(context));
 	private readonly StringBuilder _builder = new();
-	private bool _suppressKeywordSuffix;
 
 	/// <summary>
 	/// Translates a predicate expression to an ES|QL condition string.
@@ -43,31 +44,32 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 			_ = _builder.Append('(');
 
 		// Check for enum comparison that needs string formatting
-		var enumContext = GetEnumComparisonContext(node);
-		if (enumContext.HasValue)
+		var enumComparison = TryGetEnumComparison(node);
+		if (enumComparison.HasValue && !IsSpecialEnumAccess(enumComparison.Value.MemberSide.Member) && ShouldFormatEnumAsString(enumComparison.Value.EnumType))
 		{
-			_ = Visit(enumContext.Value.MemberSide);
+			_ = Visit(enumComparison.Value.MemberSide);
 			var op = GetOperator(node.NodeType);
 			_ = _builder.Append(' ').Append(op).Append(' ');
-			var enumStringValue = GetEnumStringValue(enumContext.Value.EnumType, enumContext.Value.ConstantValue);
-			_ = _context.ParameterCollection is { } parameters && enumContext.Value.ParameterName is { } paramName
-				? _builder.Append('?').Append(parameters.Add(paramName, enumStringValue))
-				: _builder.Append(EsqlFormatting.FormatValue(enumStringValue));
+
+			var constant = enumComparison.Value.ConstantSide;
+			var constantValue = ExpressionConstantResolver.Resolve(constant);
+
+			if (constant is MemberExpression member)
+			{
+				var name = member.Member.Name;
+				var value = GetEnumStringValue(enumComparison.Value.EnumType, constantValue);
+
+				_ = _builder.Append(_context.GetValueOrParameterName(name, value));
+			}
+			else
+				_ = _builder.Append(EsqlFormatting.FormatValue(constantValue));
 		}
 		else
 		{
-			// Null checks don't need .keyword — null applies to the whole field
-			var isNullCheck = IsNullConstant(node.Left) || IsNullConstant(node.Right);
-			if (isNullCheck)
-				_suppressKeywordSuffix = true;
-
 			_ = Visit(node.Left);
 			var op = GetOperator(node.NodeType);
 			_ = _builder.Append(' ').Append(op).Append(' ');
 			_ = Visit(node.Right);
-
-			if (isNullCheck)
-				_suppressKeywordSuffix = false;
 		}
 
 		if (isLogicalOperator)
@@ -76,99 +78,70 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 		return node;
 	}
 
-	private (Expression MemberSide, Type EnumType, object? ConstantValue, string? ParameterName)? GetEnumComparisonContext(BinaryExpression node)
+	/// <summary>
+	/// Inspects a <see cref="BinaryExpression"/> and determines whether it represents an enum comparison. If so, returns the enum type, the member site
+	/// expression (the property/field being compared), and the constant enum value. Handles both regular and nullable enums.
+	/// </summary>
+	private static (Type EnumType, MemberExpression MemberSide, Expression ConstantSide)? TryGetEnumComparison(BinaryExpression binary)
 	{
-		// Only handle equality/inequality comparisons
-		if (node.NodeType is not (ExpressionType.Equal or ExpressionType.NotEqual))
+		// TODO: We can probably make this more robust by explicitly looking for the parametrized member access as the source of truth for the enum type.
+
+		if (binary.NodeType is not (ExpressionType.Equal or ExpressionType.NotEqual
+			or ExpressionType.LessThan or ExpressionType.LessThanOrEqual
+			or ExpressionType.GreaterThan or ExpressionType.GreaterThanOrEqual))
 			return null;
 
-		// Try left=member, right=constant
-		var leftEnumType = GetEnumTypeFromExpression(node.Left);
-		if (leftEnumType != null)
+		// Try both orientations: member == constant and constant == member.
+		return TryMatch(binary.Left, binary.Right) ?? TryMatch(binary.Right, binary.Left);
+
+		static (Type EnumType, MemberExpression MemberSide, Expression ConstantSide)? TryMatch(Expression candidateMember, Expression candidateConstant)
 		{
-			var rightValue = TryGetConstantValue(node.Right);
-			if (rightValue != null && ShouldFormatEnumAsString(leftEnumType))
-				return (node.Left, leftEnumType, rightValue, GetParameterName(node.Right));
+			var memberSide = candidateMember.UnwrapConvertExpressions();
+			var constantSide = candidateConstant.UnwrapConvertExpressions();
+
+			// Resolve the enum type from whichever side actually has it.
+			// The member side is authoritative, but for `Nullable<TEnum> == null` the constant side may be typed differently.
+			var enumType = GetEnumType(memberSide.Type);
+			if (enumType is null)
+				return null;
+
+			// The member side must be a member access.
+			if (memberSide is not MemberExpression memberExpression)
+				return null;
+
+			// The constant side must be a static- or closure-rooted expression that can be resolved to a value.
+			// Cases where both sides are dependent on the input lambda parameter are dealt with as non-enum comparisons and don't require special handling.
+			if (!constantSide.SupportsEvaluation())
+				return null;
+
+			return (enumType, memberExpression, constantSide);
 		}
 
-		// Try right=member, left=constant
-		var rightEnumType = GetEnumTypeFromExpression(node.Right);
-		if (rightEnumType != null)
+		static Type? GetEnumType(Type type)
 		{
-			var leftValue = TryGetConstantValue(node.Left);
-			if (leftValue != null && ShouldFormatEnumAsString(rightEnumType))
-				return (node.Right, rightEnumType, leftValue, GetParameterName(node.Left));
+			var candidate = Nullable.GetUnderlyingType(type) ?? type;
+
+			return candidate.IsEnum ? candidate : null;
 		}
-
-		return null;
 	}
 
-	private static string? GetParameterName(Expression expression)
+	private static bool IsSpecialEnumAccess(MemberInfo member)
 	{
-		// Unwrap Convert expressions
-		while (expression is UnaryExpression { NodeType: ExpressionType.Convert or ExpressionType.ConvertChecked } unary)
-			expression = unary.Operand;
-
-		return expression switch
-		{
-			// Direct closure: closureObj.fieldName
-			MemberExpression { Expression: ConstantExpression } member => member.Member.Name,
-			// Nested closure: closureObj.prop.field
-			MemberExpression { Expression: MemberExpression { Expression: ConstantExpression } } member => member.Member.Name,
-			_ => null
-		};
-	}
-
-	private static Type? GetEnumTypeFromExpression(Expression expr)
-	{
-		// Unwrap Convert expressions
-		while (expr is UnaryExpression { NodeType: ExpressionType.Convert or ExpressionType.ConvertChecked } unary)
-			expr = unary.Operand;
-
-		if (expr is not MemberExpression member)
-			return null;
-
 		// DateTime/DateTimeOffset properties like DayOfWeek return enums but translate to
 		// DATE_EXTRACT which produces integers — don't treat these as enum comparisons
-		var declaringType = member.Member.DeclaringType;
-		if (declaringType == typeof(DateTime) || declaringType == typeof(DateTimeOffset))
-			return null;
-
-		var memberType = member.Member switch
-		{
-			PropertyInfo prop => prop.PropertyType,
-			FieldInfo field => field.FieldType,
-			_ => null
-		};
-
-		if (memberType == null)
-			return null;
-
-		// Handle nullable enums
-		var underlying = Nullable.GetUnderlyingType(memberType) ?? memberType;
-		return underlying.IsEnum ? underlying : null;
+		var declaringType = member.DeclaringType;
+		return declaringType == typeof(DateTime) || declaringType == typeof(DateTimeOffset);
 	}
 
 	private static bool ShouldFormatEnumAsString(Type enumType)
 	{
+		// TODO: This is not always the case. Users can choose to store enums as integers in Elasticsearch.
+		//       For now, we require enums to be stored as strings for simplicity.
+
 		// Always format enums as strings since keyword fields expect strings.
 		// The JsonStringEnumConverter attribute on the property ensures the data is stored as strings.
 		_ = enumType; // Suppress unused parameter warning
 		return true;
-	}
-
-	private static object? TryGetConstantValue(Expression expression)
-	{
-		// Unwrap Convert expressions
-		while (expression is UnaryExpression { NodeType: ExpressionType.Convert or ExpressionType.ConvertChecked } unary)
-			expression = unary.Operand;
-
-		return expression switch
-		{
-			ConstantExpression constant => constant.Value,
-			MemberExpression member when member.Expression is ConstantExpression ce => GetMemberValue(member, ce.Value),
-			_ => null
-		};
 	}
 
 	private static string? GetEnumStringValue(Type enumType, object? value)
@@ -209,7 +182,7 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 		if (node.Expression is ConstantExpression constantExpression)
 		{
 			var value = GetMemberValue(node, constantExpression.Value);
-			AppendValueOrParameter(node.Member.Name, value);
+			_ = _builder.Append(_context.GetValueOrParameterName(node.Member.Name, value));
 			return node;
 		}
 
@@ -219,7 +192,7 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 		{
 			var innerValue = GetMemberValue(innerMember, innerConstant.Value);
 			var value = GetMemberValue(node, innerValue);
-			AppendValueOrParameter(node.Member.Name, value);
+			_ = _builder.Append(_context.GetValueOrParameterName(node.Member.Name, value));
 			return node;
 		}
 
@@ -306,9 +279,7 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 		}
 
 		// Regular field access
-		var fieldName = _context.MetadataResolver.Resolve(node.Member);
-		if (!_suppressKeywordSuffix && _context.MetadataResolver.IsTextField(node.Member))
-			fieldName += ".keyword";
+		var fieldName = _context.FieldMetadataResolver.GetFieldName(node.Member.DeclaringType!, node.Member);
 		_ = _builder.Append(fieldName);
 
 		return node;
@@ -323,7 +294,7 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 				TranslateStaticDateTimeProperty(member),
 			MemberExpression member =>
 				// Field access like l.Timestamp
-				_context.MetadataResolver.Resolve(member.Member),
+				_context.FieldMetadataResolver.GetFieldName(member.Member.DeclaringType!, member.Member),
 			MethodCallExpression methodCall when methodCall.Method.DeclaringType == typeof(EsqlFunctions) =>
 				TranslateEsqlFunctionForDateTime(methodCall),
 			_ => throw new NotSupportedException($"Expression type {expression.GetType().Name} is not supported for DateTime property access.")
@@ -361,6 +332,13 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 	{
 		var methodName = node.Method.Name;
 		var declaringType = node.Method.DeclaringType;
+
+		// MultiField extension: l.Field.MultiField("keyword")
+		if (declaringType == typeof(GeneralPurposeExtensions) && methodName == "MultiField")
+		{
+			_ = _builder.Append(node.ResolveFieldName(_context.FieldMetadataResolver));
+			return node;
+		}
 
 		// Check for EsqlFunctions marker methods
 		if (declaringType == typeof(EsqlFunctions))
@@ -433,31 +411,24 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 	{
 		var methodName = node.Method.Name;
 
-		// Special handling for functions that need keyword suffix suppression
 		switch (methodName)
 		{
 			case "Match":
 			case "MatchPhrase":
 				_ = _builder.Append(methodName == "Match" ? "MATCH(" : "MATCH_PHRASE(");
-				_suppressKeywordSuffix = true;
 				_ = Visit(node.Arguments[0]);
-				_suppressKeywordSuffix = false;
 				_ = _builder.Append(", ");
 				_ = Visit(node.Arguments[1]);
 				_ = _builder.Append(')');
 				return node;
 
 			case "IsNull":
-				_suppressKeywordSuffix = true;
 				_ = Visit(node.Arguments[0]);
-				_suppressKeywordSuffix = false;
 				_ = _builder.Append(" IS NULL");
 				return node;
 
 			case "IsNotNull":
-				_suppressKeywordSuffix = true;
 				_ = Visit(node.Arguments[0]);
-				_suppressKeywordSuffix = false;
 				_ = _builder.Append(" IS NOT NULL");
 				return node;
 		}
@@ -702,11 +673,6 @@ public class WhereClauseVisitor(EsqlQueryContext context) : ExpressionVisitor
 			PropertyInfo property => property.GetValue(null),
 			_ => throw new NotSupportedException($"Static member type {member.Member.GetType()} is not supported.")
 		};
-
-	private void AppendValueOrParameter(string name, object? value) =>
-		_ = _context.ParameterCollection is { } parameters
-			? _builder.Append('?').Append(parameters.Add(name, value))
-			: _builder.Append(EsqlFormatting.FormatValue(value));
 
 	private static bool IsNullConstant(Expression expression) =>
 		expression is ConstantExpression { Value: null };

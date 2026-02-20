@@ -11,7 +11,7 @@ namespace Elastic.Esql.Generation;
 /// <summary>
 /// Generates ES|QL query strings from query models.
 /// </summary>
-public class EsqlGenerator : ICommandVisitor
+public class EsqlFormatter : ICommandVisitor
 {
 	private readonly StringBuilder _builder = new();
 	private bool _isFirstCommand = true;
@@ -19,7 +19,7 @@ public class EsqlGenerator : ICommandVisitor
 	/// <summary>
 	/// Generates an ES|QL query string from a query model.
 	/// </summary>
-	public string Generate(EsqlQuery query)
+	public string Format(EsqlQuery query)
 	{
 		_ = _builder.Clear();
 		_isFirstCommand = true;

@@ -9,7 +9,8 @@ public class GlobalAggregationTests : EsqlTestBase
 	[Test]
 	public void GlobalCount_WithConstantGroupBy_GeneratesStats()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.GroupBy(l => 1)
 			.Select(g => new { Total = g.Count() })
 			.ToString();
@@ -18,13 +19,14 @@ public class GlobalAggregationTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS total = COUNT(*)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void GlobalSum_WithConstantGroupBy_GeneratesStats()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.GroupBy(l => 1)
 			.Select(g => new { TotalDuration = g.Sum(l => l.Duration) })
 			.ToString();
@@ -33,13 +35,14 @@ public class GlobalAggregationTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS totalDuration = SUM(duration)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void GlobalAverage_WithConstantGroupBy_GeneratesStats()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.GroupBy(l => 1)
 			.Select(g => new { AvgDuration = g.Average(l => l.Duration) })
 			.ToString();
@@ -48,13 +51,14 @@ public class GlobalAggregationTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS avgDuration = AVG(duration)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void GlobalMinMax_WithConstantGroupBy_GeneratesStats()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.GroupBy(l => 1)
 			.Select(g => new
 			{
@@ -67,13 +71,14 @@ public class GlobalAggregationTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS minDuration = MIN(duration), maxDuration = MAX(duration)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void GlobalMultipleAggregations_WithConstantGroupBy_GeneratesStats()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.GroupBy(l => 1)
 			.Select(g => new
 			{
@@ -89,14 +94,15 @@ public class GlobalAggregationTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS count = COUNT(*), sum = SUM(duration), avg = AVG(duration), min = MIN(duration), max = MAX(duration)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void GlobalAggregation_WithFilter_GeneratesStats()
 	{
-		var esql = Client.Query<LogEntry>()
-			.Where(l => l.Level == "ERROR")
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Level.MultiField("keyword") == "ERROR")
 			.GroupBy(l => 1)
 			.Select(g => new { ErrorCount = g.Count(), AvgDuration = g.Average(l => l.Duration) })
 			.ToString();
@@ -106,6 +112,6 @@ public class GlobalAggregationTests : EsqlTestBase
             FROM logs-*
             | WHERE log.level.keyword == "ERROR"
             | STATS errorCount = COUNT(*), avgDuration = AVG(duration)
-            """);
+            """.NativeLineEndings());
 	}
 }
