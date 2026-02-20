@@ -4,7 +4,7 @@
 
 using System.Text.Json;
 using Elastic.Esql.Core;
-using Elastic.Esql.Execution;
+using Elastic.Clients.Esql.Execution;
 using Elastic.Esql.Extensions;
 
 namespace Playground.Helpers;

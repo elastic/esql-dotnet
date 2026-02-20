@@ -23,8 +23,6 @@ public class EsqlQueryProvider(IEsqlFieldMetadataResolver fieldMetadataResolver)
 	public IEsqlFieldMetadataResolver FieldMetadataResolver { get; } = fieldMetadataResolver;
 
 	/// <inheritdoc/>
-	[RequiresDynamicCode("The native code for this instantiation might not be available at runtime.")]
-	[RequiresUnreferencedCode("If some of the generic arguments are annotated (either with DynamicallyAccessedMembersAttribute, or generic constraints), trimming can't validate that the requirements of those annotations are met.")]
 	public IQueryable CreateQuery(Expression expression)
 	{
 		Verify.NotNull(expression);
@@ -53,8 +51,6 @@ public class EsqlQueryProvider(IEsqlFieldMetadataResolver fieldMetadataResolver)
 	}
 
 	/// <inheritdoc/>
-	[RequiresDynamicCode("The native code for this instantiation might not be available at runtime.")]
-	[RequiresUnreferencedCode("If some of the generic arguments are annotated (either with DynamicallyAccessedMembersAttribute, or generic constraints), trimming can't validate that the requirements of those annotations are met.")]
 	public object? Execute(Expression expression)
 	{
 		Verify.NotNull(expression);

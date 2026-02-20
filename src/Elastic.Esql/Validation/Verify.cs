@@ -14,14 +14,14 @@ internal static class Verify
 	public static void NotNull<T>(
 		[System.Diagnostics.CodeAnalysis.NotNull] T? value,
 		[CallerArgumentExpression(nameof(value))] string? paramName = null)
-	{
 #if NET6_0_OR_GREATER
-		ArgumentNullException.ThrowIfNull(value, paramName);
+			=> ArgumentNullException.ThrowIfNull(value, paramName);
 #else
+	{
 		if (value is null)
 			throw new ArgumentNullException(paramName);
-#endif
 	}
+#endif
 
 	/// <summary>
 	/// Throws <see cref="ArgumentNullException"/> if <paramref name="value"/> is <see langword="null"/>,

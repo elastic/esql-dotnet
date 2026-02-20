@@ -3,8 +3,10 @@
 // See the LICENSE file in the project root for more information
 
 using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
 using Elastic.Esql.Core;
 using Elastic.Esql.Extensions;
+using Elastic.Esql.FieldMetadataResolver;
 using Elastic.Mapping;
 using EsqlAotSmoketest;
 
@@ -14,8 +16,12 @@ Console.WriteLine(new string('=', 60));
 // Verify context registration
 Console.WriteLine($"Registered types: {EsqlAotContext.All.Count}");
 
+// Create a field resolver that uses the mapping context
+var resolver = new MappingResolver(EsqlAotContext.Instance);
+var provider = new EsqlQueryProvider(resolver);
+
 // Build a LINQ query and get the ES|QL string
-var query = new EsqlQueryable<EsqlOrder>(EsqlAotContext.Instance)
+var query = new EsqlQueryable<EsqlOrder>(provider)
 	.Where(o => o.TotalAmount > 100)
 	.Where(o => o.Status == "Shipped")
 	.OrderByDescending(o => o.TotalAmount)
@@ -26,7 +32,7 @@ Console.WriteLine($"\nGenerated ES|QL query:");
 Console.WriteLine($"  {esql}");
 
 // Keep overload A — simple field selection (fully AOT-safe, no anonymous types)
-var keepQuery = new EsqlQueryable<EsqlOrder>(EsqlAotContext.Instance)
+var keepQuery = new EsqlQueryable<EsqlOrder>(provider)
 	.Where(o => o.TotalAmount > 50)
 	.Keep(o => o.OrderId, o => o.Status, o => o.TotalAmount);
 
@@ -35,12 +41,12 @@ Console.WriteLine($"\nKeep query (simple):");
 Console.WriteLine($"  {keepEsql}");
 
 // Keep overload B — projection with aliases (AOT-annotated on our side)
-var aliasEsql = KeepProjectionQuery();
+var aliasEsql = KeepProjectionQuery(provider);
 Console.WriteLine($"\nKeep query (projection with alias):");
 Console.WriteLine($"  {aliasEsql}");
 
 // Product query
-var productQuery = new EsqlQueryable<EsqlProduct>(EsqlAotContext.Instance)
+var productQuery = new EsqlQueryable<EsqlProduct>(provider)
 	.Where(p => p.InStock)
 	.OrderBy(p => p.Price)
 	.Take(5);
@@ -64,8 +70,8 @@ Console.WriteLine("\nAOT smoketest passed!");
 // Expression.New with MemberInfo[] has [RequiresUnreferencedCode] — the Keep<T,TResult> overload
 // suppresses IL2026 internally, but the C# compiler still emits Expression.New at the call site.
 [UnconditionalSuppressMessage("Trimming", "IL2026")]
-static string KeepProjectionQuery() =>
-	new EsqlQueryable<EsqlOrder>(EsqlAotContext.Instance)
+static string KeepProjectionQuery(EsqlQueryProvider provider) =>
+	new EsqlQueryable<EsqlOrder>(provider)
 		.Where(o => o.TotalAmount > 50)
 		.Keep(o => new { o.OrderId, Amount = o.TotalAmount })
 		.ToEsqlString();
@@ -92,4 +98,15 @@ namespace EsqlAotSmoketest
 	[Entity<EsqlOrder>(Target = EntityTarget.Index, Name = "orders", SearchPattern = "orders-*")]
 	[Entity<EsqlProduct>(Target = EntityTarget.Index, Name = "products", SearchPattern = "products*")]
 	public static partial class EsqlAotContext;
+
+	/// <summary>
+	/// Simple <see cref="IEsqlFieldMetadataResolver"/> adapter for <see cref="TypeFieldMetadataResolver"/>.
+	/// </summary>
+	public sealed class MappingResolver(IElasticsearchMappingContext? context = null) : IEsqlFieldMetadataResolver
+	{
+		private readonly TypeFieldMetadataResolver _resolver = new(context);
+
+		public string GetFieldName(Type type, MemberInfo member) =>
+			_resolver.Resolve(member);
+	}
 }

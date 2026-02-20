@@ -107,14 +107,19 @@ public static partial class EsqlQueryableExtensions
 	}
 
 	// TODO: Reimplement properly.
-	///// <summary>
-	///// Returns the count of elements.
-	///// </summary>
-	//public static async Task<int> CountAsync<T>(
-	//	this IEsqlQueryable<T> queryable,
-	//	CancellationToken cancellationToken = default)
-	//{
-	//}
+	/// <summary>
+	/// Returns the count of elements.
+	/// </summary>
+	public static async Task<int> CountAsync<T>(
+		this IEsqlQueryable<T> queryable,
+		CancellationToken cancellationToken = default)
+	{
+		_ = queryable;
+		_ = cancellationToken;
+		await Task.CompletedTask.ConfigureAwait(false);
+
+		throw new NotImplementedException();
+	}
 
 	/// <summary>
 	/// Returns whether any elements exist.

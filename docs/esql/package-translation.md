@@ -11,7 +11,6 @@ A translation library that converts C# LINQ expressions into Elasticsearch [ES|Q
 Use `Elastic.Esql` directly when you need:
 
 - ES|QL string generation without any HTTP dependency
-- A custom `IEsqlQueryExecutor` implementation
 - Query inspection or logging of generated ES|QL
 - Integration with a transport layer you already have
 
@@ -146,15 +145,6 @@ using static Elastic.Esql.Functions.EsqlFunctions;
 .Where(l => Like(l.Path, "/api/v?/users"))                  // WHERE path LIKE "/api/v?/users"
 ```
 
-## The IEsqlQueryExecutor abstraction
+## Execution
 
-Elastic.Esql defines a minimal execution interface so you can plug in any transport:
-
-```csharp
-public interface IEsqlQueryExecutor
-{
-    Task<EsqlResponse> ExecuteAsync(string esql, CancellationToken cancellationToken = default);
-}
-```
-
-Use [Elastic.Clients.Esql](package-client.md) for the default `Elastic.Transport`-based implementation, or implement `IEsqlQueryExecutor` yourself for custom transports.
+Elastic.Esql is a pure translation library — it generates ES|QL strings but does not execute them. Use [Elastic.Clients.Esql](package-client.md) for the official `Elastic.Transport`-based execution layer, or subclass `EsqlQueryProvider` to plug in your own transport.

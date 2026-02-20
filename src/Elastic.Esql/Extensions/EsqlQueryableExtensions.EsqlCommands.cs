@@ -2,9 +2,11 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+
 using Elastic.Esql.Validation;
 
 namespace Elastic.Esql.Extensions;
@@ -57,6 +59,7 @@ public static partial class EsqlQueryableExtensions
 	/// <summary>
 	/// Specifies fields to keep using lambda selectors (KEEP command).
 	/// </summary>
+	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Target array type is statically referenced in the expression tree.")]
 	public static IQueryable<T> Keep<T>(this IQueryable<T> source, params Expression<Func<T, object?>>[] fieldSelectors)
 	{
 		Verify.NotNull(source);
@@ -92,6 +95,7 @@ public static partial class EsqlQueryableExtensions
 	/// <summary>
 	/// Specifies fields to drop from the result (DROP command).
 	/// </summary>
+	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Target array type is statically referenced in the expression tree.")]
 	public static IQueryable<T> Drop<T>(this IQueryable<T> source, params Expression<Func<T, object?>>[] fieldSelectors)
 	{
 		Verify.NotNull(source);
@@ -143,6 +147,8 @@ public static partial class EsqlQueryableExtensions
 
 	// -----
 
+	[UnconditionalSuppressMessage("AOT", "IL2060", Justification = "Generic target method is statically referenced in the expression tree.")]
+	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Generic target method is statically referenced in the expression tree.")]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private static IQueryable<TElement> ApplyMethod<TElement>(IQueryable<TElement> source, MethodInfo method, params ReadOnlySpan<Expression> arguments) =>
 		source.Provider.CreateQuery<TElement>(
@@ -155,6 +161,8 @@ public static partial class EsqlQueryableExtensions
 					.. arguments
 				]));
 
+	[UnconditionalSuppressMessage("AOT", "IL2060", Justification = "Generic target method is statically referenced in the expression tree.")]
+	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Generic target method is statically referenced in the expression tree.")]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private static IQueryable<TElement> ApplyMethod<TElement, T1>(IQueryable<TElement> source, MethodInfo method, params ReadOnlySpan<Expression> arguments) =>
 		source.Provider.CreateQuery<TElement>(

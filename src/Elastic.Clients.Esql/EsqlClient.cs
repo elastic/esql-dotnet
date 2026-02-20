@@ -5,8 +5,8 @@
 using Elastic.Clients.Esql.Execution;
 using Elastic.Esql;
 using Elastic.Esql.Core;
-using Elastic.Esql.Execution;
 using Elastic.Esql.Extensions;
+using Elastic.Esql.QueryModel;
 using Elastic.Mapping;
 using Elastic.Transport;
 
@@ -41,17 +41,17 @@ public class EsqlClient(EsqlClientSettings settings) : IDisposable
 	/// <typeparam name="T">The document type. Should have EsqlIndex attribute or will use type name as index.</typeparam>
 	public IEsqlQueryable<T> Query<T>() where T : class
 	{
-		var context = new EsqlQueryContext(Settings.MappingContext, _executor);
-		var provider = new EsqlQueryProvider(context);
+		var resolver = new MappingFieldMetadataResolver(Settings.MappingContext);
+		var provider = new EsqlClientQueryProvider(resolver, _executor);
 		return new EsqlQueryable<T>(provider);
 	}
 
 	/// <summary>Creates a strongly-typed queryable for the specified index pattern.</summary>
 	public IEsqlQueryable<T> Query<T>(string indexPattern) where T : class
 	{
-		var context = new EsqlQueryContext(Settings.MappingContext, _executor) { IndexPattern = indexPattern };
-		var provider = new EsqlQueryProvider<>(context);
-		return new EsqlQueryable<T>(provider);
+		var resolver = new MappingFieldMetadataResolver(Settings.MappingContext);
+		var provider = new EsqlClientQueryProvider(resolver, _executor);
+		return (IEsqlQueryable<T>)new EsqlQueryable<T>(provider).From(indexPattern);
 	}
 
 	/// <summary>Executes a raw ES|QL query and maps results to a type.</summary>
@@ -60,7 +60,7 @@ public class EsqlClient(EsqlClientSettings settings) : IDisposable
 		var response = await _executor.ExecuteAsync(esql, cancellationToken);
 		var materializer = new ResultMaterializer(new TypeFieldMetadataResolver(Settings.MappingContext));
 
-		var query = new Elastic.Esql.QueryModel.EsqlQuery { ElementType = typeof(T) };
+		var query = new EsqlQuery(typeof(T), [], null);
 		return materializer.Materialize<T>(response, query).ToList();
 	}
 
@@ -70,7 +70,7 @@ public class EsqlClient(EsqlClientSettings settings) : IDisposable
 		var response = await _executor.ExecuteAsync(esql, options, cancellationToken);
 		var materializer = new ResultMaterializer(new TypeFieldMetadataResolver(Settings.MappingContext));
 
-		var query = new Elastic.Esql.QueryModel.EsqlQuery { ElementType = typeof(T) };
+		var query = new EsqlQuery(typeof(T), [], null);
 		return materializer.Materialize<T>(response, query).ToList();
 	}
 
@@ -124,7 +124,7 @@ public class EsqlClient(EsqlClientSettings settings) : IDisposable
 		if (configured is IEsqlQueryable<T> esqlQueryable)
 		{
 			var esql = esqlQueryable.ToEsqlString();
-			var request = BuildAsyncRequest(esql, esqlQueryable.Context.QueryOptions, options);
+			var request = BuildAsyncRequest(esql, null, options);
 			return await _executor.ExecuteAsyncAsync<T>(request, cancellationToken);
 		}
 

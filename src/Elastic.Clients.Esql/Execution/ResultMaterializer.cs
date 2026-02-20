@@ -11,7 +11,7 @@ using System.Text.Json.Serialization;
 using Elastic.Esql.QueryModel;
 using Elastic.Mapping;
 
-namespace Elastic.Esql.Execution;
+namespace Elastic.Clients.Esql.Execution;
 
 /// <summary>
 /// Materializes ES|QL query results into C# objects.
