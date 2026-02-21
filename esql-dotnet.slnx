@@ -18,13 +18,10 @@
   <Folder Name="/src/">
     <Project Path="src/Elastic.Clients.Esql/Elastic.Clients.Esql.csproj" />
     <Project Path="src/Elastic.Esql/Elastic.Esql.csproj" />
-    <Project Path="src/Elastic.Mapping.Generator/Elastic.Mapping.Generator.csproj" />
-    <Project Path="src/Elastic.Mapping/Elastic.Mapping.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <File Path="tests\Directory.Build.props" />
     <Project Path="tests/Elastic.Esql.Tests/Elastic.Esql.Tests.csproj" />
-    <Project Path="tests/Elastic.Mapping.Tests/Elastic.Mapping.Tests.csproj" />
   </Folder>
   <Folder Name="/integration-tests/">
     <File Path="integration-tests\Directory.Build.props" />

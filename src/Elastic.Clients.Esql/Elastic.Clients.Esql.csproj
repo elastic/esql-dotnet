@@ -21,7 +21,7 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\Elastic.Esql\Elastic.Esql.csproj" />
-		<ProjectReference Include="..\Elastic.Mapping\Elastic.Mapping.csproj" />
+		<PackageReference Include="Elastic.Mapping" />
 	</ItemGroup>
 
 	<!-- Polyfills for netstandard2.0 -->
