@@ -142,7 +142,6 @@ The entire pipeline is AOT compatible. `Elastic.Mapping` generates all field met
 dotnet build esql-dotnet.slnx
 
 # Run tests (TUnit — uses dotnet run, not dotnet test)
-dotnet run --project tests/Elastic.Mapping.Tests
 dotnet run --project tests/Elastic.Esql.Tests
 
 # Or use the build script
