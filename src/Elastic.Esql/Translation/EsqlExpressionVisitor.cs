@@ -3,8 +3,9 @@
 // See the LICENSE file in the project root for more information
 
 using System.Linq.Expressions;
-using System.Reflection;
+
 using Elastic.Esql.Core;
+using Elastic.Esql.Extensions;
 using Elastic.Esql.QueryModel;
 using Elastic.Esql.QueryModel.Commands;
 
@@ -13,38 +14,35 @@ namespace Elastic.Esql.Translation;
 /// <summary>
 /// Main visitor that translates LINQ expressions to ES|QL query model.
 /// </summary>
-public class EsqlExpressionVisitor(EsqlQueryContext context) : ExpressionVisitor
+internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? defaultIndexPattern, bool inlineParameters) : ExpressionVisitor
 {
-	private readonly EsqlQueryContext _context = context ?? throw new ArgumentNullException(nameof(context));
-	private EsqlQuery _query = new();
-
 	// Tracks pending GroupBy key selector for combining with subsequent Select
 	private LambdaExpression? _pendingGroupByKeySelector;
+
+	public EsqlQueryProvider Provider { get; } = provider ?? throw new ArgumentNullException(nameof(provider));
+	public EsqlTranslationContext Context { get; } = new() { FieldMetadataResolver = provider.FieldMetadataResolver, InlineParameters = inlineParameters };
+	public string? DefaultIndexPattern { get; } = defaultIndexPattern;
 
 	/// <summary>
 	/// Translates a LINQ expression to an ES|QL query model.
 	/// </summary>
 	public EsqlQuery Translate(Expression expression)
 	{
-		_query = new EsqlQuery();
 		_ = Visit(expression);
-		return _query;
+
+		if (Context.ElementType is null)
+			throw new InvalidOperationException("Failed to determine result type for the given expression.");
+
+		return new EsqlQuery(Context.ElementType!, [.. Context.Commands, .. Context.PendingCommands], !Context.Parameters.HasParameters ? null : Context.Parameters);
 	}
 
 	protected override Expression VisitConstant(ConstantExpression node)
 	{
-		// This is typically the root queryable
 		if (node.Value is IQueryable queryable)
 		{
-			var elementType = queryable.ElementType;
-			_query.ElementType = elementType;
-
-			// Use explicit index pattern from context if set, otherwise get from attribute or use type name
-			var indexPattern = _context.IndexPattern
-				?? _context.MetadataResolver.GetSearchPattern(elementType)
-				?? ToIndexName(elementType.Name);
-
-			_query.AddCommand(new FromCommand(indexPattern));
+			Context.ElementType = queryable.ElementType;
+			Context.Commands.Add(new FromCommand(DefaultIndexPattern ?? string.Empty));
+			return node;
 		}
 
 		return base.VisitConstant(node);
@@ -52,7 +50,7 @@ public class EsqlExpressionVisitor(EsqlQueryContext context) : ExpressionVisitor
 
 	protected override Expression VisitMethodCall(MethodCallExpression node)
 	{
-		// Visit the source first (builds the query from inside out)
+		// Visit the source first (builds the query from inside out).
 		if (node.Arguments.Count > 0)
 			_ = Visit(node.Arguments[0]);
 
@@ -60,83 +58,103 @@ public class EsqlExpressionVisitor(EsqlQueryContext context) : ExpressionVisitor
 
 		switch (methodName)
 		{
-			case "Where":
+			case nameof(EsqlQueryableExtensions.From):
+				VisitFrom(node);
+				break;
+
+			case nameof(Queryable.Where):
 				VisitWhere(node);
 				break;
 
-			case "Select":
+			case nameof(Queryable.Select):
 				VisitSelect(node);
 				break;
 
-			case "OrderBy":
+			case nameof(Queryable.OrderBy):
 				VisitOrderBy(node, descending: false);
 				break;
 
-			case "OrderByDescending":
+			case nameof(Queryable.OrderByDescending):
 				VisitOrderBy(node, descending: true);
 				break;
 
-			case "ThenBy":
+			case nameof(Queryable.ThenBy):
 				VisitThenBy(node, descending: false);
 				break;
 
-			case "ThenByDescending":
+			case nameof(Queryable.ThenByDescending):
 				VisitThenBy(node, descending: true);
 				break;
 
-			case "Take":
+			case nameof(Queryable.Take):
 				VisitTake(node);
 				break;
 
-			case "Skip":
+			case nameof(Queryable.Skip):
 				// Skip is not directly supported in ES|QL
 				// For now, we'll throw an informative exception
 				throw new NotSupportedException(
-					"Skip is not directly supported in ES|QL. Use SORT with pagination instead.");
+					$"'{nameof(Queryable.Skip)}' is not directly supported in ES|QL. Use SORT with pagination instead.");
 
-			case "First":
-			case "FirstOrDefault":
+			case nameof(Queryable.First):
+			case nameof(Queryable.FirstOrDefault):
 				VisitFirst(node);
 				break;
 
-			case "Single":
-			case "SingleOrDefault":
+			case nameof(Queryable.Single):
+			case nameof(Queryable.SingleOrDefault):
 				VisitSingle(node);
 				break;
 
-			case "Count":
-			case "LongCount":
+			case nameof(Queryable.Count):
+			case nameof(Queryable.LongCount):
 				VisitCount(node);
 				break;
 
-			case "Sum":
+			case nameof(Queryable.Sum):
 				VisitAggregation(node, "SUM");
 				break;
 
-			case "Average":
+			case nameof(Queryable.Average):
 				VisitAggregation(node, "AVG");
 				break;
 
-			case "Min":
+			case nameof(Queryable.Min):
 				VisitAggregation(node, "MIN");
 				break;
 
-			case "Max":
+			case nameof(Queryable.Max):
 				VisitAggregation(node, "MAX");
 				break;
 
-			case "Any":
+			case nameof(Queryable.Any):
 				VisitAny(node);
 				break;
 
-			case "GroupBy":
+			case nameof(Queryable.GroupBy):
 				VisitGroupBy(node);
 				break;
 
-			case "Distinct":
+			case nameof(Queryable.Distinct):
 				// Distinct can be handled with STATS ... BY all fields
 				throw new NotSupportedException(
-					"Distinct is not directly supported. Consider using GroupBy instead.");
+					$"'{nameof(Queryable.Distinct)}' is not directly supported. Consider using '{nameof(Queryable.GroupBy)}' instead.");
+
+			case nameof(EsqlQueryableExtensions.Keep):
+				VisitKeep(node);
+				break;
+
+			case nameof(EsqlQueryableExtensions.Drop):
+				VisitDrop(node);
+				break;
+
+			case nameof(EsqlQueryableExtensions.Row):
+				VisitRow(node);
+				break;
+
+			case nameof(EsqlQueryableExtensions.Completion):
+				VisitCompletion(node);
+				break;
 		}
 
 		return node;
@@ -148,11 +166,11 @@ public class EsqlExpressionVisitor(EsqlQueryContext context) : ExpressionVisitor
 			return;
 
 		var predicate = node.Arguments[1];
-		if (predicate is UnaryExpression unary && unary.Operand is LambdaExpression lambda)
+		if (predicate is UnaryExpression { Operand: LambdaExpression lambda })
 		{
-			var whereVisitor = new WhereClauseVisitor(_context);
+			var whereVisitor = new WhereClauseVisitor(Context);
 			var condition = whereVisitor.Translate(lambda.Body);
-			_query.AddCommand(new WhereCommand(condition));
+			Context.Commands.Add(new WhereCommand(condition));
 		}
 	}
 
@@ -162,26 +180,26 @@ public class EsqlExpressionVisitor(EsqlQueryContext context) : ExpressionVisitor
 			return;
 
 		var selector = node.Arguments[1];
-		if (selector is UnaryExpression unary && unary.Operand is LambdaExpression lambda)
+		if (selector is UnaryExpression { Operand: LambdaExpression lambda })
 		{
 			// Check if this Select follows a GroupBy (result selector for aggregations)
 			if (_pendingGroupByKeySelector != null)
 			{
-				var groupByVisitor = new GroupByVisitor(_context);
+				var groupByVisitor = new GroupByVisitor(Context);
 				var statsCommand = groupByVisitor.Translate(_pendingGroupByKeySelector, lambda);
-				_query.AddCommand(statsCommand);
+				Context.Commands.Add(statsCommand);
 				_pendingGroupByKeySelector = null;
 				return;
 			}
 
-			var projectionVisitor = new SelectProjectionVisitor(_context);
+			var projectionVisitor = new SelectProjectionVisitor(Context);
 			var result = projectionVisitor.Translate(lambda);
 
 			if (result.KeepFields.Count > 0)
-				_query.AddCommand(new KeepCommand(result.KeepFields));
+				Context.Commands.Add(new KeepCommand(result.KeepFields));
 
 			if (result.EvalExpressions.Count > 0)
-				_query.AddCommand(new EvalCommand(result.EvalExpressions));
+				Context.Commands.Add(new EvalCommand(result.EvalExpressions));
 		}
 	}
 
@@ -194,7 +212,7 @@ public class EsqlExpressionVisitor(EsqlQueryContext context) : ExpressionVisitor
 		if (keySelector is UnaryExpression unary && unary.Operand is LambdaExpression lambda)
 		{
 			var fieldName = ExtractFieldName(lambda.Body);
-			_query.AddCommand(new SortCommand(new SortField(fieldName, descending)));
+			Context.Commands.Add(new SortCommand(new SortField(fieldName, descending)));
 		}
 	}
 
@@ -208,8 +226,10 @@ public class EsqlExpressionVisitor(EsqlQueryContext context) : ExpressionVisitor
 		{
 			var fieldName = ExtractFieldName(lambda.Body);
 
+			// TODO: This looks broken...
+
 			// Find the last SortCommand and add to it
-			var existingSorts = _query.SortCommands.ToList();
+			var existingSorts = Context.Commands.OfType<SortCommand>().ToList();
 			if (existingSorts.Count > 0)
 			{
 				var lastSort = existingSorts.Last();
@@ -218,10 +238,10 @@ public class EsqlExpressionVisitor(EsqlQueryContext context) : ExpressionVisitor
 
 				// Remove the old sort and add a new combined one
 				// (This is a simplification - in practice we'd modify the query model)
-				_query.AddCommand(new SortCommand(new SortField(fieldName, descending)));
+				Context.Commands.Add(new SortCommand(new SortField(fieldName, descending)));
 			}
 			else
-				_query.AddCommand(new SortCommand(new SortField(fieldName, descending)));
+				Context.Commands.Add(new SortCommand(new SortField(fieldName, descending)));
 		}
 	}
 
@@ -232,7 +252,7 @@ public class EsqlExpressionVisitor(EsqlQueryContext context) : ExpressionVisitor
 
 		var countArg = node.Arguments[1];
 		if (countArg is ConstantExpression constant && constant.Value is int count)
-			_query.AddCommand(new LimitCommand(count));
+			Context.Commands.Add(new LimitCommand(count));
 	}
 
 	private void VisitFirst(MethodCallExpression node)
@@ -243,13 +263,13 @@ public class EsqlExpressionVisitor(EsqlQueryContext context) : ExpressionVisitor
 			var predicate = node.Arguments[1];
 			if (predicate is UnaryExpression unary && unary.Operand is LambdaExpression lambda)
 			{
-				var whereVisitor = new WhereClauseVisitor(_context);
+				var whereVisitor = new WhereClauseVisitor(Context);
 				var condition = whereVisitor.Translate(lambda.Body);
-				_query.AddCommand(new WhereCommand(condition));
+				Context.Commands.Add(new WhereCommand(condition));
 			}
 		}
 
-		_query.AddCommand(new LimitCommand(1));
+		Context.Commands.Add(new LimitCommand(1));
 	}
 
 	private void VisitSingle(MethodCallExpression node)
@@ -258,16 +278,16 @@ public class EsqlExpressionVisitor(EsqlQueryContext context) : ExpressionVisitor
 		if (node.Arguments.Count >= 2)
 		{
 			var predicate = node.Arguments[1];
-			if (predicate is UnaryExpression unary && unary.Operand is LambdaExpression lambda)
+			if (predicate is UnaryExpression { Operand: LambdaExpression lambda })
 			{
-				var whereVisitor = new WhereClauseVisitor(_context);
+				var whereVisitor = new WhereClauseVisitor(Context);
 				var condition = whereVisitor.Translate(lambda.Body);
-				_query.AddCommand(new WhereCommand(condition));
+				Context.Commands.Add(new WhereCommand(condition));
 			}
 		}
 
 		// Limit to 2 to detect multiple results
-		_query.AddCommand(new LimitCommand(2));
+		Context.Commands.Add(new LimitCommand(2));
 	}
 
 	private void VisitCount(MethodCallExpression node)
@@ -276,15 +296,15 @@ public class EsqlExpressionVisitor(EsqlQueryContext context) : ExpressionVisitor
 		if (node.Arguments.Count >= 2)
 		{
 			var predicate = node.Arguments[1];
-			if (predicate is UnaryExpression unary && unary.Operand is LambdaExpression lambda)
+			if (predicate is UnaryExpression { Operand: LambdaExpression lambda })
 			{
-				var whereVisitor = new WhereClauseVisitor(_context);
+				var whereVisitor = new WhereClauseVisitor(Context);
 				var condition = whereVisitor.Translate(lambda.Body);
-				_query.AddCommand(new WhereCommand(condition));
+				Context.Commands.Add(new WhereCommand(condition));
 			}
 		}
 
-		_query.AddCommand(new StatsCommand(["count = COUNT(*)"]));
+		Context.Commands.Add(new StatsCommand(["count = COUNT(*)"]));
 	}
 
 	private void VisitAggregation(MethodCallExpression node, string function)
@@ -299,7 +319,7 @@ public class EsqlExpressionVisitor(EsqlQueryContext context) : ExpressionVisitor
 		}
 
 		var resultName = function.ToLowerInvariant();
-		_query.AddCommand(new StatsCommand([$"{resultName} = {function}({fieldName})"]));
+		Context.Commands.Add(new StatsCommand([$"{resultName} = {function}({fieldName})"]));
 	}
 
 	private void VisitAny(MethodCallExpression node)
@@ -310,13 +330,13 @@ public class EsqlExpressionVisitor(EsqlQueryContext context) : ExpressionVisitor
 			var predicate = node.Arguments[1];
 			if (predicate is UnaryExpression unary && unary.Operand is LambdaExpression lambda)
 			{
-				var whereVisitor = new WhereClauseVisitor(_context);
+				var whereVisitor = new WhereClauseVisitor(Context);
 				var condition = whereVisitor.Translate(lambda.Body);
-				_query.AddCommand(new WhereCommand(condition));
+				Context.Commands.Add(new WhereCommand(condition));
 			}
 		}
 
-		_query.AddCommand(new LimitCommand(1));
+		Context.Commands.Add(new LimitCommand(1));
 	}
 
 	private void VisitGroupBy(MethodCallExpression node)
@@ -333,33 +353,160 @@ public class EsqlExpressionVisitor(EsqlQueryContext context) : ExpressionVisitor
 		}
 	}
 
-	private string ExtractFieldName(Expression expression) =>
-		expression switch
-		{
-			MemberExpression member => ResolveWithKeyword(member.Member),
-			UnaryExpression { Operand: MemberExpression innerMember } => ResolveWithKeyword(innerMember.Member),
-			_ => throw new NotSupportedException($"Cannot extract field name from expression: {expression}")
-		};
-
-	private string ResolveWithKeyword(MemberInfo member)
+	private void VisitFrom(MethodCallExpression node)
 	{
-		var fieldName = _context.MetadataResolver.Resolve(member);
-		if (_context.MetadataResolver.IsTextField(member))
-			fieldName += ".keyword";
-		return fieldName;
+		if (node.Arguments.Count < 2)
+			throw new NotSupportedException();
+
+		var indexPatternExpression = node.Arguments[1];
+		var indexPattern = ExpressionConstantResolver.Resolve(indexPatternExpression);
+
+		if (indexPattern is not string indexPatternString)
+			throw new NotSupportedException("The index pattern only supports string constants.");
+
+		var from = Context.Commands.OfType<FromCommand>().Single();
+		var i = Context.Commands.IndexOf(from);
+		Context.Commands.RemoveAt(i);
+		Context.Commands.Insert(i, new FromCommand(indexPatternString));
 	}
 
-	private static string ToIndexName(string typeName)
+	private void VisitKeep(MethodCallExpression node)
 	{
-		// Convert PascalCase to kebab-case with wildcard
-		var result = new System.Text.StringBuilder();
-		for (var i = 0; i < typeName.Length; i++)
+		if (node.Arguments.Count < 2)
+			return;
+
+		var arg = node.Arguments[1];
+
+		// String params overload: Keep("field1", "field2")
+		if (arg is ConstantExpression { Value: string[] fields })
 		{
-			var c = typeName[i];
-			if (char.IsUpper(c) && i > 0)
-				_ = result.Append('-');
-			_ = result.Append(char.ToLowerInvariant(c));
+			Context.Commands.Add(new KeepCommand(fields));
+			return;
 		}
-		return result + "*";
+
+		// Lambda selector overload: Keep(l => l.Field1, l => l.Field2)
+		if (arg is NewArrayExpression arrayExpr)
+		{
+			var fieldNames = ExtractFieldsFromSelectors(arrayExpr);
+			Context.Commands.Add(new KeepCommand(fieldNames));
+			return;
+		}
+
+		// Projection overload: Keep(l => new { l.Field1, Alias = l.Field2 })
+		if (arg is UnaryExpression { Operand: LambdaExpression lambda })
+		{
+			var projectionVisitor = new SelectProjectionVisitor(Context);
+			var result = projectionVisitor.Translate(lambda);
+
+			if (result.EvalExpressions.Count > 0)
+				Context.Commands.Add(new EvalCommand(result.EvalExpressions));
+
+			// Combine direct keep fields and eval result names into a single KEEP
+			var allKeepFields = new List<string>(result.KeepFields);
+			foreach (var evalExpr in result.EvalExpressions)
+			{
+				var aliasName = evalExpr.Split('=')[0].Trim();
+				allKeepFields.Add(aliasName);
+			}
+
+			if (allKeepFields.Count > 0)
+				Context.Commands.Add(new KeepCommand(allKeepFields));
+		}
 	}
+
+	private void VisitDrop(MethodCallExpression node)
+	{
+		if (node.Arguments.Count < 2)
+			return;
+
+		var arg = node.Arguments[1];
+
+		// String params overload: Drop("field1", "field2")
+		if (arg is ConstantExpression { Value: string[] fields })
+		{
+			Context.Commands.Add(new DropCommand(fields));
+			return;
+		}
+
+		// Lambda selector overload: Drop(l => l.Field1, l => l.Field2)
+		if (arg is NewArrayExpression arrayExpr)
+		{
+			var fieldNames = ExtractFieldsFromSelectors(arrayExpr);
+			Context.Commands.Add(new DropCommand(fieldNames));
+		}
+	}
+
+	private void VisitRow(MethodCallExpression node)
+	{
+		if (node.Arguments.Count < 2)
+			return;
+
+		var arg = node.Arguments[1];
+		if (arg is not UnaryExpression { Operand: LambdaExpression lambda })
+			throw new NotSupportedException("Row requires a lambda expression.");
+
+		if (lambda.Body is not NewExpression newExpr)
+			throw new NotSupportedException("Row lambda must return an anonymous object (new { ... }).");
+
+		var expressions = new List<string>();
+		for (var i = 0; i < newExpr.Arguments.Count; i++)
+		{
+			var name = newExpr.Members![i].Name;
+			var value = ExpressionConstantResolver.Resolve(newExpr.Arguments[i]);
+			var formatted = Context.GetValueOrParameterName(name, value);
+			expressions.Add($"{name} = {formatted}");
+		}
+
+		// ROW is a source command — replace the default FROM
+		var from = Context.Commands.OfType<FromCommand>().SingleOrDefault();
+		if (from != null)
+		{
+			var idx = Context.Commands.IndexOf(from);
+			Context.Commands.RemoveAt(idx);
+			Context.Commands.Insert(idx, new RowCommand(expressions));
+		}
+		else
+			Context.Commands.Add(new RowCommand(expressions));
+	}
+
+	private void VisitCompletion(MethodCallExpression node)
+	{
+		if (node.Arguments.Count < 4)
+			return;
+
+		var promptArg = node.Arguments[1];
+		var inferenceIdArg = node.Arguments[2];
+		var columnArg = node.Arguments[3];
+
+		var inferenceId = ExpressionConstantResolver.Resolve(inferenceIdArg) as string
+			?? throw new NotSupportedException("The inferenceId parameter must be a string constant.");
+
+		var column = ExpressionConstantResolver.Resolve(columnArg) as string;
+
+		// Lambda overload: Completion(l => l.Field, inferenceId, column)
+		if (promptArg is UnaryExpression { Operand: LambdaExpression lambda })
+		{
+			var fieldName = ExtractFieldName(lambda.Body);
+			Context.Commands.Add(new CompletionCommand(fieldName, inferenceId, column));
+			return;
+		}
+
+		// String overload: Completion("fieldName", inferenceId, column)
+		if (ExpressionConstantResolver.Resolve(promptArg) is string prompt)
+			Context.Commands.Add(new CompletionCommand(prompt, inferenceId, column));
+	}
+
+	private List<string> ExtractFieldsFromSelectors(NewArrayExpression arrayExpr)
+	{
+		var fieldNames = new List<string>();
+		foreach (var element in arrayExpr.Expressions)
+		{
+			if (element is UnaryExpression { Operand: LambdaExpression selectorLambda })
+				fieldNames.Add(selectorLambda.Body.ResolveFieldName(Context.FieldMetadataResolver));
+		}
+		return fieldNames;
+	}
+
+	private string ExtractFieldName(Expression expression) =>
+		expression.ResolveFieldName(Provider.FieldMetadataResolver);
 }

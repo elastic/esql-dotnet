@@ -5,14 +5,13 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Elastic.Esql;
-using Elastic.Esql.Execution;
 using Elastic.Transport;
 using HttpMethod = Elastic.Transport.HttpMethod;
 
 namespace Elastic.Clients.Esql.Execution;
 
 /// <summary>Executes ES|QL queries against Elasticsearch via HTTP transport.</summary>
-public class EsqlTransportExecutor(EsqlClientSettings settings) : IEsqlQueryExecutor
+public class EsqlTransportExecutor(EsqlClientSettings settings)
 {
 	private readonly EsqlClientSettings _settings = settings ?? throw new ArgumentNullException(nameof(settings));
 
@@ -25,11 +24,11 @@ public class EsqlTransportExecutor(EsqlClientSettings settings) : IEsqlQueryExec
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
 	};
 
-	/// <inheritdoc/>
+	/// <summary>Executes an ES|QL query and returns the response.</summary>
 	public async Task<EsqlResponse> ExecuteAsync(string esql, CancellationToken cancellationToken = default) =>
 		await ExecuteAsync(esql, (EsqlQueryOptions?)null, cancellationToken);
 
-	/// <inheritdoc/>
+	/// <summary>Executes an ES|QL query with named parameters and returns the response.</summary>
 	public async Task<EsqlResponse> ExecuteAsync(string esql, IReadOnlyList<object>? parameters, CancellationToken cancellationToken = default) =>
 		await ExecuteAsync(esql, parameters != null ? new EsqlQueryOptions { Parameters = parameters } : null, cancellationToken);
 

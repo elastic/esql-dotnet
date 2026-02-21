@@ -10,22 +10,24 @@ public class AttributeTests : EsqlTestBase
 	public void EsqlField_CustomName_GeneratesCorrectField()
 	{
 		// LogEntry.Level has [EsqlField("log.level")]
-		var esql = Client.Query<LogEntry>()
-			.Where(l => l.Level == "ERROR")
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Level.MultiField("keyword") == "ERROR")
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
             | WHERE log.level.keyword == "ERROR"
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void EsqlField_Timestamp_GeneratesCorrectField()
 	{
 		// LogEntry.Timestamp has [EsqlField("@timestamp")]
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.OrderBy(l => l.Timestamp)
 			.ToString();
 
@@ -33,14 +35,15 @@ public class AttributeTests : EsqlTestBase
 			"""
             FROM logs-*
             | SORT @timestamp
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void EsqlIndex_Attribute_GeneratesCorrectFrom()
 	{
 		// LogEntry has [EsqlIndex("logs-*")]
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.ToString();
 
 		_ = esql.Should().Be("FROM logs-*");

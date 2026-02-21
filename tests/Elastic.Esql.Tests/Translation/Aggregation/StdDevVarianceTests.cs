@@ -9,8 +9,9 @@ public class StdDevVarianceTests : EsqlTestBase
 	[Test]
 	public void StdDev_InGroupBy_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.GroupBy(l => l.Level)
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.GroupBy(l => l.Level.MultiField("keyword"))
 			.Select(g => new
 			{
 				Level = g.Key,
@@ -22,14 +23,15 @@ public class StdDevVarianceTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS stdDevDuration = STD_DEV(duration) BY level = log.level.keyword
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Variance_InGroupBy_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.GroupBy(l => l.Level)
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.GroupBy(l => l.Level.MultiField("keyword"))
 			.Select(g => new
 			{
 				Level = g.Key,
@@ -41,6 +43,6 @@ public class StdDevVarianceTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS varDuration = VARIANCE(duration) BY level = log.level.keyword
-            """);
+            """.NativeLineEndings());
 	}
 }

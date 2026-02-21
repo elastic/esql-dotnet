@@ -9,28 +9,30 @@ public class RlikeTests : EsqlTestBase
 	[Test]
 	public void Rlike_SimplePattern_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.Where(l => EsqlFunctions.Rlike(l.Message, "error|warning"))
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => EsqlFunctions.Rlike(l.Message.MultiField("keyword"), "error|warning"))
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
             | WHERE message.keyword RLIKE "error|warning"
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Rlike_ComplexPattern_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.Where(l => EsqlFunctions.Rlike(l.Message, "^[A-Z]{3}-\\d{4}"))
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => EsqlFunctions.Rlike(l.Message.MultiField("keyword"), "^[A-Z]{3}-\\d{4}"))
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
             | WHERE message.keyword RLIKE "^[A-Z]{3}-\\d{4}"
-            """);
+            """.NativeLineEndings());
 	}
 }

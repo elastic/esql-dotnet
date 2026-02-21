@@ -7,28 +7,27 @@ using Elastic.Esql.QueryModel;
 namespace Elastic.Esql.Core;
 
 /// <summary>
-/// Extended IQueryable interface for ES|QL queries.
+/// Extended <see cref="IQueryable{T}"/> interface for ES|QL queries.
 /// </summary>
 public interface IEsqlQueryable<out T> : IQueryable<T>
 {
 	/// <summary>
-	/// Gets the ES|QL query string without executing the query.
-	/// When <paramref name="inlineParameters"/> is <c>false</c>, captured variables become <c>?name</c> placeholders.
+	/// Translates the query and returns the ES|QL query string.
 	/// </summary>
+	/// <param name="inlineParameters">Set <see langword="true"/> to inline captured variables instead of translating them to <c>?name</c> placeholders.</param>
+	/// <returns>The ES|QL query string.</returns>
 	string ToEsqlString(bool inlineParameters = true);
 
 	/// <summary>
-	/// Gets the query context.
+	/// Translates the query and returns the collected named parameters, or <see langword="null"/> if none.
 	/// </summary>
-	EsqlQueryContext Context { get; }
+	/// <returns>An <see cref="EsqlParameters"/> object containing the collected parameters for the query, or <see langword="null"/> if none.</returns>
+	EsqlParameters? GetParameters();
 
 	/// <summary>
 	/// Returns an async enumerable for streaming query results.
 	/// </summary>
+	/// <param name="cancellationToken">A cancellation token that can be used to cancel the asynchronous iteration.</param>
+	/// <returns>An asynchronous enumerable that yields elements of type <typeparamref name="T"/> as they become available.</returns>
 	IAsyncEnumerable<T> AsAsyncEnumerable(CancellationToken cancellationToken = default);
-
-	/// <summary>
-	/// Translates the query and returns the collected named parameters, or null if none.
-	/// </summary>
-	EsqlParameters? GetParameters();
 }

@@ -9,7 +9,8 @@ public class ComputedFieldTests : EsqlTestBase
 	[Test]
 	public void Select_ComputedField_Multiplication_GeneratesEval()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { l.Duration, DoubleDuration = l.Duration * 2 })
 			.ToString();
 
@@ -18,13 +19,14 @@ public class ComputedFieldTests : EsqlTestBase
             FROM logs-*
             | KEEP duration
             | EVAL doubleDuration = (duration * 2)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Select_ComputedField_Subtraction_GeneratesEval()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Adjusted = l.StatusCode - 100 })
 			.ToString();
 
@@ -32,13 +34,14 @@ public class ComputedFieldTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL adjusted = (statusCode - 100)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Select_ComputedField_Division_GeneratesEval()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { DurationSeconds = l.Duration / 1000 })
 			.ToString();
 
@@ -46,13 +49,14 @@ public class ComputedFieldTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL durationSeconds = (duration / 1000)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Select_TernaryOperator_GeneratesCaseWhen()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Category = l.StatusCode >= 400 ? "Error" : "Success" })
 			.ToString();
 
@@ -60,6 +64,6 @@ public class ComputedFieldTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL category = CASE WHEN (statusCode >= 400) THEN "Error" ELSE "Success" END
-            """);
+            """.NativeLineEndings());
 	}
 }

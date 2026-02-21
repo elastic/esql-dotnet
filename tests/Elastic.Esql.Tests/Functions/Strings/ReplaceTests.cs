@@ -9,7 +9,8 @@ public class ReplaceTests : EsqlTestBase
 	[Test]
 	public void Replace_EsqlFunction_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.Replace(l.Message, "old", "new") })
 			.ToString();
 
@@ -17,13 +18,14 @@ public class ReplaceTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = REPLACE(message, "old", "new")
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Replace_Native_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = l.Message.Replace("old", "new") })
 			.ToString();
 
@@ -31,20 +33,21 @@ public class ReplaceTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = REPLACE(message, "old", "new")
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Replace_Native_InWhere_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.Where(l => l.Message.Replace("old", "new") == "updated")
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message.MultiField("keyword").Replace("old", "new") == "updated")
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
             | WHERE REPLACE(message.keyword, "old", "new") == "updated"
-            """);
+            """.NativeLineEndings());
 	}
 }

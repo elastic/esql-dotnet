@@ -9,7 +9,8 @@ public class StringIndexTests : EsqlTestBase
 	[Test]
 	public void String_Substring_StartIndex_InSelect_GeneratesSubstring()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Sub = l.Message.Substring(5) })
 			.ToString();
 
@@ -17,13 +18,14 @@ public class StringIndexTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL sub = SUBSTRING(message, 5)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void String_Substring_StartAndLength_InSelect_GeneratesSubstring()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Sub = l.Message.Substring(0, 10) })
 			.ToString();
 
@@ -31,13 +33,14 @@ public class StringIndexTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL sub = SUBSTRING(message, 0, 10)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void String_Index_FirstChar_InSelect_GeneratesSubstring()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { FirstChar = l.Message[0] })
 			.ToString();
 
@@ -45,13 +48,14 @@ public class StringIndexTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL firstChar = SUBSTRING(message, 1, 1)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void String_Index_AtPosition_InSelect_GeneratesSubstring()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { CharAt5 = l.Message[5] })
 			.ToString();
 
@@ -59,64 +63,68 @@ public class StringIndexTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL charAt5 = SUBSTRING(message, 6, 1)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void String_Index_FirstChar_InWhere_GeneratesSubstring()
 	{
 		// Note: ES|QL SUBSTRING returns a string, so we compare with string
-		var esql = Client.Query<LogEntry>()
-			.Where(l => l.Message.Substring(0, 1) == "E")
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message.MultiField("keyword").Substring(0, 1) == "E")
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
             | WHERE SUBSTRING(message.keyword, 0, 1) == "E"
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void String_Index_AtPosition_InWhere_GeneratesSubstring()
 	{
 		// Note: ES|QL SUBSTRING returns a string, so we compare with string
-		var esql = Client.Query<LogEntry>()
-			.Where(l => l.Message.Substring(3, 1) == "O")
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message.MultiField("keyword").Substring(3, 1) == "O")
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
             | WHERE SUBSTRING(message.keyword, 3, 1) == "O"
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void String_Substring_InWhere_GeneratesSubstring()
 	{
-		var esql = Client.Query<LogEntry>()
-			.Where(l => l.Message.Substring(0, 5) == "ERROR")
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message.MultiField("keyword").Substring(0, 5) == "ERROR")
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
             | WHERE SUBSTRING(message.keyword, 0, 5) == "ERROR"
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void String_Substring_WithLength_InWhere_GeneratesSubstring()
 	{
-		var esql = Client.Query<LogEntry>()
-			.Where(l => l.Message.Substring(0, 4) == "INFO")
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message.MultiField("keyword").Substring(0, 4) == "INFO")
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
             | WHERE SUBSTRING(message.keyword, 0, 4) == "INFO"
-            """);
+            """.NativeLineEndings());
 	}
 }

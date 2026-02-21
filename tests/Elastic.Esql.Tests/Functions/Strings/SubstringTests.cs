@@ -10,7 +10,8 @@ public class SubstringTests : EsqlTestBase
 
 	public void Substring_TwoArgs_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Prefix = EsqlFunctions.Substring(l.Message, 0) })
 			.ToString();
 
@@ -18,14 +19,15 @@ public class SubstringTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL prefix = SUBSTRING(message, 0)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 
 	public void Substring_ThreeArgs_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Prefix = EsqlFunctions.Substring(l.Message, 0, 10) })
 			.ToString();
 
@@ -33,6 +35,6 @@ public class SubstringTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL prefix = SUBSTRING(message, 0, 10)
-            """);
+            """.NativeLineEndings());
 	}
 }

@@ -9,8 +9,9 @@ public class PercentileTests : EsqlTestBase
 	[Test]
 	public void Percentile_InGroupBy_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.GroupBy(l => l.Level)
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.GroupBy(l => l.Level.MultiField("keyword"))
 			.Select(g => new
 			{
 				Level = g.Key,
@@ -22,6 +23,6 @@ public class PercentileTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS p99 = PERCENTILE(duration, 99) BY level = log.level.keyword
-            """);
+            """.NativeLineEndings());
 	}
 }

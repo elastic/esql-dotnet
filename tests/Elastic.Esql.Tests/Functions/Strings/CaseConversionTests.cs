@@ -10,7 +10,8 @@ public class CaseConversionTests : EsqlTestBase
 
 	public void ToLower_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { LowerLevel = EsqlFunctions.ToLower(l.Level) })
 			.ToString();
 
@@ -18,14 +19,15 @@ public class CaseConversionTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL lowerLevel = TO_LOWER(log.level)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 
 	public void ToUpper_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { UpperLevel = EsqlFunctions.ToUpper(l.Level) })
 			.ToString();
 
@@ -33,6 +35,6 @@ public class CaseConversionTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL upperLevel = TO_UPPER(log.level)
-            """);
+            """.NativeLineEndings());
 	}
 }

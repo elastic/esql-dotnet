@@ -10,7 +10,8 @@ public class RoundTests : EsqlTestBase
 
 	public void Round_NoDecimals_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { RoundedDuration = EsqlFunctions.Round(l.Duration) })
 			.ToString();
 
@@ -18,14 +19,15 @@ public class RoundTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL roundedDuration = ROUND(duration)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 
 	public void Round_WithDecimals_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { RoundedDuration = EsqlFunctions.Round(l.Duration, 2) })
 			.ToString();
 
@@ -33,6 +35,6 @@ public class RoundTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL roundedDuration = ROUND(duration, 2)
-            """);
+            """.NativeLineEndings());
 	}
 }

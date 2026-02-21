@@ -10,47 +10,53 @@ namespace Elastic.Esql.Tests.Generation;
 
 public class CompletionCommandTests
 {
-	private readonly EsqlGenerator _generator = new();
+	private readonly EsqlFormatter _formatter = new();
 
 	[Test]
 	public void Generate_CompletionWithColumn_GeneratesCorrectEsql()
 	{
-		var query = new EsqlQuery();
-		query.AddCommand(new FromCommand("logs-*"));
-		query.AddCommand(new CompletionCommand("message", ".openai-gpt-4.1-completion", "analysis"));
+		var query = new EsqlQuery(typeof(object),
+		[
+			new FromCommand("logs-*"),
+			new CompletionCommand("message", ".openai-gpt-4.1-completion", "analysis")
+		], null);
 
-		var result = _generator.Generate(query);
+		var result = _formatter.Format(query);
 
 		_ = result.Should().Be(
 			"""
-            FROM logs-*
-            | COMPLETION analysis = message WITH { "inference_id" : ".openai-gpt-4.1-completion" }
-            """);
+			FROM logs-*
+			| COMPLETION analysis = message WITH { "inference_id" : ".openai-gpt-4.1-completion" }
+			""".NativeLineEndings());
 	}
 
 	[Test]
 	public void Generate_CompletionWithoutColumn_GeneratesCorrectEsql()
 	{
-		var query = new EsqlQuery();
-		query.AddCommand(new FromCommand("logs-*"));
-		query.AddCommand(new CompletionCommand("message", ".openai-gpt-4.1-completion"));
+		var query = new EsqlQuery(typeof(object),
+		[
+			new FromCommand("logs-*"),
+			new CompletionCommand("message", ".openai-gpt-4.1-completion")
+		], null);
 
-		var result = _generator.Generate(query);
+		var result = _formatter.Format(query);
 
 		_ = result.Should().Be(
 			"""
-            FROM logs-*
-            | COMPLETION message WITH { "inference_id" : ".openai-gpt-4.1-completion" }
-            """);
+			FROM logs-*
+			| COMPLETION message WITH { "inference_id" : ".openai-gpt-4.1-completion" }
+			""".NativeLineEndings());
 	}
 
 	[Test]
 	public void Generate_RowWithSingleExpression_GeneratesCorrectEsql()
 	{
-		var query = new EsqlQuery();
-		query.AddCommand(new RowCommand("prompt = \"Hello\""));
+		var query = new EsqlQuery(typeof(object),
+		[
+			new RowCommand("prompt = \"Hello\"")
+		], null);
 
-		var result = _generator.Generate(query);
+		var result = _formatter.Format(query);
 
 		_ = result.Should().Be("ROW prompt = \"Hello\"");
 	}
@@ -58,10 +64,12 @@ public class CompletionCommandTests
 	[Test]
 	public void Generate_RowWithMultipleExpressions_GeneratesCorrectEsql()
 	{
-		var query = new EsqlQuery();
-		query.AddCommand(new RowCommand("a = 1", "b = \"two\""));
+		var query = new EsqlQuery(typeof(object),
+		[
+			new RowCommand("a = 1", "b = \"two\"")
+		], null);
 
-		var result = _generator.Generate(query);
+		var result = _formatter.Format(query);
 
 		_ = result.Should().Be("ROW a = 1, b = \"two\"");
 	}
@@ -69,42 +77,46 @@ public class CompletionCommandTests
 	[Test]
 	public void Generate_RowAndCompletion_GeneratesPipeline()
 	{
-		var query = new EsqlQuery();
-		query.AddCommand(new RowCommand("prompt = \"Tell me about Elasticsearch\""));
-		query.AddCommand(new CompletionCommand("prompt", ".openai-gpt-4.1-completion", "answer"));
+		var query = new EsqlQuery(typeof(object),
+		[
+			new RowCommand("prompt = \"Tell me about Elasticsearch\""),
+			new CompletionCommand("prompt", ".openai-gpt-4.1-completion", "answer")
+		], null);
 
-		var result = _generator.Generate(query);
+		var result = _formatter.Format(query);
 
 		_ = result.Should().Be(
 			"""
-            ROW prompt = "Tell me about Elasticsearch"
-            | COMPLETION answer = prompt WITH { "inference_id" : ".openai-gpt-4.1-completion" }
-            """);
+			ROW prompt = "Tell me about Elasticsearch"
+			| COMPLETION answer = prompt WITH { "inference_id" : ".openai-gpt-4.1-completion" }
+			""".NativeLineEndings());
 	}
 
 	[Test]
 	public void Generate_FullRagPipeline_GeneratesCorrectEsql()
 	{
-		var query = new EsqlQuery();
-		query.AddCommand(new FromCommand("logs-*"));
-		query.AddCommand(new WhereCommand("level == \"ERROR\""));
-		query.AddCommand(new SortCommand(new SortField("@timestamp", true)));
-		query.AddCommand(new LimitCommand(10));
-		query.AddCommand(new EvalCommand("prompt = CONCAT(\"Summarize: \", message)"));
-		query.AddCommand(new CompletionCommand("prompt", ".openai-gpt-4.1-completion", "summary"));
-		query.AddCommand(new KeepCommand("message", "summary"));
+		var query = new EsqlQuery(typeof(object),
+		[
+			new FromCommand("logs-*"),
+			new WhereCommand("level == \"ERROR\""),
+			new SortCommand(new SortField("@timestamp", true)),
+			new LimitCommand(10),
+			new EvalCommand("prompt = CONCAT(\"Summarize: \", message)"),
+			new CompletionCommand("prompt", ".openai-gpt-4.1-completion", "summary"),
+			new KeepCommand("message", "summary")
+		], null);
 
-		var result = _generator.Generate(query);
+		var result = _formatter.Format(query);
 
 		_ = result.Should().Be(
 			"""
-            FROM logs-*
-            | WHERE level == "ERROR"
-            | SORT @timestamp DESC
-            | LIMIT 10
-            | EVAL prompt = CONCAT("Summarize: ", message)
-            | COMPLETION summary = prompt WITH { "inference_id" : ".openai-gpt-4.1-completion" }
-            | KEEP message, summary
-            """);
+			FROM logs-*
+			| WHERE level == "ERROR"
+			| SORT @timestamp DESC
+			| LIMIT 10
+			| EVAL prompt = CONCAT("Summarize: ", message)
+			| COMPLETION summary = prompt WITH { "inference_id" : ".openai-gpt-4.1-completion" }
+			| KEEP message, summary
+			""".NativeLineEndings());
 	}
 }

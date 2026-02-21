@@ -4,7 +4,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace Elastic.Esql.Execution;
+namespace Elastic.Clients.Esql.Execution;
 
 /// <summary>
 /// Request DTO for ES|QL query execution.

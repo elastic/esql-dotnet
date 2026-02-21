@@ -11,12 +11,13 @@
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 	</PropertyGroup>
 
-	<ItemGroup>
-		<None Include="README.md" Pack="true" PackagePath="\" />
-	</ItemGroup>
+	<PropertyGroup>
+		<PolySharpIncludeRuntimeSupportedAttributes>true</PolySharpIncludeRuntimeSupportedAttributes>
+	</PropertyGroup>
 
 	<ItemGroup>
 		<PackageReference Include="Elastic.Mapping" />
+		<None Include="README.md" Pack="true" PackagePath="\" />
 	</ItemGroup>
 
 	<!-- Polyfills for netstandard2.0 -->

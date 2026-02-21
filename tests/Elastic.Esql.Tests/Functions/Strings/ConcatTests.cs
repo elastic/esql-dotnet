@@ -10,7 +10,8 @@ public class ConcatTests : EsqlTestBase
 
 	public void Concat_TwoFields_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Combined = EsqlFunctions.Concat(l.Level, l.Message) })
 			.ToString();
 
@@ -18,6 +19,6 @@ public class ConcatTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL combined = CONCAT(log.level, message)
-            """);
+            """.NativeLineEndings());
 	}
 }

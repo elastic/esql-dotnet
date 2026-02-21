@@ -9,19 +9,20 @@ public class CountDistinctTests : EsqlTestBase
 	[Test]
 	public void CountDistinct_InGroupBy_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.GroupBy(l => l.Level)
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.GroupBy(l => l.Level.MultiField("keyword"))
 			.Select(g => new
 			{
 				Level = g.Key,
-				UniqueIps = EsqlFunctions.CountDistinct(g, l => l.ClientIp)
+				UniqueIps = EsqlFunctions.CountDistinct(g, l => l.ClientIp.MultiField("keyword"))
 			})
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
-            FROM logs-*
-            | STATS uniqueIps = COUNT_DISTINCT(clientIp.keyword) BY level = log.level.keyword
-            """);
+			FROM logs-*
+			| STATS uniqueIps = COUNT_DISTINCT(clientIp.keyword) BY level = log.level.keyword
+			""".NativeLineEndings());
 	}
 }

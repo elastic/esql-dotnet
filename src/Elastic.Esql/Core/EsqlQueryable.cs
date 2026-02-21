@@ -4,40 +4,61 @@
 
 using System.Collections;
 using System.Linq.Expressions;
+using System.Text.Json;
+using Elastic.Esql.FieldMetadataResolver;
 using Elastic.Esql.Generation;
 using Elastic.Esql.QueryModel;
-using Elastic.Mapping;
+using Elastic.Esql.Validation;
 
 namespace Elastic.Esql.Core;
 
 /// <summary>
 /// IQueryable implementation for ES|QL queries.
 /// </summary>
-public class EsqlQueryable<T> : IEsqlQueryable<T>, IOrderedQueryable<T>
+public sealed class EsqlQueryable<T> : IEsqlQueryable<T>, IOrderedQueryable<T>
 {
-	private readonly EsqlQueryProvider _provider;
+	/// <inheritdoc/>
+	public Type ElementType => typeof(T);
+
+	/// <inheritdoc/>
+	public Expression Expression { get; }
+
+	/// <inheritdoc cref="IQueryable.Provider"/>
+	public EsqlQueryProvider Provider { get; }
+
+	/// <inheritdoc/>
+	IQueryProvider IQueryable.Provider => Provider;
 
 	/// <summary>
-	/// Creates a translation-only queryable using reflection for field resolution.
+	/// Creates a new ESQL queryable.
 	/// </summary>
-	public EsqlQueryable() : this(new EsqlQueryProvider(new EsqlQueryContext()))
+	/// <remarks>
+	///	The resulting queryable will use the reflection based <see cref="SystemTextJsonFieldMetadataResolver"/> to resolve field metadata.
+	/// In AOT context, please use the <see cref="EsqlQueryable{T}(EsqlQueryProvider)"/> overload instead.
+	/// <para>
+	/// The <see cref="SystemTextJsonFieldMetadataResolver"/> is fully AOT compatible when initializing it using a <see cref="JsonSerializerOptions"/>
+	/// instance that is linked to a source generated <see cref="JsonSerializerOptions.TypeInfoResolver"/> context.
+	/// </para>
+	/// <para>
+	///	The <c>Elastic.Clients.Esql</c> and <c>Elastic.Clients.Elasticsearch</c> packages also provide AOT compatible <see cref="IEsqlFieldMetadataResolver"/>
+	/// implementations utilizing the capabilities of the <c>Elastic.Mapping</c> framework.
+	/// </para>
+	/// </remarks>
+	public EsqlQueryable()
 	{
+		Provider = new EsqlQueryProvider(new SystemTextJsonFieldMetadataResolver(null));
+		Expression = Expression.Constant(this);
 	}
 
 	/// <summary>
-	/// Creates a translation-only queryable with an explicit mapping context for field resolution.
+	/// Creates a new ESQL queryable using the specified <paramref name="provider"/>.
 	/// </summary>
-	public EsqlQueryable(IElasticsearchMappingContext? mappingContext)
-		: this(new EsqlQueryProvider(new EsqlQueryContext(mappingContext)))
-	{
-	}
-
-	/// <summary>
-	/// Creates a new queryable from a constant (root query).
-	/// </summary>
+	/// <param name="provider">The <see cref="EsqlQueryProvider"/> to use.</param>
 	public EsqlQueryable(EsqlQueryProvider provider)
 	{
-		_provider = provider ?? throw new ArgumentNullException(nameof(provider));
+		Verify.NotNull(provider);
+
+		Provider = provider;
 		Expression = Expression.Constant(this);
 	}
 
@@ -46,65 +67,54 @@ public class EsqlQueryable<T> : IEsqlQueryable<T>, IOrderedQueryable<T>
 	/// </summary>
 	public EsqlQueryable(EsqlQueryProvider provider, Expression expression)
 	{
-		_provider = provider ?? throw new ArgumentNullException(nameof(provider));
-		Expression = expression ?? throw new ArgumentNullException(nameof(expression));
+		Verify.NotNull(provider);
+		Verify.NotNull(expression);
+
+		if (!typeof(IQueryable<T>).IsAssignableFrom(expression.Type))
+		{
+			throw new ArgumentException("Expression is not assignable to 'IQueryable<T>'.", nameof(expression));
+		}
+
+		Provider = provider;
+		Expression = expression;
 	}
 
 	/// <inheritdoc/>
-	public Type ElementType => typeof(T);
-
-	/// <inheritdoc/>
-	public Expression Expression { get; }
-
-	/// <inheritdoc/>
-	public IQueryProvider Provider => _provider;
-
-	/// <inheritdoc/>
-	public EsqlQueryContext Context => _provider.Context;
-
-	/// <inheritdoc/>
-	public string ToEsqlString(bool inlineParameters = true)
+	public string ToEsqlString(bool inlineParameters)
 	{
-		if (!inlineParameters)
-			Context.ParameterCollection = new EsqlParameters();
+		var query = Provider.TranslateExpression(Expression, inlineParameters);
+		var formatter = new EsqlFormatter();
 
-		var query = _provider.TranslateExpression(Expression);
-		var generator = new EsqlGenerator();
-		var result = generator.Generate(query);
-		Context.ParameterCollection = null;
-		return result;
+		return formatter.Format(query);
 	}
 
 	/// <inheritdoc/>
 	public EsqlParameters? GetParameters()
 	{
-		var parameters = new EsqlParameters();
-		Context.ParameterCollection = parameters;
-		_ = _provider.TranslateExpression(Expression);
-		Context.ParameterCollection = null;
-		return parameters.HasParameters ? parameters : null;
+		var query = Provider.TranslateExpression(Expression, false);
+
+		return query.Parameters;
 	}
 
 	/// <summary>
 	/// Returns the ES|QL query string representation.
 	/// </summary>
-	public override string ToString() => ToEsqlString();
+	public override string ToString() => ToEsqlString(true);
 
 	/// <inheritdoc/>
-	public IEnumerator<T> GetEnumerator() => _provider.Execute<IEnumerable<T>>(Expression).GetEnumerator();
+	public IEnumerator<T> GetEnumerator() => Provider.Execute<IEnumerable<T>>(Expression).GetEnumerator();
 
 	/// <inheritdoc/>
 	IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
 	/// <inheritdoc/>
 	public IAsyncEnumerable<T> AsAsyncEnumerable(CancellationToken cancellationToken = default) =>
-		new AsyncEnumerableWrapper<T>(_provider.ExecuteStreamingAsync<T>(Expression, cancellationToken));
+		new AsyncEnumerableWrapper<T>(Provider.ExecuteStreamingAsync<T>(Expression, cancellationToken));
 
 	/// <summary>
-	/// Wrapper to expose async enumeration without implementing IAsyncEnumerable directly.
+	/// Wrapper to expose async enumeration without implementing <see cref="IAsyncEnumerable{T}"/> directly.
 	/// </summary>
-	private sealed class AsyncEnumerableWrapper<TItem>(IAsyncEnumerable<TItem> source)
-		: IAsyncEnumerable<TItem>
+	private sealed class AsyncEnumerableWrapper<TItem>(IAsyncEnumerable<TItem> source) : IAsyncEnumerable<TItem>
 	{
 		public IAsyncEnumerator<TItem> GetAsyncEnumerator(CancellationToken cancellationToken = default)
 			=> source.GetAsyncEnumerator(cancellationToken);

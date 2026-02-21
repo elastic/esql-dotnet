@@ -9,7 +9,8 @@ public class ClampTests : EsqlTestBase
 	[Test]
 	public void Clamp_EsqlFunction_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = EsqlFunctions.Clamp(l.Duration, 0, 100) })
 			.ToString();
 
@@ -17,13 +18,14 @@ public class ClampTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = CLAMP(duration, 0, 100)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void MathClamp_InSelect_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Select(l => new { Val = System.Math.Clamp(l.Duration, 0, 100) })
 			.ToString();
 
@@ -31,13 +33,14 @@ public class ClampTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = CLAMP(duration, 0, 100)
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Clamp_InWhere_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => EsqlFunctions.Clamp(l.Duration, 0, 100) > 50)
 			.ToString();
 
@@ -45,13 +48,14 @@ public class ClampTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE CLAMP(duration, 0, 100) > 50
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void MathClamp_InWhere_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => System.Math.Clamp(l.Duration, 0, 100) > 50)
 			.ToString();
 
@@ -59,6 +63,6 @@ public class ClampTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE CLAMP(duration, 0, 100) > 50
-            """);
+            """.NativeLineEndings());
 	}
 }

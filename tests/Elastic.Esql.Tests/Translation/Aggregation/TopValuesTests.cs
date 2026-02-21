@@ -9,12 +9,13 @@ public class TopValuesTests : EsqlTestBase
 	[Test]
 	public void Values_InGroupBy_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.GroupBy(l => l.Level)
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.GroupBy(l => l.Level.MultiField("keyword"))
 			.Select(g => new
 			{
 				Level = g.Key,
-				AllIps = EsqlFunctions.Values(g, l => l.ClientIp)
+				AllIps = EsqlFunctions.Values(g, l => l.ClientIp.MultiField("keyword"))
 			})
 			.ToString();
 
@@ -22,18 +23,19 @@ public class TopValuesTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS allIps = VALUES(clientIp.keyword) BY level = log.level.keyword
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void First_InGroupBy_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.GroupBy(l => l.Level)
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.GroupBy(l => l.Level.MultiField("keyword"))
 			.Select(g => new
 			{
 				Level = g.Key,
-				FirstMsg = EsqlFunctions.First(g, l => l.Message)
+				FirstMsg = EsqlFunctions.First(g, l => l.Message.MultiField("keyword"))
 			})
 			.ToString();
 
@@ -41,18 +43,19 @@ public class TopValuesTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS firstMsg = FIRST(message.keyword) BY level = log.level.keyword
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Last_InGroupBy_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.GroupBy(l => l.Level)
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.GroupBy(l => l.Level.MultiField("keyword"))
 			.Select(g => new
 			{
 				Level = g.Key,
-				LastMsg = EsqlFunctions.Last(g, l => l.Message)
+				LastMsg = EsqlFunctions.Last(g, l => l.Message.MultiField("keyword"))
 			})
 			.ToString();
 
@@ -60,18 +63,19 @@ public class TopValuesTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS lastMsg = LAST(message.keyword) BY level = log.level.keyword
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Sample_InGroupBy_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.GroupBy(l => l.Level)
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.GroupBy(l => l.Level.MultiField("keyword"))
 			.Select(g => new
 			{
 				Level = g.Key,
-				SampleMsg = EsqlFunctions.Sample(g, l => l.Message)
+				SampleMsg = EsqlFunctions.Sample(g, l => l.Message.MultiField("keyword"))
 			})
 			.ToString();
 
@@ -79,6 +83,6 @@ public class TopValuesTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS sampleMsg = SAMPLE(message.keyword) BY level = log.level.keyword
-            """);
+            """.NativeLineEndings());
 	}
 }

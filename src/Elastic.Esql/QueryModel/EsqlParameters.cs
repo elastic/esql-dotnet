@@ -4,17 +4,21 @@
 
 namespace Elastic.Esql.QueryModel;
 
-/// <summary>Collects named parameters during ES|QL query translation.</summary>
+/// <summary>
+/// Represents a collection of named parameters for use with ES|QL queries.
+/// </summary>
 public class EsqlParameters
 {
 	private readonly Dictionary<string, object?> _parameters = [];
 	private readonly Dictionary<string, int> _nameCounts = [];
 
+	// TODO: We should keep track of the "actual" ParameterExpressions to avoid duplicates if the parameter is identical.
+
 	/// <summary>
 	/// Adds a parameter and returns its unique name.
 	/// Duplicate preferred names get <c>_2</c>, <c>_3</c> suffixes.
 	/// </summary>
-	public string Add(string preferredName, object? value)
+	internal string Add(string preferredName, object? value)
 	{
 		if (!_nameCounts.TryGetValue(preferredName, out var count))
 		{
@@ -36,9 +40,11 @@ public class EsqlParameters
 	/// <summary>Whether any parameters have been collected.</summary>
 	public bool HasParameters => _parameters.Count > 0;
 
+	// TODO: Move to specific implementation.
+
 	/// <summary>
 	/// Converts to ES|QL API format: a list of single-entry dictionaries.
 	/// </summary>
-	public List<object> ToEsqlParams() =>
-		_parameters.Select(kvp => (object)new Dictionary<string, object?> { [kvp.Key] = kvp.Value }).ToList();
+	public IReadOnlyList<object> ToEsqlParams() =>
+		[.. _parameters.Select(kvp => (object)new Dictionary<string, object?> { [kvp.Key] = kvp.Value })];
 }

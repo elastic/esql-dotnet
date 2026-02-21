@@ -9,42 +9,45 @@ public class LikeTests : EsqlTestBase
 	[Test]
 	public void Like_StartsWithPattern_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.Where(l => EsqlFunctions.Like(l.Message, "ERROR*"))
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => EsqlFunctions.Like(l.Message.MultiField("keyword"), "ERROR*"))
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
             | WHERE message.keyword LIKE "ERROR*"
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Like_EndsWithPattern_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.Where(l => EsqlFunctions.Like(l.Message, "*failed"))
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => EsqlFunctions.Like(l.Message.MultiField("keyword"), "*failed"))
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
             | WHERE message.keyword LIKE "*failed"
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void Like_ContainsPattern_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.Where(l => EsqlFunctions.Like(l.Message, "*timeout*"))
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => EsqlFunctions.Like(l.Message.MultiField("keyword"), "*timeout*"))
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
             | WHERE message.keyword LIKE "*timeout*"
-            """);
+            """.NativeLineEndings());
 	}
 }

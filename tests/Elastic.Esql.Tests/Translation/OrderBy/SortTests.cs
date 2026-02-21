@@ -9,7 +9,8 @@ public class SortTests : EsqlTestBase
 	[Test]
 	public void OrderBy_SingleField_GeneratesSort()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.OrderBy(l => l.Timestamp)
 			.ToString();
 
@@ -17,13 +18,14 @@ public class SortTests : EsqlTestBase
 			"""
             FROM logs-*
             | SORT @timestamp
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void OrderByDescending_SingleField_GeneratesSortDesc()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.OrderByDescending(l => l.Timestamp)
 			.ToString();
 
@@ -31,14 +33,15 @@ public class SortTests : EsqlTestBase
 			"""
             FROM logs-*
             | SORT @timestamp DESC
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void OrderBy_ThenBy_GeneratesMultipleSort()
 	{
-		var esql = Client.Query<LogEntry>()
-			.OrderBy(l => l.Level)
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.OrderBy(l => l.Level.MultiField("keyword"))
 			.ThenBy(l => l.Timestamp)
 			.ToString();
 
@@ -47,14 +50,15 @@ public class SortTests : EsqlTestBase
             FROM logs-*
             | SORT log.level.keyword
             | SORT @timestamp
-            """);
+            """.NativeLineEndings());
 	}
 
 	[Test]
 	public void OrderBy_ThenByDescending_GeneratesMultipleSort()
 	{
-		var esql = Client.Query<LogEntry>()
-			.OrderBy(l => l.Level)
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.OrderBy(l => l.Level.MultiField("keyword"))
 			.ThenByDescending(l => l.Timestamp)
 			.ToString();
 
@@ -63,6 +67,6 @@ public class SortTests : EsqlTestBase
             FROM logs-*
             | SORT log.level.keyword
             | SORT @timestamp DESC
-            """);
+            """.NativeLineEndings());
 	}
 }

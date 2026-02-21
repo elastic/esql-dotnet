@@ -9,8 +9,9 @@ public class CategorizeTests : EsqlTestBase
 	[Test]
 	public void Categorize_GeneratesCorrectEsql()
 	{
-		var esql = Client.Query<LogEntry>()
-			.GroupBy(l => EsqlFunctions.Categorize(l.Message))
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.GroupBy(l => EsqlFunctions.Categorize(l.Message.MultiField("keyword")))
 			.Select(g => new { Category = g.Key, Count = g.Count() })
 			.ToString();
 
@@ -18,6 +19,6 @@ public class CategorizeTests : EsqlTestBase
 			"""
             FROM logs-*
             | STATS count = COUNT(*) BY category = CATEGORIZE(message.keyword)
-            """);
+            """.NativeLineEndings());
 	}
 }

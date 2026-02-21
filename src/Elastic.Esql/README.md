@@ -135,28 +135,18 @@ Elastic.Esql has no dependency on `Elastic.Transport` or any HTTP library. The e
 
 When paired with `Elastic.Mapping`'s source-generated field resolution, the full path from LINQ expression to ES|QL string is AOT safe.
 
-## The IEsqlQueryExecutor Abstraction
+## Execution
 
-Elastic.Esql defines a minimal execution interface so you can plug in any transport:
-
-```csharp
-public interface IEsqlQueryExecutor
-{
-    Task<EsqlResponse> ExecuteAsync(string esql, CancellationToken cancellationToken = default);
-}
-```
-
-Pass an executor to enable query execution alongside translation:
+Elastic.Esql is a pure translation library -- it generates ES|QL strings but does not execute them. Use **Elastic.Clients.Esql** for the official `Elastic.Transport`-based execution layer, or subclass `EsqlQueryProvider` to plug in your own transport:
 
 ```csharp
-var context = new EsqlQueryContext(mappingContext, myExecutor);
-var provider = new EsqlQueryProvider(context);
+var provider = new MyCustomQueryProvider(fieldResolver);
 var results = await new EsqlQueryable<Order>(provider)
     .Where(o => o.Total > 100)
     .ToListAsync();
 ```
 
-Without an executor, queries translate to strings only -- calling `ToListAsync()` throws. This is by design: use **Elastic.Clients.Esql** for the official Elasticsearch transport implementation, or implement `IEsqlQueryExecutor` yourself.
+Without an execution-capable provider, queries translate to strings only -- calling `ToListAsync()` throws. This is by design.
 
 ## Works With Elastic.Mapping
 

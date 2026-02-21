@@ -4,8 +4,8 @@
 
 using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
-using System.Reflection;
 using Elastic.Esql.Core;
+using Elastic.Esql.Extensions;
 using Elastic.Esql.Formatting;
 using Elastic.Esql.Functions;
 using Elastic.Esql.QueryModel.Commands;
@@ -15,10 +15,10 @@ namespace Elastic.Esql.Translation;
 /// <summary>
 /// Translates LINQ GroupBy expressions to ES|QL STATS...BY commands.
 /// </summary>
-public class GroupByVisitor(EsqlQueryContext context) : ExpressionVisitor
+internal sealed class GroupByVisitor(EsqlTranslationContext context) : ExpressionVisitor
 {
 	private const string SingleKeyMarker = "__single_key__";
-	private readonly EsqlQueryContext _context = context ?? throw new ArgumentNullException(nameof(context));
+	private readonly EsqlTranslationContext _context = context ?? throw new ArgumentNullException(nameof(context));
 
 	/// <summary>
 	/// Translates a GroupBy key selector to a STATS command (without result selector).
@@ -59,18 +59,18 @@ public class GroupByVisitor(EsqlQueryContext context) : ExpressionVisitor
 
 		switch (expression)
 		{
-			case MemberExpression member:
-				fields.Add(ResolveWithKeyword(member.Member));
+			case MemberExpression:
+				fields.Add(expression.ResolveFieldName(_context.FieldMetadataResolver));
 				break;
 
 			case NewExpression newExpr when newExpr.Members != null:
 				// Multiple grouping keys: new { x.A, x.B }
 				foreach (var arg in newExpr.Arguments)
 				{
-					if (arg is MemberExpression memberArg)
-						fields.Add(ResolveWithKeyword(memberArg.Member));
-					else if (arg is MethodCallExpression methodArg)
+					if (arg is MethodCallExpression methodArg && methodArg.Method.DeclaringType == typeof(EsqlFunctions))
 						fields.Add(TranslateGroupingFunction(methodArg));
+					else
+						fields.Add(arg.ResolveFieldName(_context.FieldMetadataResolver));
 				}
 
 				break;
@@ -81,6 +81,10 @@ public class GroupByVisitor(EsqlQueryContext context) : ExpressionVisitor
 
 			case ConstantExpression:
 				// Grouping by constant (like 1) means no grouping fields - just aggregate all
+				break;
+
+			case MethodCallExpression methodCall when methodCall.Method.DeclaringType == typeof(GeneralPurposeExtensions):
+				fields.Add(methodCall.ResolveFieldName(_context.FieldMetadataResolver));
 				break;
 
 			case MethodCallExpression methodCall:
@@ -302,15 +306,19 @@ public class GroupByVisitor(EsqlQueryContext context) : ExpressionVisitor
 
 		var methodName = methodCall.Method.Name;
 
-		string Translate(Expression e) =>
-			e switch
+		string Translate(Expression e)
+		{
+			try
 			{
-				MemberExpression member => ResolveWithKeyword(member.Member),
-				ConstantExpression constant => EsqlFormatting.FormatValue(constant.Value),
-				UnaryExpression { NodeType: ExpressionType.Convert, Operand: MemberExpression innerMember } =>
-					ResolveWithKeyword(innerMember.Member),
-				_ => EsqlFormatting.FormatValue(Expression.Lambda(e).Compile().DynamicInvoke())
-			};
+				return e.ResolveFieldName(_context.FieldMetadataResolver);
+			}
+			catch (NotSupportedException)
+			{
+				if (e is ConstantExpression constant)
+					return EsqlFormatting.FormatValue(constant.Value);
+				return EsqlFormatting.FormatValue(Expression.Lambda(e).Compile().DynamicInvoke());
+			}
+		}
 
 		var result = EsqlFunctionTranslator.TryTranslate(methodName, Translate, methodCall.Arguments);
 		return result ?? throw new NotSupportedException($"Grouping function {methodName} is not supported.");
@@ -328,21 +336,16 @@ public class GroupByVisitor(EsqlQueryContext context) : ExpressionVisitor
 		return "*";
 	}
 
-	private string ExtractFieldFromLambdaBody(Expression body) =>
-		body switch
-		{
-			MemberExpression member => ResolveWithKeyword(member.Member),
-			UnaryExpression { NodeType: ExpressionType.Convert, Operand: MemberExpression innerMember } =>
-				ResolveWithKeyword(innerMember.Member),
-			_ => "*"
-		};
-
-	private string ResolveWithKeyword(MemberInfo member)
+	private string ExtractFieldFromLambdaBody(Expression body)
 	{
-		var fieldName = _context.MetadataResolver.Resolve(member);
-		if (_context.MetadataResolver.IsTextField(member))
-			fieldName += ".keyword";
-		return fieldName;
+		try
+		{
+			return body.ResolveFieldName(_context.FieldMetadataResolver);
+		}
+		catch (NotSupportedException)
+		{
+			return "*";
+		}
 	}
 
 	private static bool IsAggregationMethod(string methodName) => methodName is "Count" or "LongCount" or "Sum" or "Average" or "Min" or "Max";

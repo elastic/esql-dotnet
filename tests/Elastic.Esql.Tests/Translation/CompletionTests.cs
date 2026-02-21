@@ -9,49 +9,53 @@ public class CompletionTests : EsqlTestBase
 	[Test]
 	public void Completion_WithStringPrompt_GeneratesCompletion()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Completion("message", InferenceEndpoints.OpenAi.Gpt41)
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
-            FROM logs-*
-            | COMPLETION message WITH { "inference_id" : ".openai-gpt-4.1-completion" }
-            """);
+			FROM logs-*
+			| COMPLETION message WITH { "inference_id" : ".openai-gpt-4.1-completion" }
+			""".NativeLineEndings());
 	}
 
 	[Test]
 	public void Completion_WithLambdaPrompt_GeneratesCompletion()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Completion(l => l.Message, InferenceEndpoints.OpenAi.Gpt41)
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
-            FROM logs-*
-            | COMPLETION message WITH { "inference_id" : ".openai-gpt-4.1-completion" }
-            """);
+			FROM logs-*
+			| COMPLETION message WITH { "inference_id" : ".openai-gpt-4.1-completion" }
+			""".NativeLineEndings());
 	}
 
 	[Test]
 	public void Completion_WithColumn_GeneratesColumnAssignment()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Completion(l => l.Message, InferenceEndpoints.Anthropic.Claude46Opus, column: "analysis")
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
-            FROM logs-*
-            | COMPLETION analysis = message WITH { "inference_id" : ".anthropic-claude-4.6-opus-completion" }
-            """);
+			FROM logs-*
+			| COMPLETION analysis = message WITH { "inference_id" : ".anthropic-claude-4.6-opus-completion" }
+			""".NativeLineEndings());
 	}
 
 	[Test]
 	public void Completion_WithPipeline_GeneratesCorrectOrder()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Where(l => l.StatusCode >= 500)
 			.Take(1)
 			.Completion(l => l.Message, InferenceEndpoints.OpenAi.Gpt41, column: "analysis")
@@ -60,72 +64,92 @@ public class CompletionTests : EsqlTestBase
 
 		_ = esql.Should().Be(
 			"""
-            FROM logs-*
-            | WHERE statusCode >= 500
-            | LIMIT 1
-            | COMPLETION analysis = message WITH { "inference_id" : ".openai-gpt-4.1-completion" }
-            | KEEP message, analysis
-            """);
+			FROM logs-*
+			| WHERE statusCode >= 500
+			| LIMIT 1
+			| COMPLETION analysis = message WITH { "inference_id" : ".openai-gpt-4.1-completion" }
+			| KEEP message, analysis
+			""".NativeLineEndings());
 	}
 
 	[Test]
-	public void CompletionQuery_Generate_WithColumn_GeneratesRowAndCompletion()
+	public void Row_WithCompletion_WithColumn_GeneratesRowAndCompletion()
 	{
-		var esql = CompletionQuery.Generate(
-			"Tell me about Elasticsearch",
-			InferenceEndpoints.Anthropic.Claude46Opus,
-			column: "answer"
-		);
+		var esql = CreateQuery<LogEntry>()
+			.Row(() => new { prompt = "Tell me about Elasticsearch" })
+			.Completion("prompt", InferenceEndpoints.Anthropic.Claude46Opus, column: "answer")
+			.ToString();
 
 		_ = esql.Should().Be(
 			"""
-            ROW prompt = "Tell me about Elasticsearch"
-            | COMPLETION answer = prompt WITH { "inference_id" : ".anthropic-claude-4.6-opus-completion" }
-            """);
+			ROW prompt = "Tell me about Elasticsearch"
+			| COMPLETION answer = prompt WITH { "inference_id" : ".anthropic-claude-4.6-opus-completion" }
+			""".NativeLineEndings());
 	}
 
 	[Test]
-	public void CompletionQuery_Generate_WithoutColumn_GeneratesRowAndCompletion()
+	public void Row_WithCompletion_WithoutColumn_GeneratesRowAndCompletion()
 	{
-		var esql = CompletionQuery.Generate(
-			"Tell me about Elasticsearch",
-			InferenceEndpoints.Google.Gemini25Pro
-		);
+		var esql = CreateQuery<LogEntry>()
+			.Row(() => new { prompt = "Tell me about Elasticsearch" })
+			.Completion("prompt", InferenceEndpoints.Google.Gemini25Pro)
+			.ToString();
 
 		_ = esql.Should().Be(
 			"""
-            ROW prompt = "Tell me about Elasticsearch"
-            | COMPLETION prompt WITH { "inference_id" : ".google-gemini-2.5-pro-completion" }
-            """);
+			ROW prompt = "Tell me about Elasticsearch"
+			| COMPLETION prompt WITH { "inference_id" : ".google-gemini-2.5-pro-completion" }
+			""".NativeLineEndings());
 	}
 
 	[Test]
-	public void CompletionQuery_Generate_EscapesPrompt()
+	public void Row_WithCompletion_EscapesPrompt()
 	{
-		var esql = CompletionQuery.Generate(
-			"What does \"hello world\" mean?",
-			InferenceEndpoints.Elastic.GpLlmV2
-		);
+		var esql = CreateQuery<LogEntry>()
+			.Row(() => new { prompt = "What does \"hello world\" mean?" })
+			.Completion("prompt", InferenceEndpoints.Elastic.GpLlmV2)
+			.ToString();
 
 		_ = esql.Should().Be(
 			"""
-            ROW prompt = "What does \"hello world\" mean?"
-            | COMPLETION prompt WITH { "inference_id" : ".gp-llm-v2-completion" }
-            """);
+			ROW prompt = "What does \"hello world\" mean?"
+			| COMPLETION prompt WITH { "inference_id" : ".gp-llm-v2-completion" }
+			""".NativeLineEndings());
+	}
+
+	[Test]
+	public void Row_WithMultipleColumns_GeneratesRow()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.Row(() => new { a = 1, b = "two", c = true })
+			.ToString();
+
+		_ = esql.Should().Be("ROW a = 1, b = \"two\", c = true");
+	}
+
+	[Test]
+	public void Row_WithSingleColumn_GeneratesRow()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.Row(() => new { name = "test" })
+			.ToString();
+
+		_ = esql.Should().Be("ROW name = \"test\"");
 	}
 
 	[Test]
 	public void Completion_WithJsonPropertyNameField_ResolvesFieldName()
 	{
-		var esql = Client.Query<LogEntry>()
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
 			.Completion(l => l.Level, InferenceEndpoints.OpenAi.Gpt41Mini, column: "result")
 			.ToString();
 
 		_ = esql.Should().Be(
 			"""
-            FROM logs-*
-            | COMPLETION result = log.level WITH { "inference_id" : ".openai-gpt-4.1-mini-completion" }
-            """);
+			FROM logs-*
+			| COMPLETION result = log.level WITH { "inference_id" : ".openai-gpt-4.1-mini-completion" }
+			""".NativeLineEndings());
 	}
 
 	[Test]
