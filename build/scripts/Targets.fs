@@ -64,7 +64,6 @@ let private test (arguments:ParseResults<Arguments>) =
     let tfmArgs =
         if getOS = OS.Windows then [] else ["-f"; "net10.0"]
     exec "dotnet" (["run"; "--project"; "tests/Elastic.Esql.Tests"; "-c"; "Release"] @ tfmArgs) |> ignore
-    exec "dotnet" (["run"; "--project"; "tests/Elastic.Mapping.Tests"; "-c"; "Release"] @ tfmArgs) |> ignore
 
 let private generatePackages (arguments:ParseResults<Arguments>) =
     let output = Paths.RootRelative Paths.Output.FullName

@@ -8,5 +8,6 @@
 
   <ItemGroup>
     <ProjectReference Include="$(SolutionRoot)\src\Elastic.Esql\Elastic.Esql.csproj" />
+    <PackageReference Include="Elastic.Mapping" />
   </ItemGroup>
 </Project>

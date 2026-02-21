@@ -17,10 +17,7 @@
 		<ProjectReference Include="$(SolutionRoot)\examples\Elastic.Examples.Ingest\Elastic.Examples.Ingest.csproj" />
 		<ProjectReference Include="$(SolutionRoot)\src\Elastic.Clients.Esql\Elastic.Clients.Esql.csproj" />
 		<ProjectReference Include="$(SolutionRoot)\src\Elastic.Esql\Elastic.Esql.csproj" />
-		<ProjectReference Include="$(SolutionRoot)\src\Elastic.Mapping\Elastic.Mapping.csproj" />
-		<ProjectReference Include="$(SolutionRoot)\src\Elastic.Mapping.Generator\Elastic.Mapping.Generator.csproj"
-						  OutputItemType="Analyzer"
-						  ReferenceOutputAssembly="false" />
+		<PackageReference Include="Elastic.Mapping" />
 	</ItemGroup>
 
 </Project>

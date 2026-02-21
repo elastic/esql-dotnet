@@ -12,10 +12,7 @@
 
   <ItemGroup>
     <ProjectReference Include="$(SolutionRoot)\src\Elastic.Esql\Elastic.Esql.csproj" />
-    <ProjectReference Include="$(SolutionRoot)\src\Elastic.Mapping\Elastic.Mapping.csproj" />
-    <ProjectReference Include="$(SolutionRoot)\src\Elastic.Mapping.Generator\Elastic.Mapping.Generator.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
+    <PackageReference Include="Elastic.Mapping" />
   </ItemGroup>
 
 </Project>
