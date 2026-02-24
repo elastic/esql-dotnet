@@ -20,7 +20,6 @@ internal sealed class EsqlTranslationContext
 
 	public Type? ElementType { get; set; }
 	public List<QueryCommand> Commands { get; } = [];
-	public List<QueryCommand> PendingCommands { get; } = [];
 	public EsqlParameters Parameters { get; } = new();
 
 	/// <summary>

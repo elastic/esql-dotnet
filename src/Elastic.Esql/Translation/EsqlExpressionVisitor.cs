@@ -33,7 +33,7 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 		if (Context.ElementType is null)
 			throw new InvalidOperationException("Failed to determine result type for the given expression.");
 
-		return new EsqlQuery(Context.ElementType!, [.. Context.Commands, .. Context.PendingCommands], !Context.Parameters.HasParameters ? null : Context.Parameters);
+		return new EsqlQuery(Context.ElementType!, [.. Context.Commands], !Context.Parameters.HasParameters ? null : Context.Parameters);
 	}
 
 	protected override Expression VisitConstant(ConstantExpression node)
@@ -98,16 +98,21 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 
 			case nameof(Queryable.First):
 			case nameof(Queryable.FirstOrDefault):
+			case nameof(EsqlQueryableExtensions.FirstAsync):
+			case nameof(EsqlQueryableExtensions.FirstOrDefaultAsync):
 				VisitFirst(node);
 				break;
 
 			case nameof(Queryable.Single):
 			case nameof(Queryable.SingleOrDefault):
+			case nameof(EsqlQueryableExtensions.SingleAsync):
+			case nameof(EsqlQueryableExtensions.SingleOrDefaultAsync):
 				VisitSingle(node);
 				break;
 
 			case nameof(Queryable.Count):
 			case nameof(Queryable.LongCount):
+			case nameof(EsqlQueryableExtensions.CountAsync):
 				VisitCount(node);
 				break;
 
@@ -128,6 +133,7 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 				break;
 
 			case nameof(Queryable.Any):
+			case nameof(EsqlQueryableExtensions.AnyAsync):
 				VisitAny(node);
 				break;
 
