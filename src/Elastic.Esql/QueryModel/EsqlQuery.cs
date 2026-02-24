@@ -15,7 +15,7 @@ namespace Elastic.Esql.QueryModel;
 public class EsqlQuery(Type elementType, IReadOnlyList<QueryCommand> commands, EsqlParameters? parameters)
 {
 	/// <summary>
-	/// The element type of the query results.
+	/// The element type of the query.
 	/// </summary>
 	public Type ElementType { get; } = elementType ?? throw new ArgumentNullException(nameof(elementType));
 

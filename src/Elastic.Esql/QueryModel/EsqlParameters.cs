@@ -7,7 +7,7 @@ namespace Elastic.Esql.QueryModel;
 /// <summary>
 /// Represents a collection of named parameters for use with ES|QL queries.
 /// </summary>
-public class EsqlParameters
+public sealed class EsqlParameters
 {
 	private readonly Dictionary<string, object?> _parameters = [];
 	private readonly Dictionary<string, int> _nameCounts = [];
