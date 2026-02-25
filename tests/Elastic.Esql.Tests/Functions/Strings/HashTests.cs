@@ -18,6 +18,7 @@ public class HashTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = HASH("sha256", message)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -33,6 +34,7 @@ public class HashTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = MD5(message)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -48,6 +50,7 @@ public class HashTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = SHA1(message)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -63,6 +66,7 @@ public class HashTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = SHA256(message)
+            | KEEP val
             """.NativeLineEndings());
 	}
 }

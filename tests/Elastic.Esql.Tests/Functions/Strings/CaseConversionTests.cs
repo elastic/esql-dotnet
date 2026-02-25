@@ -19,6 +19,7 @@ public class CaseConversionTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL lowerLevel = TO_LOWER(log.level)
+            | KEEP lowerLevel
             """.NativeLineEndings());
 	}
 
@@ -35,6 +36,7 @@ public class CaseConversionTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL upperLevel = TO_UPPER(log.level)
+            | KEEP upperLevel
             """.NativeLineEndings());
 	}
 }

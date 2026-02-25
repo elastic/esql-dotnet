@@ -19,6 +19,7 @@ public class SubstringTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL prefix = SUBSTRING(message, 0)
+            | KEEP prefix
             """.NativeLineEndings());
 	}
 
@@ -35,6 +36,7 @@ public class SubstringTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL prefix = SUBSTRING(message, 0, 10)
+            | KEEP prefix
             """.NativeLineEndings());
 	}
 }

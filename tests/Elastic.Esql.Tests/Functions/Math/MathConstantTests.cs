@@ -18,6 +18,7 @@ public class MathConstantTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = E()
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -33,6 +34,7 @@ public class MathConstantTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = PI()
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -48,6 +50,7 @@ public class MathConstantTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = TAU()
+            | KEEP val
             """.NativeLineEndings());
 	}
 

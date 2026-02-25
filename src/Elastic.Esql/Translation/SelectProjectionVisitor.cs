@@ -11,13 +11,19 @@ using Elastic.Esql.Functions;
 namespace Elastic.Esql.Translation;
 
 /// <summary>
-/// Translates LINQ Select projections to ES|QL KEEP/EVAL commands.
+/// Translates LINQ Select projections to ES|QL RENAME/EVAL/KEEP commands using a two-pass design.
+/// Pass 1 classifies each projection member into an intermediate representation.
+/// Pass 2 translates eval expressions to strings with rename-awareness.
 /// </summary>
 internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : ExpressionVisitor
 {
 	private readonly EsqlTranslationContext _context = context ?? throw new ArgumentNullException(nameof(context));
-	private readonly List<string> _keepFields = [];
-	private readonly List<string> _evalExpressions = [];
+	private readonly List<ProjectionEntry> _projections = [];
+	private Dictionary<string, string> _activeRenames = [];
+
+	private enum ProjectionKind { Keep, Rename, Eval }
+
+	private sealed record ProjectionEntry(ProjectionKind Kind, string ResultField, string? SourceField, Expression? SourceExpression);
 
 	/// <summary>
 	/// Result of projection translation.
@@ -25,6 +31,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 	public sealed class ProjectionResult
 	{
 		public IReadOnlyList<string> KeepFields { get; init; } = [];
+		public IReadOnlyList<(string Source, string Target)> RenameFields { get; init; } = [];
 		public IReadOnlyList<string> EvalExpressions { get; init; } = [];
 	}
 
@@ -33,15 +40,44 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 	/// </summary>
 	public ProjectionResult Translate(LambdaExpression lambda)
 	{
-		_keepFields.Clear();
-		_evalExpressions.Clear();
+		_projections.Clear();
+		_activeRenames = [];
 
+		// Pass 1: classify all projection members
 		_ = Visit(lambda.Body);
+
+		// Build rename map so Pass 2 resolves renamed fields correctly
+		_activeRenames = _projections
+			.Where(p => p.Kind == ProjectionKind.Rename)
+			.ToDictionary(p => p.SourceField!, p => p.ResultField);
+
+		// Pass 2: translate eval expressions to strings (now rename-aware)
+		var keepFields = new List<string>();
+		var renameFields = new List<(string, string)>();
+		var evalExpressions = new List<string>();
+
+		foreach (var entry in _projections)
+		{
+			switch (entry.Kind)
+			{
+				case ProjectionKind.Keep:
+					keepFields.Add(entry.SourceField!);
+					break;
+				case ProjectionKind.Rename:
+					renameFields.Add((entry.SourceField!, entry.ResultField));
+					break;
+				case ProjectionKind.Eval:
+					var expr = TranslateExpression(entry.SourceExpression!);
+					evalExpressions.Add($"{entry.ResultField} = {expr}");
+					break;
+			}
+		}
 
 		return new ProjectionResult
 		{
-			KeepFields = _keepFields.ToList(),
-			EvalExpressions = _evalExpressions.ToList()
+			KeepFields = keepFields,
+			RenameFields = renameFields,
+			EvalExpressions = evalExpressions
 		};
 	}
 
@@ -61,7 +97,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 				? _context.FieldMetadataResolver.GetAnonymousFieldName(member.Name)
 				: _context.FieldMetadataResolver.GetFieldName(member.DeclaringType!, member);
 
-			ProcessProjectionMember(resultField, arg);
+			ClassifyProjectionMember(resultField, arg);
 		}
 
 		return node;
@@ -74,7 +110,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 			if (binding is MemberAssignment assignment)
 			{
 				var resultField = _context.FieldMetadataResolver.GetFieldName(assignment.Member.DeclaringType!, assignment.Member);
-				ProcessProjectionMember(resultField, assignment.Expression);
+				ClassifyProjectionMember(resultField, assignment.Expression);
 			}
 		}
 
@@ -83,19 +119,17 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 
 	protected override Expression VisitMember(MemberExpression node)
 	{
-		// Simple member access: x => x.Field (identity projection)
 		var fieldName = _context.FieldMetadataResolver.GetFieldName(node.Member.DeclaringType!, node.Member);
-		_keepFields.Add(fieldName);
+		_projections.Add(new ProjectionEntry(ProjectionKind.Keep, fieldName, fieldName, null));
 
 		return node;
 	}
 
-	private void ProcessProjectionMember(string resultField, Expression sourceExpression)
+	private void ClassifyProjectionMember(string resultField, Expression sourceExpression)
 	{
-		// Unwrap nullable casts: (int?)expr → expr (ES|QL fields are inherently nullable)
 		if (sourceExpression is UnaryExpression { NodeType: ExpressionType.Convert } unary && IsNullableCast(unary))
 		{
-			ProcessProjectionMember(resultField, unary.Operand);
+			ClassifyProjectionMember(resultField, unary.Operand);
 			return;
 		}
 
@@ -103,60 +137,30 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		{
 			var declaringType = memberExpr.Member.DeclaringType;
 
-			// Check if this is a DateTime/DateTimeOffset property or string.Length access
 			if (declaringType == typeof(DateTime) || declaringType == typeof(DateTimeOffset)
 				|| (declaringType == typeof(string) && memberExpr.Member.Name == "Length"))
 			{
-				var expr = TranslateMemberExpression(memberExpr);
-				_evalExpressions.Add($"{resultField} = {expr}");
+				_projections.Add(new ProjectionEntry(ProjectionKind.Eval, resultField, null, memberExpr));
 			}
 			else
 			{
-				// Simple field access
 				var sourceField = _context.FieldMetadataResolver.GetFieldName(memberExpr.Member.DeclaringType!, memberExpr.Member);
 
 				if (sourceField == resultField)
-				{
-					// Just keep the field as-is
-					_keepFields.Add(sourceField);
-				}
+					_projections.Add(new ProjectionEntry(ProjectionKind.Keep, sourceField, sourceField, null));
 				else
-				{
-					// Rename via EVAL
-					_evalExpressions.Add($"{resultField} = {sourceField}");
-				}
+					_projections.Add(new ProjectionEntry(ProjectionKind.Rename, resultField, sourceField, null));
 			}
 		}
-		else if (sourceExpression is BinaryExpression binary)
+		else if (sourceExpression is ConditionalExpression conditional
+			&& TryUnwrapNullGuard(conditional, out var nonNullBranch)
+			&& IsSimpleFieldAccess(nonNullBranch))
 		{
-			// Computed field: x.A + x.B
-			var expr = TranslateExpression(binary);
-			_evalExpressions.Add($"{resultField} = {expr}");
+			ClassifyProjectionMember(resultField, nonNullBranch);
 		}
-		else if (sourceExpression is MethodCallExpression methodCall)
+		else if (sourceExpression is BinaryExpression or MethodCallExpression or ConditionalExpression or ConstantExpression)
 		{
-			// Method call: x.Field.ToUpper()
-			var expr = TranslateMethodCall(methodCall);
-			_evalExpressions.Add($"{resultField} = {expr}");
-		}
-		else if (sourceExpression is ConditionalExpression conditional)
-		{
-			if (TryUnwrapNullGuard(conditional, out var nonNullBranch) && IsSimpleFieldAccess(nonNullBranch))
-			{
-				// Simple null-guard: inner == null ? null : inner.Field → just the field
-				ProcessProjectionMember(resultField, nonNullBranch);
-			}
-			else
-			{
-				// Complex null-guard → CASE WHEN, or regular ternary
-				var expr = TranslateConditional(conditional);
-				_evalExpressions.Add($"{resultField} = {expr}");
-			}
-		}
-		else if (sourceExpression is ConstantExpression constant)
-		{
-			var value = EsqlFormatting.FormatValue(constant.Value);
-			_evalExpressions.Add($"{resultField} = {value}");
+			_projections.Add(new ProjectionEntry(ProjectionKind.Eval, resultField, null, sourceExpression));
 		}
 		else
 			throw new NotSupportedException($"Expression type {sourceExpression.GetType().Name} ({sourceExpression.NodeType}) is not supported.");
@@ -180,14 +184,12 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		var left = StripNullableConvert(test.Left);
 		var right = StripNullableConvert(test.Right);
 
-		// One side must be a parameter, the other must be null
 		if (!(left is ParameterExpression && IsNullConstant(right))
 			&& !(right is ParameterExpression && IsNullConstant(left)))
 			return false;
 
 		if (test.NodeType == ExpressionType.Equal)
 		{
-			// param == null ? <null-branch> : <non-null-branch>
 			if (!IsNullConstant(StripNullableConvert(conditional.IfTrue)))
 				return false;
 
@@ -195,7 +197,6 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		}
 		else
 		{
-			// param != null ? <non-null-branch> : <null-branch>
 			if (!IsNullConstant(StripNullableConvert(conditional.IfFalse)))
 				return false;
 
@@ -242,7 +243,6 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		var declaringType = member.Member.DeclaringType;
 		var memberName = member.Member.Name;
 
-		// Handle static member access
 		if (member.Expression == null)
 		{
 			if (declaringType == typeof(DateTime) || declaringType == typeof(DateTimeOffset))
@@ -255,7 +255,6 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 				};
 			}
 
-			// Math constants: Math.E, Math.PI, Math.Tau
 			if (declaringType == typeof(Math))
 			{
 				var mathConst = EsqlFunctionTranslator.TryTranslateMathConstant(memberName);
@@ -264,7 +263,6 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 			}
 		}
 
-		// Handle DateTime/DateTimeOffset instance properties (Year, Month, Day, etc.)
 		if (declaringType == typeof(DateTime) || declaringType == typeof(DateTimeOffset))
 		{
 			var dateExpr = TranslateExpression(member.Expression!);
@@ -282,15 +280,14 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 			};
 		}
 
-		// Handle string.Length property → LENGTH(field)
 		if (declaringType == typeof(string) && memberName == "Length")
 		{
 			var strExpr = TranslateExpression(member.Expression!);
 			return $"LENGTH({strExpr})";
 		}
 
-		// Regular field access
-		return _context.FieldMetadataResolver.GetFieldName(member.Member.DeclaringType!, member.Member);
+		var fieldName = _context.FieldMetadataResolver.GetFieldName(member.Member.DeclaringType!, member.Member);
+		return _activeRenames.TryGetValue(fieldName, out var renamed) ? renamed : fieldName;
 	}
 
 	private string TranslateBinary(BinaryExpression binary)
@@ -307,7 +304,6 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		var methodName = methodCall.Method.Name;
 		var declaringType = methodCall.Method.DeclaringType;
 
-		// Check for EsqlFunctions marker methods
 		if (declaringType == typeof(EsqlFunctions))
 		{
 			var result = EsqlFunctionTranslator.TryTranslate(methodName, TranslateExpression, methodCall.Arguments);
@@ -318,16 +314,12 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		{
 			var target = TranslateExpression(methodCall.Object!);
 
-			// Try shared translator first
 			var result = EsqlFunctionTranslator.TryTranslateString(methodName, TranslateExpression, target, methodCall.Arguments);
 			if (result != null)
 				return result;
 
-			// Fall back to string-specific methods not in the shared translator
 			return methodName switch
 			{
-				// get_Chars is the indexer method: s[i] → SUBSTRING(s, i+1, 1)
-				// ES|QL SUBSTRING uses 1-based indexing, C# uses 0-based
 				"get_Chars" => TranslateStringIndexer(target, methodCall.Arguments[0]),
 				_ => throw new NotSupportedException($"String method {methodName} is not supported in projections.")
 			};
@@ -344,12 +336,9 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 
 	private string TranslateStringIndexer(string target, Expression indexExpression)
 	{
-		// ES|QL SUBSTRING uses 1-based indexing, C# uses 0-based
-		// s[i] → SUBSTRING(s, i+1, 1)
 		if (indexExpression is ConstantExpression constant && constant.Value is int index)
 			return $"SUBSTRING({target}, {index + 1}, 1)";
 
-		// For non-constant index, we need to add 1 at runtime
 		var indexExpr = TranslateExpression(indexExpression);
 		return $"SUBSTRING({target}, ({indexExpr}) + 1, 1)";
 	}
@@ -383,7 +372,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 
 	private List<string> ExtractFieldAccesses(Expression expression)
 	{
-		var visitor = new FieldAccessCollector(_context);
+		var visitor = new FieldAccessCollector(_context, _activeRenames);
 		_ = visitor.Visit(expression);
 		return visitor.Fields;
 	}
@@ -391,7 +380,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 	/// <summary>
 	/// Walks an expression tree collecting resolved field names from member accesses.
 	/// </summary>
-	private sealed class FieldAccessCollector(EsqlTranslationContext context) : ExpressionVisitor
+	private sealed class FieldAccessCollector(EsqlTranslationContext context, Dictionary<string, string> activeRenames) : ExpressionVisitor
 	{
 		public List<string> Fields { get; } = [];
 
@@ -400,6 +389,9 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 			if (node.Expression is ParameterExpression && node.Member.DeclaringType != null)
 			{
 				var fieldName = context.FieldMetadataResolver.GetFieldName(node.Member.DeclaringType, node.Member);
+				if (activeRenames.TryGetValue(fieldName, out var renamed))
+					fieldName = renamed;
+
 				if (!Fields.Contains(fieldName))
 					Fields.Add(fieldName);
 			}
@@ -426,5 +418,4 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 			ExpressionType.OrElse => "OR",
 			_ => throw new NotSupportedException($"Operator {nodeType} is not supported in projections.")
 		};
-
 }

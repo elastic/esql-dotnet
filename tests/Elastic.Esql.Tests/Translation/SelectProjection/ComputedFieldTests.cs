@@ -17,8 +17,8 @@ public class ComputedFieldTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | KEEP duration
             | EVAL doubleDuration = (duration * 2)
+            | KEEP duration, doubleDuration
             """.NativeLineEndings());
 	}
 
@@ -34,6 +34,7 @@ public class ComputedFieldTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL adjusted = (statusCode - 100)
+            | KEEP adjusted
             """.NativeLineEndings());
 	}
 
@@ -49,6 +50,7 @@ public class ComputedFieldTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL durationSeconds = (duration / 1000)
+            | KEEP durationSeconds
             """.NativeLineEndings());
 	}
 
@@ -64,6 +66,7 @@ public class ComputedFieldTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL category = CASE WHEN (statusCode >= 400) THEN "Error" ELSE "Success" END
+            | KEEP category
             """.NativeLineEndings());
 	}
 }

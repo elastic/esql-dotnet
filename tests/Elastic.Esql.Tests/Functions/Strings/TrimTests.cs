@@ -19,6 +19,7 @@ public class TrimTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL trimmedMessage = TRIM(message)
+            | KEEP trimmedMessage
             """.NativeLineEndings());
 	}
 }

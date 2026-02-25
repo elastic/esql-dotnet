@@ -18,6 +18,7 @@ public class ReverseRepeatTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = REVERSE(message)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -33,6 +34,7 @@ public class ReverseRepeatTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = REPEAT(message, 3)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -48,6 +50,7 @@ public class ReverseRepeatTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = SPACE(10)
+            | KEEP val
             """.NativeLineEndings());
 	}
 }

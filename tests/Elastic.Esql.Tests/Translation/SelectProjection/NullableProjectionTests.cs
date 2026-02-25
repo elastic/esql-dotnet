@@ -21,7 +21,8 @@ public class NullableProjectionTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
 			FROM logs-*
-			| EVAL code = statusCode
+			| RENAME statusCode AS code
+			| KEEP code
 			""".NativeLineEndings());
 	}
 

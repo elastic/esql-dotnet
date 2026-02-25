@@ -46,8 +46,8 @@ public class RealWorldExamplesTests : EsqlTestBase
             FROM logs-*
             | WHERE duration > 5000
             | SORT duration DESC
-            | KEEP message, duration
-            | EVAL timestamp = @timestamp
+            | RENAME @timestamp AS timestamp
+            | KEEP message, duration, timestamp
             | LIMIT 50
             """.NativeLineEndings());
 	}

@@ -19,6 +19,7 @@ public class CoalesceTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL msg = COALESCE(message, "N/A")
+            | KEEP msg
             """.NativeLineEndings());
 	}
 }

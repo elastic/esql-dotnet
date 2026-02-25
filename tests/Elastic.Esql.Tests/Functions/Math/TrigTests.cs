@@ -33,6 +33,7 @@ public class TrigTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = ACOS(duration)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -48,6 +49,7 @@ public class TrigTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = ACOS(duration)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -78,6 +80,7 @@ public class TrigTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = ASIN(duration)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -93,6 +96,7 @@ public class TrigTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = ATAN(duration)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -108,6 +112,7 @@ public class TrigTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = ATAN2(duration, statusCode)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -123,6 +128,7 @@ public class TrigTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = ATAN2(duration, statusCode)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -138,6 +144,7 @@ public class TrigTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = COS(duration)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -153,6 +160,7 @@ public class TrigTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = COSH(duration)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -168,6 +176,7 @@ public class TrigTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = SIN(duration)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -183,6 +192,7 @@ public class TrigTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = SINH(duration)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -198,6 +208,7 @@ public class TrigTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = TAN(duration)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -213,6 +224,7 @@ public class TrigTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = TANH(duration)
+            | KEEP val
             """.NativeLineEndings());
 	}
 }

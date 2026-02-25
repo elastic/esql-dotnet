@@ -18,6 +18,7 @@ public class LeftRightTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = LEFT(message, 5)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -33,6 +34,7 @@ public class LeftRightTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = RIGHT(message, 5)
+            | KEEP val
             """.NativeLineEndings());
 	}
 

@@ -19,6 +19,7 @@ public class ConcatTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL combined = CONCAT(log.level, message)
+            | KEEP combined
             """.NativeLineEndings());
 	}
 }

@@ -138,6 +138,7 @@ public class DateExtractTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL year = DATE_EXTRACT("year", @timestamp)
+            | KEEP year
             """.NativeLineEndings());
 	}
 
@@ -153,6 +154,7 @@ public class DateExtractTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL year = DATE_EXTRACT("year", @timestamp), month = DATE_EXTRACT("month", @timestamp), day = DATE_EXTRACT("day_of_month", @timestamp)
+            | KEEP year, month, day
             """.NativeLineEndings());
 	}
 
@@ -168,6 +170,7 @@ public class DateExtractTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL hour = DATE_EXTRACT("hour", @timestamp)
+            | KEEP hour
             """.NativeLineEndings());
 	}
 }

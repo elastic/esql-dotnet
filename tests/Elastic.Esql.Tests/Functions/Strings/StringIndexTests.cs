@@ -18,6 +18,7 @@ public class StringIndexTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL sub = SUBSTRING(message, 5)
+            | KEEP sub
             """.NativeLineEndings());
 	}
 
@@ -33,6 +34,7 @@ public class StringIndexTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL sub = SUBSTRING(message, 0, 10)
+            | KEEP sub
             """.NativeLineEndings());
 	}
 
@@ -48,6 +50,7 @@ public class StringIndexTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL firstChar = SUBSTRING(message, 1, 1)
+            | KEEP firstChar
             """.NativeLineEndings());
 	}
 
@@ -63,6 +66,7 @@ public class StringIndexTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL charAt5 = SUBSTRING(message, 6, 1)
+            | KEEP charAt5
             """.NativeLineEndings());
 	}
 

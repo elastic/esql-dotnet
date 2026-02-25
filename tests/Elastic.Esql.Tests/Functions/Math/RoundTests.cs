@@ -19,6 +19,7 @@ public class RoundTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL roundedDuration = ROUND(duration)
+            | KEEP roundedDuration
             """.NativeLineEndings());
 	}
 
@@ -35,6 +36,7 @@ public class RoundTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL roundedDuration = ROUND(duration, 2)
+            | KEEP roundedDuration
             """.NativeLineEndings());
 	}
 }

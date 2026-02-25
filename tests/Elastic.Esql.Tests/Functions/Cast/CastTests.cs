@@ -18,6 +18,7 @@ public class CastTests : EsqlTestBase
 			"""
 			FROM logs-*
 			| EVAL val = duration::integer
+			| KEEP val
 			""".NativeLineEndings());
 	}
 
@@ -33,6 +34,7 @@ public class CastTests : EsqlTestBase
 			"""
 			FROM logs-*
 			| EVAL val = duration::long
+			| KEEP val
 			""".NativeLineEndings());
 	}
 
@@ -48,6 +50,7 @@ public class CastTests : EsqlTestBase
 			"""
 			FROM logs-*
 			| EVAL val = statusCode::double
+			| KEEP val
 			""".NativeLineEndings());
 	}
 
@@ -63,6 +66,7 @@ public class CastTests : EsqlTestBase
 			"""
 			FROM logs-*
 			| EVAL val = statusCode::boolean
+			| KEEP val
 			""".NativeLineEndings());
 	}
 
@@ -78,6 +82,7 @@ public class CastTests : EsqlTestBase
 			"""
 			FROM logs-*
 			| EVAL val = statusCode::keyword
+			| KEEP val
 			""".NativeLineEndings());
 	}
 

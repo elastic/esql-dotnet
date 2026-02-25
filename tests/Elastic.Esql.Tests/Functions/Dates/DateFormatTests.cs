@@ -19,6 +19,7 @@ public class DateFormatTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL formattedDate = DATE_FORMAT(@timestamp, "yyyy-MM-dd")
+            | KEEP formattedDate
             """.NativeLineEndings());
 	}
 }

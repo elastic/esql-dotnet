@@ -18,6 +18,7 @@ public class ScoreTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL relevance = SCORE()
+            | KEEP relevance
             """.NativeLineEndings());
 	}
 

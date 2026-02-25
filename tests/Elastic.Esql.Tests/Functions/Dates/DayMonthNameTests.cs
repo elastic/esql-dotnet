@@ -18,6 +18,7 @@ public class DayMonthNameTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL day = DAY_NAME(@timestamp)
+            | KEEP day
             """.NativeLineEndings());
 	}
 
@@ -33,6 +34,7 @@ public class DayMonthNameTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL month = MONTH_NAME(@timestamp)
+            | KEEP month
             """.NativeLineEndings());
 	}
 

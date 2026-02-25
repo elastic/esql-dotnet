@@ -92,7 +92,7 @@ public class KeepDropTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
 			FROM logs-*
-			| EVAL msg = message
+			| RENAME message AS msg
 			| KEEP msg
 			""".NativeLineEndings());
 	}
@@ -108,7 +108,7 @@ public class KeepDropTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
 			FROM logs-*
-			| EVAL msg = message
+			| RENAME message AS msg
 			| KEEP statusCode, msg
 			""".NativeLineEndings());
 	}
@@ -142,7 +142,7 @@ public class KeepDropTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
 			FROM logs-*
-			| EVAL timestamp = @timestamp
+			| RENAME @timestamp AS timestamp
 			| KEEP message, timestamp
 			""".NativeLineEndings());
 	}

@@ -18,6 +18,7 @@ public class DateParseTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL parsed = DATE_PARSE("yyyy-MM-dd", message)
+            | KEEP parsed
             """.NativeLineEndings());
 	}
 }
