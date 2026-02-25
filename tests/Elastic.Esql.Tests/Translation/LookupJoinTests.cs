@@ -239,6 +239,116 @@ public class LookupJoinTests : EsqlTestBase
 	}
 
 	// ============================================================================
+	// Nullable patterns in result selector
+	// ============================================================================
+
+	[Test]
+	public void LookupJoin_NullGuard_ReferenceType_UnwrapsToField()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("employees")
+			.LookupJoin<LogEntry, LanguageLookup, int, object>(
+				"languages_lookup",
+				outer => outer.StatusCode,
+				inner => inner.LanguageCode,
+				(outer, inner) => new { outer.Message, LanguageName = inner == null ? null : inner.LanguageName }
+			)
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM employees
+			| LOOKUP JOIN languages_lookup ON statusCode == languageCode
+			| KEEP message, languageName
+			""".NativeLineEndings());
+	}
+
+	[Test]
+	public void LookupJoin_NullGuard_Inverted_UnwrapsToField()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("employees")
+			.LookupJoin<LogEntry, LanguageLookup, int, object>(
+				"languages_lookup",
+				outer => outer.StatusCode,
+				inner => inner.LanguageCode,
+				(outer, inner) => new { outer.Message, LanguageName = inner != null ? inner.LanguageName : null }
+			)
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM employees
+			| LOOKUP JOIN languages_lookup ON statusCode == languageCode
+			| KEEP message, languageName
+			""".NativeLineEndings());
+	}
+
+	[Test]
+	public void LookupJoin_NullGuard_ValueType_UnwrapsToField()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("employees")
+			.LookupJoin<LogEntry, LanguageLookup, int, object>(
+				"languages_lookup",
+				outer => outer.StatusCode,
+				inner => inner.LanguageCode,
+				(outer, inner) => new { outer.Message, LanguageCode = inner == null ? (int?)null : inner.LanguageCode }
+			)
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM employees
+			| LOOKUP JOIN languages_lookup ON statusCode == languageCode
+			| KEEP message, languageCode
+			""".NativeLineEndings());
+	}
+
+	[Test]
+	public void LookupJoin_NullableCast_ValueType_UnwrapsToField()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("employees")
+			.LookupJoin<LogEntry, LanguageLookup, int, object>(
+				"languages_lookup",
+				outer => outer.StatusCode,
+				inner => inner.LanguageCode,
+				(outer, inner) => new { outer.Message, LanguageCode = (int?)inner!.LanguageCode }
+			)
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM employees
+			| LOOKUP JOIN languages_lookup ON statusCode == languageCode
+			| KEEP message, languageCode
+			""".NativeLineEndings());
+	}
+
+	[Test]
+	public void LookupJoin_NullGuard_ComplexExpression_GeneratesCaseWhen()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("employees")
+			.LookupJoin<LogEntry, LanguageLookup, int, object>(
+				"languages_lookup",
+				outer => outer.StatusCode,
+				inner => inner.LanguageCode,
+				(outer, inner) => new { outer.Message, Lang = inner == null ? null : inner.LanguageName.ToUpperInvariant() }
+			)
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM employees
+			| LOOKUP JOIN languages_lookup ON statusCode == languageCode
+			| EVAL lang = CASE WHEN languageName IS NOT NULL THEN TO_UPPER(languageName) ELSE NULL END
+			| KEEP message, lang
+			""".NativeLineEndings());
+	}
+
+	// ============================================================================
 	// Identity result selector (no KEEP generated)
 	// ============================================================================
 
