@@ -58,4 +58,9 @@ public class EsqlQuery(Type elementType, IReadOnlyList<QueryCommand> commands, E
 	/// Gets all COMPLETION commands.
 	/// </summary>
 	public IEnumerable<CompletionCommand> CompletionCommands => Commands.OfType<CompletionCommand>();
+
+	/// <summary>
+	/// Gets all LOOKUP JOIN commands.
+	/// </summary>
+	public IEnumerable<LookupJoinCommand> LookupJoinCommands => Commands.OfType<LookupJoinCommand>();
 }

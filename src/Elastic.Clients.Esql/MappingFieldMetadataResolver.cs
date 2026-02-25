@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information
 
 using System.Reflection;
+using System.Text.Json;
 using Elastic.Esql.FieldMetadataResolver;
 using Elastic.Mapping;
 
@@ -21,4 +22,8 @@ public sealed class MappingFieldMetadataResolver(IElasticsearchMappingContext? c
 	/// <inheritdoc/>
 	public string GetFieldName(Type type, MemberInfo member) =>
 		MappingResolver.Resolve(member);
+
+	/// <inheritdoc/>
+	public string GetAnonymousFieldName(string name) =>
+		JsonNamingPolicy.CamelCase.ConvertName(name);
 }

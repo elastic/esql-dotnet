@@ -103,6 +103,9 @@ public class EsqlFormatter : ICommandVisitor
 			AppendCommand($"ROW {string.Join(", ", command.Expressions)}");
 	}
 
+	public void Visit(LookupJoinCommand command) =>
+		AppendCommand($"LOOKUP JOIN {EscapeIdentifier(command.LookupIndex)} ON {command.OnCondition}");
+
 	/// <summary>
 	/// Escapes an identifier for ES|QL if needed.
 	/// </summary>
@@ -150,7 +153,7 @@ public class EsqlFormatter : ICommandVisitor
 			"BY", "AS", "AND", "OR", "NOT", "IN", "LIKE", "RLIKE", "IS", "NULL",
 			"TRUE", "FALSE", "ASC", "DESC", "NULLS", "FIRST", "LAST",
 			"ROW", "SHOW", "META", "METADATA", "MV_EXPAND", "RENAME", "DISSECT", "GROK", "ENRICH",
-			"COMPLETION"
+			"COMPLETION", "JOIN", "LOOKUP"
 		};
 
 		return keywords.Contains(identifier);

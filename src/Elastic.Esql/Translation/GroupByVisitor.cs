@@ -4,6 +4,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
+using System.Runtime.CompilerServices;
 using Elastic.Esql.Core;
 using Elastic.Esql.Extensions;
 using Elastic.Esql.Formatting;
@@ -106,19 +107,16 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 
 		// The result selector looks like: g => new { Level = g.Key, Count = g.Count() }
 		// or for composite keys: g => new { g.Key.Level, g.Key.StatusCode, Count = g.Count() }
-		if (resultSelector.Body is NewExpression newExpr && newExpr.Members != null)
-		{
-			for (var i = 0; i < newExpr.Arguments.Count; i++)
-			{
-				var arg = newExpr.Arguments[i];
-				var memberName = ToCamelCase(newExpr.Members[i].Name);
 
-				var agg = TryExtractAggregation(arg, memberName);
-				if (agg != null)
-					aggregations.Add(agg);
-				else if (TryGetKeyPropertyName(arg, out var keyPropName))
-					keyAliasMap[keyPropName] = memberName;
-			}
+		var members = ExtractResultMembers(resultSelector.Body);
+
+		foreach (var (memberName, arg) in members)
+		{
+			var agg = TryExtractAggregation(arg, memberName);
+			if (agg != null)
+				aggregations.Add(agg);
+			else if (TryGetKeyPropertyName(arg, out var keyPropName))
+				keyAliasMap[keyPropName] = memberName;
 		}
 
 		// If no aggregations found, default to count
@@ -126,6 +124,53 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 			aggregations.Add("count = COUNT(*)");
 
 		return (aggregations, keyAliasMap);
+	}
+
+	private List<(string memberName, Expression argument)> ExtractResultMembers(Expression body)
+	{
+		if (body is MemberInitExpression initExpr)
+			return ExtractFromMemberInit(initExpr);
+
+		if (body is NewExpression { Members: not null } newExpr)
+			return ExtractFromNewExpression(newExpr);
+
+		return [];
+	}
+
+	private List<(string memberName, Expression argument)> ExtractFromNewExpression(NewExpression newExpr)
+	{
+		var resolver = _context.FieldMetadataResolver;
+		var isAnonymous = newExpr.Type.IsDefined(typeof(CompilerGeneratedAttribute), false);
+		var result = new List<(string, Expression)>(newExpr.Arguments.Count);
+
+		for (var i = 0; i < newExpr.Arguments.Count; i++)
+		{
+			var member = newExpr.Members![i];
+			var name = isAnonymous
+				? resolver.GetAnonymousFieldName(member.Name)
+				: resolver.GetFieldName(member.DeclaringType!, member);
+
+			result.Add((name, newExpr.Arguments[i]));
+		}
+
+		return result;
+	}
+
+	private List<(string memberName, Expression argument)> ExtractFromMemberInit(MemberInitExpression initExpr)
+	{
+		var resolver = _context.FieldMetadataResolver;
+		var result = new List<(string, Expression)>(initExpr.Bindings.Count);
+
+		foreach (var binding in initExpr.Bindings)
+		{
+			if (binding is MemberAssignment assignment)
+			{
+				var name = resolver.GetFieldName(assignment.Member.DeclaringType!, assignment.Member);
+				result.Add((name, assignment.Expression));
+			}
+		}
+
+		return result;
 	}
 
 	/// <summary>
@@ -195,6 +240,10 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 
 	private string? TryExtractAggregation(Expression expression, string resultName)
 	{
+		// Unwrap convert expression, only if it is used to change nullability.
+		if (expression is UnaryExpression { NodeType: ExpressionType.Convert } convert && IsNullabilityChange(convert))
+			expression = convert.Operand;
+
 		if (expression is not MethodCallExpression methodCall)
 			return null;
 
@@ -348,16 +397,9 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 		}
 	}
 
+	private static bool IsNullabilityChange(UnaryExpression convert) =>
+		Nullable.GetUnderlyingType(convert.Type) == convert.Operand.Type
+		|| Nullable.GetUnderlyingType(convert.Operand.Type) == convert.Type;
+
 	private static bool IsAggregationMethod(string methodName) => methodName is "Count" or "LongCount" or "Sum" or "Average" or "Min" or "Max";
-
-	private static string ToCamelCase(string name)
-	{
-		if (string.IsNullOrEmpty(name))
-			return name;
-
-		if (name.Length == 1)
-			return name.ToLowerInvariant();
-
-		return char.ToLowerInvariant(name[0]) + name.Substring(1);
-	}
 }

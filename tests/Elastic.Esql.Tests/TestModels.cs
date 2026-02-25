@@ -14,6 +14,10 @@ namespace Elastic.Esql.Tests;
 [JsonSerializable(typeof(SimpleDocument))]
 [JsonSerializable(typeof(MetricDocument))]
 [JsonSerializable(typeof(EventDocument))]
+[JsonSerializable(typeof(LanguageLookup))]
+[JsonSerializable(typeof(ThreatListEntry))]
+[JsonSerializable(typeof(LogProjection))]
+[JsonSerializable(typeof(StatsProjection))]
 public sealed partial class EsqlTestMappingContext : JsonSerializerContext;
 
 /// <summary>
@@ -66,6 +70,24 @@ public class MetricDocument
 }
 
 /// <summary>
+/// Lookup document for LOOKUP JOIN tests.
+/// </summary>
+public class LanguageLookup
+{
+	public int LanguageCode { get; set; }
+	public string LanguageName { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Lookup document for IP threat correlation LOOKUP JOIN tests.
+/// </summary>
+public class ThreatListEntry
+{
+	public string ClientIp { get; set; } = string.Empty;
+	public string ThreatLevel { get; set; } = string.Empty;
+}
+
+/// <summary>
 /// Enum for testing enum formatting.
 /// </summary>
 public enum LogLevel
@@ -86,4 +108,40 @@ public class EventDocument
 	public LogLevel Level { get; set; }
 	public string Message { get; set; } = string.Empty;
 	public Guid EventId { get; set; }
+}
+
+/// <summary>
+/// Strongly-typed projection model with custom JSON field names for testing
+/// that <see cref="JsonPropertyNameAttribute"/> is honored on target types.
+/// </summary>
+public class LogProjection
+{
+	[JsonPropertyName("log_level")]
+	public string Level { get; set; } = string.Empty;
+
+	public string Message { get; set; } = string.Empty;
+
+	[JsonPropertyName("status")]
+	public int StatusCode { get; set; }
+
+	public double Duration { get; set; }
+}
+
+/// <summary>
+/// Strongly-typed stats result model for testing GroupBy projections
+/// with <see cref="JsonPropertyNameAttribute"/> on result fields.
+/// </summary>
+public class StatsProjection
+{
+	[JsonPropertyName("log_level")]
+	public string Level { get; set; } = string.Empty;
+
+	[JsonPropertyName("total_count")]
+	public int Count { get; set; }
+
+	[JsonPropertyName("avg_duration")]
+	public double AvgDuration { get; set; }
+
+	[JsonPropertyName("total_duration")]
+	public double TotalDuration { get; set; }
 }

@@ -28,6 +28,18 @@ public static partial class EsqlQueryableExtensions
 				]));
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private static IQueryable<TResult> CreateQuery<TSource, TResult>(IQueryable<TSource> source, MethodInfo method, params ReadOnlySpan<Expression> arguments) =>
+		source.Provider.CreateQuery<TResult>(
+			Expression.Call(
+				instance: null,
+				method: method,
+				arguments:
+				[
+					source.Expression,
+					.. arguments
+				]));
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private static TResult Execute<TSource, TResult>(IQueryable<TSource> source, MethodInfo method, params ReadOnlySpan<Expression> arguments) =>
 		source.Provider.Execute<TResult>(
 			Expression.Call(

@@ -30,12 +30,22 @@ public sealed class SystemTextJsonFieldMetadataResolver(JsonSerializerOptions? o
 		return FindProperty(type, member).Name;
 	}
 
+	/// <inheritdoc/>
+	public string GetAnonymousFieldName(string name)
+	{
+		Verify.NotNullOrEmpty(name);
+
+		return Options.PropertyNamingPolicy?.ConvertName(name) ?? name;
+	}
+
 	private JsonPropertyInfo FindProperty(Type type, MemberInfo member)
 	{
-		var t = type ?? throw new ArgumentNullException(nameof(type));
-		var m = member ?? throw new ArgumentNullException(nameof(member));
+		Verify.NotNull(type);
+		Verify.NotNull(member);
 
-		return Options.GetTypeInfo(t).Properties.FirstOrDefault(p => p.AttributeProvider is MemberInfo mi && mi == m)
-			   ?? throw new NotSupportedException($"Member '{member.Name}' of type '{member.DeclaringType?.Name}' is not supported.");
+		var typeInfo = Options.GetTypeInfo(type);
+		var property = typeInfo.Properties.FirstOrDefault(p => p.AttributeProvider is MemberInfo mi && mi == member);
+
+		return property ?? throw new NotSupportedException($"Member '{member.Name}' of type '{member.DeclaringType?.Name}' is not supported.");
 	}
 }
