@@ -16,6 +16,8 @@ namespace Elastic.Esql.Tests;
 [JsonSerializable(typeof(EventDocument))]
 [JsonSerializable(typeof(LanguageLookup))]
 [JsonSerializable(typeof(ThreatListEntry))]
+[JsonSerializable(typeof(LogProjection))]
+[JsonSerializable(typeof(StatsProjection))]
 public sealed partial class EsqlTestMappingContext : JsonSerializerContext;
 
 /// <summary>
@@ -106,4 +108,40 @@ public class EventDocument
 	public LogLevel Level { get; set; }
 	public string Message { get; set; } = string.Empty;
 	public Guid EventId { get; set; }
+}
+
+/// <summary>
+/// Strongly-typed projection model with custom JSON field names for testing
+/// that <see cref="JsonPropertyNameAttribute"/> is honored on target types.
+/// </summary>
+public class LogProjection
+{
+	[JsonPropertyName("log_level")]
+	public string Level { get; set; } = string.Empty;
+
+	public string Message { get; set; } = string.Empty;
+
+	[JsonPropertyName("status")]
+	public int StatusCode { get; set; }
+
+	public double Duration { get; set; }
+}
+
+/// <summary>
+/// Strongly-typed stats result model for testing GroupBy projections
+/// with <see cref="JsonPropertyNameAttribute"/> on result fields.
+/// </summary>
+public class StatsProjection
+{
+	[JsonPropertyName("log_level")]
+	public string Level { get; set; } = string.Empty;
+
+	[JsonPropertyName("total_count")]
+	public int Count { get; set; }
+
+	[JsonPropertyName("avg_duration")]
+	public double AvgDuration { get; set; }
+
+	[JsonPropertyName("total_duration")]
+	public double TotalDuration { get; set; }
 }

@@ -10,4 +10,10 @@ public interface IEsqlFieldMetadataResolver
 {
 	// TODO: Document
 	string GetFieldName(Type type, MemberInfo member);
+
+	/// <summary>
+	/// Converts a raw property name to a field name using the configured naming policy.
+	/// Used for anonymous types and other cases where no registered type metadata is available.
+	/// </summary>
+	string GetAnonymousFieldName(string name);
 }
