@@ -144,6 +144,8 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 			var value = EsqlFormatting.FormatValue(constant.Value);
 			_evalExpressions.Add($"{resultField} = {value}");
 		}
+		else
+			throw new NotSupportedException($"Expression type {sourceExpression.GetType().Name} ({sourceExpression.NodeType}) is not supported.");
 	}
 
 	private string TranslateExpression(Expression expression) =>

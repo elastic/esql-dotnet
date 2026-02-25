@@ -14,6 +14,8 @@ namespace Elastic.Esql.Tests;
 [JsonSerializable(typeof(SimpleDocument))]
 [JsonSerializable(typeof(MetricDocument))]
 [JsonSerializable(typeof(EventDocument))]
+[JsonSerializable(typeof(LanguageLookup))]
+[JsonSerializable(typeof(ThreatListEntry))]
 public sealed partial class EsqlTestMappingContext : JsonSerializerContext;
 
 /// <summary>
@@ -63,6 +65,24 @@ public class MetricDocument
 	public double? Value { get; set; }
 	public int? Count { get; set; }
 	public string? Tags { get; set; }
+}
+
+/// <summary>
+/// Lookup document for LOOKUP JOIN tests.
+/// </summary>
+public class LanguageLookup
+{
+	public int LanguageCode { get; set; }
+	public string LanguageName { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Lookup document for IP threat correlation LOOKUP JOIN tests.
+/// </summary>
+public class ThreatListEntry
+{
+	public string ClientIp { get; set; } = string.Empty;
+	public string ThreatLevel { get; set; } = string.Empty;
 }
 
 /// <summary>

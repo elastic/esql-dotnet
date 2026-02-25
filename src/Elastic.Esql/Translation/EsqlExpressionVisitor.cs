@@ -161,6 +161,11 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 			case nameof(EsqlQueryableExtensions.Completion):
 				VisitCompletion(node);
 				break;
+
+			case nameof(EsqlQueryableExtensions.LookupJoin):
+			case nameof(EsqlQueryableExtensions.LeftJoin):
+				VisitLookupJoin(node);
+				break;
 		}
 
 		return node;
@@ -500,6 +505,95 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 		// String overload: Completion("fieldName", inferenceId, column)
 		if (ExpressionConstantResolver.Resolve(promptArg) is string prompt)
 			Context.Commands.Add(new CompletionCommand(prompt, inferenceId, column));
+	}
+
+	private void VisitLookupJoin(MethodCallExpression node)
+	{
+		var lookupIndex = ExtractLookupIndex(node.Arguments[1].UnwrapConvertExpressions());
+
+		string onCondition;
+		Expression resultSelectorArg;
+
+		if (node.Arguments.Count == 5)
+		{
+			// Key-selector variant: args are [source, inner/index, outerKey, innerKey, resultSelector]
+			var outerKeyArg = node.Arguments[2];
+			var innerKeyArg = node.Arguments[3];
+			resultSelectorArg = node.Arguments[4];
+
+			var outerField = ExtractFieldFromQuotedLambda(outerKeyArg);
+			var innerField = ExtractFieldFromQuotedLambda(innerKeyArg);
+
+			onCondition = outerField == innerField
+				? outerField
+				: $"{outerField} == {innerField}";
+		}
+		else
+		{
+			// Predicate variant: args are [source, inner/index, onCondition, resultSelector]
+			var predicateArg = node.Arguments[2];
+			resultSelectorArg = node.Arguments[3];
+
+			if (predicateArg is not UnaryExpression { Operand: LambdaExpression lambda })
+				throw new NotSupportedException("The ON condition must be a lambda expression.");
+
+			var whereVisitor = new WhereClauseVisitor(Context);
+			onCondition = whereVisitor.Translate(lambda.Body);
+		}
+
+		Context.Commands.Add(new LookupJoinCommand(lookupIndex, onCondition));
+
+		// Process result selector projection into EVAL/KEEP commands
+		// Skip if the body is just a parameter reference (identity projection like (o, i) => o)
+		if (resultSelectorArg is UnaryExpression { Operand: LambdaExpression resultLambda }
+			&& resultLambda.Body is not ParameterExpression)
+		{
+			var projectionVisitor = new SelectProjectionVisitor(Context);
+			var result = projectionVisitor.Translate(resultLambda);
+
+			if (result.EvalExpressions.Count > 0)
+				Context.Commands.Add(new EvalCommand(result.EvalExpressions));
+
+			var allKeepFields = new List<string>(result.KeepFields);
+			foreach (var evalExpr in result.EvalExpressions)
+			{
+				var aliasName = evalExpr.Split('=')[0].Trim();
+				allKeepFields.Add(aliasName);
+			}
+
+			if (allKeepFields.Count > 0)
+				Context.Commands.Add(new KeepCommand(allKeepFields));
+		}
+	}
+
+	private string ExtractLookupIndex(Expression innerExpression)
+	{
+		if (innerExpression is ConstantExpression { Value: string indexName })
+			return indexName;
+
+		// Unwrap: if it's a ConstantExpression wrapping a queryable, use the queryable's expression
+		if (innerExpression is ConstantExpression { Value: IQueryable innerQueryable })
+			innerExpression = innerQueryable.Expression;
+
+		var innerVisitor = new EsqlExpressionVisitor(Provider, null, inlineParameters);
+		var innerQuery = innerVisitor.Translate(innerExpression);
+		var from = innerQuery.From;
+
+		if (from is null || string.IsNullOrEmpty(from.IndexPattern))
+			throw new NotSupportedException("The lookup source must specify an index using '.From(\"index_name\")'.");
+
+		if (innerQuery.Commands.Any(c => c is not FromCommand))
+			throw new NotSupportedException("The lookup source must contain only a FROM command.");
+
+		return from.IndexPattern;
+	}
+
+	private string ExtractFieldFromQuotedLambda(Expression arg)
+	{
+		if (arg is not UnaryExpression { Operand: LambdaExpression lambda })
+			throw new NotSupportedException("Expected a lambda expression for key selector.");
+
+		return ExtractFieldName(lambda.Body);
 	}
 
 	private List<string> ExtractFieldsFromSelectors(NewArrayExpression arrayExpr)
