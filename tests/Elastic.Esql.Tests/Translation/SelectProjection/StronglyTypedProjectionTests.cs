@@ -34,7 +34,8 @@ public class StronglyTypedProjectionTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
 			FROM logs-*
-			| EVAL log_level = log.level
+			| RENAME log.level AS log_level
+			| KEEP log_level
 			""".NativeLineEndings());
 	}
 
@@ -51,7 +52,8 @@ public class StronglyTypedProjectionTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
 			FROM logs-*
-			| EVAL status = statusCode
+			| RENAME statusCode AS status
+			| KEEP status
 			""".NativeLineEndings());
 	}
 
@@ -72,8 +74,8 @@ public class StronglyTypedProjectionTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
 			FROM logs-*
-			| KEEP message, duration
-			| EVAL log_level = log.level, status = statusCode
+			| RENAME log.level AS log_level, statusCode AS status
+			| KEEP message, duration, log_level, status
 			""".NativeLineEndings());
 	}
 
@@ -89,6 +91,7 @@ public class StronglyTypedProjectionTests : EsqlTestBase
 			"""
 			FROM logs-*
 			| EVAL status = (statusCode - 100)
+			| KEEP status
 			""".NativeLineEndings());
 	}
 
@@ -104,6 +107,7 @@ public class StronglyTypedProjectionTests : EsqlTestBase
 			"""
 			FROM logs-*
 			| EVAL log_level = CASE WHEN (statusCode >= 400) THEN "Error" ELSE "OK" END
+			| KEEP log_level
 			""".NativeLineEndings());
 	}
 }

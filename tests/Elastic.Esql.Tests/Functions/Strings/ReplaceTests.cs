@@ -18,6 +18,7 @@ public class ReplaceTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = REPLACE(message, "old", "new")
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -33,6 +34,7 @@ public class ReplaceTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = REPLACE(message, "old", "new")
+            | KEEP val
             """.NativeLineEndings());
 	}
 

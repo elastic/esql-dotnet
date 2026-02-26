@@ -19,6 +19,7 @@ public class CeilFloorTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL ceiledDuration = CEIL(duration)
+            | KEEP ceiledDuration
             """.NativeLineEndings());
 	}
 
@@ -35,6 +36,7 @@ public class CeilFloorTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL flooredDuration = FLOOR(duration)
+            | KEEP flooredDuration
             """.NativeLineEndings());
 	}
 }

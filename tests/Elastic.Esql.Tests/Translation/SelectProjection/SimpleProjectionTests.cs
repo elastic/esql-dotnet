@@ -29,12 +29,11 @@ public class SimpleProjectionTests : EsqlTestBase
 			.Select(l => new { l.Level, l.Message })
 			.ToString();
 
-		// Field with different source name (log.level vs level) uses EVAL for rename
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | KEEP message
-            | EVAL level = log.level
+            | RENAME log.level AS level
+            | KEEP message, level
             """.NativeLineEndings());
 	}
 
@@ -49,8 +48,8 @@ public class SimpleProjectionTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | KEEP message
-            | EVAL logLevel = log.level
+            | RENAME log.level AS logLevel
+            | KEEP message, logLevel
             """.NativeLineEndings());
 	}
 }

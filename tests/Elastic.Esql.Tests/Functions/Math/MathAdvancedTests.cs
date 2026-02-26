@@ -18,6 +18,7 @@ public class MathAdvancedTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = CBRT(duration)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -33,6 +34,7 @@ public class MathAdvancedTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = CBRT(duration)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -48,6 +50,7 @@ public class MathAdvancedTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = EXP(duration)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -63,6 +66,7 @@ public class MathAdvancedTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = EXP(duration)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -78,6 +82,7 @@ public class MathAdvancedTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = HYPOT(duration, statusCode)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -93,6 +98,7 @@ public class MathAdvancedTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = SIGNUM(duration)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -108,6 +114,7 @@ public class MathAdvancedTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = SIGNUM(duration)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -123,6 +130,7 @@ public class MathAdvancedTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = COPY_SIGN(duration, statusCode)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -138,6 +146,7 @@ public class MathAdvancedTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = SCALB(duration, 3)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -153,6 +162,7 @@ public class MathAdvancedTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = ROUND_TO(duration, 2)
+            | KEEP val
             """.NativeLineEndings());
 	}
 

@@ -18,6 +18,7 @@ public class DateDiffTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL diff = DATE_DIFF("day", @timestamp, NOW())
+            | KEEP diff
             """.NativeLineEndings());
 	}
 

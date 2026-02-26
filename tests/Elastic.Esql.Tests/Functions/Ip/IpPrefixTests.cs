@@ -18,6 +18,7 @@ public class IpPrefixTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL prefix = IP_PREFIX(clientIp, 24, 4)
+            | KEEP prefix
             """.NativeLineEndings());
 	}
 

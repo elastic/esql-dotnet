@@ -90,8 +90,8 @@ public class FluentApiTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE log.level.keyword == "ERROR"
-            | KEEP message
-            | EVAL timestamp = @timestamp
+            | RENAME @timestamp AS timestamp
+            | KEEP message, timestamp
             """.NativeLineEndings());
 	}
 }

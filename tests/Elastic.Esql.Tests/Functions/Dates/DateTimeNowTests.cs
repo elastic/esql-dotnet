@@ -92,8 +92,8 @@ public class DateTimeNowTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | KEEP message
             | EVAL currentTime = NOW()
+            | KEEP message, currentTime
             """.NativeLineEndings());
 	}
 }

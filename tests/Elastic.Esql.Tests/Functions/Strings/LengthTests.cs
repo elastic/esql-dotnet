@@ -33,8 +33,8 @@ public class LengthTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | KEEP message
             | EVAL messageLength = LENGTH(message)
+            | KEEP message, messageLength
             """.NativeLineEndings());
 	}
 }

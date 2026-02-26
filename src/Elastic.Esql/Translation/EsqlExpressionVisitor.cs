@@ -205,12 +205,7 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 
 			var projectionVisitor = new SelectProjectionVisitor(Context);
 			var result = projectionVisitor.Translate(lambda);
-
-			if (result.KeepFields.Count > 0)
-				Context.Commands.Add(new KeepCommand(result.KeepFields));
-
-			if (result.EvalExpressions.Count > 0)
-				Context.Commands.Add(new EvalCommand(result.EvalExpressions));
+			EmitProjectionCommands(result);
 		}
 	}
 
@@ -408,20 +403,7 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 		{
 			var projectionVisitor = new SelectProjectionVisitor(Context);
 			var result = projectionVisitor.Translate(lambda);
-
-			if (result.EvalExpressions.Count > 0)
-				Context.Commands.Add(new EvalCommand(result.EvalExpressions));
-
-			// Combine direct keep fields and eval result names into a single KEEP
-			var allKeepFields = new List<string>(result.KeepFields);
-			foreach (var evalExpr in result.EvalExpressions)
-			{
-				var aliasName = evalExpr.Split('=')[0].Trim();
-				allKeepFields.Add(aliasName);
-			}
-
-			if (allKeepFields.Count > 0)
-				Context.Commands.Add(new KeepCommand(allKeepFields));
+			EmitProjectionCommands(result);
 		}
 	}
 
@@ -543,27 +525,37 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 
 		Context.Commands.Add(new LookupJoinCommand(lookupIndex, onCondition));
 
-		// Process result selector projection into EVAL/KEEP commands
+		// Process result selector projection into RENAME/EVAL/KEEP commands
 		// Skip if the body is just a parameter reference (identity projection like (o, i) => o)
 		if (resultSelectorArg is UnaryExpression { Operand: LambdaExpression resultLambda }
 			&& resultLambda.Body is not ParameterExpression)
 		{
 			var projectionVisitor = new SelectProjectionVisitor(Context);
 			var result = projectionVisitor.Translate(resultLambda);
-
-			if (result.EvalExpressions.Count > 0)
-				Context.Commands.Add(new EvalCommand(result.EvalExpressions));
-
-			var allKeepFields = new List<string>(result.KeepFields);
-			foreach (var evalExpr in result.EvalExpressions)
-			{
-				var aliasName = evalExpr.Split('=')[0].Trim();
-				allKeepFields.Add(aliasName);
-			}
-
-			if (allKeepFields.Count > 0)
-				Context.Commands.Add(new KeepCommand(allKeepFields));
+			EmitProjectionCommands(result);
 		}
+	}
+
+	/// <summary>
+	/// Emits RENAME, EVAL, and KEEP commands in the correct order from a projection result.
+	/// KEEP is always emitted to reduce the result set to only the projected fields.
+	/// </summary>
+	private void EmitProjectionCommands(SelectProjectionVisitor.ProjectionResult result)
+	{
+		if (result.RenameFields.Count > 0)
+			Context.Commands.Add(new RenameCommand(result.RenameFields));
+
+		if (result.EvalExpressions.Count > 0)
+			Context.Commands.Add(new EvalCommand(result.EvalExpressions));
+
+		var allKeepFields = new List<string>(result.KeepFields);
+		foreach (var (_, target) in result.RenameFields)
+			allKeepFields.Add(target);
+		foreach (var evalExpr in result.EvalExpressions)
+			allKeepFields.Add(evalExpr.Split('=')[0].Trim());
+
+		if (allKeepFields.Count > 0)
+			Context.Commands.Add(new KeepCommand(allKeepFields));
 	}
 
 	private string ExtractLookupIndex(Expression innerExpression)

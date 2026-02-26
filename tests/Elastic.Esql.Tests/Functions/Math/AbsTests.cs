@@ -34,6 +34,7 @@ public class AbsTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL absDuration = ABS(duration)
+            | KEEP absDuration
             """.NativeLineEndings());
 	}
 }

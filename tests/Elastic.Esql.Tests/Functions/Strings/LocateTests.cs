@@ -18,6 +18,7 @@ public class LocateTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL pos = LOCATE(message, "error")
+            | KEEP pos
             """.NativeLineEndings());
 	}
 
@@ -33,6 +34,7 @@ public class LocateTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL pos = LOCATE(message, "error", 5)
+            | KEEP pos
             """.NativeLineEndings());
 	}
 
@@ -48,6 +50,7 @@ public class LocateTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL pos = LOCATE(message, "error")
+            | KEEP pos
             """.NativeLineEndings());
 	}
 

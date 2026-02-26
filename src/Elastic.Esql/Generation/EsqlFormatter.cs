@@ -103,6 +103,12 @@ public class EsqlFormatter : ICommandVisitor
 			AppendCommand($"ROW {string.Join(", ", command.Expressions)}");
 	}
 
+	public void Visit(RenameCommand command)
+	{
+		if (command.Fields.Count > 0)
+			AppendCommand($"RENAME {string.Join(", ", command.Fields.Select(f => $"{f.OldName} AS {f.NewName}"))}");
+	}
+
 	public void Visit(LookupJoinCommand command) =>
 		AppendCommand($"LOOKUP JOIN {EscapeIdentifier(command.LookupIndex)} ON {command.OnCondition}");
 

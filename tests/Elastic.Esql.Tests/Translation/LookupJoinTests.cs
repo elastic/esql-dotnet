@@ -233,7 +233,8 @@ public class LookupJoinTests : EsqlTestBase
 			"""
 			FROM employees
 			| LOOKUP JOIN languages_lookup ON statusCode == languageCode
-			| EVAL msg = message, lang = TO_UPPER(languageName)
+			| RENAME message AS msg
+			| EVAL lang = TO_UPPER(languageName)
 			| KEEP msg, lang
 			""".NativeLineEndings());
 	}

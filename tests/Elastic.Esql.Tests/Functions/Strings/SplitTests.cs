@@ -18,6 +18,7 @@ public class SplitTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = SPLIT(message, ",")
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -33,6 +34,7 @@ public class SplitTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = SPLIT(message, ",")
+            | KEEP val
             """.NativeLineEndings());
 	}
 }

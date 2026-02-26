@@ -4,6 +4,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
+using System.Text.Json;
 using Elastic.Esql.Core;
 using Elastic.Esql.Extensions;
 using Elastic.Esql.FieldMetadataResolver;
@@ -108,5 +109,8 @@ namespace EsqlAotSmoketest
 
 		public string GetFieldName(Type type, MemberInfo member) =>
 			_resolver.Resolve(member);
+
+		public string GetAnonymousFieldName(string name) =>
+			JsonNamingPolicy.CamelCase.ConvertName(name);
 	}
 }

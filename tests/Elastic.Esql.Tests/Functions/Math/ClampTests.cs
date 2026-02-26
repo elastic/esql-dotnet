@@ -18,6 +18,7 @@ public class ClampTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = CLAMP(duration, 0, 100)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -33,6 +34,7 @@ public class ClampTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = CLAMP(duration, 0, 100)
+            | KEEP val
             """.NativeLineEndings());
 	}
 

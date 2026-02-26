@@ -32,5 +32,6 @@ public interface ICommandVisitor
 	void Visit(DropCommand command);
 	void Visit(CompletionCommand command);
 	void Visit(RowCommand command);
+	void Visit(RenameCommand command);
 	void Visit(LookupJoinCommand command);
 }

@@ -18,6 +18,7 @@ public class EncodingTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = BIT_LENGTH(message)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -33,6 +34,7 @@ public class EncodingTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = BYTE_LENGTH(message)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -48,6 +50,7 @@ public class EncodingTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = FROM_BASE64(message)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -63,6 +66,7 @@ public class EncodingTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = TO_BASE64(message)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -78,6 +82,7 @@ public class EncodingTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = URL_ENCODE(message)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -93,6 +98,7 @@ public class EncodingTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = URL_ENCODE_COMPONENT(message)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -108,6 +114,7 @@ public class EncodingTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = URL_DECODE(message)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -123,6 +130,7 @@ public class EncodingTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = CHUNK(message, 100)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -138,6 +146,7 @@ public class EncodingTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL len = LENGTH(message)
+            | KEEP len
             """.NativeLineEndings());
 	}
 

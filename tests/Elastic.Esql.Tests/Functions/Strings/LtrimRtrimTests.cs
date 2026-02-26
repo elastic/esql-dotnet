@@ -18,6 +18,7 @@ public class LtrimRtrimTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = LTRIM(message)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -33,6 +34,7 @@ public class LtrimRtrimTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = RTRIM(message)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -48,6 +50,7 @@ public class LtrimRtrimTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = LTRIM(message)
+            | KEEP val
             """.NativeLineEndings());
 	}
 
@@ -63,6 +66,7 @@ public class LtrimRtrimTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL val = RTRIM(message)
+            | KEEP val
             """.NativeLineEndings());
 	}
 

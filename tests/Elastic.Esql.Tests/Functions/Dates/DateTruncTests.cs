@@ -19,6 +19,7 @@ public class DateTruncTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL hour = DATE_TRUNC("hour", @timestamp)
+            | KEEP hour
             """.NativeLineEndings());
 	}
 
@@ -35,6 +36,7 @@ public class DateTruncTests : EsqlTestBase
 			"""
             FROM logs-*
             | EVAL day = DATE_TRUNC("day", @timestamp)
+            | KEEP day
             """.NativeLineEndings());
 	}
 }
