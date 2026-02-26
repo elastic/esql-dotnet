@@ -16,6 +16,7 @@ namespace Elastic.Esql.Tests;
 [JsonSerializable(typeof(EventDocument))]
 [JsonSerializable(typeof(LanguageLookup))]
 [JsonSerializable(typeof(ThreatListEntry))]
+[JsonSerializable(typeof(OverlappingLookup))]
 [JsonSerializable(typeof(LogProjection))]
 [JsonSerializable(typeof(StatsProjection))]
 public sealed partial class EsqlTestMappingContext : JsonSerializerContext;
@@ -85,6 +86,17 @@ public class ThreatListEntry
 {
 	public string ClientIp { get; set; } = string.Empty;
 	public string ThreatLevel { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Lookup document that shares field names with <see cref="LogEntry"/> for join collision tests.
+/// Fields <c>Message</c> and <c>ClientIp</c> collide with the outer type.
+/// </summary>
+public class OverlappingLookup
+{
+	public string ClientIp { get; set; } = string.Empty;
+	public string Message { get; set; } = string.Empty;
+	public string Region { get; set; } = string.Empty;
 }
 
 /// <summary>

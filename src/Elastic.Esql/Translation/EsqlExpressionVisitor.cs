@@ -19,6 +19,16 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 	// Tracks pending GroupBy key selector for combining with subsequent Select
 	private LambdaExpression? _pendingGroupByKeySelector;
 
+	// Tracks pending GroupJoin for combining with subsequent SelectMany (left outer join pattern)
+	private PendingGroupJoin? _pendingGroupJoin;
+
+	private sealed record PendingGroupJoin(
+		Expression InnerSource,
+		LambdaExpression OuterKeySelector,
+		LambdaExpression InnerKeySelector,
+		LambdaExpression ResultSelector
+	);
+
 	public EsqlQueryProvider Provider { get; } = provider ?? throw new ArgumentNullException(nameof(provider));
 	public EsqlTranslationContext Context { get; } = new() { FieldMetadataResolver = provider.FieldMetadataResolver, InlineParameters = inlineParameters };
 	public string? DefaultIndexPattern { get; } = defaultIndexPattern;
@@ -29,6 +39,9 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 	public EsqlQuery Translate(Expression expression)
 	{
 		_ = Visit(expression);
+
+		if (_pendingGroupJoin is not null)
+			throw new NotSupportedException("GroupJoin must be followed by SelectMany with DefaultIfEmpty() to form a left outer join pattern.");
 
 		if (Context.ElementType is null)
 			throw new InvalidOperationException("Failed to determine result type for the given expression.");
@@ -165,6 +178,18 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 			case nameof(EsqlQueryableExtensions.LookupJoin):
 			case nameof(EsqlQueryableExtensions.LeftJoin):
 				VisitLookupJoin(node);
+				break;
+
+			case nameof(Queryable.Join):
+				VisitJoin(node);
+				break;
+
+			case nameof(Queryable.GroupJoin):
+				VisitGroupJoin(node);
+				break;
+
+			case nameof(Queryable.SelectMany):
+				VisitSelectMany(node);
 				break;
 		}
 
@@ -523,17 +548,160 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 			onCondition = whereVisitor.Translate(lambda.Body);
 		}
 
-		Context.Commands.Add(new LookupJoinCommand(lookupIndex, onCondition));
+		EmitJoinWithCollisionHandling(lookupIndex, onCondition, resultSelectorArg);
+	}
 
-		// Process result selector projection into RENAME/EVAL/KEEP commands
-		// Skip if the body is just a parameter reference (identity projection like (o, i) => o)
+	private void VisitJoin(MethodCallExpression node)
+	{
+		var lookupIndex = ExtractLookupIndex(node.Arguments[1].UnwrapConvertExpressions());
+		var resultSelectorArg = node.Arguments[4];
+
+		var outerField = ExtractFieldFromQuotedLambda(node.Arguments[2]);
+		var innerField = ExtractFieldFromQuotedLambda(node.Arguments[3]);
+
+		var onCondition = outerField == innerField
+			? outerField
+			: $"{outerField} == {innerField}";
+
+		EmitJoinWithCollisionHandling(lookupIndex, onCondition, resultSelectorArg, whereNotNullField: innerField);
+	}
+
+	private void VisitGroupJoin(MethodCallExpression node)
+	{
+		if (_pendingGroupJoin is not null)
+			throw new NotSupportedException("GroupJoin must be followed by SelectMany with DefaultIfEmpty() to form a left outer join pattern.");
+
+		if (node.Arguments.Count < 5)
+			throw new NotSupportedException("GroupJoin requires 5 arguments.");
+
+		var innerSource = node.Arguments[1];
+		var outerKeyArg = node.Arguments[2];
+		var innerKeyArg = node.Arguments[3];
+		var resultSelectorArg = node.Arguments[4];
+
+		if (outerKeyArg is not UnaryExpression { Operand: LambdaExpression outerKey })
+			throw new NotSupportedException("Expected a lambda expression for outer key selector.");
+
+		if (innerKeyArg is not UnaryExpression { Operand: LambdaExpression innerKey })
+			throw new NotSupportedException("Expected a lambda expression for inner key selector.");
+
+		if (resultSelectorArg is not UnaryExpression { Operand: LambdaExpression resultSelector })
+			throw new NotSupportedException("Expected a lambda expression for GroupJoin result selector.");
+
+		_pendingGroupJoin = new PendingGroupJoin(innerSource, outerKey, innerKey, resultSelector);
+	}
+
+	private void VisitSelectMany(MethodCallExpression node)
+	{
+		if (_pendingGroupJoin is null)
+			throw new NotSupportedException("SelectMany is only supported as part of a left outer join pattern (GroupJoin + SelectMany with DefaultIfEmpty).");
+
+		if (node.Arguments.Count < 3)
+			throw new NotSupportedException("SelectMany requires a collection selector and result selector for the join pattern.");
+
+		var collectionSelectorArg = node.Arguments[1];
+		var resultSelectorArg = node.Arguments[2];
+
+		if (collectionSelectorArg is not UnaryExpression { Operand: LambdaExpression collectionSelector })
+			throw new NotSupportedException("Expected a lambda expression for collection selector.");
+
+		if (!IsDefaultIfEmptyCall(collectionSelector.Body))
+			throw new NotSupportedException("SelectMany is only supported with DefaultIfEmpty() for the left outer join pattern.");
+
+		var pending = _pendingGroupJoin;
+		_pendingGroupJoin = null;
+
+		var lookupIndex = ExtractLookupIndex(pending.InnerSource.UnwrapConvertExpressions());
+
+		var outerField = ExtractFieldName(pending.OuterKeySelector.Body);
+		var innerField = ExtractFieldName(pending.InnerKeySelector.Body);
+
+		var onCondition = outerField == innerField
+			? outerField
+			: $"{outerField} == {innerField}";
+
 		if (resultSelectorArg is UnaryExpression { Operand: LambdaExpression resultLambda }
 			&& resultLambda.Body is not ParameterExpression)
 		{
-			var projectionVisitor = new SelectProjectionVisitor(Context);
-			var result = projectionVisitor.Translate(resultLambda);
-			EmitProjectionCommands(result);
+			var rewrittenLambda = RewriteGroupJoinResultSelector(pending.ResultSelector, resultLambda);
+
+			// Wrap the rewritten lambda back into a UnaryExpression so EmitJoinWithCollisionHandling can unwrap it
+			var quotedLambda = Expression.Quote(rewrittenLambda);
+			EmitJoinWithCollisionHandling(lookupIndex, onCondition, quotedLambda);
 		}
+		else
+		{
+			Context.Commands.Add(new LookupJoinCommand(lookupIndex, onCondition));
+		}
+	}
+
+	private static bool IsDefaultIfEmptyCall(Expression expression) =>
+		expression is MethodCallExpression { Method.Name: "DefaultIfEmpty" };
+
+	/// <summary>
+	/// Rewrites the SelectMany result selector so it references outer/inner parameters directly,
+	/// instead of going through the intermediate anonymous type created by GroupJoin.
+	/// </summary>
+	/// <remarks>
+	/// GroupJoin produces <c>(outer, innerCollection) => new { c = outer, ps = innerCollection }</c>.
+	/// SelectMany then has <c>(temp, p) => new { temp.c.Name, p.Price }</c>.
+	/// This method rewrites the SelectMany lambda into <c>(outer, inner) => new { outer.Name, inner.Price }</c>
+	/// so that <see cref="SelectProjectionVisitor"/> can process it identically to a <c>LeftJoin</c> result selector.
+	/// </remarks>
+	private static LambdaExpression RewriteGroupJoinResultSelector(LambdaExpression groupJoinResultSelector, LambdaExpression selectManyResultSelector)
+	{
+		if (groupJoinResultSelector.Body is not NewExpression groupJoinNew || groupJoinNew.Members is null)
+			throw new NotSupportedException("GroupJoin result selector must create an anonymous type.");
+
+		var groupJoinOuterParam = groupJoinResultSelector.Parameters[0];
+
+		string? outerMemberName = null;
+		for (var i = 0; i < groupJoinNew.Arguments.Count; i++)
+		{
+			if (groupJoinNew.Arguments[i] == groupJoinOuterParam)
+			{
+				outerMemberName = groupJoinNew.Members[i].Name;
+				break;
+			}
+		}
+
+		if (outerMemberName is null)
+			throw new NotSupportedException("Could not identify the outer entity member in the GroupJoin result selector.");
+
+		var selectManyTempParam = selectManyResultSelector.Parameters[0];
+		var selectManyInnerParam = selectManyResultSelector.Parameters[1];
+
+		var newOuterParam = Expression.Parameter(groupJoinOuterParam.Type, "outer");
+		var newInnerParam = Expression.Parameter(selectManyInnerParam.Type, "inner");
+
+		var rewriter = new GroupJoinResultRewriter(selectManyTempParam, outerMemberName, selectManyInnerParam, newOuterParam, newInnerParam);
+		var rewrittenBody = rewriter.Visit(selectManyResultSelector.Body);
+
+		return Expression.Lambda(rewrittenBody, newOuterParam, newInnerParam);
+	}
+
+	/// <summary>
+	/// Replaces member accesses through the GroupJoin intermediate type with direct parameter references.
+	/// <c>temp.c</c> becomes <c>outerParam</c> and <c>p</c> becomes <c>innerParam</c>.
+	/// </summary>
+	private sealed class GroupJoinResultRewriter(
+		ParameterExpression tempParam,
+		string outerMemberName,
+		ParameterExpression originalInnerParam,
+		ParameterExpression newOuterParam,
+		ParameterExpression newInnerParam
+	) : ExpressionVisitor
+	{
+		protected override Expression VisitMember(MemberExpression node)
+		{
+			if (node.Expression == tempParam && node.Member.Name == outerMemberName)
+				return newOuterParam;
+
+			return base.VisitMember(node);
+		}
+
+		protected override Expression VisitParameter(ParameterExpression node) =>
+			node == originalInnerParam ? newInnerParam : base.VisitParameter(node);
 	}
 
 	/// <summary>
@@ -556,6 +724,147 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 
 		if (allKeepFields.Count > 0)
 			Context.Commands.Add(new KeepCommand(allKeepFields));
+	}
+
+	/// <summary>
+	/// Shared join emission: detects field collisions, emits EVAL to preserve outer values,
+	/// emits LOOKUP JOIN, and processes the result selector projection.
+	/// </summary>
+	private void EmitJoinWithCollisionHandling(
+		string lookupIndex,
+		string onCondition,
+		Expression resultSelectorArg,
+		string? whereNotNullField = null
+	)
+	{
+		if (resultSelectorArg is not UnaryExpression { Operand: LambdaExpression resultLambda }
+			|| resultLambda.Body is ParameterExpression)
+		{
+			// Identity projection — no collision handling needed (no KEEP to filter temps)
+			Context.Commands.Add(new LookupJoinCommand(lookupIndex, onCondition));
+
+			if (whereNotNullField is not null)
+				Context.Commands.Add(new WhereCommand($"{whereNotNullField} IS NOT NULL"));
+
+			return;
+		}
+
+		var innerType = resultLambda.Parameters[1].Type;
+		var remappings = DetectJoinFieldCollisions(resultLambda, innerType);
+
+		if (remappings is not null)
+			EmitCollisionEval(remappings);
+
+		Context.Commands.Add(new LookupJoinCommand(lookupIndex, onCondition));
+
+		if (whereNotNullField is not null)
+			Context.Commands.Add(new WhereCommand($"{whereNotNullField} IS NOT NULL"));
+
+		var projectionVisitor = new SelectProjectionVisitor(Context);
+		var result = remappings is not null
+			? projectionVisitor.TranslateJoinProjection(resultLambda, resultLambda.Parameters[0], remappings)
+			: projectionVisitor.Translate(resultLambda);
+
+		var innerFieldNames = Context.GetAllFieldNames(innerType);
+		EmitJoinProjectionCommands(result, innerFieldNames);
+	}
+
+	/// <summary>
+	/// Emits projection commands after a join, converting renames to EVALs when the
+	/// target name collides with an inner field that still exists post-join.
+	/// ES|QL's RENAME fails if the target column already exists; EVAL overwrites it.
+	/// </summary>
+	private void EmitJoinProjectionCommands(SelectProjectionVisitor.ProjectionResult result, HashSet<string> innerFieldNames)
+	{
+		var safeRenames = new List<(string Source, string Target)>();
+		var evalExpressions = new List<string>(result.EvalExpressions);
+
+		foreach (var (source, target) in result.RenameFields)
+		{
+			if (innerFieldNames.Contains(target))
+				evalExpressions.Add($"{target} = {source}");
+			else
+				safeRenames.Add((source, target));
+		}
+
+		if (safeRenames.Count > 0)
+			Context.Commands.Add(new RenameCommand(safeRenames));
+
+		if (evalExpressions.Count > 0)
+			Context.Commands.Add(new EvalCommand(evalExpressions));
+
+		var allKeepFields = new List<string>(result.KeepFields);
+		foreach (var (_, target) in safeRenames)
+			allKeepFields.Add(target);
+		foreach (var evalExpr in evalExpressions)
+			allKeepFields.Add(evalExpr.Split('=')[0].Trim());
+
+		if (allKeepFields.Count > 0)
+			Context.Commands.Add(new KeepCommand(allKeepFields));
+	}
+
+	/// <summary>
+	/// Detects field name collisions between outer and inner types in a join result selector.
+	/// Returns a remapping dictionary (originalField -> tempField) for colliding outer fields,
+	/// or null if no collisions exist.
+	/// </summary>
+	private Dictionary<string, string>? DetectJoinFieldCollisions(LambdaExpression resultSelector, Type innerType)
+	{
+		var innerFieldNames = Context.GetAllFieldNames(innerType);
+
+		if (innerFieldNames.Count == 0)
+			return null;
+
+		var outerParam = resultSelector.Parameters[0];
+		var collector = new JoinFieldCollector(Context, outerParam);
+		_ = collector.Visit(resultSelector.Body);
+
+		Dictionary<string, string>? remappings = null;
+		foreach (var outerField in collector.OuterFields)
+		{
+			if (!innerFieldNames.Contains(outerField))
+				continue;
+
+			remappings ??= new Dictionary<string, string>(StringComparer.Ordinal);
+			remappings[outerField] = $"_esql_outer_{outerField}";
+		}
+
+		return remappings;
+	}
+
+	/// <summary>
+	/// Emits <c>EVAL _esql_outer_x = x</c> for each colliding field to preserve outer values
+	/// before the LOOKUP JOIN overwrites them.
+	/// </summary>
+	private void EmitCollisionEval(Dictionary<string, string> remappings)
+	{
+		var evalExprs = remappings
+			.Select(kv => $"{kv.Value} = {kv.Key}")
+			.ToList();
+		Context.Commands.Add(new EvalCommand(evalExprs));
+	}
+
+	/// <summary>
+	/// Walks a join result selector collecting resolved field names accessed from the outer parameter.
+	/// </summary>
+	private sealed class JoinFieldCollector(
+		EsqlTranslationContext context,
+		ParameterExpression outerParam
+	) : ExpressionVisitor
+	{
+		public HashSet<string> OuterFields { get; } = new(StringComparer.Ordinal);
+
+		protected override Expression VisitMember(MemberExpression node)
+		{
+			if (node.Expression is ParameterExpression param
+				&& param == outerParam
+				&& node.Member.DeclaringType is not null)
+			{
+				_ = OuterFields.Add(context.ResolveFieldName(node.Member.DeclaringType, node.Member));
+			}
+
+			return base.VisitMember(node);
+		}
 	}
 
 	private string ExtractLookupIndex(Expression innerExpression)

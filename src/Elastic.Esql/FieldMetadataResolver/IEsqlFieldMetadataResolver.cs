@@ -16,4 +16,9 @@ public interface IEsqlFieldMetadataResolver
 	/// Used for anonymous types and other cases where no registered type metadata is available.
 	/// </summary>
 	string GetAnonymousFieldName(string name);
+
+	/// <summary>
+	/// Returns all resolved ES|QL field names for a given type.
+	/// </summary>
+	HashSet<string> GetAllFieldNames(Type type);
 }

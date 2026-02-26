@@ -21,6 +21,9 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 	private readonly List<ProjectionEntry> _projections = [];
 	private Dictionary<string, string> _activeRenames = [];
 
+	private ParameterExpression? _outerParameter;
+	private Dictionary<string, string>? _outerFieldRemappings;
+
 	private enum ProjectionKind { Keep, Rename, Eval }
 
 	private sealed record ProjectionEntry(ProjectionKind Kind, string ResultField, string? SourceField, Expression? SourceExpression);
@@ -38,7 +41,34 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 	/// <summary>
 	/// Translates a Select lambda to projection commands.
 	/// </summary>
-	public ProjectionResult Translate(LambdaExpression lambda)
+	public ProjectionResult Translate(LambdaExpression lambda) =>
+		TranslateCore(lambda);
+
+	/// <summary>
+	/// Translates a join result selector lambda to projection commands, applying
+	/// outer field remappings so that <c>outer.X</c> references resolve to the
+	/// EVAL-preserved temp field instead of the post-join (overwritten) column.
+	/// </summary>
+	public ProjectionResult TranslateJoinProjection(
+		LambdaExpression lambda,
+		ParameterExpression outerParam,
+		Dictionary<string, string> outerFieldRemappings
+	)
+	{
+		_outerParameter = outerParam;
+		_outerFieldRemappings = outerFieldRemappings;
+		try
+		{
+			return TranslateCore(lambda);
+		}
+		finally
+		{
+			_outerParameter = null;
+			_outerFieldRemappings = null;
+		}
+	}
+
+	private ProjectionResult TranslateCore(LambdaExpression lambda)
 	{
 		_projections.Clear();
 		_activeRenames = [];
@@ -87,18 +117,21 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 			return node;
 
 		var isAnonymous = node.Type.IsDefined(typeof(CompilerGeneratedAttribute), false);
+		HashSet<string>? anonymousFieldNames = isAnonymous ? new(StringComparer.Ordinal) : null;
 
 		for (var i = 0; i < node.Arguments.Count; i++)
 		{
 			var arg = node.Arguments[i];
 			var member = node.Members[i];
 
-			var resultField = isAnonymous
-				? _context.FieldMetadataResolver.GetAnonymousFieldName(member.Name)
-				: _context.FieldMetadataResolver.GetFieldName(member.DeclaringType!, member);
+			var resultField = _context.ResolveFieldName(member.DeclaringType!, member);
+			_ = anonymousFieldNames?.Add(resultField);
 
 			ClassifyProjectionMember(resultField, arg);
 		}
+
+		if (anonymousFieldNames is not null)
+			_context.RegisterAnonymousTypeFields(node.Type, anonymousFieldNames);
 
 		return node;
 	}
@@ -109,7 +142,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		{
 			if (binding is MemberAssignment assignment)
 			{
-				var resultField = _context.FieldMetadataResolver.GetFieldName(assignment.Member.DeclaringType!, assignment.Member);
+				var resultField = _context.ResolveFieldName(assignment.Member.DeclaringType!, assignment.Member);
 				ClassifyProjectionMember(resultField, assignment.Expression);
 			}
 		}
@@ -119,7 +152,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 
 	protected override Expression VisitMember(MemberExpression node)
 	{
-		var fieldName = _context.FieldMetadataResolver.GetFieldName(node.Member.DeclaringType!, node.Member);
+		var fieldName = _context.ResolveFieldName(node.Member.DeclaringType!, node.Member);
 		_projections.Add(new ProjectionEntry(ProjectionKind.Keep, fieldName, fieldName, null));
 
 		return node;
@@ -144,7 +177,8 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 			}
 			else
 			{
-				var sourceField = _context.FieldMetadataResolver.GetFieldName(memberExpr.Member.DeclaringType!, memberExpr.Member);
+				var sourceField = _context.ResolveFieldName(memberExpr.Member.DeclaringType!, memberExpr.Member);
+				sourceField = ApplyOuterRemapping(memberExpr, sourceField);
 
 				if (sourceField == resultField)
 					_projections.Add(new ProjectionEntry(ProjectionKind.Keep, sourceField, sourceField, null));
@@ -211,6 +245,23 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		&& member.Member.DeclaringType != typeof(DateTime)
 		&& member.Member.DeclaringType != typeof(DateTimeOffset)
 		&& !(member.Member.DeclaringType == typeof(string) && member.Member.Name == "Length");
+
+	/// <summary>
+	/// If the member access is on the outer parameter and the field name is in the
+	/// remapping dictionary, returns the temp field name; otherwise returns the original.
+	/// </summary>
+	private string ApplyOuterRemapping(MemberExpression memberExpr, string fieldName)
+	{
+		if (_outerFieldRemappings is null || _outerParameter is null)
+			return fieldName;
+
+		if (memberExpr.Expression is ParameterExpression param
+			&& param == _outerParameter
+			&& _outerFieldRemappings.TryGetValue(fieldName, out var remapped))
+			return remapped;
+
+		return fieldName;
+	}
 
 	private static bool IsNullableCast(UnaryExpression unary)
 	{
@@ -286,7 +337,8 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 			return $"LENGTH({strExpr})";
 		}
 
-		var fieldName = _context.FieldMetadataResolver.GetFieldName(member.Member.DeclaringType!, member.Member);
+		var fieldName = _context.ResolveFieldName(member.Member.DeclaringType!, member.Member);
+		fieldName = ApplyOuterRemapping(member, fieldName);
 		return _activeRenames.TryGetValue(fieldName, out var renamed) ? renamed : fieldName;
 	}
 
@@ -372,7 +424,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 
 	private List<string> ExtractFieldAccesses(Expression expression)
 	{
-		var visitor = new FieldAccessCollector(_context, _activeRenames);
+		var visitor = new FieldAccessCollector(_context, _activeRenames, _outerParameter, _outerFieldRemappings);
 		_ = visitor.Visit(expression);
 		return visitor.Fields;
 	}
@@ -380,7 +432,12 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 	/// <summary>
 	/// Walks an expression tree collecting resolved field names from member accesses.
 	/// </summary>
-	private sealed class FieldAccessCollector(EsqlTranslationContext context, Dictionary<string, string> activeRenames) : ExpressionVisitor
+	private sealed class FieldAccessCollector(
+		EsqlTranslationContext context,
+		Dictionary<string, string> activeRenames,
+		ParameterExpression? outerParameter,
+		Dictionary<string, string>? outerFieldRemappings
+	) : ExpressionVisitor
 	{
 		public List<string> Fields { get; } = [];
 
@@ -388,7 +445,15 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		{
 			if (node.Expression is ParameterExpression && node.Member.DeclaringType != null)
 			{
-				var fieldName = context.FieldMetadataResolver.GetFieldName(node.Member.DeclaringType, node.Member);
+				var fieldName = context.ResolveFieldName(node.Member.DeclaringType, node.Member);
+
+				if (outerParameter is not null
+					&& outerFieldRemappings is not null
+					&& node.Expression is ParameterExpression param
+					&& param == outerParameter
+					&& outerFieldRemappings.TryGetValue(fieldName, out var remapped))
+					fieldName = remapped;
+
 				if (activeRenames.TryGetValue(fieldName, out var renamed))
 					fieldName = renamed;
 

@@ -26,4 +26,24 @@ public sealed class MappingFieldMetadataResolver(IElasticsearchMappingContext? c
 	/// <inheritdoc/>
 	public string GetAnonymousFieldName(string name) =>
 		JsonNamingPolicy.CamelCase.ConvertName(name);
+
+	/// <inheritdoc/>
+	public HashSet<string> GetAllFieldNames(Type type)
+	{
+		var names = new HashSet<string>(StringComparer.Ordinal);
+
+		var map = MappingResolver.GetGeneratedPropertyMap(type);
+		if (map is not null)
+		{
+			foreach (var (k, _) in map)
+				_ = names.Add(k);
+
+			return names;
+		}
+		
+		foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+			_ = names.Add(MappingResolver.Resolve(prop));
+
+		return names;
+	}
 }
