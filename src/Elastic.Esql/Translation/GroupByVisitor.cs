@@ -4,7 +4,6 @@
 
 using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
-using System.Runtime.CompilerServices;
 using Elastic.Esql.Core;
 using Elastic.Esql.Extensions;
 using Elastic.Esql.Formatting;
@@ -139,16 +138,12 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 
 	private List<(string memberName, Expression argument)> ExtractFromNewExpression(NewExpression newExpr)
 	{
-		var resolver = _context.FieldMetadataResolver;
-		var isAnonymous = newExpr.Type.IsDefined(typeof(CompilerGeneratedAttribute), false);
 		var result = new List<(string, Expression)>(newExpr.Arguments.Count);
 
 		for (var i = 0; i < newExpr.Arguments.Count; i++)
 		{
 			var member = newExpr.Members![i];
-			var name = isAnonymous
-				? resolver.GetAnonymousFieldName(member.Name)
-				: resolver.GetFieldName(member.DeclaringType!, member);
+			var name = _context.ResolveFieldName(member.DeclaringType!, member);
 
 			result.Add((name, newExpr.Arguments[i]));
 		}
@@ -158,14 +153,13 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 
 	private List<(string memberName, Expression argument)> ExtractFromMemberInit(MemberInitExpression initExpr)
 	{
-		var resolver = _context.FieldMetadataResolver;
 		var result = new List<(string, Expression)>(initExpr.Bindings.Count);
 
 		foreach (var binding in initExpr.Bindings)
 		{
 			if (binding is MemberAssignment assignment)
 			{
-				var name = resolver.GetFieldName(assignment.Member.DeclaringType!, assignment.Member);
+				var name = _context.ResolveFieldName(assignment.Member.DeclaringType!, assignment.Member);
 				result.Add((name, assignment.Expression));
 			}
 		}

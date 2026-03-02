@@ -112,5 +112,14 @@ namespace EsqlAotSmoketest
 
 		public string GetAnonymousFieldName(string name) =>
 			JsonNamingPolicy.CamelCase.ConvertName(name);
+
+		public HashSet<string> GetAllFieldNames(Type type)
+		{
+			var names = new HashSet<string>(StringComparer.Ordinal);
+			foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+				_ = names.Add(_resolver.Resolve(prop));
+
+			return names;
+		}
 	}
 }

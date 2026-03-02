@@ -38,6 +38,20 @@ public sealed class SystemTextJsonFieldMetadataResolver(JsonSerializerOptions? o
 		return Options.PropertyNamingPolicy?.ConvertName(name) ?? name;
 	}
 
+	/// <inheritdoc/>
+	public HashSet<string> GetAllFieldNames(Type type)
+	{
+		Verify.NotNull(type);
+
+		var typeInfo = Options.GetTypeInfo(type);
+
+		var names = new HashSet<string>(StringComparer.Ordinal);
+		foreach (var prop in typeInfo.Properties)
+			_ = names.Add(prop.Name);
+
+		return names;
+	}
+
 	private JsonPropertyInfo FindProperty(Type type, MemberInfo member)
 	{
 		Verify.NotNull(type);

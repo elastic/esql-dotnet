@@ -5,6 +5,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq.Expressions;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text;
 
 using Elastic.Esql.FieldMetadataResolver;
@@ -21,6 +23,40 @@ internal sealed class EsqlTranslationContext
 	public Type? ElementType { get; set; }
 	public List<QueryCommand> Commands { get; } = [];
 	public EsqlParameters Parameters { get; } = new();
+
+	private Dictionary<Type, HashSet<string>>? _anonymousTypeFields;
+
+	/// <summary>
+	/// Resolves a field name from a declaring type and member, handling anonymous types
+	/// by delegating to <see cref="IEsqlFieldMetadataResolver.GetAnonymousFieldName"/> instead of
+	/// <see cref="IEsqlFieldMetadataResolver.GetFieldName"/> which requires registered type metadata.
+	/// </summary>
+	public string ResolveFieldName(Type declaringType, MemberInfo member) =>
+		declaringType.IsDefined(typeof(CompilerGeneratedAttribute), false)
+			? FieldMetadataResolver.GetAnonymousFieldName(member.Name)
+			: FieldMetadataResolver.GetFieldName(declaringType, member);
+
+	/// <summary>
+	/// Registers the resolved field names for an anonymous type, extracted from a <see cref="NewExpression"/>.
+	/// </summary>
+	public void RegisterAnonymousTypeFields(Type type, HashSet<string> fieldNames)
+	{
+		_anonymousTypeFields ??= [];
+		_anonymousTypeFields[type] = fieldNames;
+	}
+
+	/// <summary>
+	/// Tries to retrieve tracked field names for a type. Returns the registered set for
+	/// anonymous types, or calls <see cref="IEsqlFieldMetadataResolver.GetAllFieldNames"/>
+	/// for concrete types.
+	/// </summary>
+	public HashSet<string> GetAllFieldNames(Type type)
+	{
+		if (_anonymousTypeFields is not null && _anonymousTypeFields.TryGetValue(type, out var tracked))
+			return tracked;
+
+		return FieldMetadataResolver.GetAllFieldNames(type);
+	}
 
 	/// <summary>
 	/// Returns a formatted string representing either the provided value or the parameter name, depending on the current

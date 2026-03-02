@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information
 
 using System.Linq.Expressions;
+using System.Runtime.CompilerServices;
 
 using Elastic.Esql.Extensions;
 using Elastic.Esql.FieldMetadataResolver;
@@ -58,6 +59,9 @@ internal static class TranslationExtensions
 			MethodCallExpression { Method.Name: "MultiField" } mc
 				when mc.Method.DeclaringType == typeof(GeneralPurposeExtensions) =>
 				$"{mc.Arguments[0].ResolveFieldName(resolver)}.{(string)((ConstantExpression)mc.Arguments[1]).Value!}",
+			MemberExpression member when member.Member.DeclaringType is not null
+				&& member.Member.DeclaringType.IsDefined(typeof(CompilerGeneratedAttribute), false) =>
+				resolver.GetAnonymousFieldName(member.Member.Name),
 			MemberExpression member =>
 				resolver.GetFieldName(member.Member.DeclaringType!, member.Member),
 			_ => throw new NotSupportedException($"Cannot extract field name from expression: {expression}")
