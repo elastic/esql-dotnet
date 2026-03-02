@@ -13,7 +13,9 @@ public class CustomerQueryTests : IntegrationTestBase
 	public async Task Customers_CountMatches()
 	{
 		var esqlCount = await Fixture.EsqlClient
-			.Query<Customer>("customers*")
+			.Query<Customer>()
+			.From("customers*")
+			.AsEsql()
 			.CountAsync();
 
 		var linqCount = TestData.Customers.Count;
@@ -25,7 +27,8 @@ public class CustomerQueryTests : IntegrationTestBase
 	public async Task Customers_FilterByTier_CountMatches()
 	{
 		var esqlResults = await Fixture.EsqlClient
-			.Query<Customer>("customers*")
+			.Query<Customer>()
+			.From("customers*")
 			.Where(c => c.Tier == CustomerTier.Gold)
 			.AsEsql()
 			.ToListAsync();
@@ -41,7 +44,8 @@ public class CustomerQueryTests : IntegrationTestBase
 	public async Task Customers_FilterByVerified_CountMatches()
 	{
 		var esqlResults = await Fixture.EsqlClient
-			.Query<Customer>("customers*")
+			.Query<Customer>()
+			.From("customers*")
 			.Where(c => c.IsVerified)
 			.AsEsql()
 			.ToListAsync();
@@ -57,7 +61,8 @@ public class CustomerQueryTests : IntegrationTestBase
 	public async Task Customers_FilterBySubscribed_CountMatches()
 	{
 		var esqlResults = await Fixture.EsqlClient
-			.Query<Customer>("customers*")
+			.Query<Customer>()
+			.From("customers*")
 			.Where(c => c.IsSubscribedToNewsletter)
 			.AsEsql()
 			.ToListAsync();
@@ -73,7 +78,8 @@ public class CustomerQueryTests : IntegrationTestBase
 	public async Task Customers_FilterByVerifiedAndSubscribed_CountMatches()
 	{
 		var esqlResults = await Fixture.EsqlClient
-			.Query<Customer>("customers*")
+			.Query<Customer>()
+			.From("customers*")
 			.Where(c => c.IsVerified && c.IsSubscribedToNewsletter)
 			.AsEsql()
 			.ToListAsync();
@@ -89,7 +95,8 @@ public class CustomerQueryTests : IntegrationTestBase
 	public async Task Customers_FilterByPlatinumOrDiamond_CountMatches()
 	{
 		var esqlResults = await Fixture.EsqlClient
-			.Query<Customer>("customers*")
+			.Query<Customer>()
+			.From("customers*")
 			.Where(c => c.Tier == CustomerTier.Platinum || c.Tier == CustomerTier.Diamond)
 			.AsEsql()
 			.ToListAsync();
@@ -105,7 +112,8 @@ public class CustomerQueryTests : IntegrationTestBase
 	public async Task Customers_OrderByCreatedAt_Top10()
 	{
 		var esqlResults = await Fixture.EsqlClient
-			.Query<Customer>("customers*")
+			.Query<Customer>()
+			.From("customers*")
 			.OrderByDescending(c => c.CreatedAt)
 			.Take(10)
 			.AsEsql()
@@ -123,7 +131,8 @@ public class CustomerQueryTests : IntegrationTestBase
 	public async Task Customers_SelectSpecificFields()
 	{
 		var esqlResults = await Fixture.EsqlClient
-			.Query<Customer>("customers*")
+			.Query<Customer>()
+			.From("customers*")
 			.Take(5)
 			.Select(c => new { c.Id, c.Email, c.Tier })
 			.AsEsql()
@@ -144,7 +153,8 @@ public class CustomerQueryTests : IntegrationTestBase
 	public async Task Customers_AnyPlatinum_ReturnsExpected()
 	{
 		var esqlAny = await Fixture.EsqlClient
-			.Query<Customer>("customers*")
+			.Query<Customer>()
+			.From("customers*")
 			.Where(c => c.Tier == CustomerTier.Platinum)
 			.AsEsql()
 			.AnyAsync();
@@ -158,7 +168,8 @@ public class CustomerQueryTests : IntegrationTestBase
 	public async Task Customers_FirstVerified_ReturnsCustomer()
 	{
 		var esqlFirst = await Fixture.EsqlClient
-			.Query<Customer>("customers*")
+			.Query<Customer>()
+			.From("customers*")
 			.Where(c => c.IsVerified)
 			.AsEsql()
 			.FirstAsync();
@@ -172,13 +183,15 @@ public class CustomerQueryTests : IntegrationTestBase
 	{
 		// Count each tier separately and verify totals
 		var goldCount = await Fixture.EsqlClient
-			.Query<Customer>("customers*")
+			.Query<Customer>()
+			.From("customers*")
 			.Where(c => c.Tier == CustomerTier.Gold)
 			.AsEsql()
 			.CountAsync();
 
 		var silverCount = await Fixture.EsqlClient
-			.Query<Customer>("customers*")
+			.Query<Customer>()
+			.From("customers*")
 			.Where(c => c.Tier == CustomerTier.Silver)
 			.AsEsql()
 			.CountAsync();

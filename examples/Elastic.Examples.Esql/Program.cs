@@ -32,17 +32,15 @@ WriteOutput($"[cyan]Elasticsearch:[/] {url}\n\n");
 
 // Create transport with authentication
 var transport = CreateTransport(url, apiKey);
-var settings = new EsqlClientSettings(transport)
-{
-	MappingContext = ExampleElasticsearchContext.Instance
-};
+var settings = new EsqlClientSettings(transport);
 using var client = new EsqlClient(settings);
 
 // Verify connection
 WriteOutput("[cyan]Verifying connection...[/]\n");
 try
 {
-	var testResponse = await client.QueryAsync<dynamic>("ROW message = \"Connected!\"");
+	await foreach (var _ in client.QueryAsync<dynamic>("ROW message = \"Connected!\""))
+		break;
 	WriteOutput("[bold green]Connected successfully![/]\n\n");
 }
 catch (EsqlExecutionException ex)

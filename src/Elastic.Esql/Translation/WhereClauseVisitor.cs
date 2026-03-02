@@ -279,7 +279,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		}
 
 		// Regular field access
-		var fieldName = _context.FieldMetadataResolver.GetFieldName(node.Member.DeclaringType!, node.Member);
+		var fieldName = _context.FieldNameResolver.GetFieldName(node.Member.DeclaringType!, node.Member);
 		_ = _builder.Append(fieldName);
 
 		return node;
@@ -294,7 +294,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 				TranslateStaticDateTimeProperty(member),
 			MemberExpression member =>
 				// Field access like l.Timestamp
-				_context.FieldMetadataResolver.GetFieldName(member.Member.DeclaringType!, member.Member),
+				_context.FieldNameResolver.GetFieldName(member.Member.DeclaringType!, member.Member),
 			MethodCallExpression methodCall when methodCall.Method.DeclaringType == typeof(EsqlFunctions) =>
 				TranslateEsqlFunctionForDateTime(methodCall),
 			_ => throw new NotSupportedException($"Expression type {expression.GetType().Name} is not supported for DateTime property access.")
@@ -336,7 +336,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		// MultiField extension: l.Field.MultiField("keyword")
 		if (declaringType == typeof(GeneralPurposeExtensions) && methodName == "MultiField")
 		{
-			_ = _builder.Append(node.ResolveFieldName(_context.FieldMetadataResolver));
+			_ = _builder.Append(node.ResolveFieldName(_context.FieldNameResolver));
 			return node;
 		}
 

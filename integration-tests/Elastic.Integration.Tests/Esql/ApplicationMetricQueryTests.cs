@@ -15,7 +15,9 @@ public class ApplicationMetricQueryTests : IntegrationTestBase
 	public async Task Metrics_CountMatches()
 	{
 		var esqlCount = await Fixture.EsqlClient
-			.Query<ApplicationMetric>(DataStreamPattern)
+			.Query<ApplicationMetric>()
+			.From(DataStreamPattern)
+			.AsEsql()
 			.CountAsync();
 
 		var linqCount = TestData.Metrics.Count;
@@ -29,7 +31,8 @@ public class ApplicationMetricQueryTests : IntegrationTestBase
 		const string metricSet = "system";
 
 		var esqlResults = await Fixture.EsqlClient
-			.Query<ApplicationMetric>(DataStreamPattern)
+			.Query<ApplicationMetric>()
+			.From(DataStreamPattern)
 			.Where(m => m.MetricSetName == metricSet)
 			.AsEsql()
 			.ToListAsync();
@@ -47,7 +50,8 @@ public class ApplicationMetricQueryTests : IntegrationTestBase
 		const string metricSet = "app";
 
 		var esqlResults = await Fixture.EsqlClient
-			.Query<ApplicationMetric>(DataStreamPattern)
+			.Query<ApplicationMetric>()
+			.From(DataStreamPattern)
 			.Where(m => m.MetricSetName == metricSet)
 			.AsEsql()
 			.ToListAsync();
@@ -65,7 +69,8 @@ public class ApplicationMetricQueryTests : IntegrationTestBase
 		const string metricSet = "business";
 
 		var esqlResults = await Fixture.EsqlClient
-			.Query<ApplicationMetric>(DataStreamPattern)
+			.Query<ApplicationMetric>()
+			.From(DataStreamPattern)
 			.Where(m => m.MetricSetName == metricSet)
 			.AsEsql()
 			.ToListAsync();
@@ -83,7 +88,8 @@ public class ApplicationMetricQueryTests : IntegrationTestBase
 		const string metricSet = "database";
 
 		var esqlResults = await Fixture.EsqlClient
-			.Query<ApplicationMetric>(DataStreamPattern)
+			.Query<ApplicationMetric>()
+			.From(DataStreamPattern)
 			.Where(m => m.MetricSetName == metricSet)
 			.AsEsql()
 			.ToListAsync();
@@ -101,7 +107,8 @@ public class ApplicationMetricQueryTests : IntegrationTestBase
 		const string serviceName = "api-gateway";
 
 		var esqlResults = await Fixture.EsqlClient
-			.Query<ApplicationMetric>(DataStreamPattern)
+			.Query<ApplicationMetric>()
+			.From(DataStreamPattern)
 			.Where(m => m.ServiceName == serviceName)
 			.AsEsql()
 			.ToListAsync();
@@ -119,7 +126,8 @@ public class ApplicationMetricQueryTests : IntegrationTestBase
 		const string hostName = "web-01";
 
 		var esqlResults = await Fixture.EsqlClient
-			.Query<ApplicationMetric>(DataStreamPattern)
+			.Query<ApplicationMetric>()
+			.From(DataStreamPattern)
 			.Where(m => m.HostName == hostName)
 			.AsEsql()
 			.ToListAsync();
@@ -138,7 +146,8 @@ public class ApplicationMetricQueryTests : IntegrationTestBase
 		const string metricSet = "system";
 
 		var esqlResults = await Fixture.EsqlClient
-			.Query<ApplicationMetric>(DataStreamPattern)
+			.Query<ApplicationMetric>()
+			.From(DataStreamPattern)
 			.Where(m => m.ServiceName == serviceName && m.MetricSetName == metricSet)
 			.AsEsql()
 			.ToListAsync();
@@ -154,7 +163,8 @@ public class ApplicationMetricQueryTests : IntegrationTestBase
 	public async Task Metrics_OrderByTimestamp_MostRecent10()
 	{
 		var esqlResults = await Fixture.EsqlClient
-			.Query<ApplicationMetric>(DataStreamPattern)
+			.Query<ApplicationMetric>()
+			.From(DataStreamPattern)
 			.OrderByDescending(m => m.Timestamp)
 			.Take(10)
 			.AsEsql()
@@ -172,7 +182,8 @@ public class ApplicationMetricQueryTests : IntegrationTestBase
 	public async Task Metrics_SelectSpecificFields()
 	{
 		var esqlResults = await Fixture.EsqlClient
-			.Query<ApplicationMetric>(DataStreamPattern)
+			.Query<ApplicationMetric>()
+			.From(DataStreamPattern)
 			.Where(m => m.MetricSetName == "system")
 			.Take(5)
 			.Select(m => new { m.Timestamp, m.ServiceName, m.HostName, m.CpuPercent, m.MemoryPercent })
@@ -194,25 +205,29 @@ public class ApplicationMetricQueryTests : IntegrationTestBase
 	public async Task Metrics_MetricSetDistribution_CountsMatch()
 	{
 		var systemCount = await Fixture.EsqlClient
-			.Query<ApplicationMetric>(DataStreamPattern)
+			.Query<ApplicationMetric>()
+			.From(DataStreamPattern)
 			.Where(m => m.MetricSetName == "system")
 			.AsEsql()
 			.CountAsync();
 
 		var appCount = await Fixture.EsqlClient
-			.Query<ApplicationMetric>(DataStreamPattern)
+			.Query<ApplicationMetric>()
+			.From(DataStreamPattern)
 			.Where(m => m.MetricSetName == "app")
 			.AsEsql()
 			.CountAsync();
 
 		var businessCount = await Fixture.EsqlClient
-			.Query<ApplicationMetric>(DataStreamPattern)
+			.Query<ApplicationMetric>()
+			.From(DataStreamPattern)
 			.Where(m => m.MetricSetName == "business")
 			.AsEsql()
 			.CountAsync();
 
 		var databaseCount = await Fixture.EsqlClient
-			.Query<ApplicationMetric>(DataStreamPattern)
+			.Query<ApplicationMetric>()
+			.From(DataStreamPattern)
 			.Where(m => m.MetricSetName == "database")
 			.AsEsql()
 			.CountAsync();
@@ -236,19 +251,22 @@ public class ApplicationMetricQueryTests : IntegrationTestBase
 		const string paymentService = "payment-service";
 
 		var apiGatewayCount = await Fixture.EsqlClient
-			.Query<ApplicationMetric>(DataStreamPattern)
+			.Query<ApplicationMetric>()
+			.From(DataStreamPattern)
 			.Where(m => m.ServiceName == apiGateway)
 			.AsEsql()
 			.CountAsync();
 
 		var orderServiceCount = await Fixture.EsqlClient
-			.Query<ApplicationMetric>(DataStreamPattern)
+			.Query<ApplicationMetric>()
+			.From(DataStreamPattern)
 			.Where(m => m.ServiceName == orderService)
 			.AsEsql()
 			.CountAsync();
 
 		var paymentServiceCount = await Fixture.EsqlClient
-			.Query<ApplicationMetric>(DataStreamPattern)
+			.Query<ApplicationMetric>()
+			.From(DataStreamPattern)
 			.Where(m => m.ServiceName == paymentService)
 			.AsEsql()
 			.CountAsync();
@@ -266,7 +284,8 @@ public class ApplicationMetricQueryTests : IntegrationTestBase
 	public async Task Metrics_AnySystemMetrics_ReturnsExpected()
 	{
 		var esqlAny = await Fixture.EsqlClient
-			.Query<ApplicationMetric>(DataStreamPattern)
+			.Query<ApplicationMetric>()
+			.From(DataStreamPattern)
 			.Where(m => m.MetricSetName == "system")
 			.AsEsql()
 			.AnyAsync();
@@ -280,7 +299,8 @@ public class ApplicationMetricQueryTests : IntegrationTestBase
 	public async Task Metrics_FirstSystemMetric_ReturnsMetric()
 	{
 		var esqlFirst = await Fixture.EsqlClient
-			.Query<ApplicationMetric>(DataStreamPattern)
+			.Query<ApplicationMetric>()
+			.From(DataStreamPattern)
 			.Where(m => m.MetricSetName == "system")
 			.AsEsql()
 			.FirstAsync();

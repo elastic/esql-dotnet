@@ -16,13 +16,17 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Elastic.Mapping" />
 		<None Include="README.md" Pack="true" PackagePath="\" />
+	</ItemGroup>
+
+	<ItemGroup Condition="'$(TargetFramework)' != 'net10.0'">
+		<PackageReference Include="System.IO.Pipelines" />
 	</ItemGroup>
 
 	<!-- Polyfills for netstandard2.0 -->
 	<ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
 		<PackageReference Include="System.Text.Json" />
+		<PackageReference Include="System.Memory" />
 		<PackageReference Include="Nullable" PrivateAssets="all" />
 		<PackageReference Include="IsExternalInit" PrivateAssets="all" />
 		<PackageReference Include="PolySharp" PrivateAssets="all" />

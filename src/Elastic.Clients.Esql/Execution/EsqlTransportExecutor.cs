@@ -3,7 +3,6 @@
 // See the LICENSE file in the project root for more information
 
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Elastic.Esql;
 using Elastic.Transport;
 using HttpMethod = Elastic.Transport.HttpMethod;
@@ -11,18 +10,13 @@ using HttpMethod = Elastic.Transport.HttpMethod;
 namespace Elastic.Clients.Esql.Execution;
 
 /// <summary>Executes ES|QL queries against Elasticsearch via HTTP transport.</summary>
-public class EsqlTransportExecutor(EsqlClientSettings settings)
+internal sealed class EsqlTransportExecutor(EsqlClientSettings settings)
 {
 	private readonly EsqlClientSettings _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+	private readonly JsonSerializerOptions _jsonOptions = settings.ResolveJsonOptions();
 
 	private static readonly EndpointPath QueryEndpoint = new(HttpMethod.POST, "/_query");
 	private static readonly EndpointPath AsyncQueryEndpoint = new(HttpMethod.POST, "/_query/async");
-
-	private static readonly JsonSerializerOptions JsonOptions = new()
-	{
-		PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-	};
 
 	/// <summary>Executes an ES|QL query and returns the response.</summary>
 	public async Task<EsqlResponse> ExecuteAsync(string esql, CancellationToken cancellationToken = default) =>
@@ -69,7 +63,7 @@ public class EsqlTransportExecutor(EsqlClientSettings settings)
 			: AsyncQueryEndpoint;
 
 		var response = await ExecuteEndpointAsync(endpoint, request, cancellationToken);
-		return new EsqlAsyncQuery<T>(this, response, new Elastic.Mapping.TypeFieldMetadataResolver(_settings.MappingContext));
+		return new EsqlAsyncQuery<T>(this, response, _jsonOptions);
 	}
 
 	/// <summary>Gets the status of an async query.</summary>
@@ -92,7 +86,7 @@ public class EsqlTransportExecutor(EsqlClientSettings settings)
 				response.ApiCallDetails.HttpStatusCode);
 		}
 
-		var esqlResponse = JsonSerializer.Deserialize<EsqlResponse>(response.Body, JsonOptions);
+		var esqlResponse = JsonSerializer.Deserialize<EsqlResponse>(response.Body, _jsonOptions);
 		return esqlResponse ?? new EsqlResponse();
 	}
 
@@ -117,9 +111,61 @@ public class EsqlTransportExecutor(EsqlClientSettings settings)
 		}
 	}
 
+	/// <summary>Executes an ES|QL query and returns a streaming response for incremental parsing.</summary>
+#if NET10_0_OR_GREATER
+	public async Task<PipeResponse> ExecuteStreamingAsync(
+#else
+	public async Task<StreamResponse> ExecuteStreamingAsync(
+#endif
+		string esql,
+		EsqlQueryOptions? options,
+		CancellationToken cancellationToken)
+	{
+		var defaults = _settings.Defaults;
+		var request = new EsqlRequest
+		{
+			Query = esql,
+			Columnar = false,
+			Profile = options?.IncludeProfile ?? defaults.IncludeProfile,
+			Locale = options?.Locale ?? defaults.Locale,
+			TimeZone = options?.TimeZone ?? defaults.TimeZone,
+			Params = options?.Parameters?.ToList()
+		};
+
+		var json = JsonSerializer.Serialize(request, _jsonOptions);
+		var postData = PostData.String(json);
+
+#if NET10_0_OR_GREATER
+		var response = await _settings.Transport.RequestAsync<PipeResponse>(
+#else
+		var response = await _settings.Transport.RequestAsync<StreamResponse>(
+#endif
+			in QueryEndpoint,
+			postData,
+			null,
+			null,
+			cancellationToken).ConfigureAwait(false);
+
+		if (!response.ApiCallDetails.HasSuccessfulStatusCode)
+		{
+			var statusCode = response.ApiCallDetails.HttpStatusCode;
+#if NET10_0_OR_GREATER
+			await response.DisposeAsync().ConfigureAwait(false);
+#else
+			response.Dispose();
+#endif
+			throw new EsqlExecutionException(
+				$"ES|QL query failed: {statusCode}",
+				null,
+				statusCode);
+		}
+
+		return response;
+	}
+
 	private async Task<EsqlResponse> ExecuteEndpointAsync(EndpointPath endpoint, EsqlRequest request, CancellationToken cancellationToken)
 	{
-		var json = JsonSerializer.Serialize(request, JsonOptions);
+		var json = JsonSerializer.Serialize(request, _jsonOptions);
 		var postData = PostData.String(json);
 
 		var response = await _settings.Transport.RequestAsync<StringResponse>(
@@ -137,7 +183,7 @@ public class EsqlTransportExecutor(EsqlClientSettings settings)
 				response.ApiCallDetails.HttpStatusCode);
 		}
 
-		var esqlResponse = JsonSerializer.Deserialize<EsqlResponse>(response.Body, JsonOptions);
+		var esqlResponse = JsonSerializer.Deserialize<EsqlResponse>(response.Body, _jsonOptions);
 		return esqlResponse ?? new EsqlResponse();
 	}
 

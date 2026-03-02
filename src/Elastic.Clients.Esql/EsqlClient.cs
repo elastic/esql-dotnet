@@ -2,21 +2,36 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Runtime.CompilerServices;
+using System.Text.Json;
 using Elastic.Clients.Esql.Execution;
 using Elastic.Esql;
 using Elastic.Esql.Core;
 using Elastic.Esql.Extensions;
-using Elastic.Esql.QueryModel;
-using Elastic.Mapping;
+using Elastic.Esql.Materialization;
 using Elastic.Transport;
 
 namespace Elastic.Clients.Esql;
 
 /// <summary>Main entry point for ES|QL queries.</summary>
-public class EsqlClient(EsqlClientSettings settings) : IDisposable
+public class EsqlClient : IDisposable
 {
-	private readonly EsqlTransportExecutor _executor = new(settings);
+	private readonly EsqlTransportExecutor _executor;
+	private readonly JsonSerializerOptions _jsonOptions;
+	private readonly EsqlClientQueryProvider _provider;
 	private bool _disposed;
+
+	/// <summary>Gets the client settings.</summary>
+	public EsqlClientSettings Settings { get; }
+
+	/// <summary>Creates a new ES|QL client with the specified settings.</summary>
+	public EsqlClient(EsqlClientSettings settings)
+	{
+		Settings = settings ?? throw new ArgumentNullException(nameof(settings));
+		_jsonOptions = settings.ResolveJsonOptions();
+		_executor = new EsqlTransportExecutor(settings);
+		_provider = new EsqlClientQueryProvider(_executor, _jsonOptions);
+	}
 
 	/// <summary>Creates a new ES|QL client with the specified node URI.</summary>
 	public EsqlClient(Uri nodeUri)
@@ -30,89 +45,49 @@ public class EsqlClient(EsqlClientSettings settings) : IDisposable
 	{
 	}
 
-	/// <summary>Creates an in-memory client for string generation only.</summary>
-	public static EsqlClient InMemory(IElasticsearchMappingContext? mappingContext = null) =>
-		new(EsqlClientSettings.InMemory(mappingContext));
-
-	/// <summary>Gets the client settings.</summary>
-	public EsqlClientSettings Settings { get; } = settings ?? throw new ArgumentNullException(nameof(settings));
-
 	/// <summary>Creates a strongly-typed queryable for the specified type.</summary>
-	/// <typeparam name="T">The document type. Should have EsqlIndex attribute or will use type name as index.</typeparam>
-	public IEsqlQueryable<T> Query<T>() where T : class
-	{
-		var resolver = new MappingFieldMetadataResolver(Settings.MappingContext);
-		var provider = new EsqlClientQueryProvider(resolver, _executor);
-		return new EsqlQueryable<T>(provider);
-	}
+	/// <typeparam name="T">The document type.</typeparam>
+	public IEsqlQueryable<T> Query<T>() where T : class => new EsqlQueryable<T>(_provider);
 
-	/// <summary>Creates a strongly-typed queryable for the specified index pattern.</summary>
-	public IEsqlQueryable<T> Query<T>(string indexPattern) where T : class
-	{
-		var resolver = new MappingFieldMetadataResolver(Settings.MappingContext);
-		var provider = new EsqlClientQueryProvider(resolver, _executor);
-		return (IEsqlQueryable<T>)new EsqlQueryable<T>(provider).From(indexPattern);
-	}
+	/// <summary>Executes a raw ES|QL query and streams results as they are parsed.</summary>
+	public IAsyncEnumerable<T> QueryAsync<T>(string esql, CancellationToken cancellationToken = default) =>
+		StreamResultsAsync<T>(esql, null, cancellationToken);
 
-	/// <summary>Executes a raw ES|QL query and maps results to a type.</summary>
-	public async Task<List<T>> QueryAsync<T>(string esql, CancellationToken cancellationToken = default)
-	{
-		var response = await _executor.ExecuteAsync(esql, cancellationToken);
-		var materializer = new ResultMaterializer(new TypeFieldMetadataResolver(Settings.MappingContext));
-
-		var query = new EsqlQuery(typeof(T), [], null);
-		return materializer.Materialize<T>(response, query).ToList();
-	}
-
-	/// <summary>Executes a raw ES|QL query with options and maps results to a type.</summary>
-	public async Task<List<T>> QueryAsync<T>(string esql, EsqlQueryOptions options, CancellationToken cancellationToken = default)
-	{
-		var response = await _executor.ExecuteAsync(esql, options, cancellationToken);
-		var materializer = new ResultMaterializer(new TypeFieldMetadataResolver(Settings.MappingContext));
-
-		var query = new EsqlQuery(typeof(T), [], null);
-		return materializer.Materialize<T>(response, query).ToList();
-	}
+	/// <summary>Executes a raw ES|QL query with options and streams results as they are parsed.</summary>
+	public IAsyncEnumerable<T> QueryAsync<T>(string esql, EsqlQueryOptions options, CancellationToken cancellationToken = default) =>
+		StreamResultsAsync<T>(esql, options, cancellationToken);
 
 	/// <summary>Executes a raw ES|QL query with a request object.</summary>
 	public async Task<EsqlResponse> QueryAsync(EsqlRequest request, CancellationToken cancellationToken = default) =>
-		await _executor.ExecuteAsync(request, cancellationToken);
+		await _executor.ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
 
-	/// <summary>
-	/// Executes an ES|QL query using LINQ expression or query syntax.
-	/// </summary>
-	public async Task<List<T>> QueryAsync<T>(
+	/// <summary>Executes an ES|QL query using LINQ expression and streams results.</summary>
+	public IAsyncEnumerable<T> QueryAsync<T>(
 		Func<IQueryable<T>, IQueryable<T>> query,
 		CancellationToken cancellationToken = default) where T : class
 	{
-		var queryable = Query<T>();
-		var configured = query(queryable);
+		var configured = query(Query<T>());
 
 		if (configured is IEsqlQueryable<T> esqlQueryable)
-			return await esqlQueryable.ToListAsync(cancellationToken);
+			return esqlQueryable.AsAsyncEnumerable(cancellationToken);
 
 		throw new InvalidOperationException("Query must return an IEsqlQueryable");
 	}
 
-	/// <summary>
-	/// Executes an ES|QL query with projection using LINQ expression.
-	/// </summary>
-	public async Task<List<TResult>> QueryAsync<T, TResult>(
+	/// <summary>Executes an ES|QL query with projection using LINQ expression and streams results.</summary>
+	public IAsyncEnumerable<TResult> QueryAsync<T, TResult>(
 		Func<IQueryable<T>, IQueryable<TResult>> query,
 		CancellationToken cancellationToken = default) where T : class
 	{
-		var queryable = Query<T>();
-		var configured = query(queryable);
+		var configured = query(Query<T>());
 
 		if (configured is IEsqlQueryable<TResult> esqlQueryable)
-			return await esqlQueryable.ToListAsync(cancellationToken);
+			return esqlQueryable.AsAsyncEnumerable(cancellationToken);
 
 		throw new InvalidOperationException("Query must return an IEsqlQueryable");
 	}
 
-	/// <summary>
-	/// Starts an async ES|QL query using LINQ expression. Returns IAsyncDisposable that auto-deletes.
-	/// </summary>
+	/// <summary>Starts an async ES|QL query using LINQ expression. Returns IAsyncDisposable that auto-deletes.</summary>
 	public async Task<EsqlAsyncQuery<T>> QueryAsyncQuery<T>(
 		Func<IQueryable<T>, IQueryable<T>> query,
 		EsqlAsyncQueryOptions? options = null,
@@ -131,9 +106,7 @@ public class EsqlClient(EsqlClientSettings settings) : IDisposable
 		throw new InvalidOperationException("Query must return an IEsqlQueryable");
 	}
 
-	/// <summary>
-	/// Starts an async ES|QL query from a raw query string. Returns IAsyncDisposable that auto-deletes.
-	/// </summary>
+	/// <summary>Starts an async ES|QL query from a raw query string. Returns IAsyncDisposable that auto-deletes.</summary>
 	public async Task<EsqlAsyncQuery<T>> QueryAsyncQuery<T>(
 		string esql,
 		EsqlAsyncQueryOptions? options = null,
@@ -143,14 +116,8 @@ public class EsqlClient(EsqlClientSettings settings) : IDisposable
 		return await _executor.ExecuteAsyncAsync<T>(request, cancellationToken);
 	}
 
-	/// <summary>
-	/// Executes a standalone ROW + COMPLETION query for LLM inference.
-	/// </summary>
-	/// <param name="prompt">The prompt text.</param>
-	/// <param name="inferenceId">The inference endpoint ID.</param>
-	/// <param name="column">Optional output column name.</param>
-	/// <param name="cancellationToken">Cancellation token.</param>
-	public async Task<List<T>> CompletionAsync<T>(
+	/// <summary>Executes a standalone ROW + COMPLETION query for LLM inference.</summary>
+	public IAsyncEnumerable<T> CompletionAsync<T>(
 		string prompt,
 		string inferenceId,
 		string? column = null,
@@ -160,7 +127,7 @@ public class EsqlClient(EsqlClientSettings settings) : IDisposable
 			.Row(() => new { prompt })
 			.Completion("prompt", inferenceId, column)
 			.ToEsqlString();
-		return await QueryAsync<T>(esql, cancellationToken);
+		return QueryAsync<T>(esql, cancellationToken);
 	}
 
 	/// <summary>Gets the status of an async query.</summary>
@@ -189,6 +156,26 @@ public class EsqlClient(EsqlClientSettings settings) : IDisposable
 		}
 
 		_disposed = true;
+	}
+
+	private async IAsyncEnumerable<T> StreamResultsAsync<T>(
+		string esql,
+		EsqlQueryOptions? options,
+		[EnumeratorCancellation] CancellationToken cancellationToken)
+	{
+#if NET10_0_OR_GREATER
+		await using var response = await _executor.ExecuteStreamingAsync(esql, options, cancellationToken).ConfigureAwait(false);
+
+		await foreach (var item in EsqlResponseReader.ReadRowsAsync<T>(response.Body, _jsonOptions, cancellationToken)
+			.ConfigureAwait(false))
+			yield return item;
+#else
+		using var response = await _executor.ExecuteStreamingAsync(esql, options, cancellationToken).ConfigureAwait(false);
+
+		await foreach (var item in EsqlResponseReader.ReadRowsAsync<T>(response.Body, _jsonOptions, cancellationToken)
+			.ConfigureAwait(false))
+			yield return item;
+#endif
 	}
 
 	private EsqlAsyncRequest BuildAsyncRequest(string esql, EsqlQueryOptions? queryOptions, EsqlAsyncQueryOptions? asyncOptions)

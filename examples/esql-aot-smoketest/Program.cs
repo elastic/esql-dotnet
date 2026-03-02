@@ -3,22 +3,18 @@
 // See the LICENSE file in the project root for more information
 
 using System.Diagnostics.CodeAnalysis;
-using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Elastic.Esql.Core;
 using Elastic.Esql.Extensions;
 using Elastic.Esql.FieldMetadataResolver;
-using Elastic.Mapping;
 using EsqlAotSmoketest;
 
 Console.WriteLine("Elastic.Esql AOT Smoketest");
 Console.WriteLine(new string('=', 60));
 
-// Verify context registration
-Console.WriteLine($"Registered types: {EsqlAotContext.All.Count}");
-
-// Create a field resolver that uses the mapping context
-var resolver = new MappingResolver(EsqlAotContext.Instance);
+// Create a field resolver that uses the source-generated JsonSerializerContext
+var resolver = new SystemTextJsonFieldNameResolver(EsqlJsonContext.Default);
 var provider = new EsqlQueryProvider(resolver);
 
 // Build a LINQ query and get the ES|QL string
@@ -56,15 +52,10 @@ var productEsql = productQuery.ToEsqlString();
 Console.WriteLine($"\nProduct query:");
 Console.WriteLine($"  {productEsql}");
 
-// Verify field constants
-Console.WriteLine($"\nOrder Fields:");
-Console.WriteLine($"  OrderId: {EsqlAotContext.EsqlOrder.Fields.OrderId}");
-Console.WriteLine($"  Status: {EsqlAotContext.EsqlOrder.Fields.Status}");
-Console.WriteLine($"  TotalAmount: {EsqlAotContext.EsqlOrder.Fields.TotalAmount}");
-
-Console.WriteLine($"\nProduct Fields:");
-Console.WriteLine($"  Name: {EsqlAotContext.EsqlProduct.Fields.Name}");
-Console.WriteLine($"  Price: {EsqlAotContext.EsqlProduct.Fields.Price}");
+// Verify field names are resolved via STJ naming policy
+Console.WriteLine($"\nField resolution test:");
+Console.WriteLine($"  OrderId resolves to: {resolver.GetAnonymousFieldName("OrderId")}");
+Console.WriteLine($"  TotalAmount resolves to: {resolver.GetAnonymousFieldName("TotalAmount")}");
 
 Console.WriteLine("\nAOT smoketest passed!");
 
@@ -95,31 +86,8 @@ namespace EsqlAotSmoketest
 		public bool InStock { get; set; }
 	}
 
-	[ElasticsearchMappingContext]
-	[Entity<EsqlOrder>(Target = EntityTarget.Index, Name = "orders", SearchPattern = "orders-*")]
-	[Entity<EsqlProduct>(Target = EntityTarget.Index, Name = "products", SearchPattern = "products*")]
-	public static partial class EsqlAotContext;
-
-	/// <summary>
-	/// Simple <see cref="IEsqlFieldMetadataResolver"/> adapter for <see cref="TypeFieldMetadataResolver"/>.
-	/// </summary>
-	public sealed class MappingResolver(IElasticsearchMappingContext? context = null) : IEsqlFieldMetadataResolver
-	{
-		private readonly TypeFieldMetadataResolver _resolver = new(context);
-
-		public string GetFieldName(Type type, MemberInfo member) =>
-			_resolver.Resolve(member);
-
-		public string GetAnonymousFieldName(string name) =>
-			JsonNamingPolicy.CamelCase.ConvertName(name);
-
-		public HashSet<string> GetAllFieldNames(Type type)
-		{
-			var names = new HashSet<string>(StringComparer.Ordinal);
-			foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-				_ = names.Add(_resolver.Resolve(prop));
-
-			return names;
-		}
-	}
+	[JsonSerializable(typeof(EsqlOrder))]
+	[JsonSerializable(typeof(EsqlProduct))]
+	[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+	public partial class EsqlJsonContext : JsonSerializerContext;
 }

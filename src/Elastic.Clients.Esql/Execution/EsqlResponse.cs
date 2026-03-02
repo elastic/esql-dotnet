@@ -2,6 +2,7 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Elastic.Clients.Esql.Execution;
@@ -21,7 +22,7 @@ public class EsqlResponse
 	/// Result values (row-based format).
 	/// </summary>
 	[JsonPropertyName("values")]
-	public List<List<object?>> Values { get; set; } = [];
+	public List<List<JsonElement>> Values { get; set; } = [];
 
 	/// <summary>
 	/// Whether there are more results.
