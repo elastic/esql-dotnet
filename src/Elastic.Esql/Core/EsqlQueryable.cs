@@ -33,20 +33,20 @@ public sealed class EsqlQueryable<T> : IEsqlQueryable<T>, IOrderedQueryable<T>
 	/// Creates a new ESQL queryable.
 	/// </summary>
 	/// <remarks>
-	///	The resulting queryable will use the reflection based <see cref="SystemTextJsonFieldMetadataResolver"/> to resolve field metadata.
+	///	The resulting queryable will use the reflection based <see cref="SystemTextJsonFieldNameResolver"/> to resolve field metadata.
 	/// In AOT context, please use the <see cref="EsqlQueryable{T}(EsqlQueryProvider)"/> overload instead.
 	/// <para>
-	/// The <see cref="SystemTextJsonFieldMetadataResolver"/> is fully AOT compatible when initializing it using a <see cref="JsonSerializerOptions"/>
+	/// The <see cref="SystemTextJsonFieldNameResolver"/> is fully AOT compatible when initializing it using a <see cref="JsonSerializerOptions"/>
 	/// instance that is linked to a source generated <see cref="JsonSerializerOptions.TypeInfoResolver"/> context.
 	/// </para>
 	/// <para>
-	///	The <c>Elastic.Clients.Esql</c> and <c>Elastic.Clients.Elasticsearch</c> packages also provide AOT compatible <see cref="IEsqlFieldMetadataResolver"/>
+	///	The <c>Elastic.Clients.Esql</c> and <c>Elastic.Clients.Elasticsearch</c> packages also provide AOT compatible <see cref="IEsqlFieldNameResolver"/>
 	/// implementations utilizing the capabilities of the <c>Elastic.Mapping</c> framework.
 	/// </para>
 	/// </remarks>
 	public EsqlQueryable()
 	{
-		Provider = new EsqlQueryProvider(new SystemTextJsonFieldMetadataResolver(null));
+		Provider = new EsqlQueryProvider(new SystemTextJsonFieldNameResolver());
 		Expression = Expression.Constant(this);
 	}
 

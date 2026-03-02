@@ -30,7 +30,7 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 	);
 
 	public EsqlQueryProvider Provider { get; } = provider ?? throw new ArgumentNullException(nameof(provider));
-	public EsqlTranslationContext Context { get; } = new() { FieldMetadataResolver = provider.FieldMetadataResolver, InlineParameters = inlineParameters };
+	public EsqlTranslationContext Context { get; } = new() { FieldNameResolver = provider.FieldNameResolver, InlineParameters = inlineParameters };
 	public string? DefaultIndexPattern { get; } = defaultIndexPattern;
 
 	/// <summary>
@@ -903,11 +903,11 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 		foreach (var element in arrayExpr.Expressions)
 		{
 			if (element is UnaryExpression { Operand: LambdaExpression selectorLambda })
-				fieldNames.Add(selectorLambda.Body.ResolveFieldName(Context.FieldMetadataResolver));
+				fieldNames.Add(selectorLambda.Body.ResolveFieldName(Context.FieldNameResolver));
 		}
 		return fieldNames;
 	}
 
 	private string ExtractFieldName(Expression expression) =>
-		expression.ResolveFieldName(Provider.FieldMetadataResolver);
+		expression.ResolveFieldName(Provider.FieldNameResolver);
 }

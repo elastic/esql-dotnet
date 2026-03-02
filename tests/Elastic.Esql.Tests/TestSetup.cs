@@ -13,7 +13,7 @@ namespace Elastic.Esql.Tests;
 public abstract class EsqlTestBase
 {
 	protected static readonly EsqlQueryProvider QueryProvider = new(
-		new SystemTextJsonFieldMetadataResolver(
+		new SystemTextJsonFieldNameResolver(
 			new JsonSerializerOptions
 			{
 				TypeInfoResolver = EsqlTestMappingContext.Default,

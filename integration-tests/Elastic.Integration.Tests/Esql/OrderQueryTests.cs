@@ -13,7 +13,9 @@ public class OrderQueryTests : IntegrationTestBase
 	public async Task Orders_CountMatches()
 	{
 		var esqlCount = await Fixture.EsqlClient
-			.Query<Order>("orders-*")
+			.Query<Order>()
+			.From("orders-*")
+			.AsEsql()
 			.CountAsync();
 
 		var linqCount = TestData.Orders.Count;
@@ -25,7 +27,8 @@ public class OrderQueryTests : IntegrationTestBase
 	public async Task Orders_FilterByStatus_CountMatches()
 	{
 		var esqlResults = await Fixture.EsqlClient
-			.Query<Order>("orders-*")
+			.Query<Order>()
+			.From("orders-*")
 			.Where(o => o.Status == OrderStatus.Delivered)
 			.AsEsql()
 			.ToListAsync();
@@ -41,7 +44,8 @@ public class OrderQueryTests : IntegrationTestBase
 	public async Task Orders_FilterByPending_CountMatches()
 	{
 		var esqlResults = await Fixture.EsqlClient
-			.Query<Order>("orders-*")
+			.Query<Order>()
+			.From("orders-*")
 			.Where(o => o.Status == OrderStatus.Pending)
 			.AsEsql()
 			.ToListAsync();
@@ -59,7 +63,8 @@ public class OrderQueryTests : IntegrationTestBase
 		const string currency = "USD";
 
 		var esqlResults = await Fixture.EsqlClient
-			.Query<Order>("orders-*")
+			.Query<Order>()
+			.From("orders-*")
 			.Where(o => o.Currency == currency)
 			.AsEsql()
 			.ToListAsync();
@@ -75,7 +80,8 @@ public class OrderQueryTests : IntegrationTestBase
 	public async Task Orders_FilterByTotalAmountRange_CountMatches()
 	{
 		var esqlResults = await Fixture.EsqlClient
-			.Query<Order>("orders-*")
+			.Query<Order>()
+			.From("orders-*")
 			.Where(o => o.TotalAmount >= 100 && o.TotalAmount <= 500)
 			.AsEsql()
 			.ToListAsync();
@@ -91,7 +97,8 @@ public class OrderQueryTests : IntegrationTestBase
 	public async Task Orders_OrderByTotalAmount_Top10Match()
 	{
 		var esqlResults = await Fixture.EsqlClient
-			.Query<Order>("orders-*")
+			.Query<Order>()
+			.From("orders-*")
 			.OrderByDescending(o => o.TotalAmount)
 			.Take(10)
 			.AsEsql()
@@ -117,7 +124,8 @@ public class OrderQueryTests : IntegrationTestBase
 		var cutoffDate = DateTime.UtcNow.AddDays(-30);
 
 		var esqlResults = await Fixture.EsqlClient
-			.Query<Order>("orders-*")
+			.Query<Order>()
+			.From("orders-*")
 			.Where(o => o.Timestamp >= cutoffDate)
 			.AsEsql()
 			.ToListAsync();
@@ -133,7 +141,8 @@ public class OrderQueryTests : IntegrationTestBase
 	public async Task Orders_FilterDeliveredWithHighValue_CountMatches()
 	{
 		var esqlResults = await Fixture.EsqlClient
-			.Query<Order>("orders-*")
+			.Query<Order>()
+			.From("orders-*")
 			.Where(o => o.Status == OrderStatus.Delivered && o.TotalAmount > 200)
 			.AsEsql()
 			.ToListAsync();
@@ -149,7 +158,8 @@ public class OrderQueryTests : IntegrationTestBase
 	public async Task Orders_SelectSpecificFields()
 	{
 		var esqlResults = await Fixture.EsqlClient
-			.Query<Order>("orders-*")
+			.Query<Order>()
+			.From("orders-*")
 			.Take(5)
 			.Select(o => new { o.Id, o.CustomerId, o.TotalAmount, o.Status })
 			.AsEsql()
@@ -172,19 +182,22 @@ public class OrderQueryTests : IntegrationTestBase
 	{
 		// Count specific statuses and verify
 		var deliveredCount = await Fixture.EsqlClient
-			.Query<Order>("orders-*")
+			.Query<Order>()
+			.From("orders-*")
 			.Where(o => o.Status == OrderStatus.Delivered)
 			.AsEsql()
 			.CountAsync();
 
 		var shippedCount = await Fixture.EsqlClient
-			.Query<Order>("orders-*")
+			.Query<Order>()
+			.From("orders-*")
 			.Where(o => o.Status == OrderStatus.Shipped)
 			.AsEsql()
 			.CountAsync();
 
 		var cancelledCount = await Fixture.EsqlClient
-			.Query<Order>("orders-*")
+			.Query<Order>()
+			.From("orders-*")
 			.Where(o => o.Status == OrderStatus.Cancelled)
 			.AsEsql()
 			.CountAsync();
@@ -203,7 +216,8 @@ public class OrderQueryTests : IntegrationTestBase
 	{
 		// Note: Checking if PromoCodes is not empty
 		var esqlResults = await Fixture.EsqlClient
-			.Query<Order>("orders-*")
+			.Query<Order>()
+			.From("orders-*")
 			.AsEsql()
 			.ToListAsync();
 
@@ -217,7 +231,8 @@ public class OrderQueryTests : IntegrationTestBase
 	public async Task Orders_FirstDelivered_ReturnsOrder()
 	{
 		var esqlFirst = await Fixture.EsqlClient
-			.Query<Order>("orders-*")
+			.Query<Order>()
+			.From("orders-*")
 			.Where(o => o.Status == OrderStatus.Delivered)
 			.AsEsql()
 			.FirstAsync();

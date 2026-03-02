@@ -2,8 +2,9 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Elastic.Esql;
-using Elastic.Mapping;
 using Elastic.Transport;
 
 namespace Elastic.Clients.Esql;
@@ -17,8 +18,14 @@ public class EsqlClientSettings
 	/// <summary>Default query options applied to all queries unless overridden.</summary>
 	public EsqlQueryDefaults Defaults { get; init; } = new();
 
-	/// <summary>The mapping context providing type metadata for field resolution.</summary>
-	public IElasticsearchMappingContext? MappingContext { get; init; }
+	/// <summary>The <see cref="System.Text.Json.JsonSerializerOptions"/> used for materializing ES|QL results.</summary>
+	public JsonSerializerOptions? JsonSerializerOptions { get; init; }
+
+	/// <summary>
+	/// A source-generated <see cref="System.Text.Json.Serialization.JsonSerializerContext"/> for AOT-compatible serialization.
+	/// When set, takes precedence over <see cref="JsonSerializerOptions"/>.
+	/// </summary>
+	public JsonSerializerContext? JsonSerializerContext { get; init; }
 
 	/// <summary>Creates settings with a node URI.</summary>
 	public EsqlClientSettings(Uri nodeUri)
@@ -38,19 +45,12 @@ public class EsqlClientSettings
 		Transport = new DistributedTransport(config);
 	}
 
-	/// <summary>Creates in-memory settings for string generation only.</summary>
-	private EsqlClientSettings(IElasticsearchMappingContext? mappingContext = null)
+	/// <summary>Resolves the effective <see cref="System.Text.Json.JsonSerializerOptions"/> from context or explicit options.</summary>
+	internal JsonSerializerOptions ResolveJsonOptions()
 	{
-		var pool = new SingleNodePool(new Uri("http://localhost:9200"));
-		var config = new TransportConfiguration(pool, new InMemoryRequestInvoker());
-		Transport = new DistributedTransport(config);
-		MappingContext = mappingContext;
-	}
+		if (JsonSerializerContext is not null)
+			return new JsonSerializerOptions { TypeInfoResolver = JsonSerializerContext };
 
-	/// <summary>
-	/// Creates settings for in-memory/string generation only usage.
-	/// No actual Elasticsearch connection is made.
-	/// </summary>
-	public static EsqlClientSettings InMemory(IElasticsearchMappingContext? mappingContext = null) =>
-		new(mappingContext);
+		return JsonSerializerOptions ?? JsonSerializerOptions.Default;
+	}
 }

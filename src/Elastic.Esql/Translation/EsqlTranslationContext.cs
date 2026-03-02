@@ -17,7 +17,7 @@ namespace Elastic.Esql.Translation;
 
 internal sealed class EsqlTranslationContext
 {
-	public required IEsqlFieldMetadataResolver FieldMetadataResolver { get; init; }
+	public required IEsqlFieldNameResolver FieldNameResolver { get; init; }
 	public required bool InlineParameters { get; init; }
 
 	public Type? ElementType { get; set; }
@@ -28,13 +28,13 @@ internal sealed class EsqlTranslationContext
 
 	/// <summary>
 	/// Resolves a field name from a declaring type and member, handling anonymous types
-	/// by delegating to <see cref="IEsqlFieldMetadataResolver.GetAnonymousFieldName"/> instead of
-	/// <see cref="IEsqlFieldMetadataResolver.GetFieldName"/> which requires registered type metadata.
+	/// by delegating to <see cref="IEsqlFieldNameResolver.GetAnonymousFieldName"/> instead of
+	/// <see cref="IEsqlFieldNameResolver.GetFieldName"/> which requires registered type metadata.
 	/// </summary>
 	public string ResolveFieldName(Type declaringType, MemberInfo member) =>
 		declaringType.IsDefined(typeof(CompilerGeneratedAttribute), false)
-			? FieldMetadataResolver.GetAnonymousFieldName(member.Name)
-			: FieldMetadataResolver.GetFieldName(declaringType, member);
+			? FieldNameResolver.GetAnonymousFieldName(member.Name)
+			: FieldNameResolver.GetFieldName(declaringType, member);
 
 	/// <summary>
 	/// Registers the resolved field names for an anonymous type, extracted from a <see cref="NewExpression"/>.
@@ -47,7 +47,7 @@ internal sealed class EsqlTranslationContext
 
 	/// <summary>
 	/// Tries to retrieve tracked field names for a type. Returns the registered set for
-	/// anonymous types, or calls <see cref="IEsqlFieldMetadataResolver.GetAllFieldNames"/>
+	/// anonymous types, or calls <see cref="IEsqlFieldNameResolver.GetAllFieldNames"/>
 	/// for concrete types.
 	/// </summary>
 	public HashSet<string> GetAllFieldNames(Type type)
@@ -55,7 +55,7 @@ internal sealed class EsqlTranslationContext
 		if (_anonymousTypeFields is not null && _anonymousTypeFields.TryGetValue(type, out var tracked))
 			return tracked;
 
-		return FieldMetadataResolver.GetAllFieldNames(type);
+		return FieldNameResolver.GetAllFieldNames(type);
 	}
 
 	/// <summary>

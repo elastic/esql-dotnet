@@ -13,7 +13,9 @@ public class ProductQueryTests : IntegrationTestBase
 	public async Task Products_CountMatches()
 	{
 		var esqlCount = await Fixture.EsqlClient
-			.Query<Product>("products*")
+			.Query<Product>()
+			.From("products*")
+			.AsEsql()
 			.CountAsync();
 
 		var linqCount = TestData.Products.Count;
@@ -25,7 +27,8 @@ public class ProductQueryTests : IntegrationTestBase
 	public async Task Products_FilterByInStock_CountMatches()
 	{
 		var esqlResults = await Fixture.EsqlClient
-			.Query<Product>("products*")
+			.Query<Product>()
+			.From("products*")
 			.Where(p => p.InStock)
 			.AsEsql()
 			.ToListAsync();
@@ -43,7 +46,8 @@ public class ProductQueryTests : IntegrationTestBase
 		const string brand = "TechCorp";
 
 		var esqlResults = await Fixture.EsqlClient
-			.Query<Product>("products*")
+			.Query<Product>()
+			.From("products*")
 			.Where(p => p.Brand == brand)
 			.AsEsql()
 			.ToListAsync();
@@ -59,7 +63,8 @@ public class ProductQueryTests : IntegrationTestBase
 	public async Task Products_FilterByPriceRange_CountMatches()
 	{
 		var esqlResults = await Fixture.EsqlClient
-			.Query<Product>("products*")
+			.Query<Product>()
+			.From("products*")
 			.Where(p => p.Price >= 100 && p.Price <= 500)
 			.AsEsql()
 			.ToListAsync();
@@ -75,7 +80,8 @@ public class ProductQueryTests : IntegrationTestBase
 	public async Task Products_OrderByPrice_Top10Match()
 	{
 		var esqlResults = await Fixture.EsqlClient
-			.Query<Product>("products*")
+			.Query<Product>()
+			.From("products*")
 			.OrderByDescending(p => p.Price)
 			.Take(10)
 			.AsEsql()
@@ -99,7 +105,8 @@ public class ProductQueryTests : IntegrationTestBase
 	public async Task Products_FilterInStock_OrderByPrice_Top10()
 	{
 		var esqlResults = await Fixture.EsqlClient
-			.Query<Product>("products*")
+			.Query<Product>()
+			.From("products*")
 			.Where(p => p.InStock)
 			.OrderByDescending(p => p.Price)
 			.Take(10)
@@ -125,7 +132,8 @@ public class ProductQueryTests : IntegrationTestBase
 	public async Task Products_SelectSpecificFields()
 	{
 		var esqlResults = await Fixture.EsqlClient
-			.Query<Product>("products*")
+			.Query<Product>()
+			.From("products*")
 			.Where(p => p.InStock)
 			.Take(5)
 			.Select(p => new { p.Id, p.Name, p.Price })
@@ -150,7 +158,8 @@ public class ProductQueryTests : IntegrationTestBase
 		const string brand = "StyleMax";
 
 		var esqlResults = await Fixture.EsqlClient
-			.Query<Product>("products*")
+			.Query<Product>()
+			.From("products*")
 			.Where(p => p.Brand == brand && p.InStock && p.Price < 500)
 			.AsEsql()
 			.ToListAsync();
@@ -166,7 +175,8 @@ public class ProductQueryTests : IntegrationTestBase
 	public async Task Products_OrderByBrandThenPrice()
 	{
 		var esqlResults = await Fixture.EsqlClient
-			.Query<Product>("products*")
+			.Query<Product>()
+			.From("products*")
 			.OrderBy(p => p.Brand)
 			.ThenByDescending(p => p.Price)
 			.Take(20)
@@ -186,7 +196,8 @@ public class ProductQueryTests : IntegrationTestBase
 	public async Task Products_AnyInStock_ReturnsTrue()
 	{
 		var esqlAny = await Fixture.EsqlClient
-			.Query<Product>("products*")
+			.Query<Product>()
+			.From("products*")
 			.Where(p => p.InStock)
 			.AsEsql()
 			.AnyAsync();
@@ -200,7 +211,8 @@ public class ProductQueryTests : IntegrationTestBase
 	public async Task Products_FirstInStock_ReturnsProduct()
 	{
 		var esqlFirst = await Fixture.EsqlClient
-			.Query<Product>("products*")
+			.Query<Product>()
+			.From("products*")
 			.Where(p => p.InStock)
 			.AsEsql()
 			.FirstAsync();

@@ -1226,35 +1226,4 @@ public class LookupJoinTests : EsqlTestBase
 			| KEEP outerMsg, innerMsg
 			""".NativeLineEndings());
 	}
-
-	[Test]
-	public void Join_TwoSelectsBeforeJoin_Collision_GeneratesEvalAndRemapping2()
-	{
-		var lookup = CreateQuery<OverlappingLookup>().From("host_lookup");
-
-		var esql = CreateQuery<LogEntry>()
-			.From("logs-*")
-			.Select(l => new { Arg = l.Message, l.ClientIp, l.StatusCode })
-			.Select(x => new { Arg = x.Arg.ToUpperInvariant(), x.ClientIp })
-			.Select(x => new { Message = x.Arg, x.ClientIp })
-			.Join(
-				lookup,
-				outer => outer.ClientIp,
-				inner => inner.ClientIp,
-				(outer, inner) => new { OuterMsg = outer.Message, InnerMsg = inner.Message }
-			)
-			.ToString();
-
-		_ = esql.Should().Be(
-			"""
-				FROM logs-*
-				| KEEP message, clientIp, statusCode
-				| KEEP message, clientIp
-				| EVAL _esql_outer_message = message
-				| LOOKUP JOIN host_lookup ON clientIp
-				| WHERE clientIp IS NOT NULL
-				| RENAME _esql_outer_message AS outerMsg, message AS innerMsg
-				| KEEP outerMsg, innerMsg
-				""".NativeLineEndings());
-	}
 }

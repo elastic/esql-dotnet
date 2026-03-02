@@ -6,7 +6,7 @@ using System.Reflection;
 
 namespace Elastic.Esql.FieldMetadataResolver;
 
-public interface IEsqlFieldMetadataResolver
+public interface IEsqlFieldNameResolver
 {
 	// TODO: Document
 	string GetFieldName(Type type, MemberInfo member);

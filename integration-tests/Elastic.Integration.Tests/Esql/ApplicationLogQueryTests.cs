@@ -15,7 +15,9 @@ public class ApplicationLogQueryTests : IntegrationTestBase
 	public async Task Logs_CountMatches()
 	{
 		var esqlCount = await Fixture.EsqlClient
-			.Query<ApplicationLog>(DataStreamPattern)
+			.Query<ApplicationLog>()
+			.From(DataStreamPattern)
+			.AsEsql()
 			.CountAsync();
 
 		var linqCount = TestData.Logs.Count;
@@ -27,7 +29,8 @@ public class ApplicationLogQueryTests : IntegrationTestBase
 	public async Task Logs_FilterByLevel_ErrorCountMatches()
 	{
 		var esqlResults = await Fixture.EsqlClient
-			.Query<ApplicationLog>(DataStreamPattern)
+			.Query<ApplicationLog>()
+			.From(DataStreamPattern)
 			.Where(l => l.Level == LogLevel.Error)
 			.AsEsql()
 			.ToListAsync();
@@ -43,7 +46,8 @@ public class ApplicationLogQueryTests : IntegrationTestBase
 	public async Task Logs_FilterByLevel_WarnCountMatches()
 	{
 		var esqlResults = await Fixture.EsqlClient
-			.Query<ApplicationLog>(DataStreamPattern)
+			.Query<ApplicationLog>()
+			.From(DataStreamPattern)
 			.Where(l => l.Level == LogLevel.Warn)
 			.AsEsql()
 			.ToListAsync();
@@ -59,7 +63,8 @@ public class ApplicationLogQueryTests : IntegrationTestBase
 	public async Task Logs_FilterByLevel_InfoCountMatches()
 	{
 		var esqlResults = await Fixture.EsqlClient
-			.Query<ApplicationLog>(DataStreamPattern)
+			.Query<ApplicationLog>()
+			.From(DataStreamPattern)
 			.Where(l => l.Level == LogLevel.Info)
 			.AsEsql()
 			.ToListAsync();
@@ -77,7 +82,8 @@ public class ApplicationLogQueryTests : IntegrationTestBase
 		const string serviceName = "api-gateway";
 
 		var esqlResults = await Fixture.EsqlClient
-			.Query<ApplicationLog>(DataStreamPattern)
+			.Query<ApplicationLog>()
+			.From(DataStreamPattern)
 			.Where(l => l.ServiceName == serviceName)
 			.AsEsql()
 			.ToListAsync();
@@ -95,7 +101,8 @@ public class ApplicationLogQueryTests : IntegrationTestBase
 		const string httpMethod = "POST";
 
 		var esqlResults = await Fixture.EsqlClient
-			.Query<ApplicationLog>(DataStreamPattern)
+			.Query<ApplicationLog>()
+			.From(DataStreamPattern)
 			.Where(l => l.HttpMethod == httpMethod)
 			.AsEsql()
 			.ToListAsync();
@@ -113,7 +120,8 @@ public class ApplicationLogQueryTests : IntegrationTestBase
 		const string serviceName = "order-service";
 
 		var esqlResults = await Fixture.EsqlClient
-			.Query<ApplicationLog>(DataStreamPattern)
+			.Query<ApplicationLog>()
+			.From(DataStreamPattern)
 			.Where(l => l.Level == LogLevel.Error && l.ServiceName == serviceName)
 			.AsEsql()
 			.ToListAsync();
@@ -129,7 +137,8 @@ public class ApplicationLogQueryTests : IntegrationTestBase
 	public async Task Logs_FilterByHttpStatusCode_CountMatches()
 	{
 		var esqlResults = await Fixture.EsqlClient
-			.Query<ApplicationLog>(DataStreamPattern)
+			.Query<ApplicationLog>()
+			.From(DataStreamPattern)
 			.Where(l => l.HttpStatusCode == 500)
 			.AsEsql()
 			.ToListAsync();
@@ -145,7 +154,8 @@ public class ApplicationLogQueryTests : IntegrationTestBase
 	public async Task Logs_OrderByTimestamp_MostRecent10()
 	{
 		var esqlResults = await Fixture.EsqlClient
-			.Query<ApplicationLog>(DataStreamPattern)
+			.Query<ApplicationLog>()
+			.From(DataStreamPattern)
 			.OrderByDescending(l => l.Timestamp)
 			.Take(10)
 			.AsEsql()
@@ -163,7 +173,8 @@ public class ApplicationLogQueryTests : IntegrationTestBase
 	public async Task Logs_SelectSpecificFields()
 	{
 		var esqlResults = await Fixture.EsqlClient
-			.Query<ApplicationLog>(DataStreamPattern)
+			.Query<ApplicationLog>()
+			.From(DataStreamPattern)
 			.Where(l => l.Level == LogLevel.Error)
 			.Take(5)
 			.Select(l => new { l.Timestamp, l.Level, l.ServiceName, l.Message })
@@ -186,19 +197,22 @@ public class ApplicationLogQueryTests : IntegrationTestBase
 	public async Task Logs_LevelDistribution_CountsMatch()
 	{
 		var errorCount = await Fixture.EsqlClient
-			.Query<ApplicationLog>(DataStreamPattern)
+			.Query<ApplicationLog>()
+			.From(DataStreamPattern)
 			.Where(l => l.Level == LogLevel.Error)
 			.AsEsql()
 			.CountAsync();
 
 		var warnCount = await Fixture.EsqlClient
-			.Query<ApplicationLog>(DataStreamPattern)
+			.Query<ApplicationLog>()
+			.From(DataStreamPattern)
 			.Where(l => l.Level == LogLevel.Warn)
 			.AsEsql()
 			.CountAsync();
 
 		var infoCount = await Fixture.EsqlClient
-			.Query<ApplicationLog>(DataStreamPattern)
+			.Query<ApplicationLog>()
+			.From(DataStreamPattern)
 			.Where(l => l.Level == LogLevel.Info)
 			.AsEsql()
 			.CountAsync();
@@ -216,7 +230,8 @@ public class ApplicationLogQueryTests : IntegrationTestBase
 	public async Task Logs_AnyErrors_ReturnsExpected()
 	{
 		var esqlAny = await Fixture.EsqlClient
-			.Query<ApplicationLog>(DataStreamPattern)
+			.Query<ApplicationLog>()
+			.From(DataStreamPattern)
 			.Where(l => l.Level == LogLevel.Error)
 			.AsEsql()
 			.AnyAsync();
@@ -230,7 +245,8 @@ public class ApplicationLogQueryTests : IntegrationTestBase
 	public async Task Logs_FirstError_ReturnsLog()
 	{
 		var esqlFirst = await Fixture.EsqlClient
-			.Query<ApplicationLog>(DataStreamPattern)
+			.Query<ApplicationLog>()
+			.From(DataStreamPattern)
 			.Where(l => l.Level == LogLevel.Error)
 			.AsEsql()
 			.FirstAsync();
@@ -246,13 +262,15 @@ public class ApplicationLogQueryTests : IntegrationTestBase
 		const string orderService = "order-service";
 
 		var apiGatewayCount = await Fixture.EsqlClient
-			.Query<ApplicationLog>(DataStreamPattern)
+			.Query<ApplicationLog>()
+			.From(DataStreamPattern)
 			.Where(l => l.ServiceName == apiGateway)
 			.AsEsql()
 			.CountAsync();
 
 		var orderServiceCount = await Fixture.EsqlClient
-			.Query<ApplicationLog>(DataStreamPattern)
+			.Query<ApplicationLog>()
+			.From(DataStreamPattern)
 			.Where(l => l.ServiceName == orderService)
 			.AsEsql()
 			.CountAsync();

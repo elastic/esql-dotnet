@@ -30,7 +30,7 @@ internal sealed class OrderByVisitor(EsqlTranslationContext context) : Expressio
 		{
 			MethodCallExpression methodCall when methodCall.Method.DeclaringType != typeof(GeneralPurposeExtensions) =>
 				TranslateMethodCall(methodCall),
-			_ => expression.ResolveFieldName(_context.FieldMetadataResolver)
+			_ => expression.ResolveFieldName(_context.FieldNameResolver)
 		};
 
 	private string TranslateMethodCall(MethodCallExpression methodCall)
@@ -41,7 +41,7 @@ internal sealed class OrderByVisitor(EsqlTranslationContext context) : Expressio
 		// String methods that can be used for sorting
 		if (declaringType == typeof(string) && methodCall.Object is not null)
 		{
-			var fieldName = methodCall.Object.ResolveFieldName(_context.FieldMetadataResolver);
+			var fieldName = methodCall.Object.ResolveFieldName(_context.FieldNameResolver);
 
 			return methodName switch
 			{

@@ -50,7 +50,7 @@ internal static class TranslationExtensions
 	/// <summary>
 	/// Resolves a field name from an expression, handling plain member access and <c>MultiField()</c> calls.
 	/// </summary>
-	public static string ResolveFieldName(this Expression expression, IEsqlFieldMetadataResolver resolver)
+	public static string ResolveFieldName(this Expression expression, IEsqlFieldNameResolver resolver)
 	{
 		expression = expression.UnwrapConvertExpressions();
 

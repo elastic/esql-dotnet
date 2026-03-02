@@ -15,12 +15,12 @@ namespace Elastic.Esql.Core;
 /// <summary>
 /// The base ES|QL query provider.
 /// </summary>
-public class EsqlQueryProvider(IEsqlFieldMetadataResolver fieldMetadataResolver) : IQueryProvider
+public class EsqlQueryProvider(IEsqlFieldNameResolver fieldNameResolver) : IQueryProvider
 {
 	/// <summary>
 	/// The resolver for field metadata resolution.
 	/// </summary>
-	public IEsqlFieldMetadataResolver FieldMetadataResolver { get; } = fieldMetadataResolver;
+	public IEsqlFieldNameResolver FieldNameResolver { get; } = fieldNameResolver;
 
 	/// <inheritdoc/>
 	public IQueryable CreateQuery(Expression expression)

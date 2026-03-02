@@ -60,7 +60,7 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 		switch (expression)
 		{
 			case MemberExpression:
-				fields.Add(expression.ResolveFieldName(_context.FieldMetadataResolver));
+				fields.Add(expression.ResolveFieldName(_context.FieldNameResolver));
 				break;
 
 			case NewExpression newExpr when newExpr.Members != null:
@@ -70,7 +70,7 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 					if (arg is MethodCallExpression methodArg && methodArg.Method.DeclaringType == typeof(EsqlFunctions))
 						fields.Add(TranslateGroupingFunction(methodArg));
 					else
-						fields.Add(arg.ResolveFieldName(_context.FieldMetadataResolver));
+						fields.Add(arg.ResolveFieldName(_context.FieldNameResolver));
 				}
 
 				break;
@@ -84,7 +84,7 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 				break;
 
 			case MethodCallExpression methodCall when methodCall.Method.DeclaringType == typeof(GeneralPurposeExtensions):
-				fields.Add(methodCall.ResolveFieldName(_context.FieldMetadataResolver));
+				fields.Add(methodCall.ResolveFieldName(_context.FieldNameResolver));
 				break;
 
 			case MethodCallExpression methodCall:
@@ -353,7 +353,7 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 		{
 			try
 			{
-				return e.ResolveFieldName(_context.FieldMetadataResolver);
+				return e.ResolveFieldName(_context.FieldNameResolver);
 			}
 			catch (NotSupportedException)
 			{
@@ -383,7 +383,7 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 	{
 		try
 		{
-			return body.ResolveFieldName(_context.FieldMetadataResolver);
+			return body.ResolveFieldName(_context.FieldNameResolver);
 		}
 		catch (NotSupportedException)
 		{
