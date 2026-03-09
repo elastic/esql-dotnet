@@ -86,6 +86,7 @@ public sealed class ElasticsearchFixture : IAsyncDisposable
 	{
 		var container = new ElasticsearchBuilder(ContainerImage)
 			.WithPassword(ContainerPassword)
+			.WithEnvironment("ES_JAVA_OPTS", "-Xms1g -Xmx1g")
 			.Build();
 
 		await container.StartAsync(ct).ConfigureAwait(false);
