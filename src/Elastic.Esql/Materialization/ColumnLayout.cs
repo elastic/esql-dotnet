@@ -20,6 +20,7 @@ internal readonly record struct ValueSlice(int Start, int Length, JsonTokenType 
 internal sealed class ColumnNode
 {
 	public required string PropertyName { get; init; }
+	public JsonEncodedText EncodedPropertyName { get; init; }
 	public int ColumnIndex { get; init; } = -1;
 	public bool IsCollection { get; init; }
 	public List<ColumnNode>? Children { get; set; }
@@ -48,13 +49,19 @@ internal sealed class ColumnLayout
 	/// <summary>Per-column collection flags for the flat fast-path. Null when no collection columns exist.</summary>
 	public bool[]? CollectionColumns { get; }
 
-	private ColumnLayout(ColumnNode root, int columnCount, int maxDepth, bool hasNested, bool[]? collectionColumns)
+	/// <summary>Pre-encoded column names in column order for the flat fast-path.</summary>
+	public JsonEncodedText[] EncodedColumnNames { get; }
+
+	private ColumnLayout(
+		ColumnNode root, int columnCount, int maxDepth, bool hasNested,
+		bool[]? collectionColumns, JsonEncodedText[] encodedColumnNames)
 	{
 		Root = root;
 		ColumnCount = columnCount;
 		MaxDepth = maxDepth;
 		HasNestedObjects = hasNested;
 		CollectionColumns = collectionColumns;
+		EncodedColumnNames = encodedColumnNames;
 	}
 
 	/// <summary>
@@ -82,13 +89,15 @@ internal sealed class ColumnLayout
 			typeInfo = null;
 		}
 
-		var root = new ColumnNode { PropertyName = string.Empty };
+		var root = new ColumnNode { PropertyName = string.Empty, EncodedPropertyName = default };
 		var hasNested = false;
 		bool[]? collectionColumns = null;
+		var encodedColumnNames = new JsonEncodedText[columnCount];
 
 		for (var i = 0; i < columnCount; i++)
 		{
 			var columnName = columns[i].Name;
+			encodedColumnNames[i] = JsonEncodedText.Encode(columnName);
 			var segments = ResolvePathSegments(columnName, typeInfo, options);
 
 			if (segments.Length > 1)
@@ -112,7 +121,7 @@ internal sealed class ColumnLayout
 				$"ES|QL column nesting depth ({maxDepth}) exceeds the configured maximum depth ({effectiveMaxDepth}). " +
 				"Increase JsonSerializerOptions.MaxDepth if deeper nesting is expected.");
 
-		return new ColumnLayout(root, columnCount, maxDepth, hasNested, collectionColumns);
+		return new ColumnLayout(root, columnCount, maxDepth, hasNested, collectionColumns, encodedColumnNames);
 	}
 
 	/// <summary>
@@ -248,6 +257,7 @@ internal sealed class ColumnLayout
 				current.Children.Add(new ColumnNode
 				{
 					PropertyName = segment,
+					EncodedPropertyName = JsonEncodedText.Encode(segment),
 					ColumnIndex = columnIndex,
 					IsCollection = isCollection
 				});
@@ -258,7 +268,11 @@ internal sealed class ColumnLayout
 				var existing = FindBranchChild(current.Children, segment);
 				if (existing is null)
 				{
-					existing = new ColumnNode { PropertyName = segment };
+					existing = new ColumnNode
+					{
+						PropertyName = segment,
+						EncodedPropertyName = JsonEncodedText.Encode(segment)
+					};
 					current.Children.Add(existing);
 				}
 				current = existing;
