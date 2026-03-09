@@ -232,3 +232,106 @@ public class UnmatchedCtorProjection
 
 /// <summary>Record projection for join collision tests with constructor-call syntax.</summary>
 public record CollisionRecord(string OuterMsg, string InnerMsg);
+
+// ============================================================================
+// MATERIALIZATION TEST MODELS: used by deserialization edge-case tests
+// ============================================================================
+
+[JsonSerializable(typeof(ArrayStringPropertyModel))]
+[JsonSerializable(typeof(ListIntPropertyModel))]
+[JsonSerializable(typeof(ListStringPropertyModel))]
+[JsonSerializable(typeof(ScalarStringModel))]
+[JsonSerializable(typeof(ScalarIntModel))]
+[JsonSerializable(typeof(ScalarDoubleModel))]
+[JsonSerializable(typeof(NullableIntModel))]
+[JsonSerializable(typeof(AllNullableModel))]
+[JsonSerializable(typeof(NonNullableValueModel))]
+[JsonSerializable(typeof(BoolOnlyModel))]
+[JsonSerializable(typeof(GuidPropertyModel))]
+[JsonSerializable(typeof(DateTimeOffsetPropertyModel))]
+[JsonSerializable(typeof(LongPropertyModel))]
+[JsonSerializable(typeof(CustomConverterDocument))]
+[JsonSerializable(typeof(int))]
+[JsonSerializable(typeof(int?))]
+[JsonSerializable(typeof(long))]
+[JsonSerializable(typeof(double))]
+[JsonSerializable(typeof(bool))]
+[JsonSerializable(typeof(string))]
+public sealed partial class MaterializationTestJsonContext : JsonSerializerContext;
+
+public class ArrayStringPropertyModel
+{
+	public string[] Tags { get; set; } = [];
+	public string Name { get; set; } = string.Empty;
+}
+
+public class ListIntPropertyModel
+{
+	public List<int> Values { get; set; } = [];
+	public string Name { get; set; } = string.Empty;
+}
+
+public class ListStringPropertyModel
+{
+	public List<string> Items { get; set; } = [];
+}
+
+public class ScalarStringModel
+{
+	public string Value { get; set; } = string.Empty;
+	public int Count { get; set; }
+}
+
+public class ScalarIntModel
+{
+	public int Value { get; set; }
+	public string Name { get; set; } = string.Empty;
+}
+
+public class ScalarDoubleModel
+{
+	public double Value { get; set; }
+}
+
+public class NullableIntModel
+{
+	public int? Value { get; set; }
+	public string Name { get; set; } = string.Empty;
+}
+
+public class AllNullableModel
+{
+	public string? Name { get; set; }
+	public int? Count { get; set; }
+	public double? Score { get; set; }
+}
+
+public class NonNullableValueModel
+{
+	public int Count { get; set; }
+	public bool Active { get; set; }
+	public double Score { get; set; }
+}
+
+public class GuidPropertyModel
+{
+	public Guid Id { get; set; }
+	public string Name { get; set; } = string.Empty;
+}
+
+public class DateTimeOffsetPropertyModel
+{
+	public DateTimeOffset Timestamp { get; set; }
+	public string Name { get; set; } = string.Empty;
+}
+
+public class LongPropertyModel
+{
+	public long Value { get; set; }
+	public string Name { get; set; } = string.Empty;
+}
+
+public class BoolOnlyModel
+{
+	public bool Active { get; set; }
+}
