@@ -307,10 +307,11 @@ internal sealed partial class EsqlResponseReader
 	{
 		var estimatedRowSize = Math.Max(256, columns.Length * 32);
 		var rowBuffer = new ArrayBufferWriter<byte>(estimatedRowSize);
-		var valueBuffer = layout.HasNestedObjects ? new ArrayBufferWriter<byte>(estimatedRowSize) : null;
+		var valueBuffer = new ArrayBufferWriter<byte>(estimatedRowSize);
+		using var valueWriter = new Utf8JsonWriter(valueBuffer, SkipValidationWriterOptions);
 
-		using var rowWriter = new Utf8JsonWriter(rowBuffer, SkipValidationWriterOptions);
-		using var valueWriter = valueBuffer is not null ? new Utf8JsonWriter(valueBuffer, SkipValidationWriterOptions) : null;
+		var isScalar = columns.Length == 1 && IsPrimitiveJsonType(typeof(T));
+		using var scalarWriter = isScalar ? new Utf8JsonWriter(rowBuffer, SkipValidationWriterOptions) : null;
 
 		var done = false;
 
@@ -323,7 +324,7 @@ internal sealed partial class EsqlResponseReader
 			var isFinalBlock = result.IsCompleted;
 			var reachedEnd = false;
 
-			while (TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, columns, layout, rowBuffer, rowWriter, valueBuffer, valueWriter, options, out var item, out reachedEnd))
+			while (TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, rowBuffer, valueBuffer, valueWriter, scalarWriter, options, out var item, out reachedEnd))
 			{
 				if (reachedEnd)
 				{
@@ -353,10 +354,11 @@ internal sealed partial class EsqlResponseReader
 	{
 		var estimatedRowSize = Math.Max(256, columns.Length * 32);
 		var rowBuffer = new ArrayBufferWriter<byte>(estimatedRowSize);
-		var valueBuffer = layout.HasNestedObjects ? new ArrayBufferWriter<byte>(estimatedRowSize) : null;
+		var valueBuffer = new ArrayBufferWriter<byte>(estimatedRowSize);
+		using var valueWriter = new Utf8JsonWriter(valueBuffer, SkipValidationWriterOptions);
 
-		using var rowWriter = new Utf8JsonWriter(rowBuffer, SkipValidationWriterOptions);
-		using var valueWriter = valueBuffer is not null ? new Utf8JsonWriter(valueBuffer, SkipValidationWriterOptions) : null;
+		var isScalar = columns.Length == 1 && IsPrimitiveJsonType(typeof(T));
+		using var scalarWriter = isScalar ? new Utf8JsonWriter(rowBuffer, SkipValidationWriterOptions) : null;
 
 		var done = false;
 
@@ -369,7 +371,7 @@ internal sealed partial class EsqlResponseReader
 			var isFinalBlock = syncBuffer.IsCompleted;
 			var reachedEnd = false;
 
-			while (TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, columns, layout, rowBuffer, rowWriter, valueBuffer, valueWriter, options, out var item, out reachedEnd))
+			while (TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, rowBuffer, valueBuffer, valueWriter, scalarWriter, options, out var item, out reachedEnd))
 			{
 				if (reachedEnd)
 				{
@@ -393,12 +395,11 @@ internal sealed partial class EsqlResponseReader
 		ref ReadOnlySequence<byte> buffer,
 		bool isFinalBlock,
 		ref JsonReaderState state,
-		ReadOnlySpan<ColumnInfo> columns,
 		ColumnLayout layout,
 		ArrayBufferWriter<byte> rowBuffer,
-		Utf8JsonWriter rowWriter,
-		ArrayBufferWriter<byte>? valueBuffer,
-		Utf8JsonWriter? valueWriter,
+		ArrayBufferWriter<byte> valueBuffer,
+		Utf8JsonWriter valueWriter,
+		Utf8JsonWriter? scalarWriter,
 		JsonSerializerOptions options,
 		out T? item,
 		out bool reachedEnd)
@@ -429,25 +430,16 @@ internal sealed partial class EsqlResponseReader
 			return false;
 		}
 
-		if (columns.Length == 1 && IsPrimitiveJsonType(typeof(T)))
+		if (scalarWriter is not null)
 		{
-			if (!TryWriteScalarValue(ref reader, rowBuffer, rowWriter))
+			if (!TryWriteScalarValue(ref reader, rowBuffer, scalarWriter))
 			{
 				state = savedState;
 				buffer = savedBuffer;
 				return false;
 			}
 		}
-		else if (layout.HasNestedObjects)
-		{
-			if (!TryWriteRowAsNestedObject(ref reader, columns, layout, rowBuffer, rowWriter, valueBuffer!, valueWriter!))
-			{
-				state = savedState;
-				buffer = savedBuffer;
-				return false;
-			}
-		}
-		else if (!TryWriteRowAsObject(ref reader, layout, rowBuffer, rowWriter))
+		else if (!TryMaterializeRow(ref reader, layout, rowBuffer, valueBuffer, valueWriter))
 		{
 			state = savedState;
 			buffer = savedBuffer;
@@ -461,63 +453,135 @@ internal sealed partial class EsqlResponseReader
 		return true;
 	}
 
-	private static bool TryWriteRowAsObject(
+	private static bool TryMaterializeRow(
 		ref Utf8JsonReader reader,
 		ColumnLayout layout,
-		ArrayBufferWriter<byte> buffer,
-		Utf8JsonWriter writer)
+		ArrayBufferWriter<byte> rowBuffer,
+		ArrayBufferWriter<byte> valueBuffer,
+		Utf8JsonWriter valueWriter)
 	{
-		buffer.ResetWrittenCount();
-		writer.Reset();
+		valueBuffer.ResetWrittenCount();
 
-		var encodedNames = layout.EncodedColumnNames;
-		var collectionColumns = layout.CollectionColumns;
 		var columnCount = layout.ColumnCount;
 
-		writer.WriteStartObject();
+		ValueSlice[]? rentedSlices = null;
+		var slices = columnCount <= 64
+			? stackalloc ValueSlice[columnCount]
+			: (rentedSlices = ArrayPool<ValueSlice>.Shared.Rent(columnCount)).AsSpan(0, columnCount);
 
-		var colIndex = 0;
-
-		while (true)
+		try
 		{
-			if (!reader.Read())
-				return false;
-
-			if (reader.TokenType == JsonTokenType.EndArray)
-				break;
-
-			if (colIndex >= columnCount)
-				throw new JsonException($"ES|QL row contains more values than declared columns ({columnCount}).");
-
-			if (reader.TokenType == JsonTokenType.Null)
+			var colIndex = 0;
+			while (true)
 			{
-				colIndex++;
-				continue;
-			}
-
-			writer.WritePropertyName(encodedNames[colIndex]);
-
-			if (collectionColumns is not null && collectionColumns[colIndex] && reader.TokenType != JsonTokenType.StartArray)
-			{
-				writer.WriteStartArray();
-				if (!TryWriteCurrentValue(ref reader, writer))
+				if (!reader.Read())
 					return false;
-				writer.WriteEndArray();
-			}
-			else if (!TryWriteCurrentValue(ref reader, writer))
-			{
-				return false;
+
+				if (reader.TokenType == JsonTokenType.EndArray)
+					break;
+
+				if (colIndex >= columnCount)
+					throw new JsonException($"ES|QL row contains more values than declared columns ({columnCount}).");
+
+				if (reader.TokenType == JsonTokenType.Null)
+				{
+					slices[colIndex] = new ValueSlice(0, 0, JsonTokenType.Null, IsNull: true);
+					colIndex++;
+					continue;
+				}
+
+				var start = valueBuffer.WrittenCount;
+				var firstToken = reader.TokenType;
+
+				valueWriter.Reset();
+				if (!TryWriteCurrentValue(ref reader, valueWriter))
+					return false;
+				valueWriter.Flush();
+
+				var length = valueBuffer.WrittenCount - start;
+				slices[colIndex] = new ValueSlice(start, length, firstToken, IsNull: false);
+				colIndex++;
 			}
 
-			colIndex++;
+			if (colIndex < columnCount)
+				throw new JsonException($"ES|QL row contains fewer values ({colIndex}) than declared columns ({columnCount}).");
+
+			rowBuffer.ResetWrittenCount();
+			WriteRawByte(rowBuffer, (byte)'{');
+			AssembleChildren(layout.Root.Children!, rowBuffer, valueBuffer.WrittenSpan, slices);
+			WriteRawByte(rowBuffer, (byte)'}');
+
+			return true;
 		}
+		finally
+		{
+			if (rentedSlices is not null)
+				ArrayPool<ValueSlice>.Shared.Return(rentedSlices);
+		}
+	}
 
-		if (colIndex < columnCount)
-			throw new JsonException($"ES|QL row contains fewer values ({colIndex}) than declared columns ({columnCount}).");
+	private static void AssembleChildren(
+		List<ColumnNode> children,
+		ArrayBufferWriter<byte> buffer,
+		ReadOnlySpan<byte> values,
+		ReadOnlySpan<ValueSlice> slices)
+	{
+		var needsComma = false;
+		foreach (var child in children)
+		{
+			if (child.ColumnIndex >= 0)
+			{
+				var slice = slices[child.ColumnIndex];
+				if (slice.IsNull)
+					continue;
 
-		writer.WriteEndObject();
-		writer.Flush();
-		return true;
+				if (needsComma)
+					WriteRawByte(buffer, (byte)',');
+				needsComma = true;
+
+				WriteRawBytes(buffer, child.PrefixBytes);
+				var raw = values.Slice(slice.Start, slice.Length);
+
+				if (child.IsCollection && slice.FirstToken != JsonTokenType.StartArray)
+				{
+					WriteRawByte(buffer, (byte)'[');
+					WriteRawBytes(buffer, raw);
+					WriteRawByte(buffer, (byte)']');
+				}
+				else
+				{
+					WriteRawBytes(buffer, raw);
+				}
+			}
+			else
+			{
+				if (child.Children is null || ColumnLayout.AllChildrenNull(child, slices))
+					continue;
+
+				if (needsComma)
+					WriteRawByte(buffer, (byte)',');
+				needsComma = true;
+
+				WriteRawBytes(buffer, child.PrefixBytes);
+				WriteRawByte(buffer, (byte)'{');
+				AssembleChildren(child.Children, buffer, values, slices);
+				WriteRawByte(buffer, (byte)'}');
+			}
+		}
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private static void WriteRawByte(ArrayBufferWriter<byte> buffer, byte value)
+	{
+		buffer.GetSpan(1)[0] = value;
+		buffer.Advance(1);
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private static void WriteRawBytes(ArrayBufferWriter<byte> buffer, ReadOnlySpan<byte> value)
+	{
+		value.CopyTo(buffer.GetSpan(value.Length));
+		buffer.Advance(value.Length);
 	}
 
 	private static bool IsPrimitiveJsonType(Type type)
@@ -644,115 +708,4 @@ internal sealed partial class EsqlResponseReader
 	private ColumnLayout GetColumnLayout<T>(ColumnInfo[] columns) =>
 		ColumnLayout.Build(columns, typeof(T), _metadata);
 
-	private static bool TryWriteRowAsNestedObject(
-		ref Utf8JsonReader reader,
-		ReadOnlySpan<ColumnInfo> columns,
-		ColumnLayout layout,
-		ArrayBufferWriter<byte> rowBuffer,
-		Utf8JsonWriter rowWriter,
-		ArrayBufferWriter<byte> valueBuffer,
-		Utf8JsonWriter valueWriter)
-	{
-		rowBuffer.ResetWrittenCount();
-		valueBuffer.ResetWrittenCount();
-
-		var columnCount = columns.Length;
-
-		ValueSlice[]? rentedSlices = null;
-		var slices = columnCount <= 64
-			? stackalloc ValueSlice[columnCount]
-			: (rentedSlices = ArrayPool<ValueSlice>.Shared.Rent(columnCount)).AsSpan(0, columnCount);
-
-		try
-		{
-			var colIndex = 0;
-			while (true)
-			{
-				if (!reader.Read())
-					return false;
-
-				if (reader.TokenType == JsonTokenType.EndArray)
-					break;
-
-				if (colIndex >= columnCount)
-					throw new JsonException($"ES|QL row contains more values than declared columns ({columnCount}).");
-
-				if (reader.TokenType == JsonTokenType.Null)
-				{
-					slices[colIndex] = new ValueSlice(0, 0, JsonTokenType.Null, IsNull: true);
-					colIndex++;
-					continue;
-				}
-
-				var start = valueBuffer.WrittenCount;
-				var firstToken = reader.TokenType;
-
-				valueWriter.Reset();
-				if (!TryWriteCurrentValue(ref reader, valueWriter))
-					return false;
-				valueWriter.Flush();
-
-				var length = valueBuffer.WrittenCount - start;
-				slices[colIndex] = new ValueSlice(start, length, firstToken, IsNull: false);
-				colIndex++;
-			}
-
-			if (colIndex < columnCount)
-				throw new JsonException($"ES|QL row contains fewer values ({colIndex}) than declared columns ({columnCount}).");
-
-			rowWriter.Reset();
-			rowWriter.WriteStartObject();
-			WriteChildren(layout.Root.Children!, rowWriter, valueBuffer.WrittenSpan, slices);
-			rowWriter.WriteEndObject();
-			rowWriter.Flush();
-
-			return true;
-		}
-		finally
-		{
-			if (rentedSlices is not null)
-				ArrayPool<ValueSlice>.Shared.Return(rentedSlices);
-		}
-	}
-
-	private static void WriteChildren(
-		List<ColumnNode> children,
-		Utf8JsonWriter writer,
-		ReadOnlySpan<byte> values,
-		ReadOnlySpan<ValueSlice> slices)
-	{
-		foreach (var child in children)
-		{
-			if (child.ColumnIndex >= 0)
-			{
-				var slice = slices[child.ColumnIndex];
-				if (slice.IsNull)
-					continue;
-
-				writer.WritePropertyName(child.EncodedPropertyName);
-				var raw = values.Slice(slice.Start, slice.Length);
-
-				if (child.IsCollection && slice.FirstToken != JsonTokenType.StartArray)
-				{
-					writer.WriteStartArray();
-					writer.WriteRawValue(raw, skipInputValidation: true);
-					writer.WriteEndArray();
-				}
-				else
-				{
-					writer.WriteRawValue(raw, skipInputValidation: true);
-				}
-			}
-			else
-			{
-				if (child.Children is null || ColumnLayout.AllChildrenNull(child, slices))
-					continue;
-
-				writer.WritePropertyName(child.EncodedPropertyName);
-				writer.WriteStartObject();
-				WriteChildren(child.Children, writer, values, slices);
-				writer.WriteEndObject();
-			}
-		}
-	}
 }
