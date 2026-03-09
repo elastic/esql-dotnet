@@ -7,12 +7,6 @@ namespace Elastic.Esql;
 /// <summary>Default options applied to all ES|QL queries.</summary>
 public record EsqlQueryDefaults
 {
-	/// <summary>Whether to return results in columnar format.</summary>
-	public bool Columnar { get; init; }
-
-	/// <summary>Whether to include profiling information.</summary>
-	public bool IncludeProfile { get; init; }
-
 	/// <summary>Default locale for formatting (e.g., "en-US").</summary>
 	public string? Locale { get; init; }
 

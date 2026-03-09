@@ -9,7 +9,7 @@ Complete mapping of [ES|QL functions and operators](elasticsearch://reference/qu
 ## Aggregation functions
 
 Aggregations run inside `.GroupBy(...).Select(...)` or as terminal operators like `.Count()`.
-See [STATS...BY aggregation](linq-translation.md##stats...by-aggregation) for details on the GroupBy pattern.
+See [STATS...BY aggregation](linq-translation.md#statsby---aggregation) for details on the GroupBy pattern.
 
 ```csharp
 var topLevels = client.Query<LogEntry>()
@@ -20,7 +20,7 @@ var topLevels = client.Query<LogEntry>()
         Avg = g.Average(l => l.Duration),
         P99 = EsqlFunctions.Percentile(g, l => l.Duration, 99)
     });
-// STATS count = COUNT(*), avg = AVG(duration), p99 = PERCENTILE(duration, 99) BY level = log.level.keyword
+// STATS count = COUNT(*), avg = AVG(duration), p99 = PERCENTILE(duration, 99) BY level = log.level
 ```
 
 | ES\|QL | `EsqlFunctions` | C# native |
@@ -90,7 +90,7 @@ DateTime properties translate to `DATE_EXTRACT`. Arithmetic methods like `.AddDa
 ## Grouping functions
 
 Grouping uses standard LINQ `.GroupBy()`. ES|QL-specific grouping functions are available through `EsqlFunctions`.
-See [STATS...BY aggregation](linq-translation.md##stats...by-aggregation) for the full GroupBy pattern.
+See [STATS...BY aggregation](linq-translation.md#statsby---aggregation) for the full GroupBy pattern.
 
 ```csharp
 .GroupBy(l => EsqlFunctions.Bucket(l.Duration, 10))
@@ -263,7 +263,7 @@ using static Elastic.Esql.Functions.EsqlFunctions;
 
 .Where(l => Like(l.Path, "/api/v?/users"))     // path LIKE "/api/v?/users"
 .Where(l => Rlike(l.Path, "/api/v[0-9]+/.*"))  // path RLIKE "/api/v[0-9]+/.*"
-.Where(l => levels.Contains(l.Level))           // log.level.keyword IN ("a", "b")
+.Where(l => levels.Contains(l.Level))           // log.level IN ("a", "b")
 ```
 
 | ES\|QL | `EsqlFunctions` | C# native |

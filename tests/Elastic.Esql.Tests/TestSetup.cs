@@ -3,7 +3,7 @@
 // See the LICENSE file in the project root for more information
 
 using System.Text.Json;
-using Elastic.Esql.FieldMetadataResolver;
+using Elastic.Esql.Materialization;
 
 namespace Elastic.Esql.Tests;
 
@@ -13,14 +13,15 @@ namespace Elastic.Esql.Tests;
 public abstract class EsqlTestBase
 {
 	protected static readonly EsqlQueryProvider QueryProvider = new(
-		new SystemTextJsonFieldNameResolver(
-			new JsonSerializerOptions
-			{
-				TypeInfoResolver = EsqlTestMappingContext.Default,
-				PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-			}
-		)
+		new JsonSerializerOptions
+		{
+			TypeInfoResolver = EsqlTestMappingContext.Default,
+			PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+		}
 	);
+
+	protected static JsonSerializerOptions ReaderOptions =>
+		new EsqlResponseReader(QueryProvider.Metadata).Options;
 
 	protected static EsqlQueryable<T> CreateQuery<T>() => new(QueryProvider);
 }

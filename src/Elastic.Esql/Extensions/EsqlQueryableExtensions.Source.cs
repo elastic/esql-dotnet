@@ -30,7 +30,7 @@ public static partial class EsqlQueryableExtensions
 	public static IQueryable<TSource> From<TSource>(this IQueryable<TSource> source, string indexPattern)
 	{
 		Verify.NotNull(source);
-		Verify.NotNull(indexPattern);
+		Verify.NotNullOrEmpty(indexPattern);
 
 		return CreateQuery(source,
 			new Func<IQueryable<TSource>, string, IQueryable<TSource>>(From).Method,

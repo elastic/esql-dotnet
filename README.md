@@ -8,7 +8,6 @@ Write LINQ, get [ES|QL](https://www.elastic.co/guide/en/elasticsearch/reference/
 
 | Package | Description |
 |---------|-------------|
-| [`Elastic.Mapping`](src/Elastic.Mapping) | Source generator for Elasticsearch index mappings, field constants, and analysis chains |
 | [`Elastic.Esql`](src/Elastic.Esql) | LINQ-to-ES\|QL translation engine -- no HTTP dependencies, pure query generation |
 | [`Elastic.Clients.Esql`](src/Elastic.Clients.Esql) | `EsqlClient` that connects the translation engine to a real cluster via `Elastic.Transport` |
 
@@ -16,45 +15,33 @@ Write LINQ, get [ES|QL](https://www.elastic.co/guide/en/elasticsearch/reference/
 
 ### 1. Define your domain types
 
-Clean POCOs with field-type attributes:
+Clean POCOs with `System.Text.Json` attributes:
 
 ```csharp
 public class LogEntry
 {
     [JsonPropertyName("@timestamp")]
-    [Date]
     public DateTime Timestamp { get; set; }
 
     [JsonPropertyName("log.level")]
-    [Keyword]
     public string Level { get; set; }
 
-    [Text]
     public string Message { get; set; }
 
     [JsonPropertyName("service.name")]
-    [Keyword]
     public string ServiceName { get; set; }
 
     public long Duration { get; set; }
 }
 ```
 
-### 2. Register a mapping context
+Field names are resolved from `[JsonPropertyName]` attributes, or via the configured `JsonNamingPolicy` (defaults to camelCase).
+
+### 2. Write LINQ, get ES|QL
 
 ```csharp
-[ElasticsearchMappingContext]
-[Entity<LogEntry>(Target = EntityTarget.DataStream, Type = "logs", Dataset = "myapp", Namespace = "production")]
-[Entity<Product>(Target = EntityTarget.Index, Name = "products", SearchPattern = "products*")]
-public static partial class MyContext;
-```
-
-The source generator produces type-safe field constants, index strategies, mappings JSON, and content hashes -- all at compile time.
-
-### 3. Write LINQ, get ES|QL
-
-```csharp
-var esql = new EsqlQueryable<LogEntry>(MyContext.Instance)
+var esql = new EsqlQueryable<LogEntry>()
+    .From("logs-*")
     .Where(l => l.Level == "ERROR" && l.Duration > 1000)
     .OrderByDescending(l => l.Timestamp)
     .Take(50)
@@ -64,25 +51,23 @@ var esql = new EsqlQueryable<LogEntry>(MyContext.Instance)
 Produces:
 
 ```
-FROM logs-myapp-production
+FROM logs-*
 | WHERE (log.level == "ERROR" AND duration > 1000)
 | SORT @timestamp DESC
 | LIMIT 50
 ```
 
-### 4. Execute against Elasticsearch
+### 3. Execute against Elasticsearch
 
 ```csharp
 var transport = new DistributedTransport(
     new TransportConfiguration(new Uri(url), new ApiKey(apiKey)));
 
-var settings = new EsqlClientSettings(transport)
-{
-    MappingContext = MyContext.Instance
-};
+var settings = new EsqlClientSettings(transport);
 using var client = new EsqlClient(settings);
 
 var errors = await client.Query<LogEntry>()
+    .From("logs-*")
     .Where(l => l.Level == "ERROR")
     .OrderByDescending(l => l.Timestamp)
     .Take(10)
@@ -92,27 +77,23 @@ var errors = await client.Query<LogEntry>()
 ## How It Works
 
 ```
-  Your C# code          Compile time              Runtime
-┌──────────────┐    ┌──────────────────┐    ┌──────────────────┐
-│  POCO types  │───>│ Elastic.Mapping  │    │                  │
-│  + attributes│    │ Source Generator  │    │                  │
-└──────────────┘    └───────┬──────────┘    │                  │
-                            │               │                  │
-                    field constants,         │                  │
-                    mappings JSON,           │                  │
-                    index strategies         │                  │
-                            │               │                  │
-                            v               │                  │
-                    ┌──────────────────┐    │                  │
-                    │   Elastic.Esql   │───>│  LINQ expression │
-                    │  LINQ-to-ES|QL   │    │  → ES|QL string  │
-                    └───────┬──────────┘    │                  │
-                            │               │                  │
-                            v               │                  │
-                    ┌──────────────────┐    │                  │
-                    │ Elastic.Clients  │───>│  HTTP execution  │
-                    │     .Esql        │    │  → typed results │
-                    └──────────────────┘    └──────────────────┘
+  Your C# code                          Runtime
+┌──────────────┐    ┌──────────────────────────────────────┐
+│  POCO types  │    │                                      │
+│  + STJ attrs │    │  LINQ expression tree                │
+└──────┬───────┘    │         │                            │
+       │            │         v                            │
+       │            │  ┌──────────────────┐                │
+       └───────────>│  │   Elastic.Esql   │  ES|QL string  │
+                    │  │  LINQ-to-ES|QL   │────────┐       │
+                    │  └──────────────────┘        │       │
+                    │                              v       │
+                    │  ┌──────────────────┐  ┌───────────┐ │
+                    │  │ Elastic.Clients  │  │   HTTP     │ │
+                    │  │     .Esql        │─>│ execution  │ │
+                    │  └──────────────────┘  │ → results  │ │
+                    │                        └───────────┘ │
+                    └──────────────────────────────────────┘
 ```
 
 ## What Translates?
@@ -129,19 +110,114 @@ var errors = await client.Query<LogEntry>()
 | `.Where(l => l.Timestamp.Year == 2025)` | `WHERE DATE_EXTRACT("year", @timestamp) == 2025` |
 | `.Where(l => Math.Abs(l.Delta) > 0.5)` | `WHERE ABS(delta) > 0.5` |
 | `EsqlFunctions.Match(l.Message, "error")` | `MATCH(message, "error")` |
+| `.Keep(l => l.Message, l => l.Timestamp)` | `KEEP message, @timestamp` |
+| `.Drop("duration", "host")` | `DROP duration, host` |
+| `.LeftJoin(...)` / `.LookupJoin(...)` | `LOOKUP JOIN index ON field` |
+| `.Completion(l => l.Message, endpoint)` | `COMPLETION col = message WITH {...}` |
+| `.Row(() => new { prompt = "..." })` | `ROW prompt = "..."` |
 
 See the [Elastic.Esql README](src/Elastic.Esql) for the full list including string methods, DateTime arithmetic, and ES|QL-specific functions.
 
-## Native AOT
+## Key Features
 
-The entire pipeline is AOT compatible. `Elastic.Mapping` generates all field metadata at compile time, `Elastic.Esql` translates via expression tree walking with no reflection-based serialization, and `Elastic.Transport` provides an AOT-safe HTTP client. Link a `System.Text.Json` source-generated `JsonSerializerContext` to `[ElasticsearchMappingContext]` and field names, serialization, and queries all derive from the same compile-time source of truth.
+### Full LINQ Translation
+
+Translates `.Where()`, `.Select()`, `.GroupBy()`, `.OrderBy()`, `.Take()`, and more into ES|QL commands: `WHERE`, `EVAL`, `KEEP`, `DROP`, `STATS...BY`, `SORT`, `LIMIT`, `RENAME`, `ROW`, `COMPLETION`, and `LOOKUP JOIN`.
+
+### 80+ ES|QL Functions
+
+Math (`ABS`, `SQRT`, `ROUND`, ...), string (`TRIM`, `CONCAT`, `REPLACE`, ...), date/time (`DATE_EXTRACT`, `DATE_TRUNC`, `NOW`, ...), search (`MATCH`, `KQL`, `QSTR`, ...), IP (`CIDR_MATCH`, `IP_PREFIX`), cast operators (`::integer`, `::keyword`, ...), grouping (`BUCKET`, `CATEGORIZE`), and aggregation (`PERCENTILE`, `MEDIAN`, `STD_DEV`, `VALUES`, ...).
+
+### Async Query Execution
+
+Submit long-running queries asynchronously with `ToAsyncQueryAsync()`. Poll for completion, stream results, and auto-cleanup on dispose:
+
+```csharp
+await using var asyncQuery = await client.Query<LogEntry>()
+    .From("logs-*")
+    .Where(l => l.Level == "ERROR")
+    .ToAsyncQueryAsync(new EsqlAsyncQueryOptions
+    {
+        WaitForCompletionTimeout = TimeSpan.FromSeconds(5),
+        KeepAlive = TimeSpan.FromMinutes(10)
+    });
+
+var results = await asyncQuery.ToListAsync();
+```
+
+### COMPLETION (LLM Inference)
+
+Run LLM inference directly in ES|QL pipelines or as standalone prompts using preconfigured inference endpoints:
+
+```csharp
+// RAG pipeline
+client.Query<LogEntry>()
+    .From("logs-*")
+    .Where(l => l.Level == "ERROR")
+    .Completion(l => l.Message, InferenceEndpoints.OpenAi.Gpt41, column: "analysis")
+
+// Standalone
+client.Query<Result>()
+    .Row(() => new { prompt = "Summarize Elasticsearch" })
+    .Completion("prompt", InferenceEndpoints.Anthropic.Claude46Opus, column: "answer")
+```
+
+### LOOKUP JOIN
+
+Correlate data across indices with `LeftJoin` or `LookupJoin`:
+
+```csharp
+query.LookupJoin<Order, Customer, string, OrderWithCustomer>(
+    "customers",
+    o => o.CustomerId,
+    c => c.Id,
+    (o, c) => new OrderWithCustomer { Order = o, CustomerName = c.Name }
+)
+```
+
+### Named Parameters
+
+Extract captured variables as named `?param` placeholders instead of inlining them:
+
+```csharp
+var minStatus = 400;
+var esql = query
+    .Where(l => l.StatusCode >= minStatus)
+    .ToEsqlString(inlineParameters: false);
+// WHERE statusCode >= ?minStatus
+```
+
+### Streaming Results
+
+Stream query results with `IAsyncEnumerable<T>`:
+
+```csharp
+await foreach (var entry in client.QueryAsync<LogEntry>(q =>
+    q.From("logs-*").Where(l => l.Level == "ERROR").Take(100)))
+{
+    Console.WriteLine(entry.Message);
+}
+```
+
+### Native AOT
+
+The entire pipeline is AOT compatible. Pass a source-generated `JsonSerializerContext` and field names, serialization, and queries all derive from the same compile-time source of truth with zero reflection at runtime.
+
+```csharp
+var provider = new EsqlQueryProvider(MyJsonContext.Default);
+var query = new EsqlQueryable<LogEntry>(provider);
+```
+
+### Multi-Target
+
+Supports `netstandard2.0`, `net8.0`, and `net10.0` with polyfills for older targets.
 
 ## Building
 
 ```bash
 dotnet build esql-dotnet.slnx
 
-# Run tests (TUnit — uses dotnet run, not dotnet test)
+# Run tests (TUnit -- uses dotnet run, not dotnet test)
 dotnet run --project tests/Elastic.Esql.Tests
 
 # Or use the build script
@@ -152,9 +228,7 @@ dotnet run --project tests/Elastic.Esql.Tests
 
 The [`examples/`](examples/) directory contains working applications:
 
-- **`Elastic.Examples.Domain`** -- shared domain types and mapping context
-- **`Elastic.Examples.Mapping`** -- index creation and mapping inspection
-- **`Elastic.Examples.Ingest`** -- bulk data ingestion with index and data stream strategies
+- **`Elastic.Examples.Domain`** -- shared domain types
 - **`Elastic.Examples.Esql`** -- ES|QL queries against a live cluster
 
 ## License

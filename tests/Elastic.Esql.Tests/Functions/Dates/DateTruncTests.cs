@@ -39,4 +39,20 @@ public class DateTruncTests : EsqlTestBase
             | KEEP day
             """.NativeLineEndings());
 	}
+
+	[Test]
+
+	public void DateTrunc_InWhere_GeneratesCorrectArgumentOrder()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => EsqlFunctions.DateTrunc("day", l.Timestamp) == DateTime.Today)
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+            FROM logs-*
+            | WHERE DATE_TRUNC("day", @timestamp) == DATE_TRUNC("day", NOW())
+            """.NativeLineEndings());
+	}
 }

@@ -13,6 +13,30 @@ namespace Elastic.Esql.Translation;
 /// </summary>
 internal static class EsqlFunctionTranslator
 {
+	/// <summary>
+	/// Translates a method call based on its declaring type using the centralized
+	/// EsqlFunctions/Math/string translators. Returns null when unsupported.
+	/// </summary>
+	public static string? TryTranslateMethodCall(MethodCallExpression methodCall, Func<Expression, string> translate)
+	{
+		var methodName = methodCall.Method.Name;
+		var declaringType = methodCall.Method.DeclaringType;
+
+		if (declaringType == typeof(EsqlFunctions))
+			return TryTranslate(methodName, translate, methodCall.Arguments);
+
+		if (declaringType == typeof(Math))
+			return TryTranslateMath(methodName, translate, methodCall.Arguments);
+
+		if (declaringType == typeof(string) && methodCall.Object is not null)
+		{
+			var target = translate(methodCall.Object);
+			return TryTranslateString(methodName, translate, target, methodCall.Arguments);
+		}
+
+		return null;
+	}
+
 	/// <summary>Translates an EsqlFunctions.* method call to ES|QL. Returns null if not recognized.</summary>
 	public static string? TryTranslate(string methodName, Func<Expression, string> translate, IReadOnlyList<Expression> args) =>
 		methodName switch

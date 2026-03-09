@@ -3,17 +3,13 @@
 // See the LICENSE file in the project root for more information
 
 using System.Collections;
-using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Text;
-using System.Text.Json.Serialization;
 using Elastic.Esql.Core;
 using Elastic.Esql.Extensions;
-using Elastic.Esql.Formatting;
 using Elastic.Esql.Functions;
-using Elastic.Esql.QueryModel;
 
 namespace Elastic.Esql.Translation;
 
@@ -24,6 +20,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 {
 	private readonly EsqlTranslationContext _context = context ?? throw new ArgumentNullException(nameof(context));
 	private readonly StringBuilder _builder = new();
+	private MemberInfo? _comparisonPropertyContext;
 
 	/// <summary>
 	/// Translates a predicate expression to an ES|QL condition string.
@@ -43,33 +40,30 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		if (isLogicalOperator)
 			_ = _builder.Append('(');
 
-		// Check for enum comparison that needs string formatting
 		var enumComparison = TryGetEnumComparison(node);
-		if (enumComparison.HasValue && !IsSpecialEnumAccess(enumComparison.Value.MemberSide.Member) && ShouldFormatEnumAsString(enumComparison.Value.EnumType))
+		if (enumComparison.HasValue && !IsSpecialEnumAccess(enumComparison.Value.MemberSide.Member))
 		{
+			var propertyMember = enumComparison.Value.MemberSide.Member;
 			_ = Visit(enumComparison.Value.MemberSide);
 			var op = GetOperator(node.NodeType);
 			_ = _builder.Append(' ').Append(op).Append(' ');
 
 			var constant = enumComparison.Value.ConstantSide;
 			var constantValue = ExpressionConstantResolver.Resolve(constant);
+			var enumValue = constantValue is not null ? Enum.ToObject(enumComparison.Value.EnumType, constantValue) : null;
 
-			if (constant is MemberExpression member)
-			{
-				var name = member.Member.Name;
-				var value = GetEnumStringValue(enumComparison.Value.EnumType, constantValue);
-
-				_ = _builder.Append(_context.GetValueOrParameterName(name, value));
-			}
-			else
-				_ = _builder.Append(EsqlFormatting.FormatValue(constantValue));
+			_ = constant is MemberExpression member
+				? _builder.Append(_context.GetValueOrParameterName(member.Member.Name, enumValue, propertyMember))
+				: _builder.Append(_context.FormatValue(enumValue, propertyMember));
 		}
 		else
 		{
+			_comparisonPropertyContext = ExtractEntityPropertyMember(node);
 			_ = Visit(node.Left);
 			var op = GetOperator(node.NodeType);
 			_ = _builder.Append(' ').Append(op).Append(' ');
 			_ = Visit(node.Right);
+			_comparisonPropertyContext = null;
 		}
 
 		if (isLogicalOperator)
@@ -133,25 +127,28 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		return declaringType == typeof(DateTime) || declaringType == typeof(DateTimeOffset);
 	}
 
-	private static bool ShouldFormatEnumAsString(Type enumType)
+	/// <summary>
+	/// Extracts the entity property <see cref="MemberInfo"/> from a binary comparison so that
+	/// property-level <see cref="System.Text.Json.Serialization.JsonConverterAttribute"/> can
+	/// be respected when serializing the compared value.
+	/// </summary>
+	private static MemberInfo? ExtractEntityPropertyMember(BinaryExpression node)
 	{
-		// TODO: This is not always the case. Users can choose to store enums as integers in Elasticsearch.
-		//       For now, we require enums to be stored as strings for simplicity.
-
-		// Always format enums as strings since keyword fields expect strings.
-		// The JsonStringEnumConverter attribute on the property ensures the data is stored as strings.
-		_ = enumType; // Suppress unused parameter warning
-		return true;
-	}
-
-	private static string? GetEnumStringValue(Type enumType, object? value)
-	{
-		if (value == null)
+		if (node.NodeType is not (ExpressionType.Equal or ExpressionType.NotEqual
+			or ExpressionType.LessThan or ExpressionType.LessThanOrEqual
+			or ExpressionType.GreaterThan or ExpressionType.GreaterThanOrEqual))
 			return null;
 
-		// Convert the value to the enum and get its name
-		var enumValue = Enum.ToObject(enumType, value);
-		return Enum.GetName(enumType, enumValue) ?? value.ToString() ?? "";
+		return TryExtract(node.Left) ?? TryExtract(node.Right);
+
+		static MemberInfo? TryExtract(Expression expr)
+		{
+			var unwrapped = expr.UnwrapConvertExpressions();
+			if (unwrapped is MemberExpression { Expression: ParameterExpression } member)
+				return member.Member;
+
+			return null;
+		}
 	}
 
 	protected override Expression VisitUnary(UnaryExpression node)
@@ -182,7 +179,8 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		if (node.Expression is ConstantExpression constantExpression)
 		{
 			var value = GetMemberValue(node, constantExpression.Value);
-			_ = _builder.Append(_context.GetValueOrParameterName(node.Member.Name, value));
+			_ = _builder.Append(_context.GetValueOrParameterName(node.Member.Name, value, _comparisonPropertyContext));
+			_comparisonPropertyContext = null;
 			return node;
 		}
 
@@ -192,7 +190,8 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		{
 			var innerValue = GetMemberValue(innerMember, innerConstant.Value);
 			var value = GetMemberValue(node, innerValue);
-			_ = _builder.Append(_context.GetValueOrParameterName(node.Member.Name, value));
+			_ = _builder.Append(_context.GetValueOrParameterName(node.Member.Name, value, _comparisonPropertyContext));
+			_comparisonPropertyContext = null;
 			return node;
 		}
 
@@ -230,7 +229,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 			// For other static members, evaluate the value
 			var value = GetStaticMemberValue(node);
-			_ = _builder.Append(EsqlFormatting.FormatValue(value));
+			_ = _builder.Append(_context.FormatValue(value));
 			return node;
 		}
 
@@ -279,7 +278,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		}
 
 		// Regular field access
-		var fieldName = _context.FieldNameResolver.GetFieldName(node.Member.DeclaringType!, node.Member);
+		var fieldName = _context.ResolveFieldName(node.Member.DeclaringType!, node.Member);
 		_ = _builder.Append(fieldName);
 
 		return node;
@@ -294,7 +293,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 				TranslateStaticDateTimeProperty(member),
 			MemberExpression member =>
 				// Field access like l.Timestamp
-				_context.FieldNameResolver.GetFieldName(member.Member.DeclaringType!, member.Member),
+				_context.ResolveFieldName(member.Member.DeclaringType!, member.Member),
 			MethodCallExpression methodCall when methodCall.Method.DeclaringType == typeof(EsqlFunctions) =>
 				TranslateEsqlFunctionForDateTime(methodCall),
 			_ => throw new NotSupportedException($"Expression type {expression.GetType().Name} is not supported for DateTime property access.")
@@ -314,17 +313,14 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 	private string TranslateEsqlFunctionForDateTime(MethodCallExpression methodCall)
 	{
 		var methodName = methodCall.Method.Name;
-		return methodName switch
-		{
-			"Now" => "NOW()",
-			"DateTrunc" => $"DATE_TRUNC({TranslateDateTimeExpression(methodCall.Arguments[0])}, {TranslateDateTimeExpression(methodCall.Arguments[1])})",
-			_ => throw new NotSupportedException($"EsqlFunction {methodName} is not supported in DateTime context.")
-		};
+		var translated = EsqlFunctionTranslator.TryTranslateMethodCall(methodCall, TranslateDateTimeExpression);
+		return translated ?? throw new NotSupportedException($"EsqlFunction {methodName} is not supported in DateTime context.");
 	}
 
 	protected override Expression VisitConstant(ConstantExpression node)
 	{
-		_ = _builder.Append(EsqlFormatting.FormatValue(node.Value));
+		_ = _builder.Append(_context.FormatValue(node.Value, _comparisonPropertyContext));
+		_comparisonPropertyContext = null;
 		return node;
 	}
 
@@ -336,7 +332,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		// MultiField extension: l.Field.MultiField("keyword")
 		if (declaringType == typeof(GeneralPurposeExtensions) && methodName == "MultiField")
 		{
-			_ = _builder.Append(node.ResolveFieldName(_context.FieldNameResolver));
+			_ = _builder.Append(node.ResolveFieldName(_context.Metadata));
 			return node;
 		}
 
@@ -410,31 +406,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 	private Expression VisitEsqlFunction(MethodCallExpression node)
 	{
 		var methodName = node.Method.Name;
-
-		switch (methodName)
-		{
-			case "Match":
-			case "MatchPhrase":
-				_ = _builder.Append(methodName == "Match" ? "MATCH(" : "MATCH_PHRASE(");
-				_ = Visit(node.Arguments[0]);
-				_ = _builder.Append(", ");
-				_ = Visit(node.Arguments[1]);
-				_ = _builder.Append(')');
-				return node;
-
-			case "IsNull":
-				_ = Visit(node.Arguments[0]);
-				_ = _builder.Append(" IS NULL");
-				return node;
-
-			case "IsNotNull":
-				_ = Visit(node.Arguments[0]);
-				_ = _builder.Append(" IS NOT NULL");
-				return node;
-		}
-
-		// Delegate to shared translator
-		var result = EsqlFunctionTranslator.TryTranslate(methodName, TranslateSubExpression, node.Arguments);
+		var result = EsqlFunctionTranslator.TryTranslateMethodCall(node, TranslateSubExpression);
 		if (result != null)
 		{
 			_ = _builder.Append(result);
@@ -447,7 +419,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 	private Expression VisitMathMethod(MethodCallExpression node)
 	{
 		var methodName = node.Method.Name;
-		var result = EsqlFunctionTranslator.TryTranslateMath(methodName, TranslateSubExpression, node.Arguments);
+		var result = EsqlFunctionTranslator.TryTranslateMethodCall(node, TranslateSubExpression);
 		if (result != null)
 		{
 			_ = _builder.Append(result);
@@ -533,16 +505,11 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 				break;
 
 			default:
-				// Try shared string translator for TrimStart, TrimEnd, Replace, IndexOf, Split, etc.
-				if (node.Object != null)
+				var result = EsqlFunctionTranslator.TryTranslateMethodCall(node, TranslateSubExpression);
+				if (result != null)
 				{
-					var target = TranslateSubExpression(node.Object);
-					var result = EsqlFunctionTranslator.TryTranslateString(methodName, TranslateSubExpression, target, node.Arguments);
-					if (result != null)
-					{
-						_ = _builder.Append(result);
-						break;
-					}
+					_ = _builder.Append(result);
+					break;
 				}
 
 				throw new NotSupportedException($"String method {methodName} is not supported.");
@@ -594,7 +561,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		{
 			if (!first)
 				_ = _builder.Append(", ");
-			_ = _builder.Append(EsqlFormatting.FormatValue(item));
+			_ = _builder.Append(_context.FormatValue(item));
 			first = false;
 		}
 
@@ -617,7 +584,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		{
 			if (!first)
 				_ = _builder.Append(", ");
-			_ = _builder.Append(EsqlFormatting.FormatValue(item));
+			_ = _builder.Append(_context.FormatValue(item));
 			first = false;
 		}
 
@@ -645,18 +612,17 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 			_ => throw new NotSupportedException($"Operator {nodeType} is not supported.")
 		};
 
-#if NET8_0_OR_GREATER
-	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Expression compilation fallback for constant evaluation.")]
-#endif
-	private static object? GetConstantValue(Expression expression) =>
-		expression switch
+	private static object? GetConstantValue(Expression expression)
+	{
+		try
 		{
-			ConstantExpression constant => constant.Value,
-			MemberExpression member when member.Expression is ConstantExpression ce =>
-				GetMemberValue(member, ce.Value),
-			UnaryExpression { NodeType: ExpressionType.Convert, Operand: ConstantExpression c } => c.Value,
-			_ => Expression.Lambda(expression).Compile().DynamicInvoke()
-		};
+			return ExpressionConstantResolver.Resolve(expression);
+		}
+		catch (NotSupportedException ex)
+		{
+			throw new NotSupportedException($"Expression '{expression}' is not supported for constant evaluation.", ex);
+		}
+	}
 
 	private static object? GetMemberValue(MemberExpression member, object? instance) =>
 		member.Member switch

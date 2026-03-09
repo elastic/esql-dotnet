@@ -7,15 +7,14 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Elastic.Esql.Core;
 using Elastic.Esql.Extensions;
-using Elastic.Esql.FieldMetadataResolver;
 using EsqlAotSmoketest;
 
 Console.WriteLine("Elastic.Esql AOT Smoketest");
 Console.WriteLine(new string('=', 60));
 
-// Create a field resolver that uses the source-generated JsonSerializerContext
-var resolver = new SystemTextJsonFieldNameResolver(EsqlJsonContext.Default);
-var provider = new EsqlQueryProvider(resolver);
+// Create a provider using the source-generated JsonSerializerContext
+var provider = new EsqlQueryProvider(EsqlJsonContext.Default);
+var namingPolicy = EsqlJsonContext.Default.Options.PropertyNamingPolicy;
 
 // Build a LINQ query and get the ES|QL string
 var query = new EsqlQueryable<EsqlOrder>(provider)
@@ -54,8 +53,8 @@ Console.WriteLine($"  {productEsql}");
 
 // Verify field names are resolved via STJ naming policy
 Console.WriteLine($"\nField resolution test:");
-Console.WriteLine($"  OrderId resolves to: {resolver.GetAnonymousFieldName("OrderId")}");
-Console.WriteLine($"  TotalAmount resolves to: {resolver.GetAnonymousFieldName("TotalAmount")}");
+Console.WriteLine($"  OrderId resolves to: {namingPolicy?.ConvertName("OrderId") ?? "OrderId"}");
+Console.WriteLine($"  TotalAmount resolves to: {namingPolicy?.ConvertName("TotalAmount") ?? "TotalAmount"}");
 
 Console.WriteLine("\nAOT smoketest passed!");
 

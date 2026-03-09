@@ -2,8 +2,10 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using Elastic.Esql;
 using Elastic.Transport;
 
@@ -46,11 +48,28 @@ public class EsqlClientSettings
 	}
 
 	/// <summary>Resolves the effective <see cref="System.Text.Json.JsonSerializerOptions"/> from context or explicit options.</summary>
+	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "DefaultJsonTypeInfoResolver is a fallback; the user-provided JsonSerializerContext is expected to include an AOT-safe TypeInfoResolver.")]
+	[UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "DefaultJsonTypeInfoResolver is a fallback; the user-provided JsonSerializerContext is expected to include an AOT-safe TypeInfoResolver.")]
 	internal JsonSerializerOptions ResolveJsonOptions()
 	{
 		if (JsonSerializerContext is not null)
-			return new JsonSerializerOptions { TypeInfoResolver = JsonSerializerContext };
+		{
+			return new JsonSerializerOptions
+			{
+				TypeInfoResolver = JsonTypeInfoResolver.Combine(
+					JsonSerializerContext,
+					new DefaultJsonTypeInfoResolver()
+				),
+				PropertyNamingPolicy = JsonSerializerContext.Options.PropertyNamingPolicy ?? JsonNamingPolicy.CamelCase
+			};
+		}
 
-		return JsonSerializerOptions ?? JsonSerializerOptions.Default;
+		return JsonSerializerOptions ?? CreateDefaultJsonOptions();
 	}
+
+	private static JsonSerializerOptions CreateDefaultJsonOptions() =>
+		new(JsonSerializerOptions.Default)
+		{
+			PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+		};
 }

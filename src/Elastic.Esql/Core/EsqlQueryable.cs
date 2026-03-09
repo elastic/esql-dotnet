@@ -5,7 +5,7 @@
 using System.Collections;
 using System.Linq.Expressions;
 using System.Text.Json;
-using Elastic.Esql.FieldMetadataResolver;
+using System.Text.Json.Serialization;
 using Elastic.Esql.Generation;
 using Elastic.Esql.QueryModel;
 using Elastic.Esql.Validation;
@@ -30,23 +30,15 @@ public sealed class EsqlQueryable<T> : IEsqlQueryable<T>, IOrderedQueryable<T>
 	IQueryProvider IQueryable.Provider => Provider;
 
 	/// <summary>
-	/// Creates a new ESQL queryable.
+	/// Creates a new ES|QL queryable using default camelCase JSON options.
 	/// </summary>
 	/// <remarks>
-	///	The resulting queryable will use the reflection based <see cref="SystemTextJsonFieldNameResolver"/> to resolve field metadata.
-	/// In AOT context, please use the <see cref="EsqlQueryable{T}(EsqlQueryProvider)"/> overload instead.
-	/// <para>
-	/// The <see cref="SystemTextJsonFieldNameResolver"/> is fully AOT compatible when initializing it using a <see cref="JsonSerializerOptions"/>
-	/// instance that is linked to a source generated <see cref="JsonSerializerOptions.TypeInfoResolver"/> context.
-	/// </para>
-	/// <para>
-	///	The <c>Elastic.Clients.Esql</c> and <c>Elastic.Clients.Elasticsearch</c> packages also provide AOT compatible <see cref="IEsqlFieldNameResolver"/>
-	/// implementations utilizing the capabilities of the <c>Elastic.Mapping</c> framework.
-	/// </para>
+	/// In AOT context, pass a <see cref="JsonSerializerContext"/> to <see cref="EsqlQueryProvider(JsonSerializerContext)"/>
+	/// and use the <see cref="EsqlQueryable{T}(EsqlQueryProvider)"/> overload.
 	/// </remarks>
 	public EsqlQueryable()
 	{
-		Provider = new EsqlQueryProvider(new SystemTextJsonFieldNameResolver());
+		Provider = new EsqlQueryProvider();
 		Expression = Expression.Constant(this);
 	}
 
@@ -102,7 +94,7 @@ public sealed class EsqlQueryable<T> : IEsqlQueryable<T>, IOrderedQueryable<T>
 	public override string ToString() => ToEsqlString(true);
 
 	/// <inheritdoc/>
-	public IEnumerator<T> GetEnumerator() => Provider.Execute<IEnumerable<T>>(Expression).GetEnumerator();
+	public IEnumerator<T> GetEnumerator() => Provider.ExecuteEnumerable<T>(Expression).GetEnumerator();
 
 	/// <inheritdoc/>
 	IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();

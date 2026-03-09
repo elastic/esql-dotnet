@@ -5,7 +5,7 @@
   <PropertyGroup>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <UseMicrosoftTestingPlatformRunner>false</UseMicrosoftTestingPlatformRunner>
-    <NoWarn>CA1822;CA1707;IDE0058</NoWarn>
+    <NoWarn>CA1822;CA1707;IDE0058;CS8002</NoWarn>
 
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>

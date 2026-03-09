@@ -5,8 +5,8 @@
 using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
 
+using Elastic.Esql.Core;
 using Elastic.Esql.Extensions;
-using Elastic.Esql.FieldMetadataResolver;
 
 namespace Elastic.Esql.Translation;
 
@@ -50,7 +50,7 @@ internal static class TranslationExtensions
 	/// <summary>
 	/// Resolves a field name from an expression, handling plain member access and <c>MultiField()</c> calls.
 	/// </summary>
-	public static string ResolveFieldName(this Expression expression, IEsqlFieldNameResolver resolver)
+	public static string ResolveFieldName(this Expression expression, JsonMetadataManager metadata)
 	{
 		expression = expression.UnwrapConvertExpressions();
 
@@ -58,12 +58,12 @@ internal static class TranslationExtensions
 		{
 			MethodCallExpression { Method.Name: "MultiField" } mc
 				when mc.Method.DeclaringType == typeof(GeneralPurposeExtensions) =>
-				$"{mc.Arguments[0].ResolveFieldName(resolver)}.{(string)((ConstantExpression)mc.Arguments[1]).Value!}",
+				$"{mc.Arguments[0].ResolveFieldName(metadata)}.{(string)((ConstantExpression)mc.Arguments[1]).Value!}",
 			MemberExpression member when member.Member.DeclaringType is not null
 				&& member.Member.DeclaringType.IsDefined(typeof(CompilerGeneratedAttribute), false) =>
-				resolver.GetAnonymousFieldName(member.Member.Name),
+				metadata.Options.PropertyNamingPolicy?.ConvertName(member.Member.Name) ?? member.Member.Name,
 			MemberExpression member =>
-				resolver.GetFieldName(member.Member.DeclaringType!, member.Member),
+				metadata.ResolvePropertyName(member.Member.DeclaringType!, member.Member),
 			_ => throw new NotSupportedException($"Cannot extract field name from expression: {expression}")
 		};
 	}

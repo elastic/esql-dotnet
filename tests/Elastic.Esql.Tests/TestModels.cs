@@ -2,6 +2,7 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Elastic.Esql.Tests;
@@ -19,6 +20,11 @@ namespace Elastic.Esql.Tests;
 [JsonSerializable(typeof(OverlappingLookup))]
 [JsonSerializable(typeof(LogProjection))]
 [JsonSerializable(typeof(StatsProjection))]
+[JsonSerializable(typeof(OrdinalEnumDocument))]
+[JsonSerializable(typeof(CustomConverterDocument))]
+[JsonSerializable(typeof(RecordProjection))]
+[JsonSerializable(typeof(UnmatchedCtorProjection))]
+[JsonSerializable(typeof(CollisionRecord))]
 public sealed partial class EsqlTestMappingContext : JsonSerializerContext;
 
 /// <summary>
@@ -112,12 +118,15 @@ public enum LogLevel
 }
 
 /// <summary>
-/// Document with enum property.
+/// Document with enum property using string serialization.
 /// </summary>
 public class EventDocument
 {
 	public DateTime Timestamp { get; set; }
+
+	[JsonConverter(typeof(JsonStringEnumConverter<LogLevel>))]
 	public LogLevel Level { get; set; }
+
 	public string Message { get; set; } = string.Empty;
 	public Guid EventId { get; set; }
 }
@@ -157,3 +166,69 @@ public class StatsProjection
 	[JsonPropertyName("total_duration")]
 	public double TotalDuration { get; set; }
 }
+
+/// <summary>
+/// Enum for testing ordinal (integer) enum serialization.
+/// </summary>
+public enum Priority
+{
+	Low,
+	Medium,
+	High,
+	Critical
+}
+
+/// <summary>
+/// Document with an enum property that uses default ordinal serialization (no <see cref="JsonStringEnumConverter"/>).
+/// </summary>
+public class OrdinalEnumDocument
+{
+	public Priority Priority { get; set; }
+	public string Name { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Custom converter that serializes an <see cref="int"/> as a prefixed string.
+/// </summary>
+public class PrefixedIntConverter : JsonConverter<int>
+{
+	public override int Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+	{
+		var s = reader.GetString() ?? throw new JsonException("Expected a string.");
+		return int.Parse(s.Replace("ID-", ""), System.Globalization.CultureInfo.InvariantCulture);
+	}
+
+	public override void Write(Utf8JsonWriter writer, int value, JsonSerializerOptions options) =>
+		writer.WriteStringValue($"ID-{value}");
+}
+
+/// <summary>
+/// Document with a custom converter on a property, validating that user-provided converters are respected.
+/// </summary>
+public class CustomConverterDocument
+{
+	[JsonConverter(typeof(PrefixedIntConverter))]
+	public int CustomId { get; set; }
+
+	public string Name { get; set; } = string.Empty;
+}
+
+/// <summary>Record projection for testing constructor-call Select.</summary>
+public record RecordProjection(string Message, int StatusCode);
+
+/// <summary>
+/// Projection whose constructor parameter name does not match any property,
+/// used to verify the translator throws. Cannot use a primary constructor here
+/// because that would create a matching property for the parameter.
+/// </summary>
+#pragma warning disable IDE0290
+public class UnmatchedCtorProjection
+{
+	public UnmatchedCtorProjection(string noSuchField) => Name = noSuchField;
+
+	public string Name { get; }
+}
+#pragma warning restore IDE0290
+
+/// <summary>Record projection for join collision tests with constructor-call syntax.</summary>
+public record CollisionRecord(string OuterMsg, string InnerMsg);

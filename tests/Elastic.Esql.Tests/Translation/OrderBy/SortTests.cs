@@ -37,7 +37,7 @@ public class SortTests : EsqlTestBase
 	}
 
 	[Test]
-	public void OrderBy_ThenBy_GeneratesMultipleSort()
+	public void OrderBy_ThenBy_GeneratesCombinedSort()
 	{
 		var esql = CreateQuery<LogEntry>()
 			.From("logs-*")
@@ -48,13 +48,12 @@ public class SortTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | SORT log.level.keyword
-            | SORT @timestamp
+            | SORT log.level.keyword, @timestamp
             """.NativeLineEndings());
 	}
 
 	[Test]
-	public void OrderBy_ThenByDescending_GeneratesMultipleSort()
+	public void OrderBy_ThenByDescending_GeneratesCombinedSort()
 	{
 		var esql = CreateQuery<LogEntry>()
 			.From("logs-*")
@@ -65,8 +64,37 @@ public class SortTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | SORT log.level.keyword
-            | SORT @timestamp DESC
+            | SORT log.level.keyword, @timestamp DESC
+            """.NativeLineEndings());
+	}
+
+	[Test]
+	public void OrderBy_StringToLower_GeneratesFunctionSort()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.OrderBy(l => l.Message.ToLowerInvariant())
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+            FROM logs-*
+            | SORT TO_LOWER(message)
+            """.NativeLineEndings());
+	}
+
+	[Test]
+	public void OrderBy_ComposedStringFunctions_GeneratesNestedFunctionSort()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.OrderBy(l => l.Message.Trim().ToLowerInvariant())
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+            FROM logs-*
+            | SORT TO_LOWER(TRIM(message))
             """.NativeLineEndings());
 	}
 }

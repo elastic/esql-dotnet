@@ -94,8 +94,7 @@ public class QuerySyntaxTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | SORT log.level.keyword
-            | SORT @timestamp DESC
+            | SORT log.level.keyword, @timestamp DESC
             """.NativeLineEndings());
 	}
 

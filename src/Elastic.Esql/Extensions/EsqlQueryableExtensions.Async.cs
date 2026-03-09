@@ -19,6 +19,8 @@ public static partial class EsqlQueryableExtensions
 	/// </summary>
 	public static async Task<List<TSource>> ToListAsync<TSource>(this IEsqlQueryable<TSource> source, CancellationToken cancellationToken = default)
 	{
+		Verify.NotNull(source);
+
 		var list = new List<TSource>();
 
 		await foreach (var item in source.AsAsyncEnumerable(cancellationToken).ConfigureAwait(false))
@@ -30,8 +32,12 @@ public static partial class EsqlQueryableExtensions
 	/// <summary>
 	/// Executes the query and returns results as an array.
 	/// </summary>
-	public static async Task<TSource[]> ToArrayAsync<TSource>(this IEsqlQueryable<TSource> source, CancellationToken cancellationToken = default) =>
-		(await source.ToListAsync(cancellationToken)).ToArray();
+	public static async Task<TSource[]> ToArrayAsync<TSource>(this IEsqlQueryable<TSource> source, CancellationToken cancellationToken = default)
+	{
+		Verify.NotNull(source);
+
+		return (await source.ToListAsync(cancellationToken)).ToArray();
+	}
 
 	/// <summary>
 	/// Returns the first element or throws if none exist.

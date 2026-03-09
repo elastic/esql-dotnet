@@ -94,7 +94,8 @@ public class EsqlFormatter : ICommandVisitor
 	public void Visit(CompletionCommand command)
 	{
 		var columnAssignment = command.Column != null ? $"{command.Column} = " : "";
-		AppendCommand($"COMPLETION {columnAssignment}{command.Prompt} WITH {{ \"inference_id\" : \"{command.InferenceId}\" }}");
+		var escapedId = command.InferenceId.Replace("\\", "\\\\").Replace("\"", "\\\"");
+		AppendCommand($"COMPLETION {columnAssignment}{command.Prompt} WITH {{ \"inference_id\" : \"{escapedId}\" }}");
 	}
 
 	public void Visit(RowCommand command)
@@ -106,7 +107,7 @@ public class EsqlFormatter : ICommandVisitor
 	public void Visit(RenameCommand command)
 	{
 		if (command.Fields.Count > 0)
-			AppendCommand($"RENAME {string.Join(", ", command.Fields.Select(f => $"{f.OldName} AS {f.NewName}"))}");
+			AppendCommand($"RENAME {string.Join(", ", command.Fields.Select(f => $"{EscapeIdentifier(f.OldName)} AS {EscapeIdentifier(f.NewName)}"))}");
 	}
 
 	public void Visit(LookupJoinCommand command) =>
@@ -136,7 +137,7 @@ public class EsqlFormatter : ICommandVisitor
 		// Check for characters that require escaping
 		foreach (var c in identifier)
 		{
-			if (!char.IsLetterOrDigit(c) && c != '_' && c != '.' && c != '-' && c != '*' && c != '?')
+			if (!char.IsLetterOrDigit(c) && c != '_' && c != '.' && c != '-' && c != '*' && c != '?' && c != '@')
 				return true;
 		}
 
@@ -151,17 +152,14 @@ public class EsqlFormatter : ICommandVisitor
 		return false;
 	}
 
-	private static bool IsReservedKeyword(string identifier)
+	private static readonly HashSet<string> ReservedKeywords = new(StringComparer.OrdinalIgnoreCase)
 	{
-		var keywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-		{
-			"FROM", "WHERE", "EVAL", "STATS", "SORT", "LIMIT", "KEEP", "DROP",
-			"BY", "AS", "AND", "OR", "NOT", "IN", "LIKE", "RLIKE", "IS", "NULL",
-			"TRUE", "FALSE", "ASC", "DESC", "NULLS", "FIRST", "LAST",
-			"ROW", "SHOW", "META", "METADATA", "MV_EXPAND", "RENAME", "DISSECT", "GROK", "ENRICH",
-			"COMPLETION", "JOIN", "LOOKUP"
-		};
+		"FROM", "WHERE", "EVAL", "STATS", "SORT", "LIMIT", "KEEP", "DROP",
+		"BY", "AS", "AND", "OR", "NOT", "IN", "LIKE", "RLIKE", "IS", "NULL",
+		"TRUE", "FALSE", "ASC", "DESC", "NULLS", "FIRST", "LAST",
+		"ROW", "SHOW", "META", "METADATA", "MV_EXPAND", "RENAME", "DISSECT", "GROK", "ENRICH",
+		"COMPLETION", "JOIN", "LOOKUP"
+	};
 
-		return keywords.Contains(identifier);
-	}
+	private static bool IsReservedKeyword(string identifier) => ReservedKeywords.Contains(identifier);
 }

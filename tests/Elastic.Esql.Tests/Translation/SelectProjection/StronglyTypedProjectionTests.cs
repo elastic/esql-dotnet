@@ -110,4 +110,68 @@ public class StronglyTypedProjectionTests : EsqlTestBase
 			| KEEP log_level
 			""".NativeLineEndings());
 	}
+
+	// ============================================================================
+	// Constructor-call projections (records / classes)
+	// ============================================================================
+
+	[Test]
+	public void Select_RecordConstructor_SimpleFields_GeneratesKeep()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Select(l => new RecordProjection(l.Message, l.StatusCode))
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| KEEP message, statusCode
+			""".NativeLineEndings());
+	}
+
+	[Test]
+	public void Select_RecordConstructor_RenamedFields_GeneratesRename()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Select(l => new RecordProjection(l.Level, l.StatusCode))
+			.ToString();
+
+		// LogEntry.Level → "log.level", RecordProjection.Message → "message"
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| RENAME log.level AS message
+			| KEEP statusCode, message
+			""".NativeLineEndings());
+	}
+
+	[Test]
+	public void Select_RecordConstructor_ComputedField_GeneratesEval()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Select(l => new RecordProjection(l.Message, l.StatusCode - 100))
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| EVAL statusCode = (statusCode - 100)
+			| KEEP message, statusCode
+			""".NativeLineEndings());
+	}
+
+	[Test]
+	public void Select_RecordConstructor_UnmatchedParameter_ThrowsNotSupported()
+	{
+		var act = () => CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Select(l => new UnmatchedCtorProjection(l.Message))
+			.ToString();
+
+		_ = act.Should().Throw<NotSupportedException>()
+			.WithMessage("*noSuchField*");
+	}
 }

@@ -19,7 +19,7 @@ internal static class ExpressionConstantResolver
 		{
 			ConstantExpression constant => constant.Value,
 			MemberExpression member => ResolveMember(member),
-			UnaryExpression { NodeType: ExpressionType.Convert } unary => ResolveUnary(unary),
+			UnaryExpression { NodeType: ExpressionType.Convert or ExpressionType.ConvertChecked } unary => ResolveUnary(unary),
 			_ => throw new NotSupportedException($"Expression of type '{expression.GetType().Name}' ({expression.NodeType}) is not supported.")
 		};
 	}
@@ -66,6 +66,6 @@ internal static class ExpressionConstantResolver
 		if (unary.Method is not null)
 			return unary.Method.Invoke(null, [operandValue]);
 
-		return Convert.ChangeType(operandValue, underlyingTargetType, CultureInfo.CurrentCulture);
+		return Convert.ChangeType(operandValue, underlyingTargetType, CultureInfo.InvariantCulture);
 	}
 }
