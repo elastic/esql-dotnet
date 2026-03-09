@@ -2,6 +2,8 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using Elastic.Esql.Validation;
+
 namespace Elastic.Esql.Extensions;
 
 public static partial class EsqlQueryableExtensions
@@ -9,6 +11,12 @@ public static partial class EsqlQueryableExtensions
 	/// <summary>
 	/// Adds a full-text match filter.
 	/// </summary>
-	public static IQueryable<T> Match<T>(this IQueryable<T> source, string field, string query) =>
-		source.Where(_ => Functions.EsqlFunctions.Match(field, query));
+	public static IQueryable<T> Match<T>(this IQueryable<T> source, string field, string query)
+	{
+		Verify.NotNull(source);
+		Verify.NotNullOrEmpty(field);
+		Verify.NotNullOrEmpty(query);
+
+		return source.Where(_ => Functions.EsqlFunctions.Match(field, query));
+	}
 }

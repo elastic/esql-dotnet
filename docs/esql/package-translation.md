@@ -4,7 +4,7 @@ navigation_title: Translation Package
 
 # Elastic.Esql
 
-A translation library that converts C# LINQ expressions into Elasticsearch [ES|QL](elasticsearch://reference/query-languages/esql.md) query strings. No HTTP dependencies, no transport layer, AOT compatible — just query generation.
+A translation library that converts C# LINQ expressions into Elasticsearch [ES|QL](elasticsearch://reference/query-languages/esql.md) query strings. No HTTP dependencies, no transport layer, AOT compatible -- just query generation.
 
 ## When to use this package
 
@@ -14,7 +14,7 @@ Use `Elastic.Esql` directly when you need:
 - Query inspection or logging of generated ES|QL
 - Integration with a transport layer you already have
 
-If you want LINQ-to-ES|QL with real cluster execution, use [Elastic.Clients.Esql](package-client.md) instead — it includes this package automatically.
+If you want LINQ-to-ES|QL with real cluster execution, use [Elastic.Clients.Esql](package-client.md) instead -- it includes this package automatically.
 
 ## Install
 
@@ -26,6 +26,7 @@ dotnet add package Elastic.Esql
 
 ```csharp
 var query = new EsqlQueryable<Order>()
+    .From("orders")
     .Where(o => o.Status == "shipped" && o.Total > 100)
     .OrderByDescending(o => o.CreatedAt)
     .Take(25)
@@ -36,15 +37,38 @@ Produces:
 
 ```
 FROM orders
-| WHERE (status.keyword == "shipped" AND total > 100)
-| SORT created_at DESC
+| WHERE (status == "shipped" AND total > 100)
+| SORT createdAt DESC
 | LIMIT 25
 ```
 
-### With a mapping context (AOT safe)
+### With a JsonSerializerContext (AOT safe)
+
+For Native AOT compatibility, pass a source-generated `JsonSerializerContext` so field names are resolved without reflection:
 
 ```csharp
-var query = new EsqlQueryable<Order>(MyContext.Instance)
+[JsonSerializable(typeof(Order))]
+public partial class MyJsonContext : JsonSerializerContext;
+
+var provider = new EsqlQueryProvider(MyJsonContext.Default);
+var query = new EsqlQueryable<Order>(provider)
+    .From("orders")
+    .Where(o => o.Status == "shipped")
+    .ToString();
+```
+
+### With JsonSerializerOptions
+
+You can pass `JsonSerializerOptions` to control field name resolution:
+
+```csharp
+var options = new JsonSerializerOptions
+{
+    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+};
+var provider = new EsqlQueryProvider(options);
+var query = new EsqlQueryable<Order>(provider)
+    .From("orders")
     .Where(o => o.Status == "shipped")
     .ToString();
 ```
@@ -53,7 +77,7 @@ var query = new EsqlQueryable<Order>(MyContext.Instance)
 
 ```csharp
 var esql = (
-    from o in new EsqlQueryable<Order>()
+    from o in new EsqlQueryable<Order>().From("orders")
     where o.Status == "shipped"
     where o.Total > 100
     orderby o.CreatedAt descending
@@ -69,7 +93,7 @@ See the [functions reference](functions-reference.md) for the complete list and 
 
 ```csharp
 .Where(l => l.StatusCode >= 500)                          // WHERE statusCode >= 500
-.Where(l => l.Level == "ERROR" || l.Level == "FATAL")     // WHERE (...keyword == "ERROR" OR ...keyword == "FATAL")
+.Where(l => l.Level == "ERROR" || l.Level == "FATAL")     // WHERE (level == "ERROR" OR level == "FATAL")
 .Where(l => !l.IsResolved)                                // WHERE NOT isResolved
 .Where(l => tags.Contains(l.Tag))                         // WHERE tag IN ("a", "b", "c")
 ```
@@ -77,14 +101,23 @@ See the [functions reference](functions-reference.md) for the complete list and 
 ### Sorting and limiting
 
 ```csharp
-.OrderBy(l => l.Level).ThenByDescending(l => l.Timestamp) // SORT log.level.keyword, @timestamp DESC
+.OrderBy(l => l.Level).ThenByDescending(l => l.Timestamp) // SORT level, @timestamp DESC
 .Take(50)                                                  // LIMIT 50
 ```
 
 ### Projection
 
 ```csharp
-.Select(l => new { l.Message, Secs = l.Duration / 1000 }) // KEEP message | EVAL secs = (duration / 1000)
+.Select(l => new { l.Message, Secs = l.Duration / 1000 }) // EVAL secs = (duration / 1000) | KEEP message, secs
+```
+
+### KEEP and DROP
+
+```csharp
+.Keep("message", "@timestamp")                             // KEEP message, @timestamp
+.Keep(l => l.Message, l => l.Timestamp)                    // KEEP message, @timestamp
+.Drop("duration", "host")                                  // DROP duration, host
+.Drop(l => l.Duration, l => l.Host)                        // DROP duration, host
 ```
 
 ### Aggregation
@@ -96,7 +129,7 @@ See the [functions reference](functions-reference.md) for the complete list and 
     Count = g.Count(),
     AvgDuration = g.Average(l => l.Duration)
 })
-// STATS count = COUNT(*), avgDuration = AVG(duration) BY level = log.level.keyword
+// STATS count = COUNT(*), avgDuration = AVG(duration) BY level
 ```
 
 ### String functions
@@ -125,10 +158,8 @@ See the [functions reference](functions-reference.md) for the complete list and 
 ### LLM completion
 
 ```csharp
-// Pipeline: retrieve docs, send to LLM
 .Completion(l => l.Message, InferenceEndpoints.OpenAi.Gpt41, column: "analysis")
 
-// Standalone: prompt without an index
 .Row(() => new { prompt = "Tell me about Elasticsearch" })
 .Completion("prompt", InferenceEndpoints.Anthropic.Claude46Opus, column: "answer")
 ```
@@ -145,6 +176,32 @@ using static Elastic.Esql.Functions.EsqlFunctions;
 .Where(l => Like(l.Path, "/api/v?/users"))                  // WHERE path LIKE "/api/v?/users"
 ```
 
+### LOOKUP JOIN
+
+```csharp
+query.LookupJoin<Order, Customer, string, OrderWithCustomer>(
+    "customers",
+    o => o.CustomerId,
+    c => c.Id,
+    (o, c) => new OrderWithCustomer { Order = o, CustomerName = c.Name }
+)
+// LOOKUP JOIN customers ON customer_id
+```
+
+### Named parameters
+
+Captured C# variables can be parameterized instead of inlined:
+
+```csharp
+var minStatus = 400;
+var esql = query
+    .Where(l => l.StatusCode >= minStatus)
+    .ToEsqlString(inlineParameters: false);
+// WHERE statusCode >= ?minStatus
+
+var parameters = query.GetParameters();
+```
+
 ## Execution
 
-Elastic.Esql is a pure translation library — it generates ES|QL strings but does not execute them. Use [Elastic.Clients.Esql](package-client.md) for the official `Elastic.Transport`-based execution layer, or subclass `EsqlQueryProvider` to plug in your own transport.
+Elastic.Esql is a pure translation library -- it generates ES|QL strings but does not execute them. Use [Elastic.Clients.Esql](package-client.md) for the official `Elastic.Transport`-based execution layer, or implement the `IEsqlQueryExecutor` interface to plug in your own transport.

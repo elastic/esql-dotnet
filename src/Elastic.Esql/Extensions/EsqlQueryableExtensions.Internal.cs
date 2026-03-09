@@ -2,13 +2,9 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-using System;
-using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
-using System.Text;
 using Elastic.Esql.Core;
 
 namespace Elastic.Esql.Extensions;
@@ -58,13 +54,19 @@ public static partial class EsqlQueryableExtensions
 		if (source.Provider is not EsqlQueryProvider provider)
 			throw new NotSupportedException($"This method is only valid for '{nameof(EsqlQueryable<>)}'.");
 
+		var expectedType = method.GetParameters()[0].ParameterType;
+		var sourceExpression = source.Expression.Type != expectedType
+			? Expression.Convert(source.Expression, expectedType)
+			: source.Expression;
+
 		return provider.ExecuteAsync<TResult>(
 			Expression.Call(
 				instance: null,
 				method: method,
 				arguments:
 				[
-					source.Expression,
+					sourceExpression,
+					Expression.Constant(cancellationToken),
 					.. arguments
 				]),
 			cancellationToken);

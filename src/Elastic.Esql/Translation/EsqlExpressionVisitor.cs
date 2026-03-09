@@ -2,6 +2,7 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 
 using Elastic.Esql.Core;
@@ -30,7 +31,7 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 	);
 
 	public EsqlQueryProvider Provider { get; } = provider ?? throw new ArgumentNullException(nameof(provider));
-	public EsqlTranslationContext Context { get; } = new() { FieldNameResolver = provider.FieldNameResolver, InlineParameters = inlineParameters };
+	public EsqlTranslationContext Context { get; } = new() { Metadata = provider.Metadata, InlineParameters = inlineParameters };
 	public string? DefaultIndexPattern { get; } = defaultIndexPattern;
 
 	/// <summary>
@@ -38,6 +39,7 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 	/// </summary>
 	public EsqlQuery Translate(Expression expression)
 	{
+		expression = new SelectMergingVisitor().Visit(expression);
 		_ = Visit(expression);
 
 		if (_pendingGroupJoin is not null)
@@ -68,129 +70,140 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 			_ = Visit(node.Arguments[0]);
 
 		var methodName = node.Method.Name;
+		var declaringType = node.Method.DeclaringType;
+		var isQueryableMethod = declaringType == typeof(Queryable);
+		var isEsqlExtensionMethod = declaringType == typeof(EsqlQueryableExtensions);
 
 		switch (methodName)
 		{
-			case nameof(EsqlQueryableExtensions.From):
+			case nameof(EsqlQueryableExtensions.From) when isEsqlExtensionMethod:
 				VisitFrom(node);
 				break;
 
-			case nameof(Queryable.Where):
+			case nameof(Queryable.Where) when isQueryableMethod:
 				VisitWhere(node);
 				break;
 
-			case nameof(Queryable.Select):
+			case nameof(Queryable.Select) when isQueryableMethod:
 				VisitSelect(node);
 				break;
 
-			case nameof(Queryable.OrderBy):
+			case nameof(Queryable.OrderBy) when isQueryableMethod:
 				VisitOrderBy(node, descending: false);
 				break;
 
-			case nameof(Queryable.OrderByDescending):
+			case nameof(Queryable.OrderByDescending) when isQueryableMethod:
 				VisitOrderBy(node, descending: true);
 				break;
 
-			case nameof(Queryable.ThenBy):
+			case nameof(Queryable.ThenBy) when isQueryableMethod:
 				VisitThenBy(node, descending: false);
 				break;
 
-			case nameof(Queryable.ThenByDescending):
+			case nameof(Queryable.ThenByDescending) when isQueryableMethod:
 				VisitThenBy(node, descending: true);
 				break;
 
-			case nameof(Queryable.Take):
+			case nameof(Queryable.Take) when isQueryableMethod:
 				VisitTake(node);
 				break;
 
-			case nameof(Queryable.Skip):
+			case nameof(Queryable.Skip) when isQueryableMethod:
 				// Skip is not directly supported in ES|QL
 				// For now, we'll throw an informative exception
 				throw new NotSupportedException(
 					$"'{nameof(Queryable.Skip)}' is not directly supported in ES|QL. Use SORT with pagination instead.");
 
-			case nameof(Queryable.First):
-			case nameof(Queryable.FirstOrDefault):
-			case nameof(EsqlQueryableExtensions.FirstAsync):
-			case nameof(EsqlQueryableExtensions.FirstOrDefaultAsync):
+			case nameof(Queryable.First) when isQueryableMethod:
+			case nameof(Queryable.FirstOrDefault) when isQueryableMethod:
+			case nameof(EsqlQueryableExtensions.FirstAsync) when isEsqlExtensionMethod:
+			case nameof(EsqlQueryableExtensions.FirstOrDefaultAsync) when isEsqlExtensionMethod:
 				VisitFirst(node);
 				break;
 
-			case nameof(Queryable.Single):
-			case nameof(Queryable.SingleOrDefault):
-			case nameof(EsqlQueryableExtensions.SingleAsync):
-			case nameof(EsqlQueryableExtensions.SingleOrDefaultAsync):
+			case nameof(Queryable.Single) when isQueryableMethod:
+			case nameof(Queryable.SingleOrDefault) when isQueryableMethod:
+			case nameof(EsqlQueryableExtensions.SingleAsync) when isEsqlExtensionMethod:
+			case nameof(EsqlQueryableExtensions.SingleOrDefaultAsync) when isEsqlExtensionMethod:
 				VisitSingle(node);
 				break;
 
-			case nameof(Queryable.Count):
-			case nameof(Queryable.LongCount):
-			case nameof(EsqlQueryableExtensions.CountAsync):
+			case nameof(Queryable.Count) when isQueryableMethod:
+			case nameof(Queryable.LongCount) when isQueryableMethod:
+			case nameof(EsqlQueryableExtensions.CountAsync) when isEsqlExtensionMethod:
 				VisitCount(node);
 				break;
 
-			case nameof(Queryable.Sum):
+			case nameof(Queryable.Sum) when isQueryableMethod:
 				VisitAggregation(node, "SUM");
 				break;
 
-			case nameof(Queryable.Average):
+			case nameof(Queryable.Average) when isQueryableMethod:
 				VisitAggregation(node, "AVG");
 				break;
 
-			case nameof(Queryable.Min):
+			case nameof(Queryable.Min) when isQueryableMethod:
 				VisitAggregation(node, "MIN");
 				break;
 
-			case nameof(Queryable.Max):
+			case nameof(Queryable.Max) when isQueryableMethod:
 				VisitAggregation(node, "MAX");
 				break;
 
-			case nameof(Queryable.Any):
-			case nameof(EsqlQueryableExtensions.AnyAsync):
+			case nameof(Queryable.Any) when isQueryableMethod:
+			case nameof(EsqlQueryableExtensions.AnyAsync) when isEsqlExtensionMethod:
 				VisitAny(node);
 				break;
 
-			case nameof(Queryable.GroupBy):
+			case nameof(Queryable.GroupBy) when isQueryableMethod:
 				VisitGroupBy(node);
 				break;
 
-			case nameof(Queryable.Distinct):
+			case nameof(Queryable.Distinct) when isQueryableMethod:
 				// Distinct can be handled with STATS ... BY all fields
 				throw new NotSupportedException(
 					$"'{nameof(Queryable.Distinct)}' is not directly supported. Consider using '{nameof(Queryable.GroupBy)}' instead.");
 
-			case nameof(EsqlQueryableExtensions.Keep):
+			case nameof(EsqlQueryableExtensions.Keep) when isEsqlExtensionMethod:
 				VisitKeep(node);
 				break;
 
-			case nameof(EsqlQueryableExtensions.Drop):
+			case nameof(EsqlQueryableExtensions.Drop) when isEsqlExtensionMethod:
 				VisitDrop(node);
 				break;
 
-			case nameof(EsqlQueryableExtensions.Row):
+			case nameof(EsqlQueryableExtensions.Row) when isEsqlExtensionMethod:
 				VisitRow(node);
 				break;
 
-			case nameof(EsqlQueryableExtensions.Completion):
+			case nameof(EsqlQueryableExtensions.Completion) when isEsqlExtensionMethod:
 				VisitCompletion(node);
 				break;
 
-			case nameof(EsqlQueryableExtensions.LookupJoin):
-			case nameof(EsqlQueryableExtensions.LeftJoin):
+			case nameof(EsqlQueryableExtensions.LookupJoin) when isEsqlExtensionMethod:
+			case nameof(EsqlQueryableExtensions.LeftJoin) when isEsqlExtensionMethod:
+			case "LeftJoin" when isQueryableMethod:
 				VisitLookupJoin(node);
 				break;
 
-			case nameof(Queryable.Join):
+			case nameof(Queryable.Join) when isQueryableMethod:
 				VisitJoin(node);
 				break;
 
-			case nameof(Queryable.GroupJoin):
+			case nameof(Queryable.GroupJoin) when isQueryableMethod:
 				VisitGroupJoin(node);
 				break;
 
-			case nameof(Queryable.SelectMany):
+			case nameof(Queryable.SelectMany) when isQueryableMethod:
 				VisitSelectMany(node);
 				break;
+
+			case nameof(Queryable.AsQueryable) when isQueryableMethod:
+				// Transparent query shape conversion; no ES|QL command impact.
+				break;
+
+			default:
+				throw new NotSupportedException($"Method '{declaringType?.Name}.{methodName}' is not supported in ES|QL translation.");
 		}
 
 		return node;
@@ -242,7 +255,7 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 		var keySelector = node.Arguments[1];
 		if (keySelector is UnaryExpression unary && unary.Operand is LambdaExpression lambda)
 		{
-			var fieldName = ExtractFieldName(lambda.Body);
+			var fieldName = ExtractSortExpression(lambda.Body);
 			Context.Commands.Add(new SortCommand(new SortField(fieldName, descending)));
 		}
 	}
@@ -255,25 +268,34 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 		var keySelector = node.Arguments[1];
 		if (keySelector is UnaryExpression unary && unary.Operand is LambdaExpression lambda)
 		{
-			var fieldName = ExtractFieldName(lambda.Body);
+			var fieldName = ExtractSortExpression(lambda.Body);
 
-			// TODO: This looks broken...
-
-			// Find the last SortCommand and add to it
-			var existingSorts = Context.Commands.OfType<SortCommand>().ToList();
-			if (existingSorts.Count > 0)
+			if (Context.Commands.Count > 0 && Context.Commands[^1] is SortCommand lastSort)
 			{
-				var lastSort = existingSorts.Last();
 				var allFields = lastSort.Fields.ToList();
 				allFields.Add(new SortField(fieldName, descending));
-
-				// Remove the old sort and add a new combined one
-				// (This is a simplification - in practice we'd modify the query model)
-				Context.Commands.Add(new SortCommand(new SortField(fieldName, descending)));
+				Context.Commands[^1] = new SortCommand(allFields);
 			}
 			else
 				Context.Commands.Add(new SortCommand(new SortField(fieldName, descending)));
 		}
+	}
+
+	private string ExtractSortExpression(Expression expression)
+	{
+		expression = expression.UnwrapConvertExpressions();
+
+		if (expression is MethodCallExpression methodCall && methodCall.Method.DeclaringType != typeof(GeneralPurposeExtensions))
+		{
+			var translated = EsqlFunctionTranslator.TryTranslateMethodCall(methodCall, ExtractSortExpression);
+			return translated ?? throw new NotSupportedException(
+				$"Method {methodCall.Method.DeclaringType?.Name}.{methodCall.Method.Name} is not supported in ORDER BY.");
+		}
+
+		if (expression.SupportsEvaluation())
+			return Context.FormatValue(ExpressionConstantResolver.Resolve(expression));
+
+		return expression.ResolveFieldName(Context.Metadata);
 	}
 
 	private void VisitTake(MethodCallExpression node)
@@ -284,6 +306,8 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 		var countArg = node.Arguments[1];
 		if (countArg is ConstantExpression constant && constant.Value is int count)
 			Context.Commands.Add(new LimitCommand(count));
+		else if (ExpressionConstantResolver.Resolve(countArg) is int resolved)
+			Context.Commands.Add(new LimitCommand(resolved));
 	}
 
 	private void VisitFirst(MethodCallExpression node)
@@ -367,7 +391,8 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 			}
 		}
 
-		Context.Commands.Add(new LimitCommand(1));
+		Context.Commands.Add(new StatsCommand(["result = COUNT(*)"]));
+		Context.Commands.Add(new EvalCommand("result = result > 0"));
 	}
 
 	private void VisitGroupBy(MethodCallExpression node)
@@ -648,6 +673,7 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 	/// This method rewrites the SelectMany lambda into <c>(outer, inner) => new { outer.Name, inner.Price }</c>
 	/// so that <see cref="SelectProjectionVisitor"/> can process it identically to a <c>LeftJoin</c> result selector.
 	/// </remarks>
+	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Expression tree construction for GroupJoin rewriting; types are statically known.")]
 	private static LambdaExpression RewriteGroupJoinResultSelector(LambdaExpression groupJoinResultSelector, LambdaExpression selectManyResultSelector)
 	{
 		if (groupJoinResultSelector.Body is not NewExpression groupJoinNew || groupJoinNew.Members is null)
@@ -903,11 +929,11 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 		foreach (var element in arrayExpr.Expressions)
 		{
 			if (element is UnaryExpression { Operand: LambdaExpression selectorLambda })
-				fieldNames.Add(selectorLambda.Body.ResolveFieldName(Context.FieldNameResolver));
+				fieldNames.Add(selectorLambda.Body.ResolveFieldName(Context.Metadata));
 		}
 		return fieldNames;
 	}
 
 	private string ExtractFieldName(Expression expression) =>
-		expression.ResolveFieldName(Provider.FieldNameResolver);
+		expression.ResolveFieldName(Context.Metadata);
 }

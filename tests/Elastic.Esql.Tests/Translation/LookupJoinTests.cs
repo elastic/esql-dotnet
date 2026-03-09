@@ -684,12 +684,14 @@ public class LookupJoinTests : EsqlTestBase
 	{
 		var lookup = CreateQuery<LanguageLookup>().From("languages_lookup");
 
+#pragma warning disable IDE0031 // null-coalescing not supported in expression trees
 		var esql = (
 			from outer in CreateQuery<LogEntry>().From("employees")
 			join inner in lookup on outer.StatusCode equals inner.LanguageCode into ps
 			from inner in ps.DefaultIfEmpty()
 			select new { outer.Message, LanguageName = inner == null ? null : inner.LanguageName }
 		).ToString();
+#pragma warning restore IDE0031
 
 		_ = esql.Should().Be(
 			"""
@@ -1217,11 +1219,37 @@ public class LookupJoinTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
 			FROM logs-*
-			| KEEP message, clientIp, statusCode
 			| KEEP message, clientIp
 			| EVAL _esql_outer_message = message
 			| LOOKUP JOIN host_lookup ON clientIp
 			| WHERE clientIp IS NOT NULL
+			| RENAME _esql_outer_message AS outerMsg, message AS innerMsg
+			| KEEP outerMsg, innerMsg
+			""".NativeLineEndings());
+	}
+
+	// ============================================================================
+	// Constructor-call projections with collision handling
+	// ============================================================================
+
+	[Test]
+	public void LookupJoin_Collision_RecordConstructor_GeneratesEvalAndRemapping()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.LookupJoin<LogEntry, OverlappingLookup, string?, CollisionRecord>(
+				"host_lookup",
+				outer => outer.ClientIp,
+				inner => inner.ClientIp,
+				(outer, inner) => new CollisionRecord(outer.Message, inner!.Message)
+			)
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| EVAL _esql_outer_message = message
+			| LOOKUP JOIN host_lookup ON clientIp
 			| RENAME _esql_outer_message AS outerMsg, message AS innerMsg
 			| KEEP outerMsg, innerMsg
 			""".NativeLineEndings());

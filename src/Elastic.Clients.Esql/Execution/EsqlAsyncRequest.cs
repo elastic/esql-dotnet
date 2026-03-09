@@ -2,17 +2,35 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace Elastic.Clients.Esql.Execution;
 
-/// <summary>Request for async ES|QL query execution.</summary>
-public class EsqlAsyncRequest : EsqlRequest
+/// <summary>Request DTO for async ES|QL query execution.</summary>
+internal sealed class EsqlAsyncRequest
 {
-	/// <summary>How long to wait before returning async ID. Default: 1s.</summary>
-	public TimeSpan? WaitForCompletionTimeout { get; set; }
+	[JsonPropertyName("query")]
+	public required string Query { get; init; }
 
-	/// <summary>How long to keep results. Default: 5d.</summary>
-	public TimeSpan? KeepAlive { get; set; }
+	[JsonPropertyName("params")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<IReadOnlyDictionary<string, JsonElement>>? Params { get; init; }
 
-	/// <summary>Keep results even if completed within timeout.</summary>
-	public bool KeepOnCompletion { get; set; }
+	[JsonPropertyName("locale")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? Locale { get; init; }
+
+	[JsonPropertyName("time_zone")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? TimeZone { get; init; }
+
+	[JsonIgnore]
+	public TimeSpan? WaitForCompletionTimeout { get; init; }
+
+	[JsonIgnore]
+	public TimeSpan? KeepAlive { get; init; }
+
+	[JsonIgnore]
+	public bool KeepOnCompletion { get; init; }
 }

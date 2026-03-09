@@ -2,6 +2,9 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Diagnostics.CodeAnalysis;
+using System.Text.Json;
+
 using static System.Globalization.CultureInfo;
 
 namespace Elastic.Esql.Formatting;
@@ -9,12 +12,16 @@ namespace Elastic.Esql.Formatting;
 /// <summary>
 /// Maps C# types to ES|QL types and formats values.
 /// </summary>
-public static class EsqlFormatting
+internal static class EsqlFormatting
 {
 	/// <summary>
-	/// Formats a C# value for use in an ES|QL query.
+	/// Formats a C# value for use in an ES|QL query literal. Types with ES|QL-specific
+	/// formatting (DateTime, TimeSpan, float/double NaN) are handled explicitly; all other
+	/// types are serialized via <see cref="JsonSerializer"/> using the provided options.
 	/// </summary>
-	public static string FormatValue(object? value) =>
+	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Serialization delegates to the user-provided JsonSerializerOptions/JsonSerializerContext which is expected to include an AOT-safe TypeInfoResolver.")]
+	[UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Serialization delegates to the user-provided JsonSerializerOptions/JsonSerializerContext which is expected to include an AOT-safe TypeInfoResolver.")]
+	public static string FormatValue(object? value, JsonSerializerOptions options) =>
 		value switch
 		{
 			null => "null",
@@ -27,19 +34,30 @@ public static class EsqlFormatting
 			TimeOnly t => $"\"{t:HH:mm:ss}\"",
 #endif
 			TimeSpan ts => FormatTimeSpan(ts),
-			char c => FormatString(c.ToString()),
-			byte or sbyte or short or ushort or int or uint or long or ulong => value.ToString()!,
 			float f => FormatFloat(f),
 			double d => FormatDouble(d),
-			decimal m => m.ToString(InvariantCulture),
-			Enum e => FormatString(e.ToString()),
-			Guid g => FormatString(g.ToString()),
-			_ => FormatString(value.ToString() ?? "")
+			_ => FormatJsonElement(
+				JsonSerializer.SerializeToElement(value, value.GetType(), options))
 		};
 
-	private static string FormatString(string s)
+	/// <summary>
+	/// Converts a <see cref="JsonElement"/> to an ES|QL literal string.
+	/// String values are escaped via <see cref="FormatString"/>.
+	/// </summary>
+	internal static string FormatJsonElement(JsonElement element) =>
+		element.ValueKind switch
+		{
+			JsonValueKind.String => FormatString(element.GetString()!),
+			JsonValueKind.Number => element.GetRawText(),
+			JsonValueKind.True => "true",
+			JsonValueKind.False => "false",
+			JsonValueKind.Null or JsonValueKind.Undefined => "null",
+			_ => throw new NotSupportedException(
+				$"JsonValueKind '{element.ValueKind}' is not supported as an ES|QL value.")
+		};
+
+	internal static string FormatString(string s)
 	{
-		// Escape special characters in ES|QL strings
 		var escaped = s
 			.Replace("\\", "\\\\")
 			.Replace("\"", "\\\"")
@@ -49,13 +67,11 @@ public static class EsqlFormatting
 		return $"\"{escaped}\"";
 	}
 
-	private static string FormatDateTime(DateTime dt) =>
-		// ES|QL expects ISO 8601 format
-		$"\"{dt.ToUniversalTime():yyyy-MM-ddTHH:mm:ss.fffZ}\"";
-
-	private static string FormatTimeSpan(TimeSpan ts)
+	/// <summary>
+	/// Returns the ES|QL duration string for a <see cref="TimeSpan"/> (e.g. <c>3 days</c>).
+	/// </summary>
+	internal static string FormatTimeSpanRaw(TimeSpan ts)
 	{
-		// Convert to ES|QL duration format
 		if (ts.TotalDays >= 1)
 			return $"{(long)ts.TotalDays} days";
 		if (ts.TotalHours >= 1)
@@ -67,25 +83,19 @@ public static class EsqlFormatting
 		return $"{(long)ts.TotalMilliseconds} milliseconds";
 	}
 
-	private static string FormatFloat(float f)
-	{
-		if (float.IsNaN(f))
-			return "null";
-		if (float.IsPositiveInfinity(f))
-			return "null";
-		if (float.IsNegativeInfinity(f))
-			return "null";
-		return f.ToString("G", InvariantCulture);
-	}
+	private static string FormatDateTime(DateTime dt) =>
+		$"\"{dt.ToUniversalTime():yyyy-MM-ddTHH:mm:ss.fffZ}\"";
 
-	private static string FormatDouble(double d)
-	{
-		if (double.IsNaN(d))
-			return "null";
-		if (double.IsPositiveInfinity(d))
-			return "null";
-		if (double.IsNegativeInfinity(d))
-			return "null";
-		return d.ToString("G", InvariantCulture);
-	}
+	private static string FormatTimeSpan(TimeSpan ts) =>
+		FormatTimeSpanRaw(ts);
+
+	private static string FormatFloat(float f) =>
+		float.IsNaN(f) || float.IsInfinity(f)
+			? "null"
+			: f.ToString("G", InvariantCulture);
+
+	private static string FormatDouble(double d) =>
+		double.IsNaN(d) || double.IsInfinity(d)
+			? "null"
+			: d.ToString("G", InvariantCulture);
 }

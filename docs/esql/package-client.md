@@ -19,7 +19,7 @@ This pulls in `Elastic.Esql` and `Elastic.Transport` automatically.
 ### Minimal
 
 ```csharp
-var client = new EsqlClient(new Uri("https://my-cluster:9200"));
+using var client = new EsqlClient(new Uri("https://my-cluster:9200"));
 ```
 
 ### With authentication
@@ -31,34 +31,63 @@ var transport = new DistributedTransport(
         new ApiKey("your-api-key")
     )
 );
-var client = new EsqlClient(new EsqlClientSettings(transport));
+using var client = new EsqlClient(new EsqlClientSettings(transport));
 ```
 
-### With mapping context (AOT safe)
+### With connection pool
+
+```csharp
+var pool = new StaticNodePool(new[]
+{
+    new Uri("https://node1:9200"),
+    new Uri("https://node2:9200")
+});
+using var client = new EsqlClient(new EsqlClientSettings(pool));
+```
+
+### With default query options
 
 ```csharp
 var settings = new EsqlClientSettings(transport)
 {
-    MappingContext = MyContext.Instance,
     Defaults = new EsqlQueryDefaults
     {
         TimeZone = "UTC",
-        Columnar = false
+        Locale = "en-US"
     }
 };
-var client = new EsqlClient(settings);
+using var client = new EsqlClient(settings);
 ```
 
-### In-memory mode (testing, string generation)
+### AOT-safe configuration
+
+For Native AOT, supply a source-generated `JsonSerializerContext` to control how result types are materialized:
 
 ```csharp
-var client = EsqlClient.InMemory(MyContext.Instance);
+[JsonSerializable(typeof(LogEntry))]
+[JsonSerializable(typeof(Product))]
+public partial class MyJsonContext : JsonSerializerContext;
 
-// Generates ES|QL without connecting to a cluster
-var esql = client.Query<Product>()
-    .Where(p => p.InStock)
-    .ToString();
+var settings = new EsqlClientSettings(transport)
+{
+    JsonSerializerContext = MyJsonContext.Default
+};
+using var client = new EsqlClient(settings);
 ```
+
+When `JsonSerializerContext` is set, it takes precedence over `JsonSerializerOptions`. You can also set `JsonSerializerOptions` directly for non-AOT scenarios:
+
+```csharp
+var settings = new EsqlClientSettings(transport)
+{
+    JsonSerializerOptions = new JsonSerializerOptions
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    }
+};
+```
+
+If neither `JsonSerializerContext` nor `JsonSerializerOptions` is provided, `EsqlClient` defaults to camelCase naming.
 
 ## Querying
 
@@ -66,6 +95,7 @@ var esql = client.Query<Product>()
 
 ```csharp
 var results = await client.Query<LogEntry>()
+    .From("logs-*")
     .Where(l => l.Level == "ERROR" && l.Duration > 500)
     .OrderByDescending(l => l.Timestamp)
     .Take(50)
@@ -76,7 +106,7 @@ var results = await client.Query<LogEntry>()
 
 ```csharp
 var results = await (
-    from l in client.Query<LogEntry>()
+    from l in client.Query<LogEntry>().From("logs-*")
     where l.Level == "ERROR"
     orderby l.Timestamp descending
     select new { l.Message, l.Duration }
@@ -86,66 +116,94 @@ var results = await (
 ### Lambda expression
 
 ```csharp
-var results = await client.QueryAsync<LogEntry>(q =>
-    q.Where(l => l.Level == "ERROR")
+await foreach (var entry in client.QueryAsync<LogEntry>(q =>
+    q.From("logs-*")
+     .Where(l => l.Level == "ERROR")
      .OrderByDescending(l => l.Timestamp)
-     .Take(10)
-);
+     .Take(10)))
+{
+    Console.WriteLine(entry.Message);
+}
 ```
 
-### Raw ES|QL string
+### Synchronous execution
 
 ```csharp
-var results = await client.QueryAsync<LogEntry>(
-    """FROM logs-* | WHERE log.level == "ERROR" | LIMIT 10"""
-);
+var results = client.Query<LogEntry>(q =>
+    q.From("logs-*")
+     .Where(l => l.Level == "ERROR")
+     .Take(10));
 ```
 
-### Override index pattern
+### With projection
 
 ```csharp
-var results = await client.Query<Product>("products-*")
-    .Where(p => p.Price > 100)
-    .ToListAsync();
+await foreach (var item in client.QueryAsync<LogEntry, dynamic>(q =>
+    q.From("logs-*")
+     .Where(l => l.Level == "ERROR")
+     .Select(l => new { l.Message, l.Duration })))
+{
+    Console.WriteLine(item);
+}
 ```
-
-## Standalone completion
-
-`CompletionAsync<T>()` executes a standalone `ROW + COMPLETION` query for LLM inference without querying an index:
-
-```csharp
-var results = await client.CompletionAsync<CompletionResult>(
-    "Summarize the benefits of Elasticsearch",
-    InferenceEndpoints.OpenAi.Gpt41,
-    column: "answer"
-);
-```
-
-See the [COMPLETION docs](completion.md) for pipeline patterns, well-known endpoints, and the `Row()` + `Completion()` API.
 
 ## Scalar and single-value queries
 
 ```csharp
 var count = await client.Query<LogEntry>()
+    .From("logs-*")
     .Where(l => l.Level == "ERROR")
     .CountAsync();
 
 var hasErrors = await client.Query<LogEntry>()
+    .From("logs-*")
     .Where(l => l.Level == "ERROR")
     .AnyAsync();
 
 var first = await client.Query<LogEntry>()
+    .From("logs-*")
     .Where(l => l.Level == "ERROR")
     .FirstOrDefaultAsync();
+
+var single = await client.Query<LogEntry>()
+    .From("logs-*")
+    .Where(l => l.Level == "ERROR")
+    .Take(1)
+    .SingleAsync();
+```
+
+## Streaming results
+
+All async query methods return `IAsyncEnumerable<T>`, enabling memory-efficient streaming of large result sets:
+
+```csharp
+await foreach (var entry in client.QueryAsync<LogEntry>(q =>
+    q.From("logs-*").Take(10000)))
+{
+    ProcessEntry(entry);
+}
+```
+
+You can also get an `IAsyncEnumerable<T>` from any queryable:
+
+```csharp
+var query = client.Query<LogEntry>().From("logs-*").Take(100);
+
+await foreach (var entry in query.AsAsyncEnumerable())
+{
+    ProcessEntry(entry);
+}
 ```
 
 ## Async queries
 
-Long-running queries can be submitted asynchronously. The cluster returns a query ID that you poll for completion.
+Long-running queries can be submitted asynchronously. The cluster returns a query ID that you can poll for completion. The `EsqlAsyncQuery<T>` type manages the lifecycle and auto-deletes the query from the cluster on dispose.
+
+### Submit and wait
 
 ```csharp
 await using var asyncQuery = await client.QueryAsyncQuery<LogEntry>(
-    q => q.Where(l => l.Level == "ERROR"),
+    q => q.From("logs-*").Where(l => l.Level == "ERROR"),
     new EsqlAsyncQueryOptions
     {
         WaitForCompletionTimeout = TimeSpan.FromSeconds(5),
@@ -153,12 +211,66 @@ await using var asyncQuery = await client.QueryAsyncQuery<LogEntry>(
     }
 );
 
-if (asyncQuery.IsRunning)
-    Console.WriteLine($"Query {asyncQuery.QueryId} still running...");
-
+// Wait for completion if still running, then get results
 var results = await asyncQuery.ToListAsync();
-// Query is automatically deleted from the cluster on dispose
 ```
+
+### Poll manually
+
+```csharp
+await using var asyncQuery = await client.Query<LogEntry>()
+    .From("logs-*")
+    .Where(l => l.Level == "ERROR")
+    .ToAsyncQueryAsync(new EsqlAsyncQueryOptions
+    {
+        WaitForCompletionTimeout = TimeSpan.FromSeconds(1),
+        KeepOnCompletion = true
+    });
+
+if (asyncQuery.IsRunning)
+{
+    Console.WriteLine($"Query {asyncQuery.QueryId} still running...");
+    await asyncQuery.WaitForCompletionAsync();
+}
+
+await foreach (var entry in asyncQuery.AsAsyncEnumerable())
+{
+    Console.WriteLine(entry.Message);
+}
+```
+
+### Synchronous async queries
+
+```csharp
+using var asyncQuery = client.QueryAsyncQuery<LogEntry>(
+    q => q.From("logs-*").Where(l => l.Level == "ERROR"));
+
+asyncQuery.WaitForCompletion();
+var results = asyncQuery.ToList();
+```
+
+### Async query options
+
+| Option | Default | Description |
+|---|---|---|
+| `WaitForCompletionTimeout` | 1s | How long to wait before returning an async query ID |
+| `KeepAlive` | 5d | How long to keep results on the cluster |
+| `KeepOnCompletion` | `false` | Whether to keep results even if completed within the timeout |
+| `PollInterval` | 100ms | Polling cadence used while waiting for async query completion |
+
+## Completion queries
+
+Use `ROW` + `COMPLETION` in the LINQ pipeline for standalone prompts:
+
+```csharp
+var results = await client.Query<CompletionResult>()
+    .Row(() => new { prompt = "Summarize the benefits of Elasticsearch" })
+    .Completion("prompt", InferenceEndpoints.OpenAi.Gpt41, column: "answer")
+    .ToListAsync();
+```
+
+`EsqlClient.CompletionAsync<T>()`/`Completion<T>()` are currently pending redesign and throw `NotImplementedException`.
+See the [COMPLETION docs](completion.md) for pipeline patterns and well-known endpoint IDs.
 
 ## Inspect generated ES|QL
 
@@ -166,6 +278,7 @@ Call `.ToString()` or `.ToEsqlString()` on any query to see the generated ES|QL 
 
 ```csharp
 var query = client.Query<Product>()
+    .From("products")
     .Where(p => p.Price > 100)
     .OrderBy(p => p.Name);
 
@@ -175,6 +288,39 @@ Console.WriteLine(query.ToString());
 // | SORT name
 ```
 
+Use `.ToEsqlString(inlineParameters: false)` to see named parameter placeholders, and `.GetParameters()` to extract the parameter values:
+
+```csharp
+var minPrice = 100;
+var query = client.Query<Product>()
+    .From("products")
+    .Where(p => p.Price > minPrice);
+
+Console.WriteLine(query.ToEsqlString(inlineParameters: false));
+// FROM products
+// | WHERE price > ?minPrice
+
+var parameters = query.GetParameters();
+```
+
 ## Result materialization
 
-Responses from Elasticsearch come back as rows with typed columns. `EsqlClient` automatically maps these to your C# types by matching column names to properties (using `[JsonPropertyName]` attributes or camelCase convention). Enums, nullable types, and date conversions are handled automatically.
+Responses from Elasticsearch come back as rows with typed columns. `EsqlClient` automatically maps these to your C# types by matching column names to properties (using `[JsonPropertyName]` attributes or the configured naming policy). Enums, nullable types, and date conversions are handled automatically.
+
+## Error handling
+
+Transport and execution errors are thrown as `EsqlExecutionException`, which includes the HTTP status code and response body:
+
+```csharp
+try
+{
+    var results = await client.Query<LogEntry>()
+        .From("logs-*")
+        .ToListAsync();
+}
+catch (EsqlExecutionException ex)
+{
+    Console.WriteLine($"Status: {ex.StatusCode}");
+    Console.WriteLine($"Response: {ex.ResponseBody}");
+}
+```

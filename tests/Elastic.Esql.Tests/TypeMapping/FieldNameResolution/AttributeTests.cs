@@ -9,7 +9,7 @@ public class AttributeTests : EsqlTestBase
 	[Test]
 	public void EsqlField_CustomName_GeneratesCorrectField()
 	{
-		// LogEntry.Level has [EsqlField("log.level")]
+		// LogEntry.Level has [JsonPropertyName("log.level")]
 		var esql = CreateQuery<LogEntry>()
 			.From("logs-*")
 			.Where(l => l.Level.MultiField("keyword") == "ERROR")
@@ -25,7 +25,7 @@ public class AttributeTests : EsqlTestBase
 	[Test]
 	public void EsqlField_Timestamp_GeneratesCorrectField()
 	{
-		// LogEntry.Timestamp has [EsqlField("@timestamp")]
+		// LogEntry.Timestamp has [JsonPropertyName("@timestamp")]
 		var esql = CreateQuery<LogEntry>()
 			.From("logs-*")
 			.OrderBy(l => l.Timestamp)
@@ -36,16 +36,5 @@ public class AttributeTests : EsqlTestBase
             FROM logs-*
             | SORT @timestamp
             """.NativeLineEndings());
-	}
-
-	[Test]
-	public void EsqlIndex_Attribute_GeneratesCorrectFrom()
-	{
-		// LogEntry has [EsqlIndex("logs-*")]
-		var esql = CreateQuery<LogEntry>()
-			.From("logs-*")
-			.ToString();
-
-		_ = esql.Should().Be("FROM logs-*");
 	}
 }

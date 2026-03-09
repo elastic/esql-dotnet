@@ -4,10 +4,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>$(SolutionRoot)/build/keys/keypair.snk</AssemblyOriginatorKeyFile>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="$(SolutionRoot)\src\Elastic.Esql\Elastic.Esql.csproj" />
-    <PackageReference Include="Elastic.Mapping" />
   </ItemGroup>
 </Project>

@@ -63,7 +63,7 @@ FROM logs-*
 
 ### Lambda-based prompt field
 
-Use a lambda selector for type-safe field resolution. Field names are resolved from your mapping context or `[JsonPropertyName]` attributes:
+Use a lambda selector for type-safe field resolution. Field names are resolved from `[JsonPropertyName]` attributes or the configured naming policy:
 
 ```csharp
 var esql = client.Query<LogEntry>()

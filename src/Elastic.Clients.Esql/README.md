@@ -1,6 +1,6 @@
 # Elastic.Clients.Esql
 
-Execute ES|QL queries against Elasticsearch with LINQ. This package connects the **Elastic.Esql** translation engine to a real cluster via **Elastic.Transport**. Pair with `Elastic.Mapping` for a fully **AOT-compatible** query pipeline from LINQ expression to typed results.
+Execute ES|QL queries against Elasticsearch with LINQ. This package connects the **Elastic.Esql** translation engine to a real cluster via **Elastic.Transport**. Pair it with a source-generated `JsonSerializerContext` for a fully **AOT-compatible** query pipeline from LINQ expression to typed results.
 
 ## Why?
 
@@ -25,13 +25,16 @@ var errors = await client.Query<LogEntry>()
 // Simple -- just a URI
 using var client = new EsqlClient(new Uri("https://localhost:9200"));
 
-// With authentication and mapping context
+// With authentication and a source-generated JSON context
+[JsonSerializable(typeof(LogEntry))]
+public partial class MyContext : JsonSerializerContext;
+
 var transport = new DistributedTransport(
     new TransportConfiguration(new Uri(url), new ApiKey(apiKey)));
 
 var settings = new EsqlClientSettings(transport)
 {
-    MappingContext = MyContext.Instance,  // From Elastic.Mapping source generator
+    JsonSerializerContext = MyContext.Default,
     Defaults = new EsqlQueryDefaults
     {
         TimeZone = "America/New_York",
@@ -74,12 +77,9 @@ var results = await client.QueryAsync<LogEntry>(q =>
     q.Where(l => l.Level == "ERROR").Take(10));
 ```
 
-### Raw ES|QL
+### Raw ES|QL strings
 
-```csharp
-var results = await client.QueryAsync<LogEntry>(
-    "FROM logs-* | WHERE log.level == \"ERROR\" | LIMIT 10");
-```
+Raw-string execution methods are currently pending API redesign. Use LINQ queryables and call `.ToString()` to inspect the generated ES|QL.
 
 ### Inspect the generated query
 
@@ -116,27 +116,18 @@ var results = await asyncQuery.ToListAsync();  // Polls until complete
 // Query automatically deleted from cluster when disposed
 ```
 
-## Per-Query Options
+## Query options
 
-Override client defaults on individual queries:
-
-```csharp
-var results = await client.Query<LogEntry>()
-    .Where(l => l.Level == "ERROR")
-    .WithTimeZone("Europe/London")
-    .WithProfile()
-    .WithColumnar()
-    .ToListAsync();
-```
+Configure defaults globally through `EsqlClientSettings.Defaults` (for example `TimeZone`, `Locale`, `Profile`, and `Columnar`). Per-query override helpers are not exposed yet.
 
 ## Testing
 
 Generate ES|QL strings without an Elasticsearch connection:
 
 ```csharp
-var client = EsqlClient.InMemory(MyContext.Instance);
-
-var esql = client.Query<Product>()
+var provider = new EsqlQueryProvider(MyContext.Default);
+var esql = new EsqlQueryable<Product>(provider)
+    .From("products")
     .Where(p => p.InStock && p.Price < 50)
     .OrderBy(p => p.Name)
     .ToString();
@@ -150,13 +141,13 @@ Assert.Equal("""
 
 ## AOT Compatible
 
-The full pipeline is AOT ready when used with `Elastic.Mapping`:
+The full pipeline is AOT ready when used with a source-generated `JsonSerializerContext`:
 
 - **Query translation** (`Elastic.Esql`) -- pure expression tree walking, no reflection-based serialization
-- **Field resolution** (`Elastic.Mapping`) -- source-generated constants aligned with your `System.Text.Json` context
+- **Field resolution** (`System.Text.Json` metadata) -- source-generated context aligned with your JSON contracts
 - **HTTP transport** (`Elastic.Transport`) -- AOT-compatible HTTP client
 
-Link your `JsonSerializerContext` to `[ElasticsearchMappingContext]` and field names, JSON serialization, and ES|QL queries all derive from the same compile-time source of truth.
+Use a source-generated `JsonSerializerContext` so field names, JSON serialization, and ES|QL queries all derive from the same compile-time source of truth.
 
 ## Architecture
 
@@ -164,7 +155,6 @@ Link your `JsonSerializerContext` to `[ElasticsearchMappingContext]` and field n
 Elastic.Clients.Esql          -- This package: EsqlClient, transport, execution
   references:
     Elastic.Esql               -- LINQ-to-ES|QL translation (no HTTP dependency)
-    Elastic.Mapping            -- Type metadata and field resolution (source generator)
     Elastic.Transport          -- Low-level HTTP client for Elasticsearch
 ```
 

@@ -2,6 +2,8 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Text.Json;
+
 namespace Elastic.Esql.Tests.Translation.WhereClause;
 
 public class ParameterizedQueryTests : EsqlTestBase
@@ -214,8 +216,14 @@ public class ParameterizedQueryTests : EsqlTestBase
 
 		_ = parameters.Should().NotBeNull();
 		_ = parameters!.Parameters.Should().HaveCount(2);
-		_ = parameters.Parameters["threshold"].Should().Be(500);
-		_ = parameters.Parameters["level"].Should().Be("ERROR");
+
+		var thresholdParam = parameters.Parameters["threshold"];
+		_ = thresholdParam.ValueKind.Should().Be(JsonValueKind.Number);
+		_ = thresholdParam.GetInt32().Should().Be(500);
+
+		var levelParam = parameters.Parameters["level"];
+		_ = levelParam.ValueKind.Should().Be(JsonValueKind.String);
+		_ = levelParam.GetString().Should().Be("ERROR");
 	}
 
 	[Test]
@@ -231,7 +239,7 @@ public class ParameterizedQueryTests : EsqlTestBase
 	}
 
 	[Test]
-	public void GetParameters_Enum_StoresStringValue()
+	public void GetParameters_Enum_StoresJsonElement()
 	{
 		var level = LogLevel.Error;
 
@@ -242,7 +250,10 @@ public class ParameterizedQueryTests : EsqlTestBase
 		var parameters = queryable.GetParameters();
 
 		_ = parameters.Should().NotBeNull();
-		_ = parameters!.Parameters["level"].Should().Be("Error");
+
+		var levelParam = parameters!.Parameters["level"];
+		_ = levelParam.ValueKind.Should().Be(JsonValueKind.String);
+		_ = levelParam.GetString().Should().Be("Error");
 	}
 
 	[Test]
@@ -291,8 +302,9 @@ public class ParameterizedQueryTests : EsqlTestBase
 		var esqlParams = parameters!.ToEsqlParams();
 
 		_ = esqlParams.Should().HaveCount(2);
-		_ = esqlParams[0].Should().BeEquivalentTo(new Dictionary<string, object?> { ["threshold"] = 500 });
-		_ = esqlParams[1].Should().BeEquivalentTo(new Dictionary<string, object?> { ["level"] = "ERROR" });
+
+		_ = esqlParams[0]["threshold"].GetInt32().Should().Be(500);
+		_ = esqlParams[1]["level"].GetString().Should().Be("ERROR");
 	}
 
 	[Test]
@@ -310,5 +322,105 @@ public class ParameterizedQueryTests : EsqlTestBase
 			FROM logs-*
 			| WHERE statusCode >= 500
 			""".NativeLineEndings());
+	}
+
+	[Test]
+	public void ToEsqlString_Inline_OrdinalEnum_EmitsInteger()
+	{
+		var esql = CreateQuery<OrdinalEnumDocument>()
+			.From("docs-*")
+			.Where(d => d.Priority == Priority.High)
+			.ToEsqlString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM docs-*
+			| WHERE priority == 2
+			""".NativeLineEndings());
+	}
+
+	[Test]
+	public void ToEsqlString_Parameterized_OrdinalEnum()
+	{
+		var prio = Priority.High;
+
+		var esql = CreateQuery<OrdinalEnumDocument>()
+			.From("docs-*")
+			.Where(d => d.Priority == prio)
+			.ToEsqlString(inlineParameters: false);
+
+		_ = esql.Should().Be(
+			"""
+			FROM docs-*
+			| WHERE priority == ?prio
+			""".NativeLineEndings());
+	}
+
+	[Test]
+	public void GetParameters_OrdinalEnum_StoresIntegerValue()
+	{
+		var prio = Priority.High;
+
+		var queryable = (IEsqlQueryable<OrdinalEnumDocument>)CreateQuery<OrdinalEnumDocument>()
+			.From("docs-*")
+			.Where(d => d.Priority == prio);
+
+		var parameters = queryable.GetParameters();
+
+		_ = parameters.Should().NotBeNull();
+
+		var prioParam = parameters!.Parameters["prio"];
+		_ = prioParam.ValueKind.Should().Be(JsonValueKind.Number);
+		_ = prioParam.GetInt32().Should().Be(2);
+	}
+
+	[Test]
+	public void ToEsqlString_Inline_CustomConverter_UsesSerializedForm()
+	{
+		var esql = CreateQuery<CustomConverterDocument>()
+			.From("docs-*")
+			.Where(d => d.CustomId == 42)
+			.ToEsqlString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM docs-*
+			| WHERE customId == "ID-42"
+			""".NativeLineEndings());
+	}
+
+	[Test]
+	public void ToEsqlString_Parameterized_CustomConverter()
+	{
+		var someId = 42;
+
+		var esql = CreateQuery<CustomConverterDocument>()
+			.From("docs-*")
+			.Where(d => d.CustomId == someId)
+			.ToEsqlString(inlineParameters: false);
+
+		_ = esql.Should().Be(
+			"""
+			FROM docs-*
+			| WHERE customId == ?someId
+			""".NativeLineEndings());
+	}
+
+	[Test]
+	public void GetParameters_CustomConverter_StoresSerializedValue()
+	{
+		var someId = 42;
+
+		var queryable = (IEsqlQueryable<CustomConverterDocument>)CreateQuery<CustomConverterDocument>()
+			.From("docs-*")
+			.Where(d => d.CustomId == someId);
+
+		var parameters = queryable.GetParameters();
+
+		_ = parameters.Should().NotBeNull();
+
+		var idParam = parameters!.Parameters["someId"];
+		_ = idParam.ValueKind.Should().Be(JsonValueKind.String);
+		_ = idParam.GetString().Should().Be("ID-42");
 	}
 }

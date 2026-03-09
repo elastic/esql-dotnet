@@ -15,7 +15,7 @@ public class DropCommand : QueryCommand
 		Fields = fields ?? throw new ArgumentNullException(nameof(fields));
 
 	public DropCommand(IEnumerable<string> fields) =>
-		Fields = fields.ToList() ?? throw new ArgumentNullException(nameof(fields));
+		Fields = fields?.ToList() ?? throw new ArgumentNullException(nameof(fields));
 
 	public override void Accept(ICommandVisitor visitor) => visitor.Visit(this);
 }

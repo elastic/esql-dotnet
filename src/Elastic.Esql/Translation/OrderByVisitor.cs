@@ -25,32 +25,27 @@ internal sealed class OrderByVisitor(EsqlTranslationContext context) : Expressio
 		return new SortField(fieldName, descending);
 	}
 
-	private string ExtractFieldName(Expression expression) =>
-		expression switch
+	private string ExtractFieldName(Expression expression)
+	{
+		expression = expression.UnwrapConvertExpressions();
+
+		return expression switch
 		{
 			MethodCallExpression methodCall when methodCall.Method.DeclaringType != typeof(GeneralPurposeExtensions) =>
 				TranslateMethodCall(methodCall),
-			_ => expression.ResolveFieldName(_context.FieldNameResolver)
+			_ when expression.SupportsEvaluation() =>
+				_context.FormatValue(ExpressionConstantResolver.Resolve(expression)),
+			_ => expression.ResolveFieldName(_context.Metadata)
 		};
+	}
 
 	private string TranslateMethodCall(MethodCallExpression methodCall)
 	{
 		var methodName = methodCall.Method.Name;
 		var declaringType = methodCall.Method.DeclaringType;
+		var translated = EsqlFunctionTranslator.TryTranslateMethodCall(methodCall, ExtractFieldName);
 
-		// String methods that can be used for sorting
-		if (declaringType == typeof(string) && methodCall.Object is not null)
-		{
-			var fieldName = methodCall.Object.ResolveFieldName(_context.FieldNameResolver);
-
-			return methodName switch
-			{
-				"ToLower" or "ToLowerInvariant" => $"TO_LOWER({fieldName})",
-				"ToUpper" or "ToUpperInvariant" => $"TO_UPPER({fieldName})",
-				_ => throw new NotSupportedException($"String method {methodName} is not supported in ORDER BY.")
-			};
-		}
-
-		throw new NotSupportedException($"Method {declaringType?.Name}.{methodName} is not supported in ORDER BY.");
+		return translated
+			?? throw new NotSupportedException($"Method {declaringType?.Name}.{methodName} is not supported in ORDER BY.");
 	}
 }

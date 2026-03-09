@@ -1,13 +1,10 @@
-# Elastic.Esql & Elastic.Mapping
+# ES|QL LINQ for .NET
 
-Type-safe Elasticsearch development for .NET. Write LINQ, get [ES|QL](elasticsearch://reference/query-languages/esql.md). Define mappings in C#, get AOT-ready source-generated infrastructure.
-
-## ES|QL LINQ
-
-Write C# LINQ expressions, get ES|QL query strings. Two packages: `Elastic.Clients.Esql` for query execution against a cluster, and `Elastic.Esql` for translation only.
+Type-safe Elasticsearch [ES|QL](elasticsearch://reference/query-languages/esql.md) development for .NET. Write LINQ expressions, get ES|QL query strings, execute against Elasticsearch. AOT compatible, zero reflection at runtime.
 
 ```csharp
 var results = await client.Query<LogEntry>()
+    .From("logs-*")
     .Where(l => l.Level == "ERROR" && l.Duration > 1000)
     .OrderByDescending(l => l.Timestamp)
     .Take(50)
@@ -18,41 +15,28 @@ Produces:
 
 ```
 FROM logs-*
-| WHERE (log.level.keyword == "ERROR" AND duration > 1000)
+| WHERE (log.level == "ERROR" AND duration > 1000)
 | SORT @timestamp DESC
 | LIMIT 50
 ```
 
 [Get started with ES|QL LINQ →](esql/index.md)
 
-## Elastic.Mapping
-
-A source generator that turns POCOs into type-safe, pre-computed Elasticsearch mapping infrastructure at build time. Zero reflection, zero runtime overhead, fully AOT compatible.
-
-```csharp
-[ElasticsearchMappingContext]
-[Entity<Product>(Target = EntityTarget.Index, Name = "products")]
-public static partial class MyContext;
-
-// Type-safe field names - rename the property, these update automatically
-MyContext.Product.Fields.Name   // "name"
-MyContext.Product.Fields.Price  // "price"
-```
-
-[Get started with Elastic.Mapping →](mapping/index.md)
-
 ## Key features
 
 - **Type-safe ES|QL**: write LINQ, get correct ES|QL with full IntelliSense and compile-time checking
-- **Source-generated mappings**: field names, index settings, and mappings JSON computed at build time
+- **80+ translated functions**: math, string, date/time, search, IP, cast, grouping, and aggregation functions
+- **LOOKUP JOIN**: correlate data across indices with `LeftJoin` and `LookupJoin`
+- **COMPLETION**: run LLM inference directly in ES|QL pipelines with preconfigured inference endpoints
+- **Async queries**: submit long-running queries, poll for completion, stream results
+- **Named parameters**: extract captured variables as `?param` placeholders for parameterized queries
 - **AOT compatible**: zero reflection at runtime, works with `PublishAot=true`
-- **System.Text.Json native**: inherits naming policies, enum handling, and ignore conditions from your STJ context
-- **Hash-based change detection**: SHA256 hashes detect when mappings change, enabling schema drift detection
+- **System.Text.Json native**: inherits naming policies and serialization behavior from your STJ configuration
+- **Streaming results**: consume results as `IAsyncEnumerable<T>` for memory-efficient processing
 
 ## Packages
 
 | Package                | Description                                                       |
 |------------------------|-------------------------------------------------------------------|
-| `Elastic.Mapping`      | Source-generated Elasticsearch mappings (includes the generator)  |
 | `Elastic.Esql`         | [LINQ-to-ES\|QL translation library](esql/package-translation.md) |
 | `Elastic.Clients.Esql` | [ES\|QL execution via Elastic.Transport](esql/package-client.md)  |

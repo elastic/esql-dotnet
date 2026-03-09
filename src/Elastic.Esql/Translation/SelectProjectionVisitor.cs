@@ -5,7 +5,6 @@
 using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
 using Elastic.Esql.Core;
-using Elastic.Esql.Formatting;
 using Elastic.Esql.Functions;
 
 namespace Elastic.Esql.Translation;
@@ -113,25 +112,48 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 
 	protected override Expression VisitNew(NewExpression node)
 	{
-		if (node.Members == null)
+		if (node.Members is not null)
+		{
+			var isAnonymous = node.Type.IsDefined(typeof(CompilerGeneratedAttribute), false);
+			HashSet<string>? anonymousFieldNames = isAnonymous ? new(StringComparer.Ordinal) : null;
+
+			for (var i = 0; i < node.Arguments.Count; i++)
+			{
+				var arg = node.Arguments[i];
+				var member = node.Members[i];
+
+				var resultField = _context.ResolveFieldName(member.DeclaringType!, member);
+				_ = anonymousFieldNames?.Add(resultField);
+
+				ClassifyProjectionMember(resultField, arg);
+			}
+
+			if (anonymousFieldNames is not null)
+				_context.RegisterAnonymousTypeFields(node.Type, anonymousFieldNames);
+
+			return node;
+		}
+
+		if (node.Constructor is null)
 			return node;
 
-		var isAnonymous = node.Type.IsDefined(typeof(CompilerGeneratedAttribute), false);
-		HashSet<string>? anonymousFieldNames = isAnonymous ? new(StringComparer.Ordinal) : null;
+		var parameters = node.Constructor.GetParameters();
+		var propertyMap = _context.Metadata.GetConstructorPropertyMap(node.Type);
 
 		for (var i = 0; i < node.Arguments.Count; i++)
 		{
-			var arg = node.Arguments[i];
-			var member = node.Members[i];
+			var paramName = parameters[i].Name
+				?? throw new NotSupportedException(
+					$"Constructor parameter at index {i} on type '{node.Type.Name}' has no name.");
 
-			var resultField = _context.ResolveFieldName(member.DeclaringType!, member);
-			_ = anonymousFieldNames?.Add(resultField);
+			if (!propertyMap.TryGetValue(paramName, out var jsonProp))
+				throw new NotSupportedException(
+					$"Constructor parameter '{paramName}' on type '{node.Type.Name}' " +
+					"does not match any serializable property. " +
+					"Ensure each parameter name matches a property name (case-insensitive).");
 
-			ClassifyProjectionMember(resultField, arg);
+			ClassifyProjectionMember(jsonProp.Name, node.Arguments[i]);
 		}
-
-		if (anonymousFieldNames is not null)
-			_context.RegisterAnonymousTypeFields(node.Type, anonymousFieldNames);
 
 		return node;
 	}
@@ -282,7 +304,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		{
 			BinaryExpression binary => TranslateBinary(binary),
 			MemberExpression member => TranslateMemberExpression(member),
-			ConstantExpression constant => EsqlFormatting.FormatValue(constant.Value),
+			ConstantExpression constant => _context.FormatValue(constant.Value),
 			UnaryExpression { NodeType: ExpressionType.Convert, Operand: var operand } => TranslateExpression(operand),
 			MethodCallExpression methodCall => TranslateMethodCall(methodCall),
 			ConditionalExpression conditional => TranslateConditional(conditional),
@@ -355,32 +377,18 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 	{
 		var methodName = methodCall.Method.Name;
 		var declaringType = methodCall.Method.DeclaringType;
+		var translated = EsqlFunctionTranslator.TryTranslateMethodCall(methodCall, TranslateExpression);
+		if (translated != null)
+			return translated;
 
-		if (declaringType == typeof(EsqlFunctions))
+		if (declaringType == typeof(string) && methodCall.Object is not null)
 		{
-			var result = EsqlFunctionTranslator.TryTranslate(methodName, TranslateExpression, methodCall.Arguments);
-			return result ?? throw new NotSupportedException($"ES|QL function {methodName} is not supported in projections.");
-		}
-
-		if (declaringType == typeof(string))
-		{
-			var target = TranslateExpression(methodCall.Object!);
-
-			var result = EsqlFunctionTranslator.TryTranslateString(methodName, TranslateExpression, target, methodCall.Arguments);
-			if (result != null)
-				return result;
-
+			var target = TranslateExpression(methodCall.Object);
 			return methodName switch
 			{
 				"get_Chars" => TranslateStringIndexer(target, methodCall.Arguments[0]),
 				_ => throw new NotSupportedException($"String method {methodName} is not supported in projections.")
 			};
-		}
-
-		if (declaringType == typeof(Math))
-		{
-			var result = EsqlFunctionTranslator.TryTranslateMath(methodName, TranslateExpression, methodCall.Arguments);
-			return result ?? throw new NotSupportedException($"Math method {methodName} is not supported in projections.");
 		}
 
 		throw new NotSupportedException($"Method {declaringType?.Name}.{methodName} is not supported in projections.");
@@ -439,6 +447,8 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		Dictionary<string, string>? outerFieldRemappings
 	) : ExpressionVisitor
 	{
+		private readonly HashSet<string> _seen = new(StringComparer.Ordinal);
+
 		public List<string> Fields { get; } = [];
 
 		protected override Expression VisitMember(MemberExpression node)
@@ -457,7 +467,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 				if (activeRenames.TryGetValue(fieldName, out var renamed))
 					fieldName = renamed;
 
-				if (!Fields.Contains(fieldName))
+				if (_seen.Add(fieldName))
 					Fields.Add(fieldName);
 			}
 

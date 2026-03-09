@@ -5,7 +5,15 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using System.Reflection;
-using Elastic.Esql.FieldMetadataResolver;
+using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
+using Elastic.Esql.Execution;
+using Elastic.Esql.Extensions;
+using Elastic.Esql.Generation;
+using Elastic.Esql.Materialization;
 using Elastic.Esql.QueryModel;
 using Elastic.Esql.Translation;
 using Elastic.Esql.Validation;
@@ -13,14 +21,42 @@ using Elastic.Esql.Validation;
 namespace Elastic.Esql.Core;
 
 /// <summary>
-/// The base ES|QL query provider.
+/// The ES|QL query provider. Translates LINQ expressions to ES|QL and executes them
+/// via an <see cref="IEsqlQueryExecutor"/> when one is supplied.
 /// </summary>
-public class EsqlQueryProvider(IEsqlFieldNameResolver fieldNameResolver) : IQueryProvider
+public sealed class EsqlQueryProvider : IQueryProvider
 {
-	/// <summary>
-	/// The resolver for field metadata resolution.
-	/// </summary>
-	public IEsqlFieldNameResolver FieldNameResolver { get; } = fieldNameResolver;
+	private readonly IEsqlQueryExecutor _executor;
+	private readonly EsqlResponseReader _reader;
+
+	/// <summary>Centralized STJ metadata manager with provider-scoped caching.</summary>
+	internal JsonMetadataManager Metadata { get; }
+
+	/// <summary>Creates a translation-only provider using default camelCase JSON options.</summary>
+	public EsqlQueryProvider() : this(CreateDefaultJsonOptions()) { }
+
+	/// <summary>Creates a translation-only provider using the provided <see cref="JsonSerializerOptions"/>.</summary>
+	public EsqlQueryProvider(JsonSerializerOptions options)
+		: this(options, ThrowingQueryExecutor.Instance) { }
+
+	/// <summary>Creates a translation-only provider from a source-generated <see cref="JsonSerializerContext"/>.</summary>
+	public EsqlQueryProvider(JsonSerializerContext context)
+		: this(ResolveOptions(context), ThrowingQueryExecutor.Instance) { }
+
+	/// <summary>Creates an execution-capable provider using the provided <see cref="JsonSerializerOptions"/> and executor.</summary>
+	public EsqlQueryProvider(JsonSerializerOptions options, IEsqlQueryExecutor executor)
+	{
+		Verify.NotNull(options);
+		Verify.NotNull(executor);
+
+		Metadata = new JsonMetadataManager(options);
+		_reader = new EsqlResponseReader(Metadata);
+		_executor = executor;
+	}
+
+	/// <summary>Creates an execution-capable provider from a source-generated <see cref="JsonSerializerContext"/> and executor.</summary>
+	public EsqlQueryProvider(JsonSerializerContext context, IEsqlQueryExecutor executor)
+		: this(ResolveOptions(context), executor) { }
 
 	/// <inheritdoc/>
 	public IQueryable CreateQuery(Expression expression)
@@ -36,9 +72,10 @@ public class EsqlQueryProvider(IEsqlFieldNameResolver fieldNameResolver) : IQuer
 		{
 			return (IQueryable)Activator.CreateInstance(queryableType, this, expression)!;
 		}
-		catch (TargetInvocationException ex)
+		catch (TargetInvocationException ex) when (ex.InnerException is not null)
 		{
-			throw ex.InnerException ?? ex;
+			ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+			throw; // unreachable
 		}
 	}
 
@@ -66,41 +103,28 @@ public class EsqlQueryProvider(IEsqlFieldNameResolver fieldNameResolver) : IQuer
 		return ExecuteCore<TResult>(expression);
 	}
 
-	/// <summary>
-	/// Asynchronously executes the query represented by a specified expression tree.
-	/// </summary>
-	/// <param name="expression">An expression tree that represents a LINQ query.</param>
-	/// <param name="cancellationToken">The cancellation token.</param>
-	/// <returns>The value that results from executing the specified query.</returns>
-	public Task<object?> ExecuteAsync(Expression expression, CancellationToken cancellationToken)
+	/// <summary>Asynchronously executes a scalar query represented by a specified expression tree.</summary>
+	internal async Task<TResult> ExecuteAsync<TResult>(Expression expression, CancellationToken cancellationToken)
 	{
 		Verify.NotNull(expression);
 
-		return ExecuteCoreAsync<object?>(expression, cancellationToken);
+		var (esql, query) = TranslateAndFormat(expression);
+
+		await using var response = await _executor
+			.ExecuteQueryAsync(esql, ToOptions(query), cancellationToken)
+			.ConfigureAwait(false);
+
+		var result = await _reader.ReadScalarAsync<TResult>(response.Body, cancellationToken)
+			.ConfigureAwait(false);
+
+		ValidateScalarCardinality(expression, result.RowCount);
+		return result.Value!;
 	}
 
-	/// <summary>
-	/// Asynchronously executes the strongly-typed query represented by a specified expression tree.
-	/// </summary>
-	/// <typeparam name="TResult">The type of the value that results from executing the query.</typeparam>
-	/// <param name="expression">An expression tree that represents a LINQ query.</param>
-	/// <param name="cancellationToken">The cancellation token.</param>
-	/// <returns>The value that results from executing the specified query.</returns>
-	public Task<TResult> ExecuteAsync<TResult>(Expression expression, CancellationToken cancellationToken)
-	{
-		Verify.NotNull(expression);
-
-		return ExecuteCoreAsync<TResult>(expression, cancellationToken);
-	}
-
-	/// <summary>
-	/// Executes the specified query expression asynchronously and returns the results as a stream of elements.
-	/// </summary>
-	/// <typeparam name="TElement">The type of the elements returned by the query.</typeparam>
-	/// <param name="expression">An expression representing the query to execute.</param>
-	/// <param name="cancellationToken">A cancellation token that can be used to cancel the asynchronous operation.</param>
-	/// <returns>An asynchronous stream of elements of type <typeparamref name="TElement"/> resulting from the execution of the query.</returns>
-	public IAsyncEnumerable<TElement> ExecuteStreamingAsync<TElement>(Expression expression, CancellationToken cancellationToken)
+	/// <summary>Executes the specified query expression asynchronously and returns the results as a stream of elements.</summary>
+	internal async IAsyncEnumerable<TElement> ExecuteStreamingAsync<TElement>(
+		Expression expression,
+		[EnumeratorCancellation] CancellationToken cancellationToken)
 	{
 		Verify.NotNull(expression);
 
@@ -108,125 +132,183 @@ public class EsqlQueryProvider(IEsqlFieldNameResolver fieldNameResolver) : IQuer
 		if (elementType is null || elementType != typeof(TElement))
 			throw new ArgumentException($"Expression must return a queryable of '{typeof(TElement).Name}' elements.", nameof(expression));
 
-		return ExecuteCoreStreamingAsync<TElement>(expression, cancellationToken);
+		var (esql, query) = TranslateAndFormat(expression);
+
+		await using var response = await _executor
+			.ExecuteQueryAsync(esql, ToOptions(query), cancellationToken)
+			.ConfigureAwait(false);
+
+		await foreach (var item in _reader.ReadRowsAsync<TElement>(response.Body, cancellationToken).ConfigureAwait(false))
+			yield return item;
 	}
 
-	/// <summary>
-	/// Executes the query represented by a specified expression tree.
-	/// </summary>
-	/// <typeparam name="TResult">The type of the value that results from executing the query.</typeparam>
-	/// <param name="expression">An expression tree that represents a LINQ query.</param>
-	/// <returns>The value that results from executing the specified query.</returns>
-	protected virtual TResult ExecuteCore<TResult>(Expression expression)
+	/// <summary>Translates the specified LINQ expression into an equivalent ES|QL query representation.</summary>
+	internal EsqlQuery TranslateExpression(Expression expression, bool inlineParameters)
 	{
 		Verify.NotNull(expression);
-
-		throw new InvalidOperationException($"This '{nameof(EsqlQueryProvider)}' implementation does not support query execution.");
-	}
-
-	/// <summary>
-	/// Asynchronously executes the query represented by a specified expression tree.
-	/// </summary>
-	/// <typeparam name="TResult">The type of the value that results from executing the query.</typeparam>
-	/// <param name="expression">An expression tree that represents a LINQ query.</param>
-	/// <param name="cancellationToken">The cancellation token.</param>
-	/// <returns>The value that results from executing the specified query.</returns>
-	protected virtual Task<TResult> ExecuteCoreAsync<TResult>(Expression expression, CancellationToken cancellationToken)
-	{
-		Verify.NotNull(expression);
-
-		throw new InvalidOperationException($"This '{nameof(EsqlQueryProvider)}' implementation does not support asynchronous query execution.");
-	}
-
-	/// <summary>
-	/// Executes the specified query expression asynchronously and returns the results as a stream of elements.
-	/// </summary>
-	/// <typeparam name="TElement">The type of the elements returned by the query.</typeparam>
-	/// <param name="expression">An expression representing the query to execute.</param>
-	/// <param name="cancellationToken">A cancellation token that can be used to cancel the asynchronous operation.</param>
-	/// <returns>An asynchronous stream of elements of type <typeparamref name="TElement"/> resulting from the execution of the query.</returns>
-	protected virtual IAsyncEnumerable<TElement> ExecuteCoreStreamingAsync<TElement>(Expression expression, CancellationToken cancellationToken)
-	{
-		Verify.NotNull(expression);
-
-		throw new InvalidOperationException($"This '{nameof(EsqlQueryProvider)}' implementation does not support streaming query execution.");
-	}
-
-	/// <summary>
-	/// Translates the specified LINQ expression into an equivalent ES|QL query representation.
-	/// </summary>
-	/// <param name="expression">The LINQ expression to translate.</param>
-	/// <param name="inlineParameters">Set <see langword="true"/> to inline captured variables instead of translating them to <c>?name</c> placeholders.</param>
-	/// <returns>An <see cref="EsqlQuery"/> object representing the translated ES|QL query.</returns>
-	protected internal EsqlQuery TranslateExpression(Expression expression, bool inlineParameters)
-	{
-#if NET8_0_OR_GREATER
-		ArgumentNullException.ThrowIfNull(expression);
-#else
-		if (expression is null)
-			throw new ArgumentNullException(nameof(expression));
-#endif
 
 		var visitor = new EsqlExpressionVisitor(this, null /* TODO: Implement */, inlineParameters);
 
 		return visitor.Translate(expression);
 	}
 
-	/// <summary>
-	/// Determines the element-type of a queryable expression.
-	/// </summary>
-	/// <param name="expression">The queryable expression to determine the element-type for.</param>
-	/// <returns>The element-type if the specified type is a supported queryable type or <see langword="null"/>, if not.</returns>
-	protected static Type? GetElementType(Expression expression)
+	/// <summary>Submits an async ES|QL query from a LINQ expression. Used by extension methods.</summary>
+	internal EsqlAsyncQuery<T> SubmitAsyncQuery<T>(Expression expression, EsqlAsyncQueryOptions? asyncOptions)
+	{
+		var pollInterval = ResolvePollInterval(asyncOptions);
+		var (esql, query) = TranslateAndFormat(expression);
+		var response = _executor.SubmitAsyncQuery(esql, ToOptions(query), asyncOptions);
+		var result = _reader.ReadRowsWithMetadata<T>(response.Body);
+		return new EsqlAsyncQuery<T>(_executor, result, response, _reader, pollInterval);
+	}
+
+	/// <summary>Submits an async ES|QL query from a LINQ expression asynchronously. Used by extension methods.</summary>
+	internal async Task<EsqlAsyncQuery<T>> SubmitAsyncQueryAsync<T>(
+		Expression expression,
+		EsqlAsyncQueryOptions? asyncOptions,
+		CancellationToken cancellationToken)
+	{
+		var pollInterval = ResolvePollInterval(asyncOptions);
+		var (esql, query) = TranslateAndFormat(expression);
+		var response = await _executor
+			.SubmitAsyncQueryAsync(esql, ToOptions(query), asyncOptions, cancellationToken)
+			.ConfigureAwait(false);
+		var result = await _reader
+			.ReadRowsWithMetadataAsync<T>(response.Body, cancellationToken)
+			.ConfigureAwait(false);
+		return new EsqlAsyncQuery<T>(_executor, result, response, _reader, pollInterval);
+	}
+
+	private TResult ExecuteCore<TResult>(Expression expression)
+	{
+		var (esql, query) = TranslateAndFormat(expression);
+
+		if (GetElementType(expression) is not null)
+			throw new NotSupportedException(
+				$"Collection queries must use {nameof(ExecuteEnumerable)} via GetEnumerator(). " +
+				$"Execute<{typeof(TResult).Name}> is only supported for scalar results.");
+
+		return ExecuteScalar<TResult>(esql, query, expression);
+	}
+
+	private TResult ExecuteScalar<TResult>(string esql, EsqlQuery query, Expression expression)
+	{
+		using var response = _executor.ExecuteQuery(esql, ToOptions(query));
+		var result = _reader.ReadScalar<TResult>(response.Body);
+
+		ValidateScalarCardinality(expression, result.RowCount);
+		return result.Value!;
+	}
+
+	/// <summary>Executes a collection query and returns rows as the correct element type.</summary>
+	internal List<TElement> ExecuteEnumerable<TElement>(Expression expression)
+	{
+		var (esql, query) = TranslateAndFormat(expression);
+		using var response = _executor.ExecuteQuery(esql, ToOptions(query));
+		var list = new List<TElement>();
+
+		foreach (var item in _reader.ReadRows<TElement>(response.Body))
+			list.Add(item);
+
+		return list;
+	}
+
+	private static void ValidateScalarCardinality(Expression expression, int rowCount)
+	{
+		var methodName = expression is MethodCallExpression method ? method.Method.Name : string.Empty;
+
+		switch (methodName)
+		{
+			case nameof(Queryable.First):
+			case nameof(EsqlQueryableExtensions.FirstAsync):
+				if (rowCount == 0)
+					throw new InvalidOperationException("Sequence contains no elements");
+				break;
+
+			case nameof(Queryable.Single):
+			case nameof(EsqlQueryableExtensions.SingleAsync):
+				if (rowCount == 0)
+					throw new InvalidOperationException("Sequence contains no elements");
+				if (rowCount > 1)
+					throw new InvalidOperationException("Sequence contains more than one element");
+				break;
+
+			case nameof(Queryable.SingleOrDefault):
+			case nameof(EsqlQueryableExtensions.SingleOrDefaultAsync):
+				if (rowCount > 1)
+					throw new InvalidOperationException("Sequence contains more than one element");
+				break;
+
+			case nameof(Queryable.FirstOrDefault):
+			case nameof(EsqlQueryableExtensions.FirstOrDefaultAsync):
+				break;
+
+			case nameof(Queryable.Any):
+			case nameof(EsqlQueryableExtensions.AnyAsync):
+				if (rowCount != 1)
+					throw new InvalidOperationException($"Operation '{methodName}' expected exactly one row but got {rowCount}");
+				break;
+
+			case nameof(Queryable.Count):
+			case nameof(EsqlQueryableExtensions.CountAsync):
+			case nameof(Queryable.LongCount):
+			case nameof(Queryable.Sum):
+			case nameof(Queryable.Average):
+			case nameof(Queryable.Min):
+			case nameof(Queryable.Max):
+				if (rowCount != 1)
+					throw new InvalidOperationException($"Operation '{methodName}' expected exactly one row but got {rowCount}");
+				break;
+
+			default:
+				throw new NotSupportedException($"Operation '{methodName}' is not supported.");
+		}
+	}
+
+	private (string Esql, EsqlQuery Query) TranslateAndFormat(Expression expression)
+	{
+		var query = TranslateExpression(expression, false);
+		var esql = new EsqlFormatter().Format(query);
+		return (esql, query);
+	}
+
+	private static EsqlQueryOptions? ToOptions(EsqlQuery query) =>
+		query.Parameters is { } p ? new EsqlQueryOptions { Parameters = p.ToEsqlParams() } : null;
+
+	private static TimeSpan ResolvePollInterval(EsqlAsyncQueryOptions? asyncOptions)
+	{
+		if (asyncOptions?.PollInterval is not { } pollInterval)
+			return TimeSpan.FromMilliseconds(100);
+
+		if (pollInterval <= TimeSpan.Zero)
+			throw new ArgumentOutOfRangeException(nameof(asyncOptions), "The PollInterval value must be greater than zero.");
+
+		return pollInterval;
+	}
+
+	private static Type? GetElementType(Expression expression)
 	{
 		Verify.NotNull(expression);
 
-		var type = FindGenericType(typeof(IQueryable<>), expression.Type);
+		var type = TypeHelper.FindGenericType(typeof(IQueryable<>), expression.Type);
 		if (type is null)
 			return null;
 
 		return type.GetGenericArguments()[0];
 	}
 
-	/// <summary>
-	/// Searches the inheritance hierarchy of a given type to locate a constructed generic type that matches the specified generic type definition.
-	/// </summary>
-	/// <param name="definition">The generic type definition to search for. Must be an open generic type (for example, <c>typeof(IQueryable&lt;&gt;)</c>).</param>
-	/// <param name="type">The type whose inheritance hierarchy is searched for a matching constructed generic type.</param>
-	/// <returns>
-	/// A <see cref="Type"/> object representing the constructed generic type that matches the specified definition, or <see langword="null"/>> if no such
-	/// type is found in the inheritance hierarchy.
-	/// </returns>
-	[UnconditionalSuppressMessage("ReflectionAnalysis", "IL2070:RequiresUnreferencedCode",
-		Justification = "GetInterfaces is only called if 'definition' is interface type. " +
-						"In that case though the interface must be present (otherwise the Type of it could not exist) " +
-						"which also means that the trimmer kept the interface and thus kept it on all types " +
-						"which implement it. It doesn't matter if the GetInterfaces call below returns fewer types" +
-						"as long as it returns the 'definition' as well.")]
-	private static Type? FindGenericType(Type definition, Type? type)
-	{
-		bool? definitionIsInterface = null;
-
-		while (type is not null && type != typeof(object))
+	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "DefaultJsonTypeInfoResolver is a fallback; the user-provided JsonSerializerContext is expected to include an AOT-safe TypeInfoResolver.")]
+	[UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "DefaultJsonTypeInfoResolver is a fallback; the user-provided JsonSerializerContext is expected to include an AOT-safe TypeInfoResolver.")]
+	private static JsonSerializerOptions ResolveOptions(JsonSerializerContext context) =>
+		new()
 		{
-			if (type.IsGenericType && type.GetGenericTypeDefinition() == definition)
-				return type;
+			TypeInfoResolver = JsonTypeInfoResolver.Combine(context, new DefaultJsonTypeInfoResolver()),
+			PropertyNamingPolicy = context.Options.PropertyNamingPolicy
+		};
 
-			definitionIsInterface ??= definition.IsInterface;
-
-			if (definitionIsInterface.GetValueOrDefault())
-			{
-				foreach (var itype in type.GetInterfaces())
-				{
-					var found = FindGenericType(definition, itype);
-					if (found is not null)
-						return found;
-				}
-			}
-
-			type = type.BaseType!;
-		}
-
-		return null;
-	}
+	private static JsonSerializerOptions CreateDefaultJsonOptions() =>
+		new(JsonSerializerOptions.Default)
+		{
+			PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+		};
 }

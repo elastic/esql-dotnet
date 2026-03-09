@@ -5,15 +5,7 @@
     <Platform Name="x86" />
   </Configurations>
   <Folder Name="/examples/">
-    <Project Path="examples/Elastic.Examples.Domain/Elastic.Examples.Domain.csproj" />
-    <Project Path="examples/Elastic.Examples.Esql/Elastic.Examples.Esql.csproj" />
-    <Project Path="examples/Elastic.Examples.Ingest/Elastic.Examples.Ingest.csproj" />
-    <Project Path="examples/Elastic.Examples.Mapping/Elastic.Examples.Mapping.csproj" />
-    <Project Path="examples/mapping-aot-smoketest/mapping-aot-smoketest.csproj" />
     <Project Path="examples/esql-aot-smoketest/esql-aot-smoketest.csproj" />
-  </Folder>
-  <Folder Name="/playground/">
-    <Project Path="playground/playground.csproj" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/Elastic.Clients.Esql/Elastic.Clients.Esql.csproj" />
@@ -21,11 +13,8 @@
   </Folder>
   <Folder Name="/tests/">
     <File Path="tests\Directory.Build.props" />
+    <Project Path="integration-tests/Elastic.Integration.Tests/Elastic.Esql.Integration.Tests.csproj" />
     <Project Path="tests/Elastic.Esql.Tests/Elastic.Esql.Tests.csproj" />
-  </Folder>
-  <Folder Name="/integration-tests/">
-    <File Path="integration-tests\Directory.Build.props" />
-    <Project Path="integration-tests/Elastic.Integration.Tests/Elastic.Integration.Tests.csproj" />
   </Folder>
   <Folder Name="/_root/">
     <File Path=".editorconfig" />
@@ -33,10 +22,8 @@
     <File Path="CLAUDE.md" />
     <File Path="Directory.Build.props" />
     <File Path="Directory.Packages.props" />
-    <File Path="IMPLEMENTATION_PLAN.md" />
   </Folder>
   <Project Path=".github/.github.csproj" />
-  <Project Path="aspire/aspire.csproj" />
   <Project Path="build/scripts/scripts.fsproj">
     <Build Solution="Debug|Any CPU" Project="false" />
     <Build Solution="Release|x64" Project="false" />

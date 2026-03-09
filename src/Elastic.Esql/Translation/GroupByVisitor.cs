@@ -2,11 +2,9 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using Elastic.Esql.Core;
 using Elastic.Esql.Extensions;
-using Elastic.Esql.Formatting;
 using Elastic.Esql.Functions;
 using Elastic.Esql.QueryModel.Commands;
 
@@ -60,7 +58,7 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 		switch (expression)
 		{
 			case MemberExpression:
-				fields.Add(expression.ResolveFieldName(_context.FieldNameResolver));
+				fields.Add(expression.ResolveFieldName(_context.Metadata));
 				break;
 
 			case NewExpression newExpr when newExpr.Members != null:
@@ -70,7 +68,7 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 					if (arg is MethodCallExpression methodArg && methodArg.Method.DeclaringType == typeof(EsqlFunctions))
 						fields.Add(TranslateGroupingFunction(methodArg));
 					else
-						fields.Add(arg.ResolveFieldName(_context.FieldNameResolver));
+						fields.Add(arg.ResolveFieldName(_context.Metadata));
 				}
 
 				break;
@@ -84,7 +82,7 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 				break;
 
 			case MethodCallExpression methodCall when methodCall.Method.DeclaringType == typeof(GeneralPurposeExtensions):
-				fields.Add(methodCall.ResolveFieldName(_context.FieldNameResolver));
+				fields.Add(methodCall.ResolveFieldName(_context.Metadata));
 				break;
 
 			case MethodCallExpression methodCall:
@@ -279,9 +277,6 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 		};
 	}
 
-#if NET8_0_OR_GREATER
-	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Expression compilation fallback for aggregation constant arguments.")]
-#endif
 	private string? TryExtractEsqlAggregation(MethodCallExpression methodCall, string methodName, string resultName)
 	{
 		// EsqlFunctions aggregation methods follow the pattern:
@@ -300,19 +295,16 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 			if (methodCall.Arguments.Count <= index)
 				return null;
 			var arg = methodCall.Arguments[index];
-			var value = arg switch
+			object? value;
+			try
 			{
-				ConstantExpression c => c.Value,
-				UnaryExpression { NodeType: ExpressionType.Convert, Operand: ConstantExpression c2 } => c2.Value,
-				MemberExpression member when member.Expression is ConstantExpression ce =>
-					member.Member switch
-					{
-						System.Reflection.FieldInfo fi => fi.GetValue(ce.Value),
-						System.Reflection.PropertyInfo pi => pi.GetValue(ce.Value),
-						_ => null
-					},
-				_ => Expression.Lambda(arg).Compile().DynamicInvoke()
-			};
+				value = ExpressionConstantResolver.Resolve(arg);
+			}
+			catch (NotSupportedException ex)
+			{
+				throw new NotSupportedException($"Aggregation argument '{arg}' must be constant or closure-captured.", ex);
+			}
+
 			return value?.ToString();
 		}
 
@@ -327,7 +319,7 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 			"StdDev" => $"{resultName} = STD_DEV({fieldExpr})",
 			"Variance" => $"{resultName} = VARIANCE({fieldExpr})",
 			"WeightedAvg" => $"{resultName} = WEIGHTED_AVG({fieldExpr}, {ExtractField(2)})",
-			"Top" => $"{resultName} = TOP({fieldExpr}, {ExtractConstantArg(2)}, {EsqlFormatting.FormatValue(ExtractConstantArg(3))})",
+			"Top" => $"{resultName} = TOP({fieldExpr}, {ExtractConstantArg(2)}, {_context.FormatValue(ExtractConstantArg(3))})",
 			"Values" => $"{resultName} = VALUES({fieldExpr})",
 			"First" => $"{resultName} = FIRST({fieldExpr})",
 			"Last" => $"{resultName} = LAST({fieldExpr})",
@@ -338,9 +330,6 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 		};
 	}
 
-#if NET8_0_OR_GREATER
-	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Expression compilation fallback for grouping function arguments.")]
-#endif
 	private string TranslateGroupingFunction(MethodCallExpression methodCall)
 	{
 		var declaringType = methodCall.Method.DeclaringType;
@@ -353,43 +342,41 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 		{
 			try
 			{
-				return e.ResolveFieldName(_context.FieldNameResolver);
+				return e.ResolveFieldName(_context.Metadata);
 			}
 			catch (NotSupportedException)
 			{
-				if (e is ConstantExpression constant)
-					return EsqlFormatting.FormatValue(constant.Value);
-				return EsqlFormatting.FormatValue(Expression.Lambda(e).Compile().DynamicInvoke());
+				object? value;
+				try
+				{
+					value = ExpressionConstantResolver.Resolve(e);
+				}
+				catch (NotSupportedException ex)
+				{
+					throw new NotSupportedException($"Grouping function argument '{e}' is not supported.", ex);
+				}
+
+				return _context.FormatValue(value);
 			}
 		}
 
-		var result = EsqlFunctionTranslator.TryTranslate(methodName, Translate, methodCall.Arguments);
+		var result = EsqlFunctionTranslator.TryTranslateMethodCall(methodCall, Translate);
 		return result ?? throw new NotSupportedException($"Grouping function {methodName} is not supported.");
 	}
 
 	private string ExtractFieldFromSelector(Expression selector)
 	{
-		// Unwrap UnaryExpression (Quote) to get the lambda
 		if (selector is UnaryExpression { NodeType: ExpressionType.Quote, Operand: LambdaExpression lambda })
 			return ExtractFieldFromLambdaBody(lambda.Body);
 
 		if (selector is LambdaExpression directLambda)
 			return ExtractFieldFromLambdaBody(directLambda.Body);
 
-		return "*";
+		throw new NotSupportedException($"Unsupported selector expression type '{selector.GetType().Name}' in aggregation.");
 	}
 
-	private string ExtractFieldFromLambdaBody(Expression body)
-	{
-		try
-		{
-			return body.ResolveFieldName(_context.FieldNameResolver);
-		}
-		catch (NotSupportedException)
-		{
-			return "*";
-		}
-	}
+	private string ExtractFieldFromLambdaBody(Expression body) =>
+		body.ResolveFieldName(_context.Metadata);
 
 	private static bool IsNullabilityChange(UnaryExpression convert) =>
 		Nullable.GetUnderlyingType(convert.Type) == convert.Operand.Type

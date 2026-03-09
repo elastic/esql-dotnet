@@ -2,214 +2,103 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System;
 using System.Buffers;
+using System.Collections.Generic;
 using System.IO.Pipelines;
-using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json;
+using Elastic.Esql.Core;
 
 namespace Elastic.Esql.Materialization;
 
-/// <summary>Holds the result of a scalar ES|QL query together with the total row count for cardinality validation.</summary>
-public readonly record struct ScalarResult<T>(T? Value, int RowCount);
+/// <summary>
+/// Holds metadata and a lazy row stream from <see cref="EsqlResponseReader.ReadRowsWithMetadataAsync{T}(Stream, CancellationToken)"/> /
+/// <see cref="EsqlResponseReader.ReadRowsWithMetadataAsync{T}(PipeReader, CancellationToken)"/>.
+/// <para>
+/// Metadata is <b>progressively populated</b> as the JSON is parsed. Properties found before or during column parsing are available immediately.
+/// Properties that appear after the <c>values</c> array in the JSON are only captured after <see cref="Rows"/> is fully consumed.
+/// </para>
+/// </summary>
+internal sealed class EsqlAsyncResponse<T>
+{
+	private string? _id;
+	private bool _isRunning;
+
+	/// <summary>Current best-effort metadata snapshot. May be incomplete until <see cref="Rows"/> is fully consumed.</summary>
+	public EsqlStreamMetadata Metadata => new(_id, _isRunning);
+
+	/// <summary>Lazy row stream. Single-consume - the underlying response stream can only be read once.</summary>
+	public IAsyncEnumerable<T> Rows { get; internal set; } = EmptyAsyncEnumerable<T>.Instance;
+
+	internal void SetId(string? id) => _id = id;
+
+	internal void SetIsRunning(bool isRunning) => _isRunning = isRunning;
+}
 
 /// <summary>
-/// Streams ES|QL row-oriented (columnar=false) JSON responses into <c>T</c> instances with minimal allocations.
+/// Holds metadata and a lazy row sequence from <see cref="EsqlResponseReader.ReadRowsWithMetadata{T}(Stream)"/>.
+/// <para>
+/// Metadata is <b>progressively populated</b> as the JSON is parsed. Properties found before or during column parsing are available immediately.
+/// Properties that appear after the <c>values</c> array in the JSON are only captured after <see cref="Rows"/> is fully consumed.
+/// </para>
 /// </summary>
-public static class EsqlResponseReader
+internal sealed class EsqlResponse<T>
 {
-	/// <summary>
-	/// Reads the first row of an ES|QL response as an instance of <typeparamref name="T"/>
-	/// and counts total rows for cardinality validation (First/Single semantics).
-	/// </summary>
-	public static async Task<ScalarResult<T>> ReadScalarAsync<T>(
-		Stream stream,
-		JsonSerializerOptions options,
-		CancellationToken cancellationToken = default)
-	{
-		var pipeReader = PipeReader.Create(stream, new StreamPipeReaderOptions(
-			pool: MemoryPool<byte>.Shared,
-			bufferSize: 4096,
-			leaveOpen: true));
+	private string? _id;
+	private bool _isRunning;
 
-		try
-		{
-			return await ReadScalarAsync<T>(pipeReader, options, cancellationToken)
-				.ConfigureAwait(false);
-		}
-		finally
-		{
-			await pipeReader.CompleteAsync().ConfigureAwait(false);
-		}
-	}
+	/// <summary>Current best-effort metadata snapshot. May be incomplete until <see cref="Rows"/> is fully consumed.</summary>
+	public EsqlStreamMetadata Metadata => new(_id, _isRunning);
 
-	/// <summary>
-	/// Reads the first row of an ES|QL response from a <see cref="PipeReader"/> as an instance of
-	/// <typeparamref name="T"/> and counts total rows for cardinality validation.
-	/// </summary>
-	public static async Task<ScalarResult<T>> ReadScalarAsync<T>(
-		PipeReader pipeReader,
-		JsonSerializerOptions options,
-		CancellationToken cancellationToken = default)
-	{
-		var (columns, readerState, consumed, examined) =
-			await ReadColumnsFromPipeAsync(pipeReader, cancellationToken)
-				.ConfigureAwait(false);
+	/// <summary>Lazy row sequence. Single-consume - the underlying response stream can only be read once.</summary>
+	public IEnumerable<T> Rows { get; internal set; } = [];
 
-		pipeReader.AdvanceTo(consumed, examined);
+	internal void SetId(string? id) => _id = id;
 
-		readerState = await AdvanceToValuesArrayFromPipeAsync(
-			pipeReader, readerState, cancellationToken).ConfigureAwait(false);
+	internal void SetIsRunning(bool isRunning) => _isRunning = isRunning;
+}
 
-		var rowBuffer = new ArrayBufferWriter<byte>(256);
-		T? value = default;
-		var rowCount = 0;
-		var done = false;
+/// <summary>
+/// Streams ES|QL row-oriented (<c>columnar=false</c>) JSON responses into <c>T</c> instances with minimal allocations.
+/// </summary>
+internal sealed partial class EsqlResponseReader
+{
+	private readonly JsonMetadataManager _metadata;
 
-		while (!done)
-		{
-			var result = await pipeReader.ReadAsync(cancellationToken)
-				.ConfigureAwait(false);
+	/// <summary>The <see cref="JsonSerializerOptions"/> used for deserialization.</summary>
+	public JsonSerializerOptions Options => _metadata.Options;
 
-			var buffer = result.Buffer;
-			var isFinalBlock = result.IsCompleted;
-
-			while (true)
-			{
-				if (rowCount == 0)
-				{
-					if (!TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, columns, rowBuffer, options, out var item, out var reachedEnd))
-						break;
-
-					if (reachedEnd)
-					{
-						done = true;
-						break;
-					}
-
-					value = item;
-					rowCount = 1;
-				}
-				else
-				{
-					if (!TrySkipRow(ref buffer, isFinalBlock, ref readerState, out var reachedEnd))
-						break;
-
-					if (reachedEnd)
-					{
-						done = true;
-						break;
-					}
-
-					rowCount++;
-				}
-			}
-
-			pipeReader.AdvanceTo(buffer.Start, buffer.End);
-
-			if (result.IsCompleted)
-				break;
-		}
-
-		return new ScalarResult<T>(value, rowCount);
-	}
-
-	/// <summary>
-	/// Materializes each row of an ES|QL response stream as an instance of
-	/// <typeparamref name="T"/>.
-	/// </summary>
-	public static async IAsyncEnumerable<T> ReadRowsAsync<T>(
-		Stream stream,
-		JsonSerializerOptions options,
-		[EnumeratorCancellation] CancellationToken cancellationToken = default)
-	{
-		var pipeReader = PipeReader.Create(stream, new StreamPipeReaderOptions(
-			pool: MemoryPool<byte>.Shared,
-			bufferSize: 4096,
-			leaveOpen: true));
-
-		try
-		{
-			await foreach (var item in ReadRowsAsync<T>(pipeReader, options, cancellationToken)
-				.ConfigureAwait(false))
-				yield return item;
-		}
-		finally
-		{
-			await pipeReader.CompleteAsync().ConfigureAwait(false);
-		}
-	}
-
-	/// <summary>
-	/// Materializes each row of an ES|QL response from a <see cref="PipeReader"/> as an instance of <typeparamref name="T"/>.
-	/// This overload avoids any intermediate buffering beyond what the pipe itself provides and is the preferred entry-point when you already own
-	/// a <see cref="PipeReader"/>.
-	/// </summary>
-	public static async IAsyncEnumerable<T> ReadRowsAsync<T>(
-		PipeReader pipeReader,
-		JsonSerializerOptions options,
-		[EnumeratorCancellation] CancellationToken cancellationToken = default)
-	{
-		// 1. Parse "columns" incrementally from the pipe.
-		var (columns, readerState, consumed, examined) =
-			await ReadColumnsFromPipeAsync(pipeReader, cancellationToken)
-				.ConfigureAwait(false);
-
-		pipeReader.AdvanceTo(consumed, examined);
-
-		// 2. Advance past everything until we're inside "values".
-		readerState = await AdvanceToValuesArrayFromPipeAsync(
-			pipeReader, readerState, cancellationToken).ConfigureAwait(false);
-
-		// 3. Stream rows one at a time.
-		var rowBuffer = new ArrayBufferWriter<byte>(256);
-		var done = false;
-
-		while (!done)
-		{
-			var result = await pipeReader.ReadAsync(cancellationToken)
-				.ConfigureAwait(false);
-
-			var buffer = result.Buffer;
-			var isFinalBlock = result.IsCompleted;
-			var reachedEnd = false;
-
-			while (TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, columns, rowBuffer, options, out var item, out reachedEnd))
-			{
-				yield return item!;
-
-				if (reachedEnd)
-				{
-					done = true;
-					break;
-				}
-			}
-
-			if (reachedEnd)
-				done = true;
-
-			pipeReader.AdvanceTo(buffer.Start, buffer.End);
-
-			if (result.IsCompleted)
-				break;
-		}
-	}
+	internal EsqlResponseReader(JsonMetadataManager metadata) =>
+		_metadata = metadata ?? throw new ArgumentNullException(nameof(metadata));
 
 	private readonly record struct ColumnInfo(string Name, string Type);
 
-	private static async Task<(ColumnInfo[] Columns, JsonReaderState State, SequencePosition Consumed, SequencePosition Examined)>
-		ReadColumnsFromPipeAsync(
-			PipeReader pipeReader,
-			CancellationToken ct)
+	private static PipeReader CreatePipeReader(Stream stream) =>
+		PipeReader.Create(stream, new StreamPipeReaderOptions(
+			pool: MemoryPool<byte>.Shared,
+			bufferSize: 4096,
+			leaveOpen: true));
+
+	/// <summary>
+	/// Incrementally parses columns from the pipe, also capturing any <c>id</c>/<c>is_running</c> metadata properties encountered before the
+	/// <c>columns</c> array.
+	/// </summary>
+	private static async Task<(ColumnInfo[] Columns, JsonReaderState State, SequencePosition Consumed, SequencePosition Examined, string? Id, bool? IsRunning)> ReadColumnsFromPipeAsync(
+		PipeReader pipeReader,
+		CancellationToken ct)
 	{
 		var state = new JsonReaderState();
+		string? id = null;
+		bool? isRunning = null;
 
 		while (true)
 		{
 			var result = await pipeReader.ReadAsync(ct).ConfigureAwait(false);
 			var buffer = result.Buffer;
 
-			if (TryParseColumns(buffer, result.IsCompleted, ref state, out var columns, out var consumed))
-				return (columns!, state, consumed, buffer.End);
+			if (TryParseColumns(buffer, result.IsCompleted, ref state, out var columns, out var consumed, ref id, ref isRunning))
+				return (columns!, state, consumed, buffer.End, id, isRunning);
 
 			pipeReader.AdvanceTo(buffer.Start, buffer.End);
 
@@ -218,12 +107,34 @@ public static class EsqlResponseReader
 		}
 	}
 
+	private static (ColumnInfo[] Columns, JsonReaderState State, SequencePosition Consumed, string? Id, bool? IsRunning) ReadColumnsFromStream(
+		SyncStreamBuffer syncBuffer)
+	{
+		var state = new JsonReaderState();
+		string? id = null;
+		bool? isRunning = null;
+
+		while (syncBuffer.Read())
+		{
+			var buffer = syncBuffer.Buffer;
+
+			if (TryParseColumns(buffer, syncBuffer.IsCompleted, ref state, out var columns, out var consumed, ref id, ref isRunning))
+				return (columns!, state, consumed, id, isRunning);
+
+			syncBuffer.AdvanceTo(buffer.Start, buffer.End);
+		}
+
+		throw new JsonException("Stream ended before \"columns\" array was fully read.");
+	}
+
 	private static bool TryParseColumns(
 		ReadOnlySequence<byte> buffer,
 		bool isFinalBlock,
 		ref JsonReaderState state,
 		out ColumnInfo[]? columns,
-		out SequencePosition consumed)
+		out SequencePosition consumed,
+		ref string? id,
+		ref bool? isRunning)
 	{
 		columns = null;
 		var reader = new Utf8JsonReader(buffer, isFinalBlock, state);
@@ -231,11 +142,44 @@ public static class EsqlResponseReader
 		var foundColumns = false;
 		while (reader.Read())
 		{
-			if (reader.TokenType == JsonTokenType.PropertyName &&
-				reader.ValueTextEquals("columns"u8))
+			if (reader.TokenType == JsonTokenType.PropertyName)
 			{
-				foundColumns = true;
-				break;
+				if (reader.ValueTextEquals("columns"u8))
+				{
+					foundColumns = true;
+					break;
+				}
+
+				if (reader.ValueTextEquals("id"u8))
+				{
+					if (!reader.Read())
+					{
+						state = reader.CurrentState;
+						consumed = reader.Position;
+						return false;
+					}
+					id = reader.GetString();
+					continue;
+				}
+
+				if (reader.ValueTextEquals("is_running"u8))
+				{
+					if (!reader.Read())
+					{
+						state = reader.CurrentState;
+						consumed = reader.Position;
+						return false;
+					}
+					isRunning = reader.GetBoolean();
+					continue;
+				}
+
+				if (!reader.TrySkip())
+				{
+					state = reader.CurrentState;
+					consumed = reader.Position;
+					return false;
+				}
 			}
 		}
 
@@ -330,277 +274,119 @@ public static class EsqlResponseReader
 		return true;
 	}
 
-	private static async Task<JsonReaderState> AdvanceToValuesArrayFromPipeAsync(
+	/// <summary>
+	/// Advances past everything between <c>columns</c> and the start of the <c>values</c> array,
+	/// also capturing any <c>id</c>/<c>is_running</c> metadata properties encountered along the way.
+	/// </summary>
+	private static async Task<(JsonReaderState State, string? Id, bool? IsRunning)> AdvanceToValuesArrayFromPipeAsync(
 		PipeReader pipeReader,
 		JsonReaderState state,
 		CancellationToken ct)
 	{
+		string? id = null;
+		bool? isRunning = null;
+
 		while (true)
 		{
 			var result = await pipeReader.ReadAsync(ct).ConfigureAwait(false);
 			var buffer = result.Buffer;
 
-			var reader = new Utf8JsonReader(buffer, result.IsCompleted, state);
-
-			while (reader.Read())
+			if (TryAdvanceToValuesArray(buffer, result.IsCompleted, ref state, out var consumed, ref id, ref isRunning))
 			{
-				if (reader.TokenType == JsonTokenType.PropertyName &&
-					reader.ValueTextEquals("values"u8))
-				{
-					if (!reader.Read()) // StartArray
-						break;
-
-					state = reader.CurrentState;
-					pipeReader.AdvanceTo(reader.Position, buffer.End);
-					return state;
-				}
+				pipeReader.AdvanceTo(consumed, buffer.End);
+				return (state, id, isRunning);
 			}
 
-			state = reader.CurrentState;
-			pipeReader.AdvanceTo(reader.Position, buffer.End);
+			pipeReader.AdvanceTo(consumed, buffer.End);
 
 			if (result.IsCompleted)
 				throw new JsonException("ES|QL response does not contain a \"values\" property.");
 		}
 	}
 
-	/// <summary>
-	/// Attempts to read a single complete row from <paramref name="buffer"/>.
-	/// On success the buffer is sliced past the consumed bytes.
-	/// </summary>
-	private static bool TryReadNextRow<T>(
-		ref ReadOnlySequence<byte> buffer,
-		bool isFinalBlock,
-		ref JsonReaderState state,
-		ReadOnlySpan<ColumnInfo> columns,
-		ArrayBufferWriter<byte> rowBuffer,
-		JsonSerializerOptions options,
-		out T? item,
-		out bool reachedEnd)
+	private static (JsonReaderState State, string? Id, bool? IsRunning) AdvanceToValuesArrayFromStream(
+		SyncStreamBuffer syncBuffer,
+		JsonReaderState state)
 	{
-		item = default;
-		reachedEnd = false;
+		string? id = null;
+		bool? isRunning = null;
 
-		var savedState = state;
-		var savedBuffer = buffer;
-
-		var reader = new Utf8JsonReader(buffer, isFinalBlock, state);
-
-		if (!reader.Read())
-			return false;
-
-		if (reader.TokenType == JsonTokenType.EndArray)
+		while (syncBuffer.Read())
 		{
-			reachedEnd = true;
-			state = reader.CurrentState;
-			buffer = buffer.Slice(reader.Position);
-			return true;
+			var buffer = syncBuffer.Buffer;
+
+			if (TryAdvanceToValuesArray(buffer, syncBuffer.IsCompleted, ref state, out var consumed, ref id, ref isRunning))
+			{
+				syncBuffer.AdvanceTo(consumed, buffer.End);
+				return (state, id, isRunning);
+			}
+
+			syncBuffer.AdvanceTo(consumed, buffer.End);
 		}
 
-		if (reader.TokenType != JsonTokenType.StartArray)
-		{
-			state = reader.CurrentState;
-			buffer = buffer.Slice(reader.Position);
-			return false;
-		}
-
-		if (!TryWriteRowAsObject(ref reader, columns, rowBuffer))
-		{
-			// Incomplete row. Restore caller's state so the partial bytes are re-read after more data arrives from the pipe.
-			state = savedState;
-			buffer = savedBuffer;
-			return false;
-		}
-
-		item = JsonSerializer.Deserialize<T>(rowBuffer.WrittenSpan, options);
-
-		state = reader.CurrentState;
-		buffer = buffer.Slice(reader.Position);
-		return true;
+		throw new JsonException("ES|QL response does not contain a \"values\" property.");
 	}
 
-	/// <summary>
-	/// Skips a single row (array) without materializing it, used for counting remaining rows.
-	/// </summary>
-	private static bool TrySkipRow(
-		ref ReadOnlySequence<byte> buffer,
+	private static bool TryAdvanceToValuesArray(
+		ReadOnlySequence<byte> buffer,
 		bool isFinalBlock,
 		ref JsonReaderState state,
-		out bool reachedEnd)
+		out SequencePosition consumed,
+		ref string? id,
+		ref bool? isRunning)
 	{
-		reachedEnd = false;
-
-		var savedState = state;
-		var savedBuffer = buffer;
-
 		var reader = new Utf8JsonReader(buffer, isFinalBlock, state);
 
-		if (!reader.Read())
-			return false;
-
-		if (reader.TokenType == JsonTokenType.EndArray)
+		while (reader.Read())
 		{
-			reachedEnd = true;
-			state = reader.CurrentState;
-			buffer = buffer.Slice(reader.Position);
-			return true;
-		}
+			if (reader.TokenType != JsonTokenType.PropertyName)
+				continue;
 
-		if (reader.TokenType != JsonTokenType.StartArray)
-		{
-			state = reader.CurrentState;
-			buffer = buffer.Slice(reader.Position);
-			return false;
-		}
+			if (reader.ValueTextEquals("values"u8))
+			{
+				if (!reader.Read())
+					break;
 
-		// Skip past the entire row array
-		if (!reader.TrySkip())
-		{
-			state = savedState;
-			buffer = savedBuffer;
-			return false;
+				state = reader.CurrentState;
+				consumed = reader.Position;
+				return true;
+			}
+
+			if (reader.ValueTextEquals("id"u8))
+			{
+				if (!reader.Read())
+					break;
+				id = reader.GetString();
+				continue;
+			}
+
+			if (reader.ValueTextEquals("is_running"u8))
+			{
+				if (!reader.Read())
+					break;
+				isRunning = reader.GetBoolean();
+				continue;
+			}
+
+			if (!reader.TrySkip())
+				break;
 		}
 
 		state = reader.CurrentState;
-		buffer = buffer.Slice(reader.Position);
-		return true;
+		consumed = reader.Position;
+		return false;
 	}
+}
 
-	/// <summary>
-	/// Rewrites the current row array as a named JSON object into <paramref name="buffer"/>.
-	/// Returns <see langword="false"/> if the reader ran out of data before the row was complete.
-	/// </summary>
-	private static bool TryWriteRowAsObject(
-		ref Utf8JsonReader reader,
-		ReadOnlySpan<ColumnInfo> columns,
-		ArrayBufferWriter<byte> buffer)
-	{
-		buffer.ResetWrittenCount();
+internal sealed class EmptyAsyncEnumerable<T> : IAsyncEnumerable<T>, IAsyncEnumerator<T>
+{
+	public static readonly EmptyAsyncEnumerable<T> Instance = new();
 
-		using var writer = new Utf8JsonWriter(buffer, new JsonWriterOptions
-		{
-			SkipValidation = true
-		});
+	public T Current => default!;
 
-		writer.WriteStartObject();
+	public IAsyncEnumerator<T> GetAsyncEnumerator(CancellationToken cancellationToken = default) => this;
 
-		var colIndex = 0;
+	public ValueTask<bool> MoveNextAsync() => new(false);
 
-		while (true)
-		{
-			if (!reader.Read())
-				return false;
-
-			if (reader.TokenType == JsonTokenType.EndArray)
-				break;
-
-			writer.WritePropertyName(columns[colIndex].Name);
-
-			if (!TryWriteCurrentValue(ref reader, writer))
-				return false;
-
-			colIndex++;
-		}
-
-		writer.WriteEndObject();
-		writer.Flush();
-		return true;
-	}
-
-	private static bool TryWriteCurrentValue(
-		ref Utf8JsonReader reader,
-		Utf8JsonWriter writer)
-	{
-		switch (reader.TokenType)
-		{
-			case JsonTokenType.String:
-				writer.WriteStringValue(reader.HasValueSequence
-					? reader.ValueSequence.ToArray()
-					: reader.ValueSpan);
-				return true;
-
-			case JsonTokenType.Number:
-				writer.WriteRawValue(reader.HasValueSequence
-					? reader.ValueSequence.ToArray()
-					: reader.ValueSpan, skipInputValidation: true);
-				return true;
-
-			case JsonTokenType.True:
-				writer.WriteBooleanValue(true);
-				return true;
-
-			case JsonTokenType.False:
-				writer.WriteBooleanValue(false);
-				return true;
-
-			case JsonTokenType.Null:
-				writer.WriteNullValue();
-				return true;
-
-			case JsonTokenType.StartArray:
-			case JsonTokenType.StartObject:
-				return TryWriteComplexValue(ref reader, writer);
-
-			default:
-				throw new JsonException($"Unexpected token {reader.TokenType} in ES|QL row value.");
-		}
-	}
-
-	/// <summary>
-	/// Deep-copies a nested array or object from reader → writer.
-	/// </summary>
-	private static bool TryWriteComplexValue(
-		ref Utf8JsonReader reader,
-		Utf8JsonWriter writer)
-	{
-		var depth = reader.CurrentDepth;
-
-		if (reader.TokenType == JsonTokenType.StartArray)
-			writer.WriteStartArray();
-		else
-			writer.WriteStartObject();
-
-		while (true)
-		{
-			if (!reader.Read())
-				return false;
-
-			if (reader.CurrentDepth <= depth)
-			{
-				if (reader.TokenType == JsonTokenType.EndArray)
-					writer.WriteEndArray();
-				else
-					writer.WriteEndObject();
-				break;
-			}
-
-			switch (reader.TokenType)
-			{
-				case JsonTokenType.PropertyName:
-					writer.WritePropertyName(reader.HasValueSequence
-						? reader.ValueSequence.ToArray()
-						: reader.ValueSpan
-					);
-					break;
-				case JsonTokenType.StartObject:
-					writer.WriteStartObject();
-					break;
-				case JsonTokenType.EndObject:
-					writer.WriteEndObject();
-					break;
-				case JsonTokenType.StartArray:
-					writer.WriteStartArray();
-					break;
-				case JsonTokenType.EndArray:
-					writer.WriteEndArray();
-					break;
-				default:
-					if (!TryWriteCurrentValue(ref reader, writer))
-						return false;
-					break;
-			}
-		}
-
-		return true;
-	}
+	public ValueTask DisposeAsync() => default;
 }

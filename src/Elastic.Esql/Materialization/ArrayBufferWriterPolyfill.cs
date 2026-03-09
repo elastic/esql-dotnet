@@ -8,7 +8,9 @@ using System.Buffers;
 
 namespace Elastic.Esql.Materialization;
 
-/// <summary>Minimal polyfill for <c>ArrayBufferWriter&lt;T&gt;</c> which is unavailable on netstandard2.0.</summary>
+/// <summary>
+/// Minimal polyfill for <c>ArrayBufferWriter&lt;T&gt;</c> which is unavailable on <c>netstandard2.0</c>.
+/// </summary>
 internal sealed class ArrayBufferWriter<T>(int initialCapacity) : IBufferWriter<T>
 {
 	private T[] _buffer = new T[initialCapacity];

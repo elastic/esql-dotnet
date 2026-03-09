@@ -22,23 +22,15 @@
     <PackageVersion Include="Microsoft.Bcl.AsyncInterfaces" Version="10.0.0" />
     <PackageVersion Include="System.IO.Pipelines" Version="10.0.0" />
     <PackageVersion Include="System.Memory" Version="4.6.3" />
-    <!-- Aspire -->
-    <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.1.0" />
-    <PackageVersion Include="Aspire.Hosting.Testing" Version="13.1.0" />
+    <!-- Integration tests -->
+    <PackageVersion Include="Testcontainers.Elasticsearch" Version="4.10.0" />
     <!-- Build infrastructure -->
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
     <PackageVersion Include="Argu" Version="6.2.5" />
     <PackageVersion Include="Bullseye" Version="6.0.0" />
     <PackageVersion Include="Proc" Version="0.13.0" />
     <PackageVersion Include="Fake.Tools.Git" Version="6.0.0" />
-    <!-- Ingest example dependencies -->
-    <PackageVersion Include="Elastic.Clients.Elasticsearch" Version="8.17.0" />
-    <PackageVersion Include="Elastic.Ingest.Elasticsearch" Version="0.17.1" />
-    <PackageVersion Include="AutoBogus" Version="2.13.1" />
-    <PackageVersion Include="Bogus" Version="35.6.1" />
-    <PackageVersion Include="XenoAtom.Terminal" Version="1.5.1" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.UserSecrets" Version="10.0.1" />
-    <PackageVersion Include="Elastic.Mapping" Version="0.4.1" />
+    <!-- Elasticsearch client for integration tests -->
+    <PackageVersion Include="Elastic.Clients.Elasticsearch" Version="8.19.15" />
   </ItemGroup>
-  <!-- AWS -->
 </Project>

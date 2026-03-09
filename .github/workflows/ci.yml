@@ -38,12 +38,6 @@ jobs:
       with:
         global-json-file: ./global.json
 
-    - name: Publish mapping AOT smoketest
-      run: dotnet publish examples/mapping-aot-smoketest
-
-    - name: Invoke mapping AOT smoketest
-      run: ./.artifacts/publish/mapping-aot-smoketest/release/mapping-aot-smoketest${{ matrix.os.ext }}
-
     - name: Publish esql AOT smoketest
       run: dotnet publish examples/esql-aot-smoketest
 
@@ -113,6 +107,22 @@ jobs:
       with:
         name: build
         path: build/output/
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 1
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v5
+      with:
+        global-json-file: ./global.json
+
+    - name: Run integration tests
+      run: dotnet run --project integration-tests/Elastic.Integration.Tests/Elastic.Esql.Integration.Tests.csproj
 
   release-canary:
     runs-on: ubuntu-latest

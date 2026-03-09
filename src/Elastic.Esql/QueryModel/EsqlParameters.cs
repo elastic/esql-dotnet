@@ -2,6 +2,8 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Text.Json;
+
 namespace Elastic.Esql.QueryModel;
 
 /// <summary>
@@ -9,7 +11,7 @@ namespace Elastic.Esql.QueryModel;
 /// </summary>
 public sealed class EsqlParameters
 {
-	private readonly Dictionary<string, object?> _parameters = [];
+	private readonly Dictionary<string, JsonElement> _parameters = [];
 	private readonly Dictionary<string, int> _nameCounts = [];
 
 	// TODO: We should keep track of the "actual" ParameterExpressions to avoid duplicates if the parameter is identical.
@@ -18,7 +20,7 @@ public sealed class EsqlParameters
 	/// Adds a parameter and returns its unique name.
 	/// Duplicate preferred names get <c>_2</c>, <c>_3</c> suffixes.
 	/// </summary>
-	internal string Add(string preferredName, object? value)
+	internal string Add(string preferredName, JsonElement value)
 	{
 		if (!_nameCounts.TryGetValue(preferredName, out var count))
 		{
@@ -35,7 +37,7 @@ public sealed class EsqlParameters
 	}
 
 	/// <summary>All collected parameters keyed by name.</summary>
-	public IReadOnlyDictionary<string, object?> Parameters => _parameters;
+	public IReadOnlyDictionary<string, JsonElement> Parameters => _parameters;
 
 	/// <summary>Whether any parameters have been collected.</summary>
 	public bool HasParameters => _parameters.Count > 0;
@@ -45,6 +47,6 @@ public sealed class EsqlParameters
 	/// <summary>
 	/// Converts to ES|QL API format: a list of single-entry dictionaries.
 	/// </summary>
-	public IReadOnlyList<object> ToEsqlParams() =>
-		[.. _parameters.Select(kvp => (object)new Dictionary<string, object?> { [kvp.Key] = kvp.Value })];
+	public IReadOnlyList<IReadOnlyDictionary<string, JsonElement>> ToEsqlParams() =>
+		[.. _parameters.Select(kvp => new Dictionary<string, JsonElement> { [kvp.Key] = kvp.Value })];
 }
