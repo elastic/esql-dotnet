@@ -48,9 +48,9 @@ internal sealed partial class EsqlResponseReader
 
 		(readerState, _, _) = await AdvanceToValuesArrayFromPipeAsync(pipeReader, readerState, cancellationToken).ConfigureAwait(false);
 
-		var collectionColumns = GetCollectionColumns<T>(columns);
+		var layout = GetColumnLayout<T>(columns);
 
-		await foreach (var item in StreamRowsAsync<T>(pipeReader, readerState, columns, collectionColumns, Options, cancellationToken)
+		await foreach (var item in StreamRowsAsync<T>(pipeReader, readerState, columns, layout, Options, cancellationToken)
 						   .ConfigureAwait(false))
 			yield return item;
 	}
@@ -67,9 +67,9 @@ internal sealed partial class EsqlResponseReader
 
 		(readerState, _, _) = AdvanceToValuesArrayFromStream(syncBuffer, readerState);
 
-		var collectionColumns = GetCollectionColumns<T>(columns);
+		var layout = GetColumnLayout<T>(columns);
 
-		foreach (var item in StreamRows<T>(syncBuffer, readerState, columns, collectionColumns, Options))
+		foreach (var item in StreamRows<T>(syncBuffer, readerState, columns, layout, Options))
 			yield return item;
 	}
 
@@ -132,9 +132,9 @@ internal sealed partial class EsqlResponseReader
 			if (isRunning.HasValue)
 				result.SetIsRunning(isRunning.Value);
 
-			var collectionColumns = GetCollectionColumns<T>(columns);
+			var layout = GetColumnLayout<T>(columns);
 
-			await foreach (var item in StreamRowsAsync<T>(pipeReader, readerState, columns, collectionColumns, Options, cancellationToken)
+			await foreach (var item in StreamRowsAsync<T>(pipeReader, readerState, columns, layout, Options, cancellationToken)
 				.ConfigureAwait(false))
 				yield return item;
 
@@ -168,9 +168,9 @@ internal sealed partial class EsqlResponseReader
 		if (isRunning.HasValue)
 			result.SetIsRunning(isRunning.Value);
 
-		var collectionColumns = GetCollectionColumns<T>(columns);
+		var layout = GetColumnLayout<T>(columns);
 
-		foreach (var item in StreamRows<T>(syncBuffer, readerState, columns, collectionColumns, Options))
+		foreach (var item in StreamRows<T>(syncBuffer, readerState, columns, layout, Options))
 			yield return item;
 
 		ScanRemainingMetadata(syncBuffer, readerState, result);
@@ -299,11 +299,12 @@ internal sealed partial class EsqlResponseReader
 		PipeReader pipeReader,
 		JsonReaderState readerState,
 		ColumnInfo[] columns,
-		bool[]? collectionColumns,
+		ColumnLayout layout,
 		JsonSerializerOptions options,
 		[EnumeratorCancellation] CancellationToken cancellationToken)
 	{
 		var rowBuffer = new ArrayBufferWriter<byte>(256);
+		var valueBuffer = layout.HasNestedObjects ? new ArrayBufferWriter<byte>(256) : null;
 		var done = false;
 
 		while (!done)
@@ -315,7 +316,7 @@ internal sealed partial class EsqlResponseReader
 			var isFinalBlock = result.IsCompleted;
 			var reachedEnd = false;
 
-			while (TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, columns, collectionColumns, rowBuffer, options, out var item, out reachedEnd))
+			while (TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, columns, layout, rowBuffer, valueBuffer, options, out var item, out reachedEnd))
 			{
 				if (reachedEnd)
 				{
@@ -340,10 +341,11 @@ internal sealed partial class EsqlResponseReader
 		SyncStreamBuffer syncBuffer,
 		JsonReaderState readerState,
 		ColumnInfo[] columns,
-		bool[]? collectionColumns,
+		ColumnLayout layout,
 		JsonSerializerOptions options)
 	{
 		var rowBuffer = new ArrayBufferWriter<byte>(256);
+		var valueBuffer = layout.HasNestedObjects ? new ArrayBufferWriter<byte>(256) : null;
 		var done = false;
 
 		while (!done)
@@ -355,7 +357,7 @@ internal sealed partial class EsqlResponseReader
 			var isFinalBlock = syncBuffer.IsCompleted;
 			var reachedEnd = false;
 
-			while (TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, columns, collectionColumns, rowBuffer, options, out var item, out reachedEnd))
+			while (TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, columns, layout, rowBuffer, valueBuffer, options, out var item, out reachedEnd))
 			{
 				if (reachedEnd)
 				{
@@ -380,8 +382,9 @@ internal sealed partial class EsqlResponseReader
 		bool isFinalBlock,
 		ref JsonReaderState state,
 		ReadOnlySpan<ColumnInfo> columns,
-		bool[]? collectionColumns,
+		ColumnLayout layout,
 		ArrayBufferWriter<byte> rowBuffer,
+		ArrayBufferWriter<byte>? valueBuffer,
 		JsonSerializerOptions options,
 		out T? item,
 		out bool reachedEnd)
@@ -414,7 +417,6 @@ internal sealed partial class EsqlResponseReader
 
 		if (columns.Length == 1 && IsPrimitiveJsonType(typeof(T)))
 		{
-			// TODO: Evaluate if this is really the best approach.
 			if (!TryWriteScalarValue(ref reader, rowBuffer))
 			{
 				state = savedState;
@@ -422,7 +424,16 @@ internal sealed partial class EsqlResponseReader
 				return false;
 			}
 		}
-		else if (!TryWriteRowAsObject(ref reader, columns, collectionColumns, rowBuffer))
+		else if (layout.HasNestedObjects)
+		{
+			if (!TryWriteRowAsNestedObject(ref reader, columns, layout, rowBuffer, valueBuffer!))
+			{
+				state = savedState;
+				buffer = savedBuffer;
+				return false;
+			}
+		}
+		else if (!TryWriteRowAsObject(ref reader, columns, layout.CollectionColumns, rowBuffer))
 		{
 			state = savedState;
 			buffer = savedBuffer;
@@ -615,14 +626,121 @@ internal sealed partial class EsqlResponseReader
 	}
 
 	/// <summary>
-	/// Uses the metadata manager to determine which columns map to collection-typed properties.
+	/// Builds a <see cref="ColumnLayout"/> for the target type and the ES|QL columns.
 	/// </summary>
-	private bool[]? GetCollectionColumns<T>(ColumnInfo[] columns)
-	{
-		var columnNames = new string[columns.Length];
-		for (var i = 0; i < columns.Length; i++)
-			columnNames[i] = columns[i].Name;
+	private ColumnLayout GetColumnLayout<T>(ColumnInfo[] columns) =>
+		ColumnLayout.Build(columns, typeof(T), _metadata);
 
-		return _metadata.GetCollectionColumnFlags(typeof(T), columnNames);
+	private static bool TryWriteRowAsNestedObject(
+		ref Utf8JsonReader reader,
+		ReadOnlySpan<ColumnInfo> columns,
+		ColumnLayout layout,
+		ArrayBufferWriter<byte> rowBuffer,
+		ArrayBufferWriter<byte> valueBuffer)
+	{
+		rowBuffer.ResetWrittenCount();
+		valueBuffer.ResetWrittenCount();
+
+		var columnCount = columns.Length;
+
+		ValueSlice[]? rentedSlices = null;
+		var slices = columnCount <= 64
+			? stackalloc ValueSlice[columnCount]
+			: (rentedSlices = ArrayPool<ValueSlice>.Shared.Rent(columnCount)).AsSpan(0, columnCount);
+
+		try
+		{
+			var writerOptions = new JsonWriterOptions { SkipValidation = true };
+
+			var colIndex = 0;
+			while (true)
+			{
+				if (!reader.Read())
+					return false;
+
+				if (reader.TokenType == JsonTokenType.EndArray)
+					break;
+
+				if (colIndex >= columnCount)
+					throw new JsonException($"ES|QL row contains more values than declared columns ({columnCount}).");
+
+				if (reader.TokenType == JsonTokenType.Null)
+				{
+					slices[colIndex] = new ValueSlice(0, 0, JsonTokenType.Null, IsNull: true);
+					colIndex++;
+					continue;
+				}
+
+				var start = valueBuffer.WrittenCount;
+				var firstToken = reader.TokenType;
+
+				using (var valueWriter = new Utf8JsonWriter(valueBuffer, writerOptions))
+				{
+					if (!TryWriteCurrentValue(ref reader, valueWriter))
+						return false;
+				}
+
+				var length = valueBuffer.WrittenCount - start;
+				slices[colIndex] = new ValueSlice(start, length, firstToken, IsNull: false);
+				colIndex++;
+			}
+
+			if (colIndex < columnCount)
+				throw new JsonException($"ES|QL row contains fewer values ({colIndex}) than declared columns ({columnCount}).");
+
+			using var rowWriter = new Utf8JsonWriter(rowBuffer, writerOptions);
+			rowWriter.WriteStartObject();
+			WriteChildren(layout.Root.Children!, rowWriter, valueBuffer.WrittenSpan, slices);
+			rowWriter.WriteEndObject();
+			rowWriter.Flush();
+
+			return true;
+		}
+		finally
+		{
+			if (rentedSlices is not null)
+				ArrayPool<ValueSlice>.Shared.Return(rentedSlices);
+		}
+	}
+
+	private static void WriteChildren(
+		List<ColumnNode> children,
+		Utf8JsonWriter writer,
+		ReadOnlySpan<byte> values,
+		ReadOnlySpan<ValueSlice> slices)
+	{
+		foreach (var child in children)
+		{
+			if (child.ColumnIndex >= 0)
+			{
+				var slice = slices[child.ColumnIndex];
+				if (slice.IsNull)
+					continue;
+
+				writer.WritePropertyName(child.PropertyName);
+				var raw = values.Slice(slice.Start, slice.Length);
+
+				if (child.IsCollection && slice.FirstToken != JsonTokenType.StartArray)
+				{
+					writer.WriteStartArray();
+					writer.WriteRawValue(raw, skipInputValidation: true);
+					writer.WriteEndArray();
+				}
+				else
+				{
+					writer.WriteRawValue(raw, skipInputValidation: true);
+				}
+			}
+			else
+			{
+				if (child.Children is null || ColumnLayout.AllChildrenNull(child, slices))
+					continue;
+
+				writer.WritePropertyName(child.PropertyName);
+				writer.WriteStartObject();
+				WriteChildren(child.Children, writer, values, slices);
+				writer.WriteEndObject();
+			}
+		}
 	}
 }

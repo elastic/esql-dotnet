@@ -72,7 +72,7 @@ internal sealed partial class EsqlResponseReader
 	internal EsqlResponseReader(JsonMetadataManager metadata) =>
 		_metadata = metadata ?? throw new ArgumentNullException(nameof(metadata));
 
-	private readonly record struct ColumnInfo(string Name, string Type);
+	internal readonly record struct ColumnInfo(string Name, string Type);
 
 	private static PipeReader CreatePipeReader(Stream stream) =>
 		PipeReader.Create(stream, new StreamPipeReaderOptions(

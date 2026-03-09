@@ -56,7 +56,8 @@ internal sealed partial class EsqlResponseReader
 		(readerState, _, _) = await AdvanceToValuesArrayFromPipeAsync(
 			pipeReader, readerState, cancellationToken).ConfigureAwait(false);
 
-		var collectionColumns = GetCollectionColumns<T>(columns);
+		var layout = GetColumnLayout<T>(columns);
+		var valueBuffer = layout.HasNestedObjects ? new ArrayBufferWriter<byte>(256) : null;
 
 		var rowBuffer = new ArrayBufferWriter<byte>(256);
 		T? value = default;
@@ -75,7 +76,7 @@ internal sealed partial class EsqlResponseReader
 			{
 				if (rowCount == 0)
 				{
-					if (!TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, columns, collectionColumns, rowBuffer, Options, out var item, out var reachedEnd))
+					if (!TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, columns, layout, rowBuffer, valueBuffer, Options, out var item, out var reachedEnd))
 						break;
 
 					if (reachedEnd)
@@ -124,7 +125,8 @@ internal sealed partial class EsqlResponseReader
 
 		(readerState, _, _) = AdvanceToValuesArrayFromStream(syncBuffer, readerState);
 
-		var collectionColumns = GetCollectionColumns<T>(columns);
+		var layout = GetColumnLayout<T>(columns);
+		var valueBuffer = layout.HasNestedObjects ? new ArrayBufferWriter<byte>(256) : null;
 
 		var rowBuffer = new ArrayBufferWriter<byte>(256);
 		T? value = default;
@@ -143,7 +145,7 @@ internal sealed partial class EsqlResponseReader
 			{
 				if (rowCount == 0)
 				{
-					if (!TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, columns, collectionColumns, rowBuffer, Options, out var item, out var reachedEnd))
+					if (!TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, columns, layout, rowBuffer, valueBuffer, Options, out var item, out var reachedEnd))
 						break;
 
 					if (reachedEnd)

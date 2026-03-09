@@ -24,6 +24,8 @@
     <PackageVersion Include="System.Memory" Version="4.6.3" />
     <!-- Integration tests -->
     <PackageVersion Include="Testcontainers.Elasticsearch" Version="4.10.0" />
+    <!-- Benchmarks -->
+    <PackageVersion Include="BenchmarkDotNet" Version="0.14.0" />
     <!-- Build infrastructure -->
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
     <PackageVersion Include="Argu" Version="6.2.5" />
