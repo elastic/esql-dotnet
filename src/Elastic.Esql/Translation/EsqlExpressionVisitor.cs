@@ -443,7 +443,7 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 		// Lambda selector overload: Keep(l => l.Field1, l => l.Field2)
 		if (arg is NewArrayExpression arrayExpr)
 		{
-			var fieldNames = ExtractFieldsFromSelectors(arrayExpr);
+			var fieldNames = ExtractFieldsFromSelectors(arrayExpr, expandObjectMembers: true);
 			Context.Commands.Add(new KeepCommand(fieldNames));
 			return;
 		}
@@ -474,7 +474,7 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 		// Lambda selector overload: Drop(l => l.Field1, l => l.Field2)
 		if (arg is NewArrayExpression arrayExpr)
 		{
-			var fieldNames = ExtractFieldsFromSelectors(arrayExpr);
+			var fieldNames = ExtractFieldsFromSelectors(arrayExpr, expandObjectMembers: true);
 			Context.Commands.Add(new DropCommand(fieldNames));
 		}
 	}
@@ -923,15 +923,39 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 		return ExtractFieldName(lambda.Body);
 	}
 
-	private List<string> ExtractFieldsFromSelectors(NewArrayExpression arrayExpr)
+	private List<string> ExtractFieldsFromSelectors(NewArrayExpression arrayExpr, bool expandObjectMembers = false)
 	{
 		var fieldNames = new List<string>();
 		foreach (var element in arrayExpr.Expressions)
 		{
 			if (element is UnaryExpression { Operand: LambdaExpression selectorLambda })
-				fieldNames.Add(selectorLambda.Body.ResolveFieldName(Context.Metadata));
+				fieldNames.Add(ResolveSelectorFieldName(selectorLambda.Body, expandObjectMembers));
 		}
 		return fieldNames;
+	}
+
+	private string ResolveSelectorFieldName(Expression expression, bool expandObjectMembers)
+	{
+		expression = expression.UnwrapConvertExpressions();
+
+		var fieldName = expression.ResolveFieldName(Context.Metadata);
+		if (!expandObjectMembers || expression is not MemberExpression member)
+			return fieldName;
+
+		if (!IsObjectSelectionType(member.Type))
+			return fieldName;
+
+		return $"{fieldName}.*";
+	}
+
+	private static bool IsObjectSelectionType(Type type)
+	{
+		var candidateType = Nullable.GetUnderlyingType(type) ?? type;
+
+		return !candidateType.IsValueType
+			&& candidateType != typeof(string)
+			&& candidateType != typeof(object)
+			&& !TypeHelper.IsEnumerableType(candidateType);
 	}
 
 	private string ExtractFieldName(Expression expression) =>
