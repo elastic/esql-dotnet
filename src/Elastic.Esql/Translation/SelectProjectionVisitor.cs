@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information
 
 using System.Linq.Expressions;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using Elastic.Esql.Core;
 using Elastic.Esql.Functions;
@@ -191,6 +192,9 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 			return;
 		}
 
+		if (TryClassifyNestedProjection(resultField, sourceExpression))
+			return;
+
 		if (sourceExpression is MemberExpression memberExpr)
 		{
 			var declaringType = memberExpr.Member.DeclaringType;
@@ -235,6 +239,43 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		}
 		else
 			throw new NotSupportedException($"Expression type {sourceExpression.GetType().Name} ({sourceExpression.NodeType}) is not supported.");
+	}
+
+	private bool TryClassifyNestedProjection(string resultField, Expression sourceExpression)
+	{
+		if (sourceExpression is NewExpression { Members: not null } newExpression)
+		{
+			for (var i = 0; i < newExpression.Arguments.Count; i++)
+			{
+				var member = newExpression.Members[i];
+				var nestedResultField = BuildNestedResultField(resultField, member);
+				ClassifyProjectionMember(nestedResultField, newExpression.Arguments[i]);
+			}
+
+			return true;
+		}
+
+		if (sourceExpression is MemberInitExpression memberInitExpression)
+		{
+			foreach (var binding in memberInitExpression.Bindings)
+			{
+				if (binding is not MemberAssignment assignment)
+					continue;
+
+				var nestedResultField = BuildNestedResultField(resultField, assignment.Member);
+				ClassifyProjectionMember(nestedResultField, assignment.Expression);
+			}
+
+			return true;
+		}
+
+		return false;
+	}
+
+	private string BuildNestedResultField(string resultFieldPrefix, MemberInfo member)
+	{
+		var childField = _context.ResolveFieldName(member.DeclaringType!, member);
+		return $"{resultFieldPrefix}.{childField}";
 	}
 
 	/// <summary>

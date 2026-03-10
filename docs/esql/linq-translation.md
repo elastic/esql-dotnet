@@ -281,6 +281,25 @@ query.Select(l => new { Msg = l.Message })
 // | KEEP msg
 ```
 
+### Nested anonymous projections
+
+Nested anonymous projections are flattened to dotted field names:
+
+```csharp
+query.Select(l => new { A = new { B = l.Message } })
+// | RENAME message AS a.b
+// | KEEP a.b
+```
+
+Consecutive `Select` calls can still be merged through nested member access:
+
+```csharp
+query
+    .Select(l => new { A = new { B = l.Message } })
+    .Select(x => x.A.B)
+// | KEEP message
+```
+
 ## KEEP and DROP extensions
 
 In addition to `.Select()`, explicit `.Keep()` and `.Drop()` extension methods are available for fine-grained control:

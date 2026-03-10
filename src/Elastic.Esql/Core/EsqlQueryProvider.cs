@@ -306,6 +306,8 @@ public sealed class EsqlQueryProvider : IQueryProvider
 			PropertyNamingPolicy = context.Options.PropertyNamingPolicy
 		};
 
+	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Default options are a convenience fallback; Native AOT scenarios should pass explicit JsonSerializerOptions/JsonSerializerContext.")]
+	[UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Default options are a convenience fallback; trimming-safe scenarios should pass explicit JsonSerializerOptions/JsonSerializerContext.")]
 	private static JsonSerializerOptions CreateDefaultJsonOptions() =>
 		new(JsonSerializerOptions.Default)
 		{

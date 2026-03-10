@@ -6,6 +6,7 @@ using System.Collections;
 using System.Globalization;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text;
 using Elastic.Esql.Core;
 using Elastic.Esql.Extensions;
@@ -144,7 +145,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		static MemberInfo? TryExtract(Expression expr)
 		{
 			var unwrapped = expr.UnwrapConvertExpressions();
-			if (unwrapped is MemberExpression { Expression: ParameterExpression } member)
+			if (unwrapped is MemberExpression member && IsRootedInParameter(member))
 				return member.Member;
 
 			return null;
@@ -278,7 +279,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		}
 
 		// Regular field access
-		var fieldName = _context.ResolveFieldName(node.Member.DeclaringType!, node.Member);
+		var fieldName = ResolveFieldPath(node);
 		_ = _builder.Append(fieldName);
 
 		return node;
@@ -293,11 +294,61 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 				TranslateStaticDateTimeProperty(member),
 			MemberExpression member =>
 				// Field access like l.Timestamp
-				_context.ResolveFieldName(member.Member.DeclaringType!, member.Member),
+				ResolveFieldPath(member),
 			MethodCallExpression methodCall when methodCall.Method.DeclaringType == typeof(EsqlFunctions) =>
 				TranslateEsqlFunctionForDateTime(methodCall),
 			_ => throw new NotSupportedException($"Expression type {expression.GetType().Name} is not supported for DateTime property access.")
 		};
+
+	private string ResolveFieldPath(MemberExpression member)
+	{
+		var fullPath = member.ResolveFieldName(_context.Metadata);
+
+		if (!TryGetTransparentIdentifierPrefix(member, out var prefix))
+			return fullPath;
+
+		var prefixWithDot = $"{prefix}.";
+		return fullPath.StartsWith(prefixWithDot, StringComparison.Ordinal)
+			? fullPath[prefixWithDot.Length..]
+			: fullPath;
+	}
+
+	private bool TryGetTransparentIdentifierPrefix(MemberExpression member, out string prefix)
+	{
+		prefix = string.Empty;
+
+		var rootMember = GetRootMember(member);
+		if (rootMember?.Expression is not ParameterExpression)
+			return false;
+
+		var declaringType = rootMember.Member.DeclaringType;
+		if (declaringType is null || !declaringType.IsDefined(typeof(CompilerGeneratedAttribute), false))
+			return false;
+
+		if (_context.IsTrackedAnonymousType(declaringType))
+			return false;
+
+		prefix = _context.ResolveFieldName(declaringType, rootMember.Member);
+		return !string.IsNullOrEmpty(prefix);
+	}
+
+	private static MemberExpression? GetRootMember(MemberExpression member)
+	{
+		var current = member;
+		while (current.Expression is MemberExpression parent)
+			current = parent;
+
+		return current;
+	}
+
+	private static bool IsRootedInParameter(MemberExpression member)
+	{
+		Expression? current = member;
+		while (current is MemberExpression memberExpression)
+			current = memberExpression.Expression?.UnwrapConvertExpressions();
+
+		return current is ParameterExpression;
+	}
 
 	private string TranslateStaticDateTimeProperty(MemberExpression member)
 	{

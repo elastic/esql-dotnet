@@ -48,6 +48,13 @@ internal sealed class EsqlTranslationContext
 	}
 
 	/// <summary>
+	/// Returns true when field names were explicitly tracked for an anonymous type
+	/// during projection translation.
+	/// </summary>
+	public bool IsTrackedAnonymousType(Type type) =>
+		_anonymousTypeFields is not null && _anonymousTypeFields.ContainsKey(type);
+
+	/// <summary>
 	/// Tries to retrieve tracked field names for a type. Returns the registered set for
 	/// anonymous types, or resolves all property names from the metadata manager for concrete types.
 	/// </summary>

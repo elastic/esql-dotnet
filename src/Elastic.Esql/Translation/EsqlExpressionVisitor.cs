@@ -882,14 +882,22 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 
 		protected override Expression VisitMember(MemberExpression node)
 		{
-			if (node.Expression is ParameterExpression param
-				&& param == outerParam
-				&& node.Member.DeclaringType is not null)
+			if (node.Member.DeclaringType is not null && IsRootedInOuterParameter(node))
 			{
-				_ = OuterFields.Add(context.ResolveFieldName(node.Member.DeclaringType, node.Member));
+				_ = OuterFields.Add(node.ResolveFieldName(context.Metadata));
+				return node;
 			}
 
 			return base.VisitMember(node);
+		}
+
+		private bool IsRootedInOuterParameter(MemberExpression member)
+		{
+			Expression? current = member;
+			while (current is MemberExpression memberExpression)
+				current = memberExpression.Expression?.UnwrapConvertExpressions();
+
+			return current == outerParam;
 		}
 	}
 
