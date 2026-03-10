@@ -10,8 +10,10 @@ namespace Elastic.Esql.Materialization;
 /// Lightweight synchronous buffer manager that wraps a <see cref="Stream"/> and provides
 /// a read-advance pattern analogous to <c>PipeReader</c> but fully synchronous.
 /// </summary>
-internal sealed class SyncStreamBuffer(Stream stream, int initialBufferSize = 4096) : IDisposable
+internal sealed class SyncStreamBuffer(Stream stream, int initialBufferSize = 16384) : IDisposable
 {
+	private const int MinimumReadSize = 16384;
+
 	private byte[] _buffer = ArrayPool<byte>.Shared.Rent(initialBufferSize);
 	private int _offset;
 	private int _filled;
@@ -32,8 +34,7 @@ internal sealed class SyncStreamBuffer(Stream stream, int initialBufferSize = 40
 		if (_streamCompleted)
 			return _offset < _filled;
 
-		Compact();
-		EnsureCapacity();
+		EnsureWritableSpace(MinimumReadSize);
 
 		var bytesRead = stream.Read(_buffer, _filled, _buffer.Length - _filled);
 		if (bytesRead == 0)
@@ -68,28 +69,33 @@ internal sealed class SyncStreamBuffer(Stream stream, int initialBufferSize = 40
 			ArrayPool<byte>.Shared.Return(buf);
 	}
 
-	private void Compact()
+	private void EnsureWritableSpace(int sizeHint)
 	{
-		if (_offset == 0)
+		var availableTail = _buffer.Length - _filled;
+		if (availableTail >= sizeHint)
 			return;
 
 		var remaining = _filled - _offset;
-		if (remaining > 0)
-			System.Buffer.BlockCopy(_buffer, _offset, _buffer, 0, remaining);
+		if (_offset > 0 && _buffer.Length - remaining >= sizeHint)
+		{
+			if (remaining > 0)
+				System.Buffer.BlockCopy(_buffer, _offset, _buffer, 0, remaining);
 
-		_filled = remaining;
-		_offset = 0;
-	}
-
-	private void EnsureCapacity()
-	{
-		if (_filled < _buffer.Length)
+			_filled = remaining;
+			_offset = 0;
 			return;
+		}
 
-		var newSize = _buffer.Length * 2;
+		var required = remaining + sizeHint;
+		var newSize = Math.Max(_buffer.Length * 2, required);
 		var newBuffer = ArrayPool<byte>.Shared.Rent(newSize);
-		System.Buffer.BlockCopy(_buffer, 0, newBuffer, 0, _filled);
+
+		if (remaining > 0)
+			System.Buffer.BlockCopy(_buffer, _offset, newBuffer, 0, remaining);
+
 		ArrayPool<byte>.Shared.Return(_buffer);
 		_buffer = newBuffer;
+		_filled = remaining;
+		_offset = 0;
 	}
 }

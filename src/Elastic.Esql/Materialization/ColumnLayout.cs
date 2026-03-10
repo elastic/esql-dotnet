@@ -20,10 +20,11 @@ internal readonly record struct ValueSlice(int Start, int Length, JsonTokenType 
 internal sealed class ColumnNode
 {
 	public required string PropertyName { get; init; }
-	public JsonEncodedText EncodedPropertyName { get; init; }
 	public byte[] PrefixBytes { get; init; } = [];
 	public int ColumnIndex { get; init; } = -1;
 	public bool IsCollection { get; init; }
+	public int BranchIndex { get; set; } = -1;
+	public ColumnNode? Parent { get; set; }
 	public List<ColumnNode>? Children { get; set; }
 }
 
@@ -35,9 +36,6 @@ internal sealed class ColumnLayout
 {
 	private const int DefaultMaxDepth = 64;
 
-	/// <summary>Whether any column resolves to a nested object path (depth > 1).</summary>
-	public bool HasNestedObjects { get; }
-
 	/// <summary>Virtual root whose <see cref="ColumnNode.Children"/> are the top-level properties.</summary>
 	public ColumnNode Root { get; }
 
@@ -47,16 +45,24 @@ internal sealed class ColumnLayout
 	/// <summary>Maximum nesting depth of the tree (1 = flat).</summary>
 	public int MaxDepth { get; }
 
-	/// <summary>Per-column collection flags for the flat fast-path. Null when no collection columns exist.</summary>
-	public bool[]? CollectionColumns { get; }
+	/// <summary>Leaf node lookup by original ES|QL column index.</summary>
+	public ColumnNode[] LeafNodesByColumnIndex { get; }
 
-	private ColumnLayout(ColumnNode root, int columnCount, int maxDepth, bool hasNested, bool[]? collectionColumns)
+	/// <summary>Total count of non-root branch nodes (nested objects).</summary>
+	public int BranchNodeCount { get; }
+
+	private ColumnLayout(
+		ColumnNode root,
+		int columnCount,
+		int maxDepth,
+		ColumnNode[] leafNodesByColumnIndex,
+		int branchNodeCount)
 	{
 		Root = root;
 		ColumnCount = columnCount;
 		MaxDepth = maxDepth;
-		HasNestedObjects = hasNested;
-		CollectionColumns = collectionColumns;
+		LeafNodesByColumnIndex = leafNodesByColumnIndex;
+		BranchNodeCount = branchNodeCount;
 	}
 
 	/// <summary>
@@ -84,25 +90,14 @@ internal sealed class ColumnLayout
 			typeInfo = null;
 		}
 
-		var root = new ColumnNode { PropertyName = string.Empty, EncodedPropertyName = default };
-		var hasNested = false;
-		bool[]? collectionColumns = null;
+		var root = new ColumnNode { PropertyName = string.Empty };
 
 		for (var i = 0; i < columnCount; i++)
 		{
 			var columnName = columns[i].Name;
 			var segments = ResolvePathSegments(columnName, typeInfo, options);
 
-			if (segments.Length > 1)
-				hasNested = true;
-
 			var isCollection = IsCollectionColumn(segments, typeInfo, options);
-			if (isCollection)
-			{
-				collectionColumns ??= new bool[columnCount];
-				collectionColumns[i] = true;
-			}
-
 			InsertIntoTree(root, segments, i, isCollection);
 		}
 
@@ -114,7 +109,10 @@ internal sealed class ColumnLayout
 				$"ES|QL column nesting depth ({maxDepth}) exceeds the configured maximum depth ({effectiveMaxDepth}). " +
 				"Increase JsonSerializerOptions.MaxDepth if deeper nesting is expected.");
 
-		return new ColumnLayout(root, columnCount, maxDepth, hasNested, collectionColumns);
+		var leafNodesByColumnIndex = new ColumnNode[columnCount];
+		var branchNodeCount = IndexNodes(root, leafNodesByColumnIndex, 0);
+
+		return new ColumnLayout(root, columnCount, maxDepth, leafNodesByColumnIndex, branchNodeCount);
 	}
 
 	/// <summary>
@@ -243,8 +241,6 @@ internal sealed class ColumnLayout
 		{
 			var segment = segments[i];
 			var isLeaf = i == segments.Length - 1;
-			var encoded = JsonEncodedText.Encode(segment);
-			var prefixBytes = BuildPrefixBytes(encoded);
 
 			if (isLeaf)
 			{
@@ -252,10 +248,10 @@ internal sealed class ColumnLayout
 				current.Children.Add(new ColumnNode
 				{
 					PropertyName = segment,
-					EncodedPropertyName = encoded,
-					PrefixBytes = prefixBytes,
+					PrefixBytes = BuildPrefixBytes(segment),
 					ColumnIndex = columnIndex,
-					IsCollection = isCollection
+					IsCollection = isCollection,
+					Parent = current
 				});
 			}
 			else
@@ -267,8 +263,8 @@ internal sealed class ColumnLayout
 					existing = new ColumnNode
 					{
 						PropertyName = segment,
-						EncodedPropertyName = encoded,
-						PrefixBytes = prefixBytes
+						PrefixBytes = BuildPrefixBytes(segment),
+						Parent = current
 					};
 					current.Children.Add(existing);
 				}
@@ -277,8 +273,32 @@ internal sealed class ColumnLayout
 		}
 	}
 
-	private static byte[] BuildPrefixBytes(JsonEncodedText encoded)
+	private static int IndexNodes(ColumnNode node, ColumnNode[] leafNodesByColumnIndex, int branchIndex)
 	{
+		if (node.ColumnIndex >= 0)
+		{
+			leafNodesByColumnIndex[node.ColumnIndex] = node;
+			return branchIndex;
+		}
+
+		if (!string.IsNullOrEmpty(node.PropertyName))
+		{
+			node.BranchIndex = branchIndex;
+			branchIndex++;
+		}
+
+		if (node.Children is null)
+			return branchIndex;
+
+		foreach (var child in node.Children)
+			branchIndex = IndexNodes(child, leafNodesByColumnIndex, branchIndex);
+
+		return branchIndex;
+	}
+
+	private static byte[] BuildPrefixBytes(string propertyName)
+	{
+		var encoded = JsonEncodedText.Encode(propertyName);
 		var utf8 = encoded.EncodedUtf8Bytes;
 		var prefix = new byte[utf8.Length + 3];
 		prefix[0] = (byte)'"';
@@ -313,19 +333,4 @@ internal sealed class ColumnLayout
 		return max;
 	}
 
-	/// <summary>
-	/// Checks recursively whether all leaf nodes under <paramref name="node"/> have null values.
-	/// </summary>
-	public static bool AllChildrenNull(ColumnNode node, ReadOnlySpan<ValueSlice> slices)
-	{
-		if (node.Children is null)
-			return node.ColumnIndex >= 0 && slices[node.ColumnIndex].IsNull;
-
-		foreach (var child in node.Children)
-		{
-			if (!AllChildrenNull(child, slices))
-				return false;
-		}
-		return true;
-	}
 }

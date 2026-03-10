@@ -58,12 +58,12 @@ internal sealed partial class EsqlResponseReader
 
 		var layout = GetColumnLayout<T>(columns);
 		var estimatedRowSize = Math.Max(256, columns.Length * 32);
+		var typeInfo = TryResolveTypeInfo<T>(Options);
 
 		var rowBuffer = new ArrayBufferWriter<byte>(estimatedRowSize);
-		var valueBuffer = new ArrayBufferWriter<byte>(estimatedRowSize);
-		using var valueWriter = new Utf8JsonWriter(valueBuffer, SkipValidationWriterOptions);
-
 		var isScalar = columns.Length == 1 && IsPrimitiveJsonType(typeof(T));
+		var valueBuffer = isScalar ? null : new ArrayBufferWriter<byte>(estimatedRowSize);
+		using var valueWriter = isScalar ? null : new Utf8JsonWriter(valueBuffer!, SkipValidationWriterOptions);
 		using var scalarWriter = isScalar ? new Utf8JsonWriter(rowBuffer, SkipValidationWriterOptions) : null;
 
 		T? value = default;
@@ -82,7 +82,7 @@ internal sealed partial class EsqlResponseReader
 			{
 				if (rowCount == 0)
 				{
-					if (!TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, rowBuffer, valueBuffer, valueWriter, scalarWriter, Options, out var item, out var reachedEnd))
+					if (!TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, rowBuffer, valueBuffer, valueWriter, scalarWriter, typeInfo, Options, out var item, out var reachedEnd))
 						break;
 
 					if (reachedEnd)
@@ -133,12 +133,12 @@ internal sealed partial class EsqlResponseReader
 
 		var layout = GetColumnLayout<T>(columns);
 		var estimatedRowSize = Math.Max(256, columns.Length * 32);
+		var typeInfo = TryResolveTypeInfo<T>(Options);
 
 		var rowBuffer = new ArrayBufferWriter<byte>(estimatedRowSize);
-		var valueBuffer = new ArrayBufferWriter<byte>(estimatedRowSize);
-		using var valueWriter = new Utf8JsonWriter(valueBuffer, SkipValidationWriterOptions);
-
 		var isScalar = columns.Length == 1 && IsPrimitiveJsonType(typeof(T));
+		var valueBuffer = isScalar ? null : new ArrayBufferWriter<byte>(estimatedRowSize);
+		using var valueWriter = isScalar ? null : new Utf8JsonWriter(valueBuffer!, SkipValidationWriterOptions);
 		using var scalarWriter = isScalar ? new Utf8JsonWriter(rowBuffer, SkipValidationWriterOptions) : null;
 
 		T? value = default;
@@ -157,7 +157,7 @@ internal sealed partial class EsqlResponseReader
 			{
 				if (rowCount == 0)
 				{
-					if (!TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, rowBuffer, valueBuffer, valueWriter, scalarWriter, Options, out var item, out var reachedEnd))
+					if (!TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, rowBuffer, valueBuffer, valueWriter, scalarWriter, typeInfo, Options, out var item, out var reachedEnd))
 						break;
 
 					if (reachedEnd)

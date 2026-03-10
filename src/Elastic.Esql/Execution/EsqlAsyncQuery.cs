@@ -75,10 +75,16 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 	/// After calling <see cref="RefreshAsync"/> or <see cref="WaitForCompletionAsync"/>,
 	/// this returns rows from the new response.
 	/// </summary>
-	public IAsyncEnumerable<T> AsAsyncEnumerable(CancellationToken cancellationToken = default) =>
-		_asyncResult is not null
-			? WithCancellation(_asyncResult.Rows, cancellationToken)
-			: EmptyAsync();
+	public IAsyncEnumerable<T> AsAsyncEnumerable(CancellationToken cancellationToken = default)
+	{
+		if (_asyncResult is null)
+			return EmptyAsyncEnumerable<T>.Instance;
+
+		if (!cancellationToken.CanBeCanceled)
+			return _asyncResult.Rows;
+
+		return new CancellableAsyncEnumerable(_asyncResult.Rows, cancellationToken);
+	}
 
 	/// <summary>
 	/// Performs a single poll to refresh the query state. Does not loop.
@@ -335,18 +341,17 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 		_ownedSyncResponse = null;
 	}
 
-	private static async IAsyncEnumerable<T> WithCancellation(
+	private readonly struct CancellableAsyncEnumerable(
 		IAsyncEnumerable<T> source,
-		[EnumeratorCancellation] CancellationToken cancellationToken)
+		CancellationToken cancellationToken) : IAsyncEnumerable<T>
 	{
-		await foreach (var item in source.WithCancellation(cancellationToken).ConfigureAwait(false))
-			yield return item;
-	}
+		public IAsyncEnumerator<T> GetAsyncEnumerator(CancellationToken enumeratorCancellationToken = default)
+		{
+			var effectiveCancellationToken = enumeratorCancellationToken.CanBeCanceled
+				? enumeratorCancellationToken
+				: cancellationToken;
 
-#pragma warning disable CS1998 // Async method lacks 'await' operators
-	private static async IAsyncEnumerable<T> EmptyAsync()
-#pragma warning restore CS1998
-	{
-		yield break;
+			return source.GetAsyncEnumerator(effectiveCancellationToken);
+		}
 	}
 }

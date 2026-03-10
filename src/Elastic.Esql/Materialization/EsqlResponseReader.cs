@@ -77,7 +77,7 @@ internal sealed partial class EsqlResponseReader
 	private static PipeReader CreatePipeReader(Stream stream) =>
 		PipeReader.Create(stream, new StreamPipeReaderOptions(
 			pool: MemoryPool<byte>.Shared,
-			bufferSize: 4096,
+			bufferSize: 16384,
 			leaveOpen: true));
 
 	/// <summary>

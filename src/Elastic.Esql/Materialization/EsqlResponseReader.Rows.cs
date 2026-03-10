@@ -3,16 +3,52 @@
 // See the LICENSE file in the project root for more information
 
 using System.Buffers;
+using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.IO.Pipelines;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 
 namespace Elastic.Esql.Materialization;
 
 internal sealed partial class EsqlResponseReader
 {
 	private static readonly JsonWriterOptions SkipValidationWriterOptions = new() { SkipValidation = true };
+	private readonly ConcurrentDictionary<ColumnLayoutCacheKey, ColumnLayoutCacheEntry> _columnLayoutCache = [];
+
+	private readonly record struct ColumnLayoutCacheKey(Type TargetType, int SchemaHash, int ColumnCount);
+
+	private sealed class ColumnLayoutCacheEntry
+	{
+		private readonly ColumnInfo[] _columns;
+
+		public ColumnLayout Layout { get; }
+
+		public ColumnLayoutCacheEntry(ReadOnlySpan<ColumnInfo> columns, ColumnLayout layout)
+		{
+			_columns = columns.ToArray();
+			Layout = layout;
+		}
+
+		public bool Matches(ReadOnlySpan<ColumnInfo> columns)
+		{
+			if (_columns.Length != columns.Length)
+				return false;
+
+			for (var i = 0; i < columns.Length; i++)
+			{
+				var candidate = columns[i];
+				var cached = _columns[i];
+				if (!string.Equals(cached.Name, candidate.Name, StringComparison.Ordinal))
+					return false;
+				if (!string.Equals(cached.Type, candidate.Type, StringComparison.Ordinal))
+					return false;
+			}
+
+			return true;
+		}
+	}
 
 	/// <summary>
 	/// Materializes each row of an ES|QL response from a <see cref="Stream"/> as an instance of <typeparamref name="T"/>.
@@ -307,10 +343,11 @@ internal sealed partial class EsqlResponseReader
 	{
 		var estimatedRowSize = Math.Max(256, columns.Length * 32);
 		var rowBuffer = new ArrayBufferWriter<byte>(estimatedRowSize);
-		var valueBuffer = new ArrayBufferWriter<byte>(estimatedRowSize);
-		using var valueWriter = new Utf8JsonWriter(valueBuffer, SkipValidationWriterOptions);
+		var typeInfo = TryResolveTypeInfo<T>(options);
 
 		var isScalar = columns.Length == 1 && IsPrimitiveJsonType(typeof(T));
+		var valueBuffer = isScalar ? null : new ArrayBufferWriter<byte>(estimatedRowSize);
+		using var valueWriter = isScalar ? null : new Utf8JsonWriter(valueBuffer!, SkipValidationWriterOptions);
 		using var scalarWriter = isScalar ? new Utf8JsonWriter(rowBuffer, SkipValidationWriterOptions) : null;
 
 		var done = false;
@@ -324,7 +361,7 @@ internal sealed partial class EsqlResponseReader
 			var isFinalBlock = result.IsCompleted;
 			var reachedEnd = false;
 
-			while (TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, rowBuffer, valueBuffer, valueWriter, scalarWriter, options, out var item, out reachedEnd))
+			while (TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, rowBuffer, valueBuffer, valueWriter, scalarWriter, typeInfo, options, out var item, out reachedEnd))
 			{
 				if (reachedEnd)
 				{
@@ -354,10 +391,11 @@ internal sealed partial class EsqlResponseReader
 	{
 		var estimatedRowSize = Math.Max(256, columns.Length * 32);
 		var rowBuffer = new ArrayBufferWriter<byte>(estimatedRowSize);
-		var valueBuffer = new ArrayBufferWriter<byte>(estimatedRowSize);
-		using var valueWriter = new Utf8JsonWriter(valueBuffer, SkipValidationWriterOptions);
+		var typeInfo = TryResolveTypeInfo<T>(options);
 
 		var isScalar = columns.Length == 1 && IsPrimitiveJsonType(typeof(T));
+		var valueBuffer = isScalar ? null : new ArrayBufferWriter<byte>(estimatedRowSize);
+		using var valueWriter = isScalar ? null : new Utf8JsonWriter(valueBuffer!, SkipValidationWriterOptions);
 		using var scalarWriter = isScalar ? new Utf8JsonWriter(rowBuffer, SkipValidationWriterOptions) : null;
 
 		var done = false;
@@ -371,7 +409,7 @@ internal sealed partial class EsqlResponseReader
 			var isFinalBlock = syncBuffer.IsCompleted;
 			var reachedEnd = false;
 
-			while (TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, rowBuffer, valueBuffer, valueWriter, scalarWriter, options, out var item, out reachedEnd))
+			while (TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, rowBuffer, valueBuffer, valueWriter, scalarWriter, typeInfo, options, out var item, out reachedEnd))
 			{
 				if (reachedEnd)
 				{
@@ -397,9 +435,10 @@ internal sealed partial class EsqlResponseReader
 		ref JsonReaderState state,
 		ColumnLayout layout,
 		ArrayBufferWriter<byte> rowBuffer,
-		ArrayBufferWriter<byte> valueBuffer,
-		Utf8JsonWriter valueWriter,
+		ArrayBufferWriter<byte>? valueBuffer,
+		Utf8JsonWriter? valueWriter,
 		Utf8JsonWriter? scalarWriter,
+		JsonTypeInfo<T>? typeInfo,
 		JsonSerializerOptions options,
 		out T? item,
 		out bool reachedEnd)
@@ -439,14 +478,16 @@ internal sealed partial class EsqlResponseReader
 				return false;
 			}
 		}
-		else if (!TryMaterializeRow(ref reader, layout, rowBuffer, valueBuffer, valueWriter))
+		else if (valueBuffer is null || valueWriter is null || !TryMaterializeRow(ref reader, layout, rowBuffer, valueBuffer, valueWriter))
 		{
 			state = savedState;
 			buffer = savedBuffer;
 			return false;
 		}
 
-		item = JsonSerializer.Deserialize<T>(rowBuffer.WrittenSpan, options);
+		item = typeInfo is not null
+			? JsonSerializer.Deserialize(rowBuffer.WrittenSpan, typeInfo)
+			: JsonSerializer.Deserialize<T>(rowBuffer.WrittenSpan, options);
 
 		state = reader.CurrentState;
 		buffer = buffer.Slice(reader.Position);
@@ -468,6 +509,15 @@ internal sealed partial class EsqlResponseReader
 		var slices = columnCount <= 64
 			? stackalloc ValueSlice[columnCount]
 			: (rentedSlices = ArrayPool<ValueSlice>.Shared.Rent(columnCount)).AsSpan(0, columnCount);
+
+		bool[]? rentedActiveBranches = null;
+		var activeBranches = layout.BranchNodeCount switch
+		{
+			0 => [],
+			<= 128 => stackalloc bool[layout.BranchNodeCount],
+			_ => (rentedActiveBranches = ArrayPool<bool>.Shared.Rent(layout.BranchNodeCount)).AsSpan(0, layout.BranchNodeCount)
+		};
+		activeBranches.Clear();
 
 		try
 		{
@@ -500,6 +550,7 @@ internal sealed partial class EsqlResponseReader
 
 				var length = valueBuffer.WrittenCount - start;
 				slices[colIndex] = new ValueSlice(start, length, firstToken, IsNull: false);
+				MarkActiveBranches(layout.LeafNodesByColumnIndex[colIndex], activeBranches);
 				colIndex++;
 			}
 
@@ -508,7 +559,7 @@ internal sealed partial class EsqlResponseReader
 
 			rowBuffer.ResetWrittenCount();
 			WriteRawByte(rowBuffer, (byte)'{');
-			AssembleChildren(layout.Root.Children!, rowBuffer, valueBuffer.WrittenSpan, slices);
+			AssembleChildren(layout.Root.Children!, rowBuffer, valueBuffer.WrittenSpan, slices, activeBranches);
 			WriteRawByte(rowBuffer, (byte)'}');
 
 			return true;
@@ -517,6 +568,23 @@ internal sealed partial class EsqlResponseReader
 		{
 			if (rentedSlices is not null)
 				ArrayPool<ValueSlice>.Shared.Return(rentedSlices);
+			if (rentedActiveBranches is not null)
+				ArrayPool<bool>.Shared.Return(rentedActiveBranches);
+		}
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private static void MarkActiveBranches(ColumnNode leafNode, Span<bool> activeBranches)
+	{
+		if (activeBranches.IsEmpty)
+			return;
+
+		var current = leafNode.Parent;
+		while (current is not null)
+		{
+			if (current.BranchIndex >= 0)
+				activeBranches[current.BranchIndex] = true;
+			current = current.Parent;
 		}
 	}
 
@@ -524,7 +592,8 @@ internal sealed partial class EsqlResponseReader
 		List<ColumnNode> children,
 		ArrayBufferWriter<byte> buffer,
 		ReadOnlySpan<byte> values,
-		ReadOnlySpan<ValueSlice> slices)
+		ReadOnlySpan<ValueSlice> slices,
+		ReadOnlySpan<bool> activeBranches)
 	{
 		var needsComma = false;
 		foreach (var child in children)
@@ -555,7 +624,9 @@ internal sealed partial class EsqlResponseReader
 			}
 			else
 			{
-				if (child.Children is null || ColumnLayout.AllChildrenNull(child, slices))
+				if (child.Children is null)
+					continue;
+				if (child.BranchIndex >= 0 && !activeBranches[child.BranchIndex])
 					continue;
 
 				if (needsComma)
@@ -564,7 +635,7 @@ internal sealed partial class EsqlResponseReader
 
 				WriteRawBytes(buffer, child.PrefixBytes);
 				WriteRawByte(buffer, (byte)'{');
-				AssembleChildren(child.Children, buffer, values, slices);
+				AssembleChildren(child.Children, buffer, values, slices, activeBranches);
 				WriteRawByte(buffer, (byte)'}');
 			}
 		}
@@ -705,7 +776,43 @@ internal sealed partial class EsqlResponseReader
 	/// <summary>
 	/// Builds a <see cref="ColumnLayout"/> for the target type and the ES|QL columns.
 	/// </summary>
-	private ColumnLayout GetColumnLayout<T>(ColumnInfo[] columns) =>
-		ColumnLayout.Build(columns, typeof(T), _metadata);
+	private ColumnLayout GetColumnLayout<T>(ColumnInfo[] columns)
+	{
+		var targetType = typeof(T);
+		var schemaHash = ComputeSchemaHash(columns);
+		var key = new ColumnLayoutCacheKey(targetType, schemaHash, columns.Length);
+
+		if (_columnLayoutCache.TryGetValue(key, out var cachedEntry) && cachedEntry.Matches(columns))
+			return cachedEntry.Layout;
+
+		var layout = ColumnLayout.Build(columns, targetType, _metadata);
+		_columnLayoutCache[key] = new ColumnLayoutCacheEntry(columns, layout);
+		return layout;
+	}
+
+	private static int ComputeSchemaHash(ReadOnlySpan<ColumnInfo> columns)
+	{
+		var hashCode = new HashCode();
+
+		foreach (var column in columns)
+		{
+			hashCode.Add(column.Name, StringComparer.Ordinal);
+			hashCode.Add(column.Type, StringComparer.Ordinal);
+		}
+
+		return hashCode.ToHashCode();
+	}
+
+	private static JsonTypeInfo<T>? TryResolveTypeInfo<T>(JsonSerializerOptions options)
+	{
+		try
+		{
+			return options.GetTypeInfo(typeof(T)) as JsonTypeInfo<T>;
+		}
+		catch
+		{
+			return null;
+		}
+	}
 
 }
