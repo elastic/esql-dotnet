@@ -2,11 +2,8 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-using System;
 using System.Buffers;
-using System.Collections.Generic;
 using System.IO.Pipelines;
-using System.Text;
 using System.Text.Json;
 
 namespace Elastic.Esql.Materialization;
@@ -26,17 +23,9 @@ internal sealed partial class EsqlResponseReader
 		Stream stream,
 		CancellationToken cancellationToken = default)
 	{
-		var pipeReader = CreatePipeReader(stream);
-
-		try
-		{
-			return await ReadScalarAsync<T>(pipeReader, cancellationToken)
-				.ConfigureAwait(false);
-		}
-		finally
-		{
-			await pipeReader.CompleteAsync().ConfigureAwait(false);
-		}
+		await using var ownedPipeReader = CreateOwnedPipeReader(stream);
+		return await ReadScalarAsync<T>(ownedPipeReader.Reader, cancellationToken)
+			.ConfigureAwait(false);
 	}
 
 	/// <summary>
@@ -57,9 +46,15 @@ internal sealed partial class EsqlResponseReader
 			pipeReader, readerState, cancellationToken).ConfigureAwait(false);
 
 		var layout = GetColumnLayout<T>(columns);
-		var valueBuffer = layout.HasNestedObjects ? new ArrayBufferWriter<byte>(256) : null;
+		var estimatedRowSize = Math.Max(256, columns.Length * 32);
+		var typeInfo = TryResolveTypeInfo<T>(Options);
 
-		var rowBuffer = new ArrayBufferWriter<byte>(256);
+		var rowBuffer = new ArrayBufferWriter<byte>(estimatedRowSize);
+		var isScalar = columns.Length == 1 && IsPrimitiveJsonType(typeof(T));
+		var valueBuffer = isScalar ? null : new ArrayBufferWriter<byte>(estimatedRowSize);
+		await using var valueWriter = isScalar ? null : new Utf8JsonWriter(valueBuffer!, SkipValidationWriterOptions);
+		await using var scalarWriter = isScalar ? new Utf8JsonWriter(rowBuffer, SkipValidationWriterOptions) : null;
+
 		T? value = default;
 		var rowCount = 0;
 		var done = false;
@@ -76,7 +71,7 @@ internal sealed partial class EsqlResponseReader
 			{
 				if (rowCount == 0)
 				{
-					if (!TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, columns, layout, rowBuffer, valueBuffer, Options, out var item, out var reachedEnd))
+					if (!TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, rowBuffer, valueBuffer, valueWriter, scalarWriter, typeInfo, Options, out var item, out var reachedEnd))
 						break;
 
 					if (reachedEnd)
@@ -126,9 +121,15 @@ internal sealed partial class EsqlResponseReader
 		(readerState, _, _) = AdvanceToValuesArrayFromStream(syncBuffer, readerState);
 
 		var layout = GetColumnLayout<T>(columns);
-		var valueBuffer = layout.HasNestedObjects ? new ArrayBufferWriter<byte>(256) : null;
+		var estimatedRowSize = Math.Max(256, columns.Length * 32);
+		var typeInfo = TryResolveTypeInfo<T>(Options);
 
-		var rowBuffer = new ArrayBufferWriter<byte>(256);
+		var rowBuffer = new ArrayBufferWriter<byte>(estimatedRowSize);
+		var isScalar = columns.Length == 1 && IsPrimitiveJsonType(typeof(T));
+		var valueBuffer = isScalar ? null : new ArrayBufferWriter<byte>(estimatedRowSize);
+		using var valueWriter = isScalar ? null : new Utf8JsonWriter(valueBuffer!, SkipValidationWriterOptions);
+		using var scalarWriter = isScalar ? new Utf8JsonWriter(rowBuffer, SkipValidationWriterOptions) : null;
+
 		T? value = default;
 		var rowCount = 0;
 		var done = false;
@@ -145,7 +146,7 @@ internal sealed partial class EsqlResponseReader
 			{
 				if (rowCount == 0)
 				{
-					if (!TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, columns, layout, rowBuffer, valueBuffer, Options, out var item, out var reachedEnd))
+					if (!TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, rowBuffer, valueBuffer, valueWriter, scalarWriter, typeInfo, Options, out var item, out var reachedEnd))
 						break;
 
 					if (reachedEnd)
