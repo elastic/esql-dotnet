@@ -2,12 +2,11 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-using System;
 using System.Buffers;
-using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.IO.Pipelines;
-using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using Elastic.Esql.Core;
 
 namespace Elastic.Esql.Materialization;
@@ -65,6 +64,7 @@ internal sealed class EsqlResponse<T>
 internal sealed partial class EsqlResponseReader
 {
 	private readonly JsonMetadataManager _metadata;
+	private readonly ConcurrentDictionary<ColumnLayoutCacheKey, ColumnLayoutCacheEntry> _columnLayoutCache = [];
 
 	/// <summary>The <see cref="JsonSerializerOptions"/> used for deserialization.</summary>
 	public JsonSerializerOptions Options => _metadata.Options;
@@ -73,12 +73,96 @@ internal sealed partial class EsqlResponseReader
 		_metadata = metadata ?? throw new ArgumentNullException(nameof(metadata));
 
 	internal readonly record struct ColumnInfo(string Name, string Type);
+	private readonly record struct ColumnLayoutCacheKey(Type TargetType, int SchemaHash, int ColumnCount);
+
+	private sealed class ColumnLayoutCacheEntry
+	{
+		private readonly ColumnInfo[] _columns;
+
+		public ColumnLayout Layout { get; }
+
+		public ColumnLayoutCacheEntry(ReadOnlySpan<ColumnInfo> columns, ColumnLayout layout)
+		{
+			_columns = columns.ToArray();
+			Layout = layout;
+		}
+
+		public bool Matches(ReadOnlySpan<ColumnInfo> columns)
+		{
+			if (_columns.Length != columns.Length)
+				return false;
+
+			for (var i = 0; i < columns.Length; i++)
+			{
+				var candidate = columns[i];
+				var cached = _columns[i];
+				if (!string.Equals(cached.Name, candidate.Name, StringComparison.Ordinal))
+					return false;
+				if (!string.Equals(cached.Type, candidate.Type, StringComparison.Ordinal))
+					return false;
+			}
+
+			return true;
+		}
+	}
 
 	private static PipeReader CreatePipeReader(Stream stream) =>
 		PipeReader.Create(stream, new StreamPipeReaderOptions(
 			pool: MemoryPool<byte>.Shared,
 			bufferSize: 16384,
 			leaveOpen: true));
+
+	private static OwnedPipeReader CreateOwnedPipeReader(Stream stream) =>
+		new(CreatePipeReader(stream));
+
+	private sealed class OwnedPipeReader(PipeReader reader) : IAsyncDisposable
+	{
+		public PipeReader Reader { get; } = reader;
+
+		public ValueTask DisposeAsync() => Reader.CompleteAsync();
+	}
+
+	/// <summary>
+	/// Builds a <see cref="ColumnLayout"/> for the target type and the ES|QL columns.
+	/// </summary>
+	private ColumnLayout GetColumnLayout<T>(ColumnInfo[] columns)
+	{
+		var targetType = typeof(T);
+		var schemaHash = ComputeSchemaHash(columns);
+		var key = new ColumnLayoutCacheKey(targetType, schemaHash, columns.Length);
+
+		if (_columnLayoutCache.TryGetValue(key, out var cachedEntry) && cachedEntry.Matches(columns))
+			return cachedEntry.Layout;
+
+		var layout = ColumnLayout.Build(columns, targetType, _metadata);
+		_columnLayoutCache[key] = new ColumnLayoutCacheEntry(columns, layout);
+		return layout;
+	}
+
+	private static int ComputeSchemaHash(ReadOnlySpan<ColumnInfo> columns)
+	{
+		var hashCode = new HashCode();
+
+		foreach (var column in columns)
+		{
+			hashCode.Add(column.Name, StringComparer.Ordinal);
+			hashCode.Add(column.Type, StringComparer.Ordinal);
+		}
+
+		return hashCode.ToHashCode();
+	}
+
+	private static JsonTypeInfo<T>? TryResolveTypeInfo<T>(JsonSerializerOptions options)
+	{
+		try
+		{
+			return options.GetTypeInfo(typeof(T)) as JsonTypeInfo<T>;
+		}
+		catch
+		{
+			return null;
+		}
+	}
 
 	/// <summary>
 	/// Incrementally parses columns from the pipe, also capturing any <c>id</c>/<c>is_running</c> metadata properties encountered before the

@@ -2,11 +2,8 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-using System;
 using System.Buffers;
-using System.Collections.Generic;
 using System.IO.Pipelines;
-using System.Text;
 using System.Text.Json;
 
 namespace Elastic.Esql.Materialization;
@@ -26,17 +23,9 @@ internal sealed partial class EsqlResponseReader
 		Stream stream,
 		CancellationToken cancellationToken = default)
 	{
-		var pipeReader = CreatePipeReader(stream);
-
-		try
-		{
-			return await ReadScalarAsync<T>(pipeReader, cancellationToken)
-				.ConfigureAwait(false);
-		}
-		finally
-		{
-			await pipeReader.CompleteAsync().ConfigureAwait(false);
-		}
+		await using var ownedPipeReader = CreateOwnedPipeReader(stream);
+		return await ReadScalarAsync<T>(ownedPipeReader.Reader, cancellationToken)
+			.ConfigureAwait(false);
 	}
 
 	/// <summary>
@@ -63,8 +52,8 @@ internal sealed partial class EsqlResponseReader
 		var rowBuffer = new ArrayBufferWriter<byte>(estimatedRowSize);
 		var isScalar = columns.Length == 1 && IsPrimitiveJsonType(typeof(T));
 		var valueBuffer = isScalar ? null : new ArrayBufferWriter<byte>(estimatedRowSize);
-		using var valueWriter = isScalar ? null : new Utf8JsonWriter(valueBuffer!, SkipValidationWriterOptions);
-		using var scalarWriter = isScalar ? new Utf8JsonWriter(rowBuffer, SkipValidationWriterOptions) : null;
+		await using var valueWriter = isScalar ? null : new Utf8JsonWriter(valueBuffer!, SkipValidationWriterOptions);
+		await using var scalarWriter = isScalar ? new Utf8JsonWriter(rowBuffer, SkipValidationWriterOptions) : null;
 
 		T? value = default;
 		var rowCount = 0;
