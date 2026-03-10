@@ -251,6 +251,16 @@ public record CollisionRecord(string OuterMsg, string InnerMsg);
 [JsonSerializable(typeof(DateTimeOffsetPropertyModel))]
 [JsonSerializable(typeof(LongPropertyModel))]
 [JsonSerializable(typeof(CustomConverterDocument))]
+[JsonSerializable(typeof(PersonModel))]
+[JsonSerializable(typeof(DeepRoot))]
+[JsonSerializable(typeof(DotNamePrecedenceModel))]
+[JsonSerializable(typeof(MixedDotModel))]
+[JsonSerializable(typeof(OuterWithDotInner))]
+[JsonSerializable(typeof(PersonWithTaggedAddress))]
+[JsonSerializable(typeof(MultiNestedModel))]
+[JsonSerializable(typeof(NullableNestedModel))]
+[JsonSerializable(typeof(FlatDotFallbackModel))]
+[JsonSerializable(typeof(Level1Root))]
 [JsonSerializable(typeof(int))]
 [JsonSerializable(typeof(int?))]
 [JsonSerializable(typeof(long))]
@@ -334,4 +344,139 @@ public class LongPropertyModel
 public class BoolOnlyModel
 {
 	public bool Active { get; set; }
+}
+
+// ============================================================================
+// NESTED OBJECT TEST MODELS: used by nested object deserialization tests
+// ============================================================================
+
+public class AddressModel
+{
+	public string Street { get; set; } = string.Empty;
+	public string City { get; set; } = string.Empty;
+}
+
+public class PersonModel
+{
+	public string Name { get; set; } = string.Empty;
+	public AddressModel? Address { get; set; }
+}
+
+public class DeepLeaf
+{
+	public string Value { get; set; } = string.Empty;
+}
+
+public class DeepMiddle
+{
+	public string Label { get; set; } = string.Empty;
+	public DeepLeaf? Leaf { get; set; }
+}
+
+public class DeepRoot
+{
+	public string Name { get; set; } = string.Empty;
+	public DeepMiddle? Middle { get; set; }
+}
+
+public class Level4Leaf
+{
+	public string Data { get; set; } = string.Empty;
+}
+
+public class Level3
+{
+	public Level4Leaf? Inner { get; set; }
+	public string Tag { get; set; } = string.Empty;
+}
+
+public class Level2
+{
+	public Level3? Child { get; set; }
+	public string Info { get; set; } = string.Empty;
+}
+
+public class Level1Root
+{
+	public string Name { get; set; } = string.Empty;
+	public Level2? Nested { get; set; }
+}
+
+/// <summary>
+/// JsonPropertyName with dots takes precedence over nested object resolution.
+/// Column "address.street" should map to this flat property, NOT create a nested object.
+/// </summary>
+public class DotNamePrecedenceModel
+{
+	[JsonPropertyName("address.street")]
+	public string AddressStreet { get; set; } = string.Empty;
+
+	public string Name { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Mixed scenario: "address.full" is a flat JsonPropertyName, while "address.street"/"address.city"
+/// resolve to the nested Address object.
+/// </summary>
+public class MixedDotModel
+{
+	[JsonPropertyName("address.full")]
+	public string AddressFull { get; set; } = string.Empty;
+
+	public AddressModel? Address { get; set; }
+}
+
+public class InnerWithDotName
+{
+	[JsonPropertyName("x.y")]
+	public string Xy { get; set; } = string.Empty;
+
+	public string Z { get; set; } = string.Empty;
+}
+
+public class OuterWithDotInner
+{
+	public InnerWithDotName? Inner { get; set; }
+}
+
+public class AddressWithTags
+{
+	public string City { get; set; } = string.Empty;
+	public List<string> Tags { get; set; } = [];
+}
+
+public class PersonWithTaggedAddress
+{
+	public string Name { get; set; } = string.Empty;
+	public AddressWithTags? Address { get; set; }
+}
+
+public class ContactInfo
+{
+	public string Email { get; set; } = string.Empty;
+	public string Phone { get; set; } = string.Empty;
+}
+
+public class MultiNestedModel
+{
+	public string Name { get; set; } = string.Empty;
+	public AddressModel? Address { get; set; }
+	public ContactInfo? Contact { get; set; }
+}
+
+public class NullableNestedModel
+{
+	public string Name { get; set; } = string.Empty;
+	public AddressModel? Address { get; set; }
+}
+
+/// <summary>
+/// Column with dots but no matching nested type - should fall back to flat property name.
+/// </summary>
+public class FlatDotFallbackModel
+{
+	[JsonPropertyName("unknown.prop")]
+	public string UnknownProp { get; set; } = string.Empty;
+
+	public string Name { get; set; } = string.Empty;
 }

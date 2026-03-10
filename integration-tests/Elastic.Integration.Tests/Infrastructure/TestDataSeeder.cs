@@ -14,12 +14,14 @@ public static class TestDataSeeder
 	public const string EventIndex = "test-events";
 	public const string CategoryLookupIndex = "test-categories";
 	public const string CategoryOverlapIndex = "test-category-overlap";
+	public const string UserProfileIndex = "test-user-profiles";
 
 	public static IReadOnlyList<TestProduct> Products { get; } = CreateProducts();
 	public static IReadOnlyList<TestOrder> Orders { get; } = CreateOrders();
 	public static IReadOnlyList<TestEvent> Events { get; } = CreateEvents();
 	public static IReadOnlyList<TestCategoryLookup> CategoryLookups { get; } = CreateCategoryLookups();
 	public static IReadOnlyList<TestCategoryOverlap> CategoryOverlaps { get; } = CreateCategoryOverlaps();
+	public static IReadOnlyList<TestUserProfile> UserProfiles { get; } = CreateUserProfiles();
 
 	public static async Task SeedAllAsync(ElasticsearchClient client, CancellationToken ct = default)
 	{
@@ -28,6 +30,7 @@ public static class TestDataSeeder
 		await SeedEventsAsync(client, ct).ConfigureAwait(false);
 		await SeedCategoryLookupAsync(client, ct).ConfigureAwait(false);
 		await SeedCategoryOverlapAsync(client, ct).ConfigureAwait(false);
+		await SeedUserProfilesAsync(client, ct).ConfigureAwait(false);
 
 		await client.Indices.RefreshAsync(Indices.All, ct).ConfigureAwait(false);
 	}
@@ -196,4 +199,55 @@ public static class TestDataSeeder
 		new() { CategoryId = "cat-home", Name = "Garden", Region = "EU" },
 		new() { CategoryId = "cat-sports", Name = "Outdoors", Region = "US" }
 	];
+
+	private static async Task SeedUserProfilesAsync(ElasticsearchClient client, CancellationToken ct)
+	{
+		await client.Indices.CreateAsync(UserProfileIndex, i => i
+			.Settings(s => s.NumberOfShards(1).NumberOfReplicas(0))
+			.Mappings(m => m
+				.Properties(p => p
+					.Keyword("user_id")
+					.Keyword("name")
+					.Object("address", o => o
+						.Properties(ap => ap
+							.Keyword("street")
+							.Keyword("city")
+							.Keyword("country")
+						)
+					)
+				)
+			), ct).ConfigureAwait(false);
+
+		var response = await client.BulkAsync(b => b.Index(UserProfileIndex).IndexMany(UserProfiles), ct).ConfigureAwait(false);
+		if (response.Errors)
+			throw new InvalidOperationException($"Bulk index user profiles failed: {response.DebugInformation}");
+	}
+
+	private static IReadOnlyList<TestUserProfile> CreateUserProfiles()
+	{
+		var cities = new[] { "New York", "London", "Tokyo", "Berlin", "Sydney" };
+		var countries = new[] { "US", "UK", "JP", "DE", "AU" };
+		var streets = new[] { "1st Ave", "Baker St", "Shibuya", "Unter den Linden", "George St" };
+		var profiles = new List<TestUserProfile>();
+
+		for (var i = 1; i <= 10; i++)
+		{
+			var idx = (i - 1) % cities.Length;
+			profiles.Add(new TestUserProfile
+			{
+				UserId = $"user-{i:D4}",
+				Name = $"User {i}",
+				Address = i % 3 == 0
+					? null
+					: new TestAddress
+					{
+						Street = streets[idx],
+						City = cities[idx],
+						Country = countries[idx]
+					}
+			});
+		}
+
+		return profiles;
+	}
 }
