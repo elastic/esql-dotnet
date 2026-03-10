@@ -37,6 +37,21 @@ public class KeepDropTests : EsqlTestBase
 	}
 
 	[Test]
+	public void Drop_WithLambdaSelector_ObjectMember_GeneratesWildcardDrop()
+	{
+		var esql = CreateQuery<NestedSelectionDocument>()
+			.From("logs-*")
+			.Drop(l => l.Host)
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| DROP host.*
+			""".NativeLineEndings());
+	}
+
+	[Test]
 	public void Keep_WithLambdaSelectors_GeneratesKeep()
 	{
 		var esql = CreateQuery<LogEntry>()
@@ -67,6 +82,36 @@ public class KeepDropTests : EsqlTestBase
 	}
 
 	[Test]
+	public void Keep_WithLambdaSelectors_NestedSubFields_GeneratesDottedPaths()
+	{
+		var esql = CreateQuery<NestedSelectionDocument>()
+			.From("logs-*")
+			.Keep(l => l.Host.Name, l => l.Host.Geo.City, l => l.Agent.Name)
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| KEEP host.name, host.geo.city, agent.name
+			""".NativeLineEndings());
+	}
+
+	[Test]
+	public void Keep_WithLambdaSelector_ObjectMember_GeneratesWildcardKeep()
+	{
+		var esql = CreateQuery<NestedSelectionDocument>()
+			.From("logs-*")
+			.Keep(l => l.Host)
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| KEEP host.*
+			""".NativeLineEndings());
+	}
+
+	[Test]
 	public void Keep_WithProjection_SimpleFields_GeneratesKeep()
 	{
 		var esql = CreateQuery<LogEntry>()
@@ -78,6 +123,21 @@ public class KeepDropTests : EsqlTestBase
 			"""
 			FROM logs-*
 			| KEEP message, statusCode
+			""".NativeLineEndings());
+	}
+
+	[Test]
+	public void Keep_WithProjection_ObjectMember_GeneratesWildcardKeep()
+	{
+		var esql = CreateQuery<NestedSelectionDocument>()
+			.From("logs-*")
+			.Keep(l => new { l.Host })
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| KEEP host.*
 			""".NativeLineEndings());
 	}
 
@@ -111,6 +171,18 @@ public class KeepDropTests : EsqlTestBase
 			| RENAME message AS msg
 			| KEEP statusCode, msg
 			""".NativeLineEndings());
+	}
+
+	[Test]
+	public void Keep_WithProjection_ObjectAlias_ThrowsNotSupported()
+	{
+		var act = () => CreateQuery<NestedSelectionDocument>()
+			.From("logs-*")
+			.Keep(l => new { Node = l.Host })
+			.ToString();
+
+		_ = act.Should().Throw<NotSupportedException>()
+			.WithMessage("*Aliasing object selections is not supported*");
 	}
 
 	[Test]

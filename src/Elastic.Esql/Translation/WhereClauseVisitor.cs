@@ -6,6 +6,7 @@ using System.Collections;
 using System.Globalization;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text;
 using Elastic.Esql.Core;
 using Elastic.Esql.Extensions;
@@ -144,7 +145,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		static MemberInfo? TryExtract(Expression expr)
 		{
 			var unwrapped = expr.UnwrapConvertExpressions();
-			if (unwrapped is MemberExpression { Expression: ParameterExpression } member)
+			if (unwrapped is MemberExpression member && ExpressionTranslationHelpers.IsRootedInParameter(member))
 				return member.Member;
 
 			return null;
@@ -278,7 +279,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		}
 
 		// Regular field access
-		var fieldName = _context.ResolveFieldName(node.Member.DeclaringType!, node.Member);
+		var fieldName = ResolveFieldPath(node);
 		_ = _builder.Append(fieldName);
 
 		return node;
@@ -293,11 +294,43 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 				TranslateStaticDateTimeProperty(member),
 			MemberExpression member =>
 				// Field access like l.Timestamp
-				_context.ResolveFieldName(member.Member.DeclaringType!, member.Member),
+				ResolveFieldPath(member),
 			MethodCallExpression methodCall when methodCall.Method.DeclaringType == typeof(EsqlFunctions) =>
 				TranslateEsqlFunctionForDateTime(methodCall),
 			_ => throw new NotSupportedException($"Expression type {expression.GetType().Name} is not supported for DateTime property access.")
 		};
+
+	private string ResolveFieldPath(MemberExpression member)
+	{
+		var remainingPath = member.ResolveFieldName(_context.Metadata);
+
+		foreach (var prefix in GetTransparentIdentifierPrefixes(member))
+		{
+			var prefixWithDot = $"{prefix}.";
+			if (!remainingPath.StartsWith(prefixWithDot, StringComparison.Ordinal))
+				break;
+
+			remainingPath = remainingPath[prefixWithDot.Length..];
+		}
+
+		return remainingPath;
+	}
+
+	private IEnumerable<string> GetTransparentIdentifierPrefixes(MemberExpression member)
+	{
+		var chain = ExpressionTranslationHelpers.GetMemberChainFromRoot(member);
+		foreach (var chainedMember in chain)
+		{
+			var declaringType = chainedMember.Member.DeclaringType;
+			if (declaringType is null || !declaringType.IsDefined(typeof(CompilerGeneratedAttribute), false))
+				yield break;
+
+			if (_context.IsTrackedAnonymousType(declaringType))
+				yield break;
+
+			yield return _context.ResolveFieldName(declaringType, chainedMember.Member);
+		}
+	}
 
 	private string TranslateStaticDateTimeProperty(MemberExpression member)
 	{

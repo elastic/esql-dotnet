@@ -59,12 +59,31 @@ internal static class TranslationExtensions
 			MethodCallExpression { Method.Name: "MultiField" } mc
 				when mc.Method.DeclaringType == typeof(GeneralPurposeExtensions) =>
 				$"{mc.Arguments[0].ResolveFieldName(metadata)}.{(string)((ConstantExpression)mc.Arguments[1]).Value!}",
-			MemberExpression member when member.Member.DeclaringType is not null
-				&& member.Member.DeclaringType.IsDefined(typeof(CompilerGeneratedAttribute), false) =>
-				metadata.Options.PropertyNamingPolicy?.ConvertName(member.Member.Name) ?? member.Member.Name,
-			MemberExpression member =>
-				metadata.ResolvePropertyName(member.Member.DeclaringType!, member.Member),
+			MemberExpression member => ResolveMemberFieldPath(member, metadata),
 			_ => throw new NotSupportedException($"Cannot extract field name from expression: {expression}")
 		};
+	}
+
+	private static string ResolveMemberFieldPath(MemberExpression member, JsonMetadataManager metadata)
+	{
+		var segment = ResolveMemberSegmentName(member, metadata);
+		var parent = member.Expression?.UnwrapConvertExpressions();
+
+		return parent switch
+		{
+			ParameterExpression => segment,
+			MemberExpression parentMember => $"{ResolveMemberFieldPath(parentMember, metadata)}.{segment}",
+			_ => throw new NotSupportedException($"Cannot extract field name from expression: {member}")
+		};
+	}
+
+	private static string ResolveMemberSegmentName(MemberExpression member, JsonMetadataManager metadata)
+	{
+		var declaringType = member.Member.DeclaringType
+			?? throw new NotSupportedException($"Cannot extract field name from expression: {member}");
+
+		return declaringType.IsDefined(typeof(CompilerGeneratedAttribute), false)
+			? metadata.Options.PropertyNamingPolicy?.ConvertName(member.Member.Name) ?? member.Member.Name
+			: metadata.ResolvePropertyName(declaringType, member.Member);
 	}
 }

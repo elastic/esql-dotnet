@@ -281,6 +281,25 @@ query.Select(l => new { Msg = l.Message })
 // | KEEP msg
 ```
 
+### Nested anonymous projections
+
+Nested anonymous projections are flattened to dotted field names:
+
+```csharp
+query.Select(l => new { A = new { B = l.Message } })
+// | RENAME message AS a.b
+// | KEEP a.b
+```
+
+Consecutive `Select` calls can still be merged through nested member access:
+
+```csharp
+query
+    .Select(l => new { A = new { B = l.Message } })
+    .Select(x => x.A.B)
+// | KEEP message
+```
+
 ## KEEP and DROP extensions
 
 In addition to `.Select()`, explicit `.Keep()` and `.Drop()` extension methods are available for fine-grained control:
@@ -297,9 +316,13 @@ query.Keep("message", "statusCode")
 ```csharp
 query.Keep(l => l.Message, l => l.StatusCode)
 // | KEEP message, statusCode
+
+query.Keep(l => l.Host)
+// | KEEP host.*
 ```
 
 Lambda selectors resolve field names from `[JsonPropertyName]` attributes automatically.
+Selecting a complex object member expands to a wildcard keep (`field.*`) so ES|QL returns flattened sub-fields.
 
 ### KEEP with projection
 
@@ -310,6 +333,12 @@ query.Keep(l => new { l.Message, l.StatusCode })
 query.Keep(l => new { Msg = l.Message })
 // | RENAME message AS msg
 // | KEEP msg
+
+query.Keep(l => new { l.Host })
+// | KEEP host.*
+
+// Object aliases are not supported (ES|QL has no equivalent for renaming field.*)
+query.Keep(l => new { Node = l.Host }) // throws NotSupportedException
 ```
 
 ### DROP with string field names
@@ -324,6 +353,9 @@ query.Drop("duration", "host")
 ```csharp
 query.Drop(l => l.Duration, l => l.Host)
 // | DROP duration, host
+
+query.Drop(l => l.Host)
+// | DROP host.*
 ```
 
 ## LOOKUP JOIN - cross-index correlation

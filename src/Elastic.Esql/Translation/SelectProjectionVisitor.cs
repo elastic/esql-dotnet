@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information
 
 using System.Linq.Expressions;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using Elastic.Esql.Core;
 using Elastic.Esql.Functions;
@@ -174,7 +175,10 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 
 	protected override Expression VisitMember(MemberExpression node)
 	{
-		var fieldName = _context.ResolveFieldName(node.Member.DeclaringType!, node.Member);
+		var fieldName = node.ResolveFieldName(_context.Metadata);
+		if (ExpressionTranslationHelpers.IsObjectSelectionType(node.Type))
+			fieldName = $"{fieldName}.*";
+
 		_projections.Add(new ProjectionEntry(ProjectionKind.Keep, fieldName, fieldName, null));
 
 		return node;
@@ -188,6 +192,9 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 			return;
 		}
 
+		if (TryClassifyNestedProjection(resultField, sourceExpression))
+			return;
+
 		if (sourceExpression is MemberExpression memberExpr)
 		{
 			var declaringType = memberExpr.Member.DeclaringType;
@@ -199,8 +206,20 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 			}
 			else
 			{
-				var sourceField = _context.ResolveFieldName(memberExpr.Member.DeclaringType!, memberExpr.Member);
+				var sourceField = memberExpr.ResolveFieldName(_context.Metadata);
 				sourceField = ApplyOuterRemapping(memberExpr, sourceField);
+
+				if (ExpressionTranslationHelpers.IsObjectSelectionType(memberExpr.Type))
+				{
+					if (sourceField != resultField)
+						throw new NotSupportedException(
+							$"Aliasing object selections is not supported for '{sourceField}'. " +
+							$"Select specific sub-fields or keep '{sourceField}.*'.");
+
+					var wildcardField = $"{sourceField}.*";
+					_projections.Add(new ProjectionEntry(ProjectionKind.Keep, wildcardField, wildcardField, null));
+					return;
+				}
 
 				if (sourceField == resultField)
 					_projections.Add(new ProjectionEntry(ProjectionKind.Keep, sourceField, sourceField, null));
@@ -220,6 +239,43 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		}
 		else
 			throw new NotSupportedException($"Expression type {sourceExpression.GetType().Name} ({sourceExpression.NodeType}) is not supported.");
+	}
+
+	private bool TryClassifyNestedProjection(string resultField, Expression sourceExpression)
+	{
+		if (sourceExpression is NewExpression { Members: not null } newExpression)
+		{
+			for (var i = 0; i < newExpression.Arguments.Count; i++)
+			{
+				var member = newExpression.Members[i];
+				var nestedResultField = BuildNestedResultField(resultField, member);
+				ClassifyProjectionMember(nestedResultField, newExpression.Arguments[i]);
+			}
+
+			return true;
+		}
+
+		if (sourceExpression is MemberInitExpression memberInitExpression)
+		{
+			foreach (var binding in memberInitExpression.Bindings)
+			{
+				if (binding is not MemberAssignment assignment)
+					continue;
+
+				var nestedResultField = BuildNestedResultField(resultField, assignment.Member);
+				ClassifyProjectionMember(nestedResultField, assignment.Expression);
+			}
+
+			return true;
+		}
+
+		return false;
+	}
+
+	private string BuildNestedResultField(string resultFieldPrefix, MemberInfo member)
+	{
+		var childField = _context.ResolveFieldName(member.DeclaringType!, member);
+		return $"{resultFieldPrefix}.{childField}";
 	}
 
 	/// <summary>
@@ -262,11 +318,18 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		return true;
 	}
 
-	private static bool IsSimpleFieldAccess(Expression expression) =>
-		expression is MemberExpression { Expression: ParameterExpression, Member.DeclaringType: not null } member
-		&& member.Member.DeclaringType != typeof(DateTime)
-		&& member.Member.DeclaringType != typeof(DateTimeOffset)
-		&& !(member.Member.DeclaringType == typeof(string) && member.Member.Name == "Length");
+	private static bool IsSimpleFieldAccess(Expression expression)
+	{
+		if (expression is not MemberExpression { Member.DeclaringType: not null } member)
+			return false;
+
+		if (member.Member.DeclaringType == typeof(DateTime)
+			|| member.Member.DeclaringType == typeof(DateTimeOffset)
+			|| (member.Member.DeclaringType == typeof(string) && member.Member.Name == "Length"))
+			return false;
+
+		return ExpressionTranslationHelpers.IsRootedInParameter(member);
+	}
 
 	/// <summary>
 	/// If the member access is on the outer parameter and the field name is in the
@@ -277,12 +340,55 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		if (_outerFieldRemappings is null || _outerParameter is null)
 			return fieldName;
 
-		if (memberExpr.Expression is ParameterExpression param
-			&& param == _outerParameter
-			&& _outerFieldRemappings.TryGetValue(fieldName, out var remapped))
+		if (ExpressionTranslationHelpers.IsRootedInParameter(memberExpr, _outerParameter)
+			&& TryResolveOuterRemappedField(fieldName, _outerFieldRemappings, out var remapped))
 			return remapped;
 
 		return fieldName;
+	}
+
+	private static bool TryResolveOuterRemappedField(
+		string fieldName,
+		Dictionary<string, string> outerFieldRemappings,
+		out string remappedField)
+	{
+		if (outerFieldRemappings.TryGetValue(fieldName, out var exact))
+		{
+			remappedField = exact;
+			return true;
+		}
+
+		string? bestPrefix = null;
+		string? bestRemappedPrefix = null;
+
+		foreach (var remapping in outerFieldRemappings)
+		{
+			var sourcePrefix = remapping.Key;
+			var targetPrefix = remapping.Value;
+			if (!fieldName.StartsWith(sourcePrefix, StringComparison.Ordinal))
+				continue;
+
+			if (fieldName.Length != sourcePrefix.Length && fieldName[sourcePrefix.Length] != '.')
+				continue;
+
+			if (bestPrefix is not null && bestPrefix.Length >= sourcePrefix.Length)
+				continue;
+
+			bestPrefix = sourcePrefix;
+			bestRemappedPrefix = targetPrefix;
+		}
+
+		if (bestPrefix is null || bestRemappedPrefix is null)
+		{
+			remappedField = string.Empty;
+			return false;
+		}
+
+		remappedField = fieldName.Length == bestPrefix.Length
+			? bestRemappedPrefix
+			: $"{bestRemappedPrefix}{fieldName[bestPrefix.Length..]}";
+
+		return true;
 	}
 
 	private static bool IsNullableCast(UnaryExpression unary)
@@ -359,7 +465,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 			return $"LENGTH({strExpr})";
 		}
 
-		var fieldName = _context.ResolveFieldName(member.Member.DeclaringType!, member.Member);
+		var fieldName = member.ResolveFieldName(_context.Metadata);
 		fieldName = ApplyOuterRemapping(member, fieldName);
 		return _activeRenames.TryGetValue(fieldName, out var renamed) ? renamed : fieldName;
 	}
@@ -453,15 +559,14 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 
 		protected override Expression VisitMember(MemberExpression node)
 		{
-			if (node.Expression is ParameterExpression && node.Member.DeclaringType != null)
+			if (node.Member.DeclaringType != null && ExpressionTranslationHelpers.IsRootedInParameter(node))
 			{
-				var fieldName = context.ResolveFieldName(node.Member.DeclaringType, node.Member);
+				var fieldName = node.ResolveFieldName(context.Metadata);
 
 				if (outerParameter is not null
 					&& outerFieldRemappings is not null
-					&& node.Expression is ParameterExpression param
-					&& param == outerParameter
-					&& outerFieldRemappings.TryGetValue(fieldName, out var remapped))
+					&& ExpressionTranslationHelpers.IsRootedInParameter(node, outerParameter)
+					&& TryResolveOuterRemappedField(fieldName, outerFieldRemappings, out var remapped))
 					fieldName = remapped;
 
 				if (activeRenames.TryGetValue(fieldName, out var renamed))
@@ -469,6 +574,10 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 
 				if (_seen.Add(fieldName))
 					Fields.Add(fieldName);
+
+				// Avoid descending into parent member nodes to prevent collecting
+				// intermediate prefixes for nested paths (e.g. "address" when collecting "address.city").
+				return node;
 			}
 
 			return base.VisitMember(node);

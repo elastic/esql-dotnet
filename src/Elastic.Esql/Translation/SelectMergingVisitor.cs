@@ -104,16 +104,106 @@ internal sealed class SelectMergingVisitor : ExpressionVisitor
 
 		protected override Expression VisitMember(MemberExpression node)
 		{
-			if (node.Expression == parameter)
-			{
-				if (memberMap.TryGetValue(node.Member, out var replacement))
-					return replacement;
+			if (TryResolveMemberChain(node, out var replacement))
+				return replacement;
 
+			if (ExpressionTranslationHelpers.IsRootedInParameter(node, parameter))
+			{
 				Success = false;
 				return node;
 			}
 
 			return base.VisitMember(node);
+		}
+
+		private bool TryResolveMemberChain(MemberExpression node, out Expression replacement)
+		{
+			replacement = null!;
+
+			var memberChain = new Stack<MemberInfo>();
+			Expression? current = node;
+			while (current is MemberExpression member)
+			{
+				memberChain.Push(member.Member);
+				current = member.Expression?.UnwrapConvertExpressions();
+			}
+
+			if (current != parameter || memberChain.Count == 0)
+				return false;
+
+			var first = memberChain.Pop();
+			if (!memberMap.TryGetValue(first, out var resolved))
+				return false;
+
+			while (memberChain.Count > 0)
+			{
+				var nextMember = memberChain.Pop();
+				if (!TryResolveMemberOnExpression(resolved, nextMember, out resolved))
+					return false;
+			}
+
+			replacement = resolved;
+			return true;
+		}
+
+		private static bool TryResolveMemberOnExpression(Expression source, MemberInfo member, out Expression resolved)
+		{
+			source = source.UnwrapConvertExpressions();
+
+			if (TryResolveFromInitializer(source, member, out resolved))
+				return true;
+
+			if (TryCreateMemberAccess(source, member, out resolved))
+				return true;
+
+			resolved = null!;
+			return false;
+		}
+
+		private static bool TryResolveFromInitializer(Expression source, MemberInfo member, out Expression resolved)
+		{
+			if (source is NewExpression { Members: not null } newExpression)
+			{
+				for (var i = 0; i < newExpression.Members.Count; i++)
+				{
+					var mappedMember = newExpression.Members[i];
+					if (mappedMember == member || string.Equals(mappedMember.Name, member.Name, StringComparison.Ordinal))
+					{
+						resolved = newExpression.Arguments[i];
+						return true;
+					}
+				}
+			}
+
+			if (source is MemberInitExpression memberInitExpression)
+			{
+				foreach (var binding in memberInitExpression.Bindings)
+				{
+					if (binding is not MemberAssignment assignment)
+						continue;
+
+					if (assignment.Member == member || string.Equals(assignment.Member.Name, member.Name, StringComparison.Ordinal))
+					{
+						resolved = assignment.Expression;
+						return true;
+					}
+				}
+			}
+
+			resolved = null!;
+			return false;
+		}
+
+		private static bool TryCreateMemberAccess(Expression source, MemberInfo member, out Expression resolved)
+		{
+			if (member.DeclaringType?.IsAssignableFrom(source.Type) == true)
+			{
+				resolved = Expression.MakeMemberAccess(source, member);
+				return true;
+			}
+
+			resolved = null!;
+			return false;
 		}
 	}
 }

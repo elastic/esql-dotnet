@@ -4,6 +4,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
+using System.Text;
 
 using Elastic.Esql.Core;
 using Elastic.Esql.Extensions;
@@ -846,16 +847,84 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 		_ = collector.Visit(resultSelector.Body);
 
 		Dictionary<string, string>? remappings = null;
-		foreach (var outerField in collector.OuterFields)
+		var usedTempAliases = new HashSet<string>(StringComparer.Ordinal);
+		foreach (var outerFieldEntry in collector.OuterFields.OrderBy(kv => kv.Key, StringComparer.Ordinal))
 		{
-			if (!innerFieldNames.Contains(outerField))
+			var outerField = outerFieldEntry.Key;
+			var isNestedPath = outerFieldEntry.Value;
+			var collisionKey = FindCollisionKey(outerField, isNestedPath, innerFieldNames);
+			if (collisionKey is null)
 				continue;
 
 			remappings ??= new Dictionary<string, string>(StringComparer.Ordinal);
-			remappings[outerField] = $"_esql_outer_{outerField}";
+			if (remappings.ContainsKey(collisionKey))
+				continue;
+
+			remappings[collisionKey] = BuildCollisionTempFieldName(collisionKey, usedTempAliases);
 		}
 
 		return remappings;
+	}
+
+	private static string? FindCollisionKey(string outerField, bool isNestedPath, HashSet<string> innerFieldNames)
+	{
+		if (innerFieldNames.Contains(outerField))
+			return outerField;
+
+		if (isNestedPath)
+		{
+			for (var idx = outerField.LastIndexOf('.'); idx > 0; idx = outerField.LastIndexOf('.', idx - 1))
+			{
+				var prefix = outerField[..idx];
+				if (innerFieldNames.Contains(prefix))
+					return prefix;
+			}
+		}
+
+		var nestedPrefix = $"{outerField}.";
+		return innerFieldNames.Any(name => name.StartsWith(nestedPrefix, StringComparison.Ordinal))
+			? outerField
+			: null;
+	}
+
+	private static string BuildCollisionTempFieldName(string collisionKey, HashSet<string> usedAliases)
+	{
+		var sanitized = SanitizeFieldName(collisionKey);
+		var baseAlias = string.IsNullOrEmpty(sanitized) ? "_esql_outer_field" : $"_esql_outer_{sanitized}";
+		var alias = baseAlias;
+		var suffix = 1;
+
+		while (!usedAliases.Add(alias))
+		{
+			alias = $"{baseAlias}_{suffix}";
+			suffix++;
+		}
+
+		return alias;
+	}
+
+	private static string SanitizeFieldName(string fieldName)
+	{
+		var builder = new StringBuilder(fieldName.Length);
+		var previousWasUnderscore = false;
+
+		foreach (var character in fieldName)
+		{
+			if (char.IsLetterOrDigit(character) || character == '_')
+			{
+				_ = builder.Append(character);
+				previousWasUnderscore = false;
+				continue;
+			}
+
+			if (previousWasUnderscore)
+				continue;
+
+			_ = builder.Append('_');
+			previousWasUnderscore = true;
+		}
+
+		return builder.ToString().Trim('_');
 	}
 
 	/// <summary>
@@ -878,15 +947,18 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 		ParameterExpression outerParam
 	) : ExpressionVisitor
 	{
-		public HashSet<string> OuterFields { get; } = new(StringComparer.Ordinal);
+		public Dictionary<string, bool> OuterFields { get; } = new(StringComparer.Ordinal);
 
 		protected override Expression VisitMember(MemberExpression node)
 		{
-			if (node.Expression is ParameterExpression param
-				&& param == outerParam
-				&& node.Member.DeclaringType is not null)
+			if (node.Member.DeclaringType is not null && ExpressionTranslationHelpers.IsRootedInParameter(node, outerParam))
 			{
-				_ = OuterFields.Add(context.ResolveFieldName(node.Member.DeclaringType, node.Member));
+				var fieldName = node.ResolveFieldName(context.Metadata);
+				var isNestedPath = node.Expression?.UnwrapConvertExpressions() is MemberExpression;
+				OuterFields[fieldName] = OuterFields.TryGetValue(fieldName, out var trackedNested)
+					? trackedNested || isNestedPath
+					: isNestedPath;
+				return node;
 			}
 
 			return base.VisitMember(node);
@@ -929,9 +1001,23 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 		foreach (var element in arrayExpr.Expressions)
 		{
 			if (element is UnaryExpression { Operand: LambdaExpression selectorLambda })
-				fieldNames.Add(selectorLambda.Body.ResolveFieldName(Context.Metadata));
+				fieldNames.Add(ResolveSelectorFieldName(selectorLambda.Body));
 		}
 		return fieldNames;
+	}
+
+	private string ResolveSelectorFieldName(Expression expression)
+	{
+		expression = expression.UnwrapConvertExpressions();
+
+		var fieldName = expression.ResolveFieldName(Context.Metadata);
+		if (expression is not MemberExpression member)
+			return fieldName;
+
+		if (!ExpressionTranslationHelpers.IsObjectSelectionType(member.Type))
+			return fieldName;
+
+		return $"{fieldName}.*";
 	}
 
 	private string ExtractFieldName(Expression expression) =>

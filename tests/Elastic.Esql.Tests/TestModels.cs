@@ -25,6 +25,9 @@ namespace Elastic.Esql.Tests;
 [JsonSerializable(typeof(RecordProjection))]
 [JsonSerializable(typeof(UnmatchedCtorProjection))]
 [JsonSerializable(typeof(CollisionRecord))]
+[JsonSerializable(typeof(NestedSelectionDocument))]
+[JsonSerializable(typeof(NestedHostLookup))]
+[JsonSerializable(typeof(DottedLevelLookup))]
 public sealed partial class EsqlTestMappingContext : JsonSerializerContext;
 
 /// <summary>
@@ -103,6 +106,20 @@ public class OverlappingLookup
 	public string ClientIp { get; set; } = string.Empty;
 	public string Message { get; set; } = string.Empty;
 	public string Region { get; set; } = string.Empty;
+}
+
+public class NestedHostLookup
+{
+	public string Message { get; set; } = string.Empty;
+	public NestedSelectionHost Host { get; set; } = new();
+}
+
+public class DottedLevelLookup
+{
+	public string Message { get; set; } = string.Empty;
+
+	[JsonPropertyName("log.level")]
+	public string Level { get; set; } = string.Empty;
 }
 
 /// <summary>
@@ -232,6 +249,30 @@ public class UnmatchedCtorProjection
 
 /// <summary>Record projection for join collision tests with constructor-call syntax.</summary>
 public record CollisionRecord(string OuterMsg, string InnerMsg);
+
+/// <summary>Translation test model for nested sub-field selection and wildcard KEEP behavior.</summary>
+public class NestedSelectionDocument
+{
+	public string Message { get; set; } = string.Empty;
+	public NestedSelectionHost Host { get; set; } = new();
+	public NestedSelectionAgent Agent { get; set; } = new();
+}
+
+public class NestedSelectionHost
+{
+	public string Name { get; set; } = string.Empty;
+	public NestedSelectionGeo Geo { get; set; } = new();
+}
+
+public class NestedSelectionAgent
+{
+	public string Name { get; set; } = string.Empty;
+}
+
+public class NestedSelectionGeo
+{
+	public string City { get; set; } = string.Empty;
+}
 
 // ============================================================================
 // MATERIALIZATION TEST MODELS: used by deserialization edge-case tests
