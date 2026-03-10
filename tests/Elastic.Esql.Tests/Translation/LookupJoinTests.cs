@@ -899,6 +899,58 @@ public class LookupJoinTests : EsqlTestBase
 	}
 
 	[Test]
+	public void Join_Collision_NestedOuterPath_RemapsUsingTopLevelPrefix()
+	{
+		var lookup = CreateQuery<NestedHostLookup>().From("host_lookup");
+
+		var esql = CreateQuery<NestedSelectionDocument>()
+			.From("logs-*")
+			.Join(
+				lookup,
+				outer => outer.Message,
+				inner => inner.Message,
+				(outer, inner) => new { OuterHostName = outer.Host.Name, InnerHostName = inner.Host.Name }
+			)
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| EVAL _esql_outer_host = host
+			| LOOKUP JOIN host_lookup ON message
+			| WHERE message IS NOT NULL
+			| RENAME _esql_outer_host.name AS outerHostName, host.name AS innerHostName
+			| KEEP outerHostName, innerHostName
+			""".NativeLineEndings());
+	}
+
+	[Test]
+	public void Join_Collision_DottedFieldName_UsesSanitizedTempAlias()
+	{
+		var lookup = CreateQuery<DottedLevelLookup>().From("dotted_lookup");
+
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Join(
+				lookup,
+				outer => outer.Message,
+				inner => inner.Message,
+				(outer, inner) => new { OuterLevel = outer.Level, InnerLevel = inner.Level }
+			)
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| EVAL _esql_outer_log_level = log.level
+			| LOOKUP JOIN dotted_lookup ON message
+			| WHERE message IS NOT NULL
+			| RENAME _esql_outer_log_level AS outerLevel, log.level AS innerLevel
+			| KEEP outerLevel, innerLevel
+			""".NativeLineEndings());
+	}
+
+	[Test]
 	public void LookupJoin_NoCollision_NoEvalGenerated()
 	{
 		var esql = CreateQuery<LogEntry>()

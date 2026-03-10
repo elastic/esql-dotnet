@@ -107,7 +107,7 @@ internal sealed class SelectMergingVisitor : ExpressionVisitor
 			if (TryResolveMemberChain(node, out var replacement))
 				return replacement;
 
-			if (IsRootedInParameter(node))
+			if (ExpressionTranslationHelpers.IsRootedInParameter(node, parameter))
 			{
 				Success = false;
 				return node;
@@ -204,15 +204,6 @@ internal sealed class SelectMergingVisitor : ExpressionVisitor
 
 			resolved = null!;
 			return false;
-		}
-
-		private bool IsRootedInParameter(MemberExpression node)
-		{
-			Expression? current = node;
-			while (current is MemberExpression member)
-				current = member.Expression?.UnwrapConvertExpressions();
-
-			return current == parameter;
 		}
 	}
 }

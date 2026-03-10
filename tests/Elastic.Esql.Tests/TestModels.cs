@@ -26,6 +26,8 @@ namespace Elastic.Esql.Tests;
 [JsonSerializable(typeof(UnmatchedCtorProjection))]
 [JsonSerializable(typeof(CollisionRecord))]
 [JsonSerializable(typeof(NestedSelectionDocument))]
+[JsonSerializable(typeof(NestedHostLookup))]
+[JsonSerializable(typeof(DottedLevelLookup))]
 public sealed partial class EsqlTestMappingContext : JsonSerializerContext;
 
 /// <summary>
@@ -104,6 +106,20 @@ public class OverlappingLookup
 	public string ClientIp { get; set; } = string.Empty;
 	public string Message { get; set; } = string.Empty;
 	public string Region { get; set; } = string.Empty;
+}
+
+public class NestedHostLookup
+{
+	public string Message { get; set; } = string.Empty;
+	public NestedSelectionHost Host { get; set; } = new();
+}
+
+public class DottedLevelLookup
+{
+	public string Message { get; set; } = string.Empty;
+
+	[JsonPropertyName("log.level")]
+	public string Level { get; set; } = string.Empty;
 }
 
 /// <summary>

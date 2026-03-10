@@ -176,7 +176,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 	protected override Expression VisitMember(MemberExpression node)
 	{
 		var fieldName = node.ResolveFieldName(_context.Metadata);
-		if (IsObjectSelectionType(node.Type))
+		if (ExpressionTranslationHelpers.IsObjectSelectionType(node.Type))
 			fieldName = $"{fieldName}.*";
 
 		_projections.Add(new ProjectionEntry(ProjectionKind.Keep, fieldName, fieldName, null));
@@ -209,7 +209,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 				var sourceField = memberExpr.ResolveFieldName(_context.Metadata);
 				sourceField = ApplyOuterRemapping(memberExpr, sourceField);
 
-				if (IsObjectSelectionType(memberExpr.Type))
+				if (ExpressionTranslationHelpers.IsObjectSelectionType(memberExpr.Type))
 				{
 					if (sourceField != resultField)
 						throw new NotSupportedException(
@@ -328,7 +328,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 			|| (member.Member.DeclaringType == typeof(string) && member.Member.Name == "Length"))
 			return false;
 
-		return IsRootedInParameter(member);
+		return ExpressionTranslationHelpers.IsRootedInParameter(member);
 	}
 
 	/// <summary>
@@ -340,11 +340,55 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		if (_outerFieldRemappings is null || _outerParameter is null)
 			return fieldName;
 
-		if (IsRootedInParameter(memberExpr, _outerParameter)
-			&& _outerFieldRemappings.TryGetValue(fieldName, out var remapped))
+		if (ExpressionTranslationHelpers.IsRootedInParameter(memberExpr, _outerParameter)
+			&& TryResolveOuterRemappedField(fieldName, _outerFieldRemappings, out var remapped))
 			return remapped;
 
 		return fieldName;
+	}
+
+	private static bool TryResolveOuterRemappedField(
+		string fieldName,
+		Dictionary<string, string> outerFieldRemappings,
+		out string remappedField)
+	{
+		if (outerFieldRemappings.TryGetValue(fieldName, out var exact))
+		{
+			remappedField = exact;
+			return true;
+		}
+
+		string? bestPrefix = null;
+		string? bestRemappedPrefix = null;
+
+		foreach (var remapping in outerFieldRemappings)
+		{
+			var sourcePrefix = remapping.Key;
+			var targetPrefix = remapping.Value;
+			if (!fieldName.StartsWith(sourcePrefix, StringComparison.Ordinal))
+				continue;
+
+			if (fieldName.Length != sourcePrefix.Length && fieldName[sourcePrefix.Length] != '.')
+				continue;
+
+			if (bestPrefix is not null && bestPrefix.Length >= sourcePrefix.Length)
+				continue;
+
+			bestPrefix = sourcePrefix;
+			bestRemappedPrefix = targetPrefix;
+		}
+
+		if (bestPrefix is null || bestRemappedPrefix is null)
+		{
+			remappedField = string.Empty;
+			return false;
+		}
+
+		remappedField = fieldName.Length == bestPrefix.Length
+			? bestRemappedPrefix
+			: $"{bestRemappedPrefix}{fieldName[bestPrefix.Length..]}";
+
+		return true;
 	}
 
 	private static bool IsNullableCast(UnaryExpression unary)
@@ -360,16 +404,6 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 
 	private static bool IsNullConstant(Expression expression) =>
 		expression is ConstantExpression { Value: null } or DefaultExpression;
-
-	private static bool IsObjectSelectionType(Type type)
-	{
-		var candidateType = Nullable.GetUnderlyingType(type) ?? type;
-
-		return !candidateType.IsValueType
-			&& candidateType != typeof(string)
-			&& candidateType != typeof(object)
-			&& !TypeHelper.IsEnumerableType(candidateType);
-	}
 
 	private string TranslateExpression(Expression expression) =>
 		expression switch
@@ -525,14 +559,14 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 
 		protected override Expression VisitMember(MemberExpression node)
 		{
-			if (node.Member.DeclaringType != null && IsRootedInParameter(node))
+			if (node.Member.DeclaringType != null && ExpressionTranslationHelpers.IsRootedInParameter(node))
 			{
 				var fieldName = node.ResolveFieldName(context.Metadata);
 
 				if (outerParameter is not null
 					&& outerFieldRemappings is not null
-					&& IsRootedInParameter(node, outerParameter)
-					&& outerFieldRemappings.TryGetValue(fieldName, out var remapped))
+					&& ExpressionTranslationHelpers.IsRootedInParameter(node, outerParameter)
+					&& TryResolveOuterRemappedField(fieldName, outerFieldRemappings, out var remapped))
 					fieldName = remapped;
 
 				if (activeRenames.TryGetValue(fieldName, out var renamed))
@@ -548,19 +582,6 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 
 			return base.VisitMember(node);
 		}
-	}
-
-	private static bool IsRootedInParameter(MemberExpression member, ParameterExpression? expectedParameter = null)
-	{
-		var current = member.Expression?.UnwrapConvertExpressions();
-
-		while (current is MemberExpression parent)
-			current = parent.Expression?.UnwrapConvertExpressions();
-
-		if (current is not ParameterExpression parameter)
-			return false;
-
-		return expectedParameter is null || parameter == expectedParameter;
 	}
 
 	private static string GetOperator(ExpressionType nodeType) =>

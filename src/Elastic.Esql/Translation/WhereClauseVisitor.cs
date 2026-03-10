@@ -145,7 +145,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		static MemberInfo? TryExtract(Expression expr)
 		{
 			var unwrapped = expr.UnwrapConvertExpressions();
-			if (unwrapped is MemberExpression member && IsRootedInParameter(member))
+			if (unwrapped is MemberExpression member && ExpressionTranslationHelpers.IsRootedInParameter(member))
 				return member.Member;
 
 			return null;
@@ -302,52 +302,34 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 	private string ResolveFieldPath(MemberExpression member)
 	{
-		var fullPath = member.ResolveFieldName(_context.Metadata);
+		var remainingPath = member.ResolveFieldName(_context.Metadata);
 
-		if (!TryGetTransparentIdentifierPrefix(member, out var prefix))
-			return fullPath;
+		foreach (var prefix in GetTransparentIdentifierPrefixes(member))
+		{
+			var prefixWithDot = $"{prefix}.";
+			if (!remainingPath.StartsWith(prefixWithDot, StringComparison.Ordinal))
+				break;
 
-		var prefixWithDot = $"{prefix}.";
-		return fullPath.StartsWith(prefixWithDot, StringComparison.Ordinal)
-			? fullPath[prefixWithDot.Length..]
-			: fullPath;
+			remainingPath = remainingPath[prefixWithDot.Length..];
+		}
+
+		return remainingPath;
 	}
 
-	private bool TryGetTransparentIdentifierPrefix(MemberExpression member, out string prefix)
+	private IEnumerable<string> GetTransparentIdentifierPrefixes(MemberExpression member)
 	{
-		prefix = string.Empty;
+		var chain = ExpressionTranslationHelpers.GetMemberChainFromRoot(member);
+		foreach (var chainedMember in chain)
+		{
+			var declaringType = chainedMember.Member.DeclaringType;
+			if (declaringType is null || !declaringType.IsDefined(typeof(CompilerGeneratedAttribute), false))
+				yield break;
 
-		var rootMember = GetRootMember(member);
-		if (rootMember?.Expression is not ParameterExpression)
-			return false;
+			if (_context.IsTrackedAnonymousType(declaringType))
+				yield break;
 
-		var declaringType = rootMember.Member.DeclaringType;
-		if (declaringType is null || !declaringType.IsDefined(typeof(CompilerGeneratedAttribute), false))
-			return false;
-
-		if (_context.IsTrackedAnonymousType(declaringType))
-			return false;
-
-		prefix = _context.ResolveFieldName(declaringType, rootMember.Member);
-		return !string.IsNullOrEmpty(prefix);
-	}
-
-	private static MemberExpression? GetRootMember(MemberExpression member)
-	{
-		var current = member;
-		while (current.Expression is MemberExpression parent)
-			current = parent;
-
-		return current;
-	}
-
-	private static bool IsRootedInParameter(MemberExpression member)
-	{
-		Expression? current = member;
-		while (current is MemberExpression memberExpression)
-			current = memberExpression.Expression?.UnwrapConvertExpressions();
-
-		return current is ParameterExpression;
+			yield return _context.ResolveFieldName(declaringType, chainedMember.Member);
+		}
 	}
 
 	private string TranslateStaticDateTimeProperty(MemberExpression member)
