@@ -123,7 +123,8 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 				var arg = node.Arguments[i];
 				var member = node.Members[i];
 
-				var resultField = _context.ResolveFieldName(member.DeclaringType!, member);
+				var declaringType = member.DeclaringType ?? node.Type;
+				var resultField = _context.ResolveFieldName(declaringType, member);
 				_ = anonymousFieldNames?.Add(resultField);
 
 				ClassifyProjectionMember(resultField, arg);
@@ -165,7 +166,8 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		{
 			if (binding is MemberAssignment assignment)
 			{
-				var resultField = _context.ResolveFieldName(assignment.Member.DeclaringType!, assignment.Member);
+				var declaringType = assignment.Member.DeclaringType ?? node.Type;
+				var resultField = _context.ResolveFieldName(declaringType, assignment.Member);
 				ClassifyProjectionMember(resultField, assignment.Expression);
 			}
 		}
@@ -248,7 +250,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 			for (var i = 0; i < newExpression.Arguments.Count; i++)
 			{
 				var member = newExpression.Members[i];
-				var nestedResultField = BuildNestedResultField(resultField, member);
+				var nestedResultField = BuildNestedResultField(resultField, member, newExpression.Type);
 				ClassifyProjectionMember(nestedResultField, newExpression.Arguments[i]);
 			}
 
@@ -262,7 +264,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 				if (binding is not MemberAssignment assignment)
 					continue;
 
-				var nestedResultField = BuildNestedResultField(resultField, assignment.Member);
+				var nestedResultField = BuildNestedResultField(resultField, assignment.Member, memberInitExpression.Type);
 				ClassifyProjectionMember(nestedResultField, assignment.Expression);
 			}
 
@@ -272,9 +274,10 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		return false;
 	}
 
-	private string BuildNestedResultField(string resultFieldPrefix, MemberInfo member)
+	private string BuildNestedResultField(string resultFieldPrefix, MemberInfo member, Type fallbackDeclaringType)
 	{
-		var childField = _context.ResolveFieldName(member.DeclaringType!, member);
+		var declaringType = member.DeclaringType ?? fallbackDeclaringType;
+		var childField = _context.ResolveFieldName(declaringType, member);
 		return $"{resultFieldPrefix}.{childField}";
 	}
 

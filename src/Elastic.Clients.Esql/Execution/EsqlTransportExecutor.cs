@@ -2,13 +2,15 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-using System.IO.Pipelines;
 using System.Text.Json;
 using Elastic.Esql;
 using Elastic.Esql.Execution;
 using Elastic.Transport;
 using Elastic.Transport.Products.Elasticsearch;
 using HttpMethod = Elastic.Transport.HttpMethod;
+#if NET10_0_OR_GREATER
+using System.IO.Pipelines;
+#endif
 
 namespace Elastic.Clients.Esql.Execution;
 
@@ -260,15 +262,15 @@ internal sealed class TransportEsqlAsyncResponse(PipeResponse response) : IEsqlA
 		await response.DisposeAsync().ConfigureAwait(false);
 }
 #else
-/// <summary>Wraps a <see cref="StreamResponse"/> as an <see cref="IEsqlAsyncResponse"/>, constructing a <see cref="PipeReader"/> from the stream.</summary>
+/// <summary>Wraps a <see cref="StreamResponse"/> as an <see cref="IEsqlAsyncResponse"/>.</summary>
 internal sealed class TransportEsqlAsyncResponse(StreamResponse response) : IEsqlAsyncResponse
 {
-	public PipeReader Body { get; } = PipeReader.Create(response.Body, new StreamPipeReaderOptions(leaveOpen: true));
+	public Stream Body => response.Body;
 
-	public async ValueTask DisposeAsync()
+	public ValueTask DisposeAsync()
 	{
-		await Body.CompleteAsync().ConfigureAwait(false);
 		response.Dispose();
+		return default;
 	}
 }
 #endif

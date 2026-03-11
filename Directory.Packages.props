@@ -21,7 +21,6 @@
     <PackageVersion Include="System.Text.Json" Version="10.0.0" />
     <PackageVersion Include="PolySharp" Version="1.14.1" />
     <PackageVersion Include="Microsoft.Bcl.AsyncInterfaces" Version="10.0.0" />
-    <PackageVersion Include="System.IO.Pipelines" Version="10.0.0" />
     <PackageVersion Include="System.Memory" Version="4.6.3" />
     <!-- Integration tests -->
     <PackageVersion Include="Testcontainers.Elasticsearch" Version="4.10.0" />

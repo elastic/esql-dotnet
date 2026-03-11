@@ -74,9 +74,11 @@ internal sealed class SelectMergingVisitor : ExpressionVisitor
 
 	private static Dictionary<MemberInfo, Expression> BuildNewExpressionMap(NewExpression newExpr)
 	{
-		var map = new Dictionary<MemberInfo, Expression>(newExpr.Members!.Count);
+		var members = newExpr.Members
+			?? throw new NotSupportedException("Select projection must define member names.");
+		var map = new Dictionary<MemberInfo, Expression>(members.Count);
 		for (var i = 0; i < newExpr.Arguments.Count; i++)
-			map[newExpr.Members[i]] = newExpr.Arguments[i];
+			map[members[i]] = newExpr.Arguments[i];
 		return map;
 	}
 

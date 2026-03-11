@@ -238,7 +238,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		if (node.Member.DeclaringType == typeof(string) && node.Member.Name == "Length")
 		{
 			_ = _builder.Append("LENGTH(");
-			_ = Visit(node.Expression!);
+			_ = Visit(node.Expression);
 			_ = _builder.Append(')');
 			return node;
 		}
@@ -246,7 +246,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		// Check for DateTime/DateTimeOffset property access (Year, Month, Day, etc.)
 		if (node.Member.DeclaringType == typeof(DateTime) || node.Member.DeclaringType == typeof(DateTimeOffset))
 		{
-			var dateExpr = TranslateDateTimeExpression(node.Expression!);
+			var dateExpr = TranslateDateTimeExpression(node.Expression);
 			var memberName = node.Member.Name;
 
 			switch (memberName)
@@ -480,7 +480,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		{
 			case "Contains":
 				// string.Contains("x") → LIKE "*x*"
-				_ = Visit(node.Object!);
+				_ = Visit(node.Object);
 				_ = _builder.Append(" LIKE ");
 				var containsValue = GetConstantValue(node.Arguments[0]);
 				_ = _builder.Append("\"*").Append(EscapeLikePattern(containsValue?.ToString() ?? "")).Append("*\"");
@@ -488,7 +488,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 			case "StartsWith":
 				// string.StartsWith("x") → LIKE "x*"
-				_ = Visit(node.Object!);
+				_ = Visit(node.Object);
 				_ = _builder.Append(" LIKE ");
 				var startsValue = GetConstantValue(node.Arguments[0]);
 				_ = _builder.Append('"').Append(EscapeLikePattern(startsValue?.ToString() ?? "")).Append("*\"");
@@ -496,7 +496,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 			case "EndsWith":
 				// string.EndsWith("x") → LIKE "*x"
-				_ = Visit(node.Object!);
+				_ = Visit(node.Object);
 				_ = _builder.Append(" LIKE ");
 				var endsValue = GetConstantValue(node.Arguments[0]);
 				_ = _builder.Append("\"*").Append(EscapeLikePattern(endsValue?.ToString() ?? "")).Append('"');
@@ -521,7 +521,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 			case "get_Chars":
 				// string[i] → SUBSTRING(s, i+1, 1)
 				_ = _builder.Append("SUBSTRING(");
-				_ = Visit(node.Object!);
+				_ = Visit(node.Object);
 				_ = _builder.Append(", ");
 				// Add 1 for 1-based indexing in ES|QL
 				var index = GetConstantValue(node.Arguments[0]);
@@ -564,7 +564,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 			case "AddMilliseconds":
 				// DateTime arithmetic
 				_ = _builder.Append('(');
-				_ = Visit(node.Object!);
+				_ = Visit(node.Object);
 				var amount = GetConstantValue(node.Arguments[0]);
 				var unit = methodName.Replace("Add", "").ToLowerInvariant();
 				_ = amount is double d and < 0

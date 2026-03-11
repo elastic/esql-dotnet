@@ -137,11 +137,14 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 	private List<(string memberName, Expression argument)> ExtractFromNewExpression(NewExpression newExpr)
 	{
 		var result = new List<(string, Expression)>(newExpr.Arguments.Count);
+		var members = newExpr.Members
+			?? throw new NotSupportedException("GroupBy key projection must define member names.");
 
 		for (var i = 0; i < newExpr.Arguments.Count; i++)
 		{
-			var member = newExpr.Members![i];
-			var name = _context.ResolveFieldName(member.DeclaringType!, member);
+			var member = members[i];
+			var declaringType = member.DeclaringType ?? newExpr.Type;
+			var name = _context.ResolveFieldName(declaringType, member);
 
 			result.Add((name, newExpr.Arguments[i]));
 		}
@@ -157,7 +160,8 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 		{
 			if (binding is MemberAssignment assignment)
 			{
-				var name = _context.ResolveFieldName(assignment.Member.DeclaringType!, assignment.Member);
+				var declaringType = assignment.Member.DeclaringType ?? initExpr.Type;
+				var name = _context.ResolveFieldName(declaringType, assignment.Member);
 				result.Add((name, assignment.Expression));
 			}
 		}

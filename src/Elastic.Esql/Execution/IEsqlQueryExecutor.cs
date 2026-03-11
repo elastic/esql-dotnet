@@ -8,7 +8,7 @@ namespace Elastic.Esql.Execution;
 /// Abstracts the transport layer for ES|QL query execution.
 /// Implementations issue HTTP requests and return raw response bodies
 /// as <see cref="IEsqlResponse"/> (sync / <see cref="Stream"/>) or
-/// <see cref="IEsqlAsyncResponse"/> (async / <see cref="System.IO.Pipelines.PipeReader"/>).
+/// <see cref="IEsqlAsyncResponse"/> (async / streamed response body).
 /// </summary>
 public interface IEsqlQueryExecutor
 {

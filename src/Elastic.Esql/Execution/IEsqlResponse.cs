@@ -2,7 +2,9 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+#if NET10_0_OR_GREATER
 using System.IO.Pipelines;
+#endif
 
 namespace Elastic.Esql.Execution;
 
@@ -16,6 +18,11 @@ public interface IEsqlResponse : IDisposable
 /// <summary>Owns an asynchronous ES|QL response pipe. Disposing releases the underlying transport resource.</summary>
 public interface IEsqlAsyncResponse : IAsyncDisposable
 {
+#if NET10_0_OR_GREATER
 	/// <summary>The response body as a <see cref="PipeReader"/>.</summary>
 	PipeReader Body { get; }
+#else
+	/// <summary>The response body as a <see cref="Stream"/>.</summary>
+	Stream Body { get; }
+#endif
 }

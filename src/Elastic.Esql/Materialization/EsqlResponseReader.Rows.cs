@@ -4,7 +4,9 @@
 
 using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
+#if NET10_0_OR_GREATER
 using System.IO.Pipelines;
+#endif
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
@@ -13,7 +15,12 @@ namespace Elastic.Esql.Materialization;
 
 internal sealed partial class EsqlResponseReader
 {
-	private static readonly JsonWriterOptions SkipValidationWriterOptions = new() { SkipValidation = true };
+	private sealed class ReaderStateTracker(JsonReaderState state)
+	{
+		public JsonReaderState State { get; set; } = state;
+
+		public void Set(JsonReaderState state) => State = state;
+	}
 
 	/// <summary>
 	/// Materializes each row of an ES|QL response from a <see cref="Stream"/> as an instance of <typeparamref name="T"/>.
@@ -22,13 +29,16 @@ internal sealed partial class EsqlResponseReader
 		Stream stream,
 		[EnumeratorCancellation] CancellationToken cancellationToken = default)
 	{
-		await using var ownedPipeReader = CreateOwnedPipeReader(stream);
+		using var asyncBuffer = new AsyncStreamBuffer(stream);
+		var cursor = new AsyncStreamBufferCursor(asyncBuffer);
+		var (columns, readerState, layout) = await PrepareRowsAsync<T>(cursor, cancellationToken).ConfigureAwait(false);
 
-		await foreach (var item in ReadRowsAsync<T>(ownedPipeReader.Reader, cancellationToken)
+		await foreach (var item in StreamRowsAsync<T>(cursor, readerState, columns, layout, Options, cancellationToken: cancellationToken)
 						   .ConfigureAwait(false))
 			yield return item;
 	}
 
+#if NET10_0_OR_GREATER
 	/// <summary>
 	/// Materializes each row of an ES|QL response from a <see cref="PipeReader"/> as an instance of <typeparamref name="T"/>.
 	/// </summary>
@@ -36,20 +46,14 @@ internal sealed partial class EsqlResponseReader
 		PipeReader pipeReader,
 		[EnumeratorCancellation] CancellationToken cancellationToken = default)
 	{
-		var (columns, readerState, consumed, examined, _, _) =
-			await ReadColumnsFromPipeAsync(pipeReader, cancellationToken)
-				.ConfigureAwait(false);
+		var cursor = new PipeReaderCursor(pipeReader);
+		var (columns, readerState, layout) = await PrepareRowsAsync<T>(cursor, cancellationToken).ConfigureAwait(false);
 
-		pipeReader.AdvanceTo(consumed, examined);
-
-		(readerState, _, _) = await AdvanceToValuesArrayFromPipeAsync(pipeReader, readerState, cancellationToken).ConfigureAwait(false);
-
-		var layout = GetColumnLayout<T>(columns);
-
-		await foreach (var item in StreamRowsAsync<T>(pipeReader, readerState, columns, layout, Options, cancellationToken)
+		await foreach (var item in StreamRowsAsync<T>(cursor, readerState, columns, layout, Options, cancellationToken: cancellationToken)
 						   .ConfigureAwait(false))
 			yield return item;
 	}
+#endif
 
 	/// <summary>
 	/// Materializes each row of an ES|QL response from a <see cref="Stream"/> as an instance of <typeparamref name="T"/>.
@@ -57,15 +61,10 @@ internal sealed partial class EsqlResponseReader
 	public IEnumerable<T> ReadRows<T>(Stream stream)
 	{
 		using var syncBuffer = new SyncStreamBuffer(stream);
+		var cursor = new SyncStreamBufferCursor(syncBuffer);
+		var (columns, readerState, layout) = PrepareRows<T>(cursor);
 
-		var (columns, readerState, consumed, _, _) = ReadColumnsFromStream(syncBuffer);
-		syncBuffer.AdvanceTo(consumed);
-
-		(readerState, _, _) = AdvanceToValuesArrayFromStream(syncBuffer, readerState);
-
-		var layout = GetColumnLayout<T>(columns);
-
-		foreach (var item in StreamRows<T>(syncBuffer, readerState, columns, layout, Options))
+		foreach (var item in StreamRows<T>(cursor, readerState, columns, layout, Options))
 			yield return item;
 	}
 
@@ -74,15 +73,20 @@ internal sealed partial class EsqlResponseReader
 	/// <para>
 	/// Metadata properties are captured whenever encountered during JSON parsing. Because JSON does not guarantee
 	/// property order, <c>id</c>/<c>is_running</c> may appear before <c>columns</c>, between <c>columns</c>
-	/// and <c>values</c>, or after <c>values</c>. As a result, <see cref="EsqlAsyncResponse{T}.Metadata"/> is
+	/// and <c>values</c>, or after <c>values</c>. As a result, <see cref="EsqlResponseState.Metadata"/> is
 	/// <b>not guaranteed to be fully populated</b> until <see cref="EsqlAsyncResponse{T}.Rows"/> has been fully consumed.
 	/// </para>
 	/// </summary>
 	public Task<EsqlAsyncResponse<T>> ReadRowsWithMetadataAsync<T>(
 		Stream stream,
-		CancellationToken cancellationToken = default) =>
-		ReadRowsWithMetadataAsync<T>(CreatePipeReader(stream), cancellationToken);
+		CancellationToken cancellationToken = default)
+	{
+		var result = new EsqlAsyncResponse<T>();
+		result.Rows = ReadRowsWithMetadataCore<T>(stream, result, cancellationToken);
+		return Task.FromResult(result);
+	}
 
+#if NET10_0_OR_GREATER
 	/// <inheritdoc cref="ReadRowsWithMetadataAsync{T}(Stream, CancellationToken)"/>
 	public Task<EsqlAsyncResponse<T>> ReadRowsWithMetadataAsync<T>(
 		PipeReader pipeReader,
@@ -92,6 +96,7 @@ internal sealed partial class EsqlResponseReader
 		result.Rows = ReadRowsWithMetadataCore<T>(pipeReader, result, cancellationToken);
 		return Task.FromResult(result);
 	}
+#endif
 
 	/// <summary>
 	/// Streams rows from an ES|QL response synchronously, progressively capturing <c>id</c> and <c>is_running</c> metadata.
@@ -103,43 +108,39 @@ internal sealed partial class EsqlResponseReader
 		return result;
 	}
 
+#if NET10_0_OR_GREATER
 	private async IAsyncEnumerable<T> ReadRowsWithMetadataCore<T>(
 		PipeReader pipeReader,
 		EsqlAsyncResponse<T> result,
 		[EnumeratorCancellation] CancellationToken cancellationToken)
 	{
+		var cursor = new PipeReaderCursor(pipeReader);
+
 		try
 		{
-			var (columns, readerState, consumed, examined, id, isRunning) =
-				await ReadColumnsFromPipeAsync(pipeReader, cancellationToken)
-					.ConfigureAwait(false);
-
-			result.SetId(id);
-			if (isRunning.HasValue)
-				result.SetIsRunning(isRunning.Value);
-
-			pipeReader.AdvanceTo(consumed, examined);
-
-			(readerState, id, isRunning) = await AdvanceToValuesArrayFromPipeAsync(
-				pipeReader, readerState, cancellationToken).ConfigureAwait(false);
-
-			if (id != null)
-				result.SetId(id);
-			if (isRunning.HasValue)
-				result.SetIsRunning(isRunning.Value);
-
-			var layout = GetColumnLayout<T>(columns);
-
-			await foreach (var item in StreamRowsAsync<T>(pipeReader, readerState, columns, layout, Options, cancellationToken)
-				.ConfigureAwait(false))
+			await foreach (var item in ReadRowsWithMetadataCore(cursor, result, cancellationToken).ConfigureAwait(false))
+			{
 				yield return item;
-
-			await ScanRemainingMetadataAsync(pipeReader, readerState, result, cancellationToken)
-				.ConfigureAwait(false);
+			}
 		}
 		finally
 		{
 			await pipeReader.CompleteAsync().ConfigureAwait(false);
+		}
+	}
+#endif
+
+	private async IAsyncEnumerable<T> ReadRowsWithMetadataCore<T>(
+		Stream stream,
+		EsqlAsyncResponse<T> result,
+		[EnumeratorCancellation] CancellationToken cancellationToken)
+	{
+		using var asyncBuffer = new AsyncStreamBuffer(stream);
+		var cursor = new AsyncStreamBufferCursor(asyncBuffer);
+
+		await foreach (var item in ReadRowsWithMetadataCore(cursor, result, cancellationToken).ConfigureAwait(false))
+		{
+			yield return item;
 		}
 	}
 
@@ -148,122 +149,162 @@ internal sealed partial class EsqlResponseReader
 		EsqlResponse<T> result)
 	{
 		using var syncBuffer = new SyncStreamBuffer(stream);
+		var cursor = new SyncStreamBufferCursor(syncBuffer);
 
-		var (columns, readerState, consumed, id, isRunning) = ReadColumnsFromStream(syncBuffer);
+		foreach (var item in ReadRowsWithMetadataCore(cursor, result))
+			yield return item;
+	}
 
-		result.SetId(id);
-		if (isRunning.HasValue)
-			result.SetIsRunning(isRunning.Value);
+	private async IAsyncEnumerable<T> ReadRowsWithMetadataCore<T>(
+		IAsyncBufferCursor cursor,
+		EsqlAsyncResponse<T> result,
+		[EnumeratorCancellation] CancellationToken cancellationToken)
+	{
+		var (columns, readerState, consumed, id, isRunning) =
+			await ReadColumnsFromAsyncCursorAsync(cursor, cancellationToken).ConfigureAwait(false);
 
-		syncBuffer.AdvanceTo(consumed);
+		ApplyMetadata(result, id, isRunning);
+		cursor.AdvanceTo(consumed, cursor.Buffer.End);
 
-		(readerState, id, isRunning) = AdvanceToValuesArrayFromStream(syncBuffer, readerState);
+		(readerState, id, isRunning) = await AdvanceToValuesArrayFromAsyncCursorAsync(
+			cursor, readerState, cancellationToken).ConfigureAwait(false);
 
-		if (id is not null)
-			result.SetId(id);
-		if (isRunning.HasValue)
-			result.SetIsRunning(isRunning.Value);
+		ApplyMetadata(result, id, isRunning);
 
 		var layout = GetColumnLayout<T>(columns);
+		var readerStateTracker = new ReaderStateTracker(readerState);
 
-		foreach (var item in StreamRows<T>(syncBuffer, readerState, columns, layout, Options))
+		await foreach (var item in StreamRowsAsync<T>(cursor, readerState, columns, layout, Options, cancellationToken, readerStateTracker)
+			.ConfigureAwait(false))
+		{
+			yield return item;
+		}
+
+		await ScanRemainingMetadataAsync(cursor, readerStateTracker.State, result, cancellationToken).ConfigureAwait(false);
+	}
+
+	private IEnumerable<T> ReadRowsWithMetadataCore<T>(
+		ISyncBufferCursor cursor,
+		EsqlResponse<T> result)
+	{
+		var (columns, readerState, consumed, id, isRunning) = ReadColumnsFromSyncCursor(cursor);
+		ApplyMetadata(result, id, isRunning);
+		cursor.AdvanceTo(consumed, cursor.Buffer.End);
+
+		(readerState, id, isRunning) = AdvanceToValuesArrayFromSyncCursor(cursor, readerState);
+		ApplyMetadata(result, id, isRunning);
+
+		var layout = GetColumnLayout<T>(columns);
+		var readerStateTracker = new ReaderStateTracker(readerState);
+
+		foreach (var item in StreamRows<T>(cursor, readerState, columns, layout, Options, readerStateTracker))
 			yield return item;
 
-		ScanRemainingMetadata(syncBuffer, readerState, result);
+		ScanRemainingMetadata(cursor, readerStateTracker.State, result);
 	}
 
 	/// <summary>Streams rows one at a time from the <c>values</c> array.</summary>
 	private static async IAsyncEnumerable<T> StreamRowsAsync<T>(
-		PipeReader pipeReader,
+		IAsyncBufferCursor cursor,
 		JsonReaderState readerState,
 		ColumnInfo[] columns,
 		ColumnLayout layout,
 		JsonSerializerOptions options,
-		[EnumeratorCancellation] CancellationToken cancellationToken)
+		[EnumeratorCancellation] CancellationToken cancellationToken,
+		ReaderStateTracker? readerStateTracker = null)
 	{
-		var estimatedRowSize = Math.Max(256, columns.Length * 32);
-		var rowBuffer = new ArrayBufferWriter<byte>(estimatedRowSize);
-		var typeInfo = TryResolveTypeInfo<T>(options);
+		var plan = CreateRowMaterializationPlan<T>(columns, options);
+		var rowBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
+		var valueBuffer = plan.IsScalar ? null : new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
+		await using var valueWriter = plan.IsScalar ? null : new Utf8JsonWriter(valueBuffer!, SkipValidationWriterOptions);
+		await using var scalarWriter = plan.IsScalar ? new Utf8JsonWriter(rowBuffer, SkipValidationWriterOptions) : null;
 
-		var isScalar = columns.Length == 1 && IsPrimitiveJsonType(typeof(T));
-		var valueBuffer = isScalar ? null : new ArrayBufferWriter<byte>(estimatedRowSize);
-		await using var valueWriter = isScalar ? null : new Utf8JsonWriter(valueBuffer!, SkipValidationWriterOptions);
-		await using var scalarWriter = isScalar ? new Utf8JsonWriter(rowBuffer, SkipValidationWriterOptions) : null;
-
-		var done = false;
-
-		while (!done)
+		try
 		{
-			var result = await pipeReader.ReadAsync(cancellationToken)
-				.ConfigureAwait(false);
+			var done = false;
 
-			var buffer = result.Buffer;
-			var isFinalBlock = result.IsCompleted;
-			var reachedEnd = false;
-
-			while (TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, rowBuffer, valueBuffer, valueWriter, scalarWriter, typeInfo, options, out var item, out reachedEnd))
+			while (!done)
 			{
-				if (reachedEnd)
-				{
-					done = true;
+				if (!await cursor.ReadAsync(cancellationToken).ConfigureAwait(false))
 					break;
+
+				var buffer = cursor.Buffer;
+				var isFinalBlock = cursor.IsCompleted;
+				var reachedEnd = false;
+
+				while (TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, rowBuffer, valueBuffer, valueWriter, scalarWriter, plan.TypeInfo, options, out var item, out reachedEnd))
+				{
+					if (reachedEnd)
+					{
+						done = true;
+						break;
+					}
+
+					yield return item!;
 				}
 
-				yield return item!;
+				if (reachedEnd)
+					done = true;
+
+				cursor.AdvanceTo(buffer.Start, buffer.End);
+
+				if (cursor.IsCompleted)
+					break;
 			}
-
-			if (reachedEnd)
-				done = true;
-
-			pipeReader.AdvanceTo(buffer.Start, buffer.End);
-
-			if (result.IsCompleted)
-				break;
+		}
+		finally
+		{
+			readerStateTracker?.Set(readerState);
 		}
 	}
 
 	private static IEnumerable<T> StreamRows<T>(
-		SyncStreamBuffer syncBuffer,
+		ISyncBufferCursor cursor,
 		JsonReaderState readerState,
 		ColumnInfo[] columns,
 		ColumnLayout layout,
-		JsonSerializerOptions options)
+		JsonSerializerOptions options,
+		ReaderStateTracker? readerStateTracker = null)
 	{
-		var estimatedRowSize = Math.Max(256, columns.Length * 32);
-		var rowBuffer = new ArrayBufferWriter<byte>(estimatedRowSize);
-		var typeInfo = TryResolveTypeInfo<T>(options);
+		var plan = CreateRowMaterializationPlan<T>(columns, options);
+		var rowBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
+		var valueBuffer = plan.IsScalar ? null : new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
+		using var valueWriter = plan.IsScalar ? null : new Utf8JsonWriter(valueBuffer!, SkipValidationWriterOptions);
+		using var scalarWriter = plan.IsScalar ? new Utf8JsonWriter(rowBuffer, SkipValidationWriterOptions) : null;
 
-		var isScalar = columns.Length == 1 && IsPrimitiveJsonType(typeof(T));
-		var valueBuffer = isScalar ? null : new ArrayBufferWriter<byte>(estimatedRowSize);
-		using var valueWriter = isScalar ? null : new Utf8JsonWriter(valueBuffer!, SkipValidationWriterOptions);
-		using var scalarWriter = isScalar ? new Utf8JsonWriter(rowBuffer, SkipValidationWriterOptions) : null;
-
-		var done = false;
-
-		while (!done)
+		try
 		{
-			if (!syncBuffer.Read() && syncBuffer.IsCompleted && syncBuffer.Buffer.IsEmpty)
-				break;
+			var done = false;
 
-			var buffer = syncBuffer.Buffer;
-			var isFinalBlock = syncBuffer.IsCompleted;
-			var reachedEnd = false;
-
-			while (TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, rowBuffer, valueBuffer, valueWriter, scalarWriter, typeInfo, options, out var item, out reachedEnd))
+			while (!done)
 			{
-				if (reachedEnd)
-				{
-					done = true;
+				if (!cursor.Read() && cursor.IsCompleted && cursor.Buffer.IsEmpty)
 					break;
+
+				var buffer = cursor.Buffer;
+				var isFinalBlock = cursor.IsCompleted;
+				var reachedEnd = false;
+
+				while (TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, rowBuffer, valueBuffer, valueWriter, scalarWriter, plan.TypeInfo, options, out var item, out reachedEnd))
+				{
+					if (reachedEnd)
+					{
+						done = true;
+						break;
+					}
+
+					yield return item!;
 				}
 
-				yield return item!;
+				if (reachedEnd)
+					done = true;
+
+				cursor.AdvanceTo(buffer.Start, buffer.End);
 			}
-
-			if (reachedEnd)
-				done = true;
-
-			syncBuffer.AdvanceTo(buffer.Start, buffer.End);
+		}
+		finally
+		{
+			readerStateTracker?.Set(readerState);
 		}
 	}
 
@@ -493,12 +534,6 @@ internal sealed partial class EsqlResponseReader
 	{
 		value.CopyTo(buffer.GetSpan(value.Length));
 		buffer.Advance(value.Length);
-	}
-
-	private static bool IsPrimitiveJsonType(Type type)
-	{
-		var t = Nullable.GetUnderlyingType(type) ?? type;
-		return t.IsPrimitive || t == typeof(decimal) || t == typeof(string) || t.IsEnum;
 	}
 
 	private static bool TryWriteScalarValue(ref Utf8JsonReader reader, ArrayBufferWriter<byte> buffer, Utf8JsonWriter writer)
