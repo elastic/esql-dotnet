@@ -181,6 +181,10 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 				VisitCompletion(node);
 				break;
 
+			case nameof(EsqlQueryableExtensions.RawEsql) when isEsqlExtensionMethod:
+				VisitRawEsql(node);
+				break;
+
 			case nameof(EsqlQueryableExtensions.LookupJoin) when isEsqlExtensionMethod:
 			case nameof(EsqlQueryableExtensions.LeftJoin) when isEsqlExtensionMethod:
 			case "LeftJoin" when isQueryableMethod:
@@ -539,6 +543,60 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 		// String overload: Completion("fieldName", inferenceId, column)
 		if (ExpressionConstantResolver.Resolve(promptArg) is string prompt)
 			Context.Commands.Add(new CompletionCommand(prompt, inferenceId, column));
+	}
+
+	private void VisitRawEsql(MethodCallExpression node)
+	{
+		if (node.Arguments.Count < 2)
+			return;
+
+		if (ExpressionConstantResolver.Resolve(node.Arguments[1]) is not string rawEsql)
+			throw new NotSupportedException("RawEsql requires a string fragment.");
+
+		var fragments = NormalizeRawFragments(rawEsql);
+		foreach (var fragment in fragments)
+			Context.Commands.Add(new RawFragmentCommand(fragment));
+
+		Context.ElementType = ResolveQueryableElementType(node.Method.ReturnType) ?? Context.ElementType;
+	}
+
+	private static IReadOnlyList<string> NormalizeRawFragments(string rawEsql)
+	{
+		if (string.IsNullOrWhiteSpace(rawEsql))
+			throw new NotSupportedException("RawEsql requires at least one non-empty fragment.");
+
+		var normalized = rawEsql.Replace("\r\n", "\n")
+			.Replace('\r', '\n');
+
+		var fragments = normalized
+			.Split('\n')
+			.Select(NormalizeRawFragmentLine)
+			.Where(fragment => !string.IsNullOrEmpty(fragment))
+			.Select(fragment => fragment!)
+			.ToList();
+
+		if (fragments.Count == 0)
+			throw new NotSupportedException("RawEsql requires at least one non-empty fragment.");
+
+		return fragments;
+	}
+
+	private static string? NormalizeRawFragmentLine(string line)
+	{
+		var trimmed = line.Trim();
+		if (trimmed.Length == 0)
+			return null;
+
+		if (trimmed[0] == '|')
+			trimmed = trimmed[1..].TrimStart();
+
+		return trimmed.Length == 0 ? null : trimmed;
+	}
+
+	private static Type? ResolveQueryableElementType(Type returnType)
+	{
+		var queryableType = TypeHelper.FindGenericType(typeof(IQueryable<>), returnType);
+		return queryableType?.GetGenericArguments()[0];
 	}
 
 	private void VisitLookupJoin(MethodCallExpression node)

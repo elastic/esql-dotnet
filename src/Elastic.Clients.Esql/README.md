@@ -12,7 +12,7 @@ Execute ES|QL queries against Elasticsearch with LINQ. This package connects the
 using var client = new EsqlClient(new Uri("https://my-cluster:9200"));
 
 // LINQ query -- translates and executes in one step
-var errors = await client.Query<LogEntry>()
+var errors = await client.CreateQuery<LogEntry>()
     .Where(l => l.Level == "ERROR")
     .OrderByDescending(l => l.Timestamp)
     .Take(10)
@@ -49,7 +49,7 @@ using var client = new EsqlClient(settings);
 ### LINQ fluent syntax
 
 ```csharp
-var topBrands = await client.Query<Product>()
+var topBrands = await client.CreateQuery<Product>()
     .Where(p => p.InStock)
     .GroupBy(p => p.Brand)
     .Select(g => new { Brand = g.Key, Avg = g.Average(p => p.Price), Count = g.Count() })
@@ -62,7 +62,7 @@ var topBrands = await client.Query<Product>()
 
 ```csharp
 var results = await (
-    from log in client.Query<LogEntry>()
+    from log in client.CreateQuery<LogEntry>()
     where log.Level == "ERROR"
     where log.Duration > 500
     orderby log.Timestamp descending
@@ -77,16 +77,33 @@ var results = await client.QueryAsync<LogEntry>(q =>
     q.Where(l => l.Level == "ERROR").Take(10));
 ```
 
-### Raw ES|QL strings
+### Raw ES|QL fragments
 
-Raw-string execution methods are currently pending API redesign. Use LINQ queryables and call `.ToString()` to inspect the generated ES|QL.
+Use `RawEsql()` to append expert-level ES|QL fragments directly into a LINQ pipeline:
+
+```csharp
+var results = client.Query<LogEntry>(q => q
+	.From("logs-*")
+	.RawEsql("WHERE log.level == \"ERROR\"")
+	.RawEsql("| LIMIT 10"));
+```
+
+You can also switch the downstream materialization type:
+
+```csharp
+var rows = client.Query<LogEntry, LogProjection>(q => q
+	.From("logs-*")
+	.RawEsql<LogEntry, LogProjection>("KEEP message, statusCode"));
+```
+
+For Native AOT, ensure the target materialization type (for example `LogProjection`) is included in your source-generated `JsonSerializerContext`.
 
 ### Inspect the generated query
 
 Every queryable's `.ToString()` returns the ES|QL without executing:
 
 ```csharp
-var query = client.Query<Product>()
+var query = client.CreateQuery<Product>()
     .Where(p => p.Price > 100)
     .OrderBy(p => p.Name);
 
@@ -101,7 +118,7 @@ Console.WriteLine(query.ToString());
 For long-running queries, use the async query API. Results auto-delete from the cluster on dispose:
 
 ```csharp
-await using var asyncQuery = await client.QueryAsyncQuery<LogEntry>(
+await using var asyncQuery = await client.QueryAsyncQueryAsync<LogEntry>(
     q => q.Where(l => l.Level == "ERROR"),
     new EsqlAsyncQueryOptions
     {

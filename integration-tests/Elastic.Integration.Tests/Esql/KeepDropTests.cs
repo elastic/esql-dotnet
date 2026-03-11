@@ -13,7 +13,7 @@ public class KeepDropTests : IntegrationTestBase
 	public async Task Keep_StringFieldNames_KeepsOnlySpecified()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Keep("product_id", "name", "price_usd")
 			.Take(5)
@@ -36,7 +36,7 @@ public class KeepDropTests : IntegrationTestBase
 	public async Task Keep_LambdaSelectors_KeepsOnlySpecified()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Keep(p => p.Id, p => p.Name)
 			.Take(5)
@@ -56,7 +56,7 @@ public class KeepDropTests : IntegrationTestBase
 	public async Task Drop_StringFieldNames_RemovesSpecified()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Drop("tags", "sale_price_usd", "created_at")
 			.Take(5)
@@ -78,7 +78,7 @@ public class KeepDropTests : IntegrationTestBase
 	public async Task Drop_LambdaSelectors_RemovesSpecified()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Drop(p => p.Tags, p => p.SalePrice)
 			.Take(5)

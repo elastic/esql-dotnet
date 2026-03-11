@@ -22,4 +22,5 @@ namespace Elastic.Esql.Integration.Tests.Infrastructure;
 [JsonSerializable(typeof(CollisionOriginalNameResult))]
 [JsonSerializable(typeof(TypeWithPropertyConverter))]
 [JsonSerializable(typeof(TestUserProfile))]
+[JsonSerializable(typeof(RawProductSummary))]
 public partial class IntegrationJsonContext : JsonSerializerContext;

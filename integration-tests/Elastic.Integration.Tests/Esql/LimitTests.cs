@@ -13,7 +13,7 @@ public class LimitTests : IntegrationTestBase
 	public async Task Take_LimitsResultCount()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(10)
 			.AsEsql()
@@ -26,7 +26,7 @@ public class LimitTests : IntegrationTestBase
 	public async Task Take_WithWhere_LimitsFilteredResults()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.InStock)
 			.Take(5)
@@ -41,7 +41,7 @@ public class LimitTests : IntegrationTestBase
 	public async Task Take_WithOrderBy_LimitsSortedResults()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.OrderByDescending(p => p.Price)
 			.Take(3)
@@ -56,7 +56,7 @@ public class LimitTests : IntegrationTestBase
 	public async Task Take_One_ReturnsSingleRow()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(1)
 			.AsEsql()
@@ -69,7 +69,7 @@ public class LimitTests : IntegrationTestBase
 	public async Task Take_LargerThanDataset_ReturnsAll()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(10000)
 			.AsEsql()

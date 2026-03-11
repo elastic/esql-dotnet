@@ -45,7 +45,7 @@ Append `.Completion()` to a `FROM`-based query to run LLM inference on query res
 ### String-based prompt field
 
 ```csharp
-var esql = client.Query<LogEntry>()
+var esql = client.CreateQuery<LogEntry>()
     .Where(l => l.StatusCode >= 500)
     .Take(1)
     .Completion("message", InferenceEndpoints.OpenAi.Gpt41, column: "analysis")
@@ -66,7 +66,7 @@ FROM logs-*
 Use a lambda selector for type-safe field resolution. Field names are resolved from `[JsonPropertyName]` attributes or the configured naming policy:
 
 ```csharp
-var esql = client.Query<LogEntry>()
+var esql = client.CreateQuery<LogEntry>()
     .Completion(l => l.Message, InferenceEndpoints.Anthropic.Claude46Opus, column: "summary")
     .ToString();
 ```
@@ -81,7 +81,7 @@ FROM logs-*
 When `column` is omitted, ES|QL defaults the output column to `completion`:
 
 ```csharp
-var esql = client.Query<LogEntry>()
+var esql = client.CreateQuery<LogEntry>()
     .Completion(l => l.Message, InferenceEndpoints.Google.Gemini25Flash)
     .ToString();
 ```
@@ -96,7 +96,7 @@ FROM logs-*
 Use `.Row()` to create a standalone `ROW + COMPLETION` pipeline for sending a prompt without querying an index. The `Row()` extension method accepts an anonymous object — property names become column names and values are automatically escaped:
 
 ```csharp
-var esql = client.Query<CompletionResult>()
+var esql = client.CreateQuery<CompletionResult>()
     .Row(() => new { prompt = "Tell me about Elasticsearch" })
     .Completion("prompt", InferenceEndpoints.Anthropic.Claude46Opus, column: "answer")
     .ToString();
@@ -107,24 +107,12 @@ ROW prompt = "Tell me about Elasticsearch"
 | COMPLETION answer = prompt WITH { "inference_id" : ".anthropic-claude-4.6-opus-completion" }
 ```
 
-### Client convenience method
-
-`EsqlClient` provides `CompletionAsync<T>()` for executing standalone completions directly:
-
-```csharp
-var results = await client.CompletionAsync<CompletionResult>(
-    "Summarize the benefits of Elasticsearch",
-    InferenceEndpoints.OpenAi.Gpt41,
-    column: "answer"
-);
-```
-
 ## RAG pipeline example
 
 A full retrieval-augmented generation pipeline that fetches error logs, builds a prompt, sends it to an LLM, and keeps only the relevant output:
 
 ```csharp
-var esql = client.Query<LogEntry>()
+var esql = client.CreateQuery<LogEntry>()
     .Where(l => l.StatusCode >= 500)
     .OrderByDescending(l => l.Timestamp)
     .Take(10)
@@ -147,7 +135,7 @@ FROM logs-*
 The `ROW` source command produces a row with literal values. It is primarily used with `COMPLETION` for standalone prompts, but is available as a general-purpose command:
 
 ```csharp
-var esql = client.Query<MyType>()
+var esql = client.CreateQuery<MyType>()
     .Row(() => new { a = 1, b = "hello" })
     .ToString();
 ```
@@ -165,9 +153,3 @@ ROW a = 1, b = "hello"
 | `.Row(Expression<Func<object>> columns)` | Produces a row with literal values (ROW command) |
 | `.Completion(string prompt, string inferenceId, string? column)` | Adds a COMPLETION command with a string field name |
 | `.Completion(Expression<Func<T, string>> prompt, string inferenceId, string? column)` | Adds a COMPLETION command with a type-safe lambda selector |
-
-### Client methods
-
-| Method | Description |
-|---|---|
-| `EsqlClient.CompletionAsync<T>(string prompt, string inferenceId, string? column, CancellationToken)` | Executes a standalone completion query against the cluster |

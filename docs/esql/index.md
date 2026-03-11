@@ -7,7 +7,7 @@ navigation_title: ES|QL LINQ
 Write C# LINQ expressions, get Elasticsearch [ES|QL](elasticsearch://reference/query-languages/esql.md) query strings. Type-safe, AOT compatible, with full IntelliSense and compile-time checking.
 
 ```csharp
-var results = await client.Query<LogEntry>()
+var results = await client.CreateQuery<LogEntry>()
     .From("logs-*")
     .Where(l => l.Level == "ERROR" && l.Duration > 1000)
     .OrderByDescending(l => l.Timestamp)

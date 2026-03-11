@@ -17,7 +17,7 @@ public class LookupJoinTests : IntegrationTestBase
 	public async Task LookupJoin_BasicJoin_EnrichesWithCategoryLabel()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(10)
 			.LookupJoin<TestProduct, TestCategoryLookup, string, object>(
@@ -36,7 +36,7 @@ public class LookupJoinTests : IntegrationTestBase
 	public async Task LookupJoin_AllProductsHaveMatchingCategory()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.LookupJoin<TestProduct, TestCategoryLookup, string, object>(
 				TestDataSeeder.CategoryLookupIndex,
@@ -57,7 +57,7 @@ public class LookupJoinTests : IntegrationTestBase
 			.Count(p => p.Category == ProductCategory.Electronics);
 
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.Category == ProductCategory.Electronics)
 			.LookupJoin<TestProduct, TestCategoryLookup, string, object>(
@@ -85,7 +85,7 @@ public class LookupJoinTests : IntegrationTestBase
 			.ToDictionary(c => c.CategoryId, c => c.Name);
 
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(10)
 			.LookupJoin<TestProduct, TestCategoryOverlap, string, CollisionBothResult>(
@@ -112,7 +112,7 @@ public class LookupJoinTests : IntegrationTestBase
 	public async Task LookupJoin_Collision_OnlyOuterProjected_ReturnsOuterValue()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(5)
 			.LookupJoin<TestProduct, TestCategoryOverlap, string, CollisionOuterResult>(
@@ -138,7 +138,7 @@ public class LookupJoinTests : IntegrationTestBase
 			.ToDictionary(c => c.CategoryId, c => c.Name);
 
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(5)
 			.LookupJoin<TestProduct, TestCategoryOverlap, string, CollisionInnerResult>(
@@ -161,7 +161,7 @@ public class LookupJoinTests : IntegrationTestBase
 	public async Task LookupJoin_Collision_OuterKeptWithOriginalName_ReturnsOuterValue()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(5)
 			.LookupJoin<TestProduct, TestCategoryOverlap, string, CollisionOriginalNameResult>(

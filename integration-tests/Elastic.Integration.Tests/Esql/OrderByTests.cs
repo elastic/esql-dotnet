@@ -13,7 +13,7 @@ public class OrderByTests : IntegrationTestBase
 	public async Task OrderBy_Ascending_SortsByPrice()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.OrderBy(p => p.Price)
 			.Take(10)
@@ -28,7 +28,7 @@ public class OrderByTests : IntegrationTestBase
 	public async Task OrderByDescending_SortsByPriceDesc()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.OrderByDescending(p => p.Price)
 			.Take(10)
@@ -49,7 +49,7 @@ public class OrderByTests : IntegrationTestBase
 			.ToList();
 
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.OrderByDescending(p => p.Price)
 			.Take(10)
@@ -64,7 +64,7 @@ public class OrderByTests : IntegrationTestBase
 	public async Task ThenBy_MultiColumnSort()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.OrderBy(p => p.Brand)
 			.ThenByDescending(p => p.Price)
@@ -91,7 +91,7 @@ public class OrderByTests : IntegrationTestBase
 	public async Task OrderBy_WithWhere_SortedAndFiltered()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.InStock)
 			.OrderByDescending(p => p.Price)
@@ -108,7 +108,7 @@ public class OrderByTests : IntegrationTestBase
 	public async Task OrderBy_DateTime_SortsByTimestamp()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestOrder>()
+			.CreateQuery<TestOrder>()
 			.From(TestDataSeeder.OrderIndex)
 			.OrderByDescending(o => o.Timestamp)
 			.Take(10)
@@ -123,7 +123,7 @@ public class OrderByTests : IntegrationTestBase
 	public async Task OrderBy_Integer_SortsByStockQuantity()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.OrderByDescending(p => p.StockQuantity)
 			.Take(10)

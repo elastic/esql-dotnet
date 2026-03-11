@@ -19,7 +19,7 @@ public class SerializationTests : IntegrationTestBase
 		var products = TestDataSeeder.Products;
 
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.OrderBy(p => p.Id)
 			.AsEsql()
@@ -44,7 +44,7 @@ public class SerializationTests : IntegrationTestBase
 			.ToList();
 
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.OrderBy(p => p.Id)
 			.AsEsql()
@@ -62,7 +62,7 @@ public class SerializationTests : IntegrationTestBase
 			.ToList();
 
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.OrderBy(p => p.Id)
 			.AsEsql()
@@ -80,7 +80,7 @@ public class SerializationTests : IntegrationTestBase
 			.ToList();
 
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.OrderBy(p => p.Id)
 			.AsEsql()
@@ -98,7 +98,7 @@ public class SerializationTests : IntegrationTestBase
 			.ToList();
 
 		var results = await Fixture.EsqlClient
-			.Query<TestOrder>()
+			.CreateQuery<TestOrder>()
 			.From(TestDataSeeder.OrderIndex)
 			.OrderBy(o => o.Id)
 			.AsEsql()
@@ -119,7 +119,7 @@ public class SerializationTests : IntegrationTestBase
 			.ToList();
 
 		var results = await Fixture.EsqlClient
-			.Query<TestOrder>()
+			.CreateQuery<TestOrder>()
 			.From(TestDataSeeder.OrderIndex)
 			.OrderBy(o => o.Id)
 			.AsEsql()
@@ -137,7 +137,7 @@ public class SerializationTests : IntegrationTestBase
 			.ToList();
 
 		var results = await Fixture.EsqlClient
-			.Query<TestOrder>()
+			.CreateQuery<TestOrder>()
 			.From(TestDataSeeder.OrderIndex)
 			.OrderBy(o => o.Id)
 			.AsEsql()
@@ -155,7 +155,7 @@ public class SerializationTests : IntegrationTestBase
 			.ToList();
 
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.OrderBy(p => p.Id)
 			.AsEsql()
@@ -177,7 +177,7 @@ public class SerializationTests : IntegrationTestBase
 			.ToList();
 
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.OrderBy(p => p.Id)
 			.AsEsql()
@@ -212,7 +212,7 @@ public class SerializationTests : IntegrationTestBase
 			.ToList();
 
 		var results = await Fixture.EsqlClient
-			.Query<TestOrder>()
+			.CreateQuery<TestOrder>()
 			.From(TestDataSeeder.OrderIndex)
 			.OrderBy(o => o.Id)
 			.AsEsql()
@@ -247,7 +247,7 @@ public class SerializationTests : IntegrationTestBase
 			.ToList();
 
 		var results = await Fixture.EsqlClient
-			.Query<TestEvent>()
+			.CreateQuery<TestEvent>()
 			.From(TestDataSeeder.EventIndex)
 			.OrderBy(e => e.Timestamp)
 			.AsEsql()
@@ -271,7 +271,7 @@ public class SerializationTests : IntegrationTestBase
 	public async Task RoundTrip_ListField_PreservesTags()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.InStock)
 			.OrderBy(p => p.Id)
@@ -300,7 +300,7 @@ public class SerializationTests : IntegrationTestBase
 	public async Task AnonymousType_MixedFieldTypes_DeserializesCorrectly()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(3)
 			.Select(p => new { p.Id, p.Price, p.InStock, p.StockQuantity })
@@ -320,7 +320,7 @@ public class SerializationTests : IntegrationTestBase
 	public async Task AnonymousType_DateTimeAndEnum_DeserializesCorrectly()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestOrder>()
+			.CreateQuery<TestOrder>()
 			.From(TestDataSeeder.OrderIndex)
 			.Take(3)
 			.Select(o => new { o.Id, o.Timestamp, o.Status, o.TotalAmount })
@@ -340,7 +340,7 @@ public class SerializationTests : IntegrationTestBase
 	public async Task AnonymousType_NullableFields_HandlesNulls()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.OrderBy(p => p.Id)
 			.Take(10)
@@ -363,7 +363,7 @@ public class SerializationTests : IntegrationTestBase
 	public void TopLevelJsonConverter_ThrowsNotSupportedException()
 	{
 		var act = () => Fixture.EsqlClient
-			.Query<TypeWithTopLevelConverter>()
+			.CreateQuery<TypeWithTopLevelConverter>()
 			.From("any-index")
 			.Where(x => x.Name == "test")
 			.ToEsqlString();
@@ -380,7 +380,7 @@ public class SerializationTests : IntegrationTestBase
 	public async Task JsonPropertyName_RoundTrip_FieldsMapCorrectly()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Keep("product_id", "price_usd", "in_stock")
 			.Take(5)
