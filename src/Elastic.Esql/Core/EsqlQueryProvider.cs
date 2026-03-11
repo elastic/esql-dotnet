@@ -70,7 +70,11 @@ public sealed class EsqlQueryProvider : IQueryProvider
 
 		try
 		{
-			return (IQueryable)Activator.CreateInstance(queryableType, this, expression)!;
+			var instance = Activator.CreateInstance(queryableType, this, expression);
+			if (instance is IQueryable queryable)
+				return queryable;
+
+			throw new InvalidOperationException($"Unable to create queryable instance for '{queryableType.FullName}'.");
 		}
 		catch (TargetInvocationException ex) when (ex.InnerException is not null)
 		{

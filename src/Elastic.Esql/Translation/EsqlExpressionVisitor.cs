@@ -49,7 +49,7 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 		if (Context.ElementType is null)
 			throw new InvalidOperationException("Failed to determine result type for the given expression.");
 
-		return new EsqlQuery(Context.ElementType!, [.. Context.Commands], !Context.Parameters.HasParameters ? null : Context.Parameters);
+		return new EsqlQuery(Context.ElementType, [.. Context.Commands], !Context.Parameters.HasParameters ? null : Context.Parameters);
 	}
 
 	protected override Expression VisitConstant(ConstantExpression node)
@@ -493,9 +493,10 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 			throw new NotSupportedException("Row lambda must return an anonymous object (new { ... }).");
 
 		var expressions = new List<string>();
+		var members = newExpr.Members ?? throw new NotSupportedException("Row lambda must provide named members.");
 		for (var i = 0; i < newExpr.Arguments.Count; i++)
 		{
-			var name = newExpr.Members![i].Name;
+			var name = members[i].Name;
 			var value = ExpressionConstantResolver.Resolve(newExpr.Arguments[i]);
 			var formatted = Context.GetValueOrParameterName(name, value);
 			expressions.Add($"{name} = {formatted}");

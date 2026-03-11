@@ -3,8 +3,11 @@
 // See the LICENSE file in the project root for more information
 
 using System.Buffers;
+#if NET10_0_OR_GREATER
 using System.IO.Pipelines;
+#endif
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 
 namespace Elastic.Esql.Materialization;
 
@@ -23,11 +26,12 @@ internal sealed partial class EsqlResponseReader
 		Stream stream,
 		CancellationToken cancellationToken = default)
 	{
-		await using var ownedPipeReader = CreateOwnedPipeReader(stream);
-		return await ReadScalarAsync<T>(ownedPipeReader.Reader, cancellationToken)
-			.ConfigureAwait(false);
+		using var asyncBuffer = new AsyncStreamBuffer(stream);
+		var cursor = new AsyncStreamBufferCursor(asyncBuffer);
+		return await ReadScalarAsync<T>(cursor, cancellationToken).ConfigureAwait(false);
 	}
 
+#if NET10_0_OR_GREATER
 	/// <summary>
 	/// Reads the first row of an ES|QL response from a <see cref="PipeReader"/> as an instance of <typeparamref name="T"/> and counts total rows for
 	/// cardinality validation.
@@ -36,76 +40,10 @@ internal sealed partial class EsqlResponseReader
 		PipeReader pipeReader,
 		CancellationToken cancellationToken = default)
 	{
-		var (columns, readerState, consumed, examined, _, _) =
-			await ReadColumnsFromPipeAsync(pipeReader, cancellationToken)
-				.ConfigureAwait(false);
-
-		pipeReader.AdvanceTo(consumed, examined);
-
-		(readerState, _, _) = await AdvanceToValuesArrayFromPipeAsync(
-			pipeReader, readerState, cancellationToken).ConfigureAwait(false);
-
-		var layout = GetColumnLayout<T>(columns);
-		var estimatedRowSize = Math.Max(256, columns.Length * 32);
-		var typeInfo = TryResolveTypeInfo<T>(Options);
-
-		var rowBuffer = new ArrayBufferWriter<byte>(estimatedRowSize);
-		var isScalar = columns.Length == 1 && IsPrimitiveJsonType(typeof(T));
-		var valueBuffer = isScalar ? null : new ArrayBufferWriter<byte>(estimatedRowSize);
-		await using var valueWriter = isScalar ? null : new Utf8JsonWriter(valueBuffer!, SkipValidationWriterOptions);
-		await using var scalarWriter = isScalar ? new Utf8JsonWriter(rowBuffer, SkipValidationWriterOptions) : null;
-
-		T? value = default;
-		var rowCount = 0;
-		var done = false;
-
-		while (!done)
-		{
-			var result = await pipeReader.ReadAsync(cancellationToken)
-				.ConfigureAwait(false);
-
-			var buffer = result.Buffer;
-			var isFinalBlock = result.IsCompleted;
-
-			while (true)
-			{
-				if (rowCount == 0)
-				{
-					if (!TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, rowBuffer, valueBuffer, valueWriter, scalarWriter, typeInfo, Options, out var item, out var reachedEnd))
-						break;
-
-					if (reachedEnd)
-					{
-						done = true;
-						break;
-					}
-
-					value = item;
-					rowCount = 1;
-				}
-				else
-				{
-					if (!TrySkipRow(ref buffer, isFinalBlock, ref readerState, out var reachedEnd))
-						break;
-
-					if (reachedEnd)
-					{
-						done = true;
-						break;
-					}
-
-					rowCount++;
-				}
-			}
-
-			pipeReader.AdvanceTo(buffer.Start, buffer.End);
-
-			if (result.IsCompleted)
-				break;
-		}
-
-		return new ScalarResult<T>(value, rowCount);
+		var cursor = new PipeReaderCursor(pipeReader);
+		return await ReadScalarAsync<T>(cursor, cancellationToken).ConfigureAwait(false);
 	}
+#endif
 
 	/// <summary>
 	/// Reads the first row of an ES|QL response from a <see cref="Stream"/> as an instance of <typeparamref name="T"/> and counts total rows for
@@ -114,21 +52,21 @@ internal sealed partial class EsqlResponseReader
 	public ScalarResult<T> ReadScalar<T>(Stream stream)
 	{
 		using var syncBuffer = new SyncStreamBuffer(stream);
+		var cursor = new SyncStreamBufferCursor(syncBuffer);
+		return ReadScalar<T>(cursor);
+	}
 
-		var (columns, readerState, consumed, _, _) = ReadColumnsFromStream(syncBuffer);
-		syncBuffer.AdvanceTo(consumed);
+	private async Task<ScalarResult<T>> ReadScalarAsync<T>(
+		IAsyncBufferCursor cursor,
+		CancellationToken cancellationToken)
+	{
+		var (columns, readerState, layout) = await PrepareRowsAsync<T>(cursor, cancellationToken).ConfigureAwait(false);
+		var plan = CreateRowMaterializationPlan<T>(columns, Options);
 
-		(readerState, _, _) = AdvanceToValuesArrayFromStream(syncBuffer, readerState);
-
-		var layout = GetColumnLayout<T>(columns);
-		var estimatedRowSize = Math.Max(256, columns.Length * 32);
-		var typeInfo = TryResolveTypeInfo<T>(Options);
-
-		var rowBuffer = new ArrayBufferWriter<byte>(estimatedRowSize);
-		var isScalar = columns.Length == 1 && IsPrimitiveJsonType(typeof(T));
-		var valueBuffer = isScalar ? null : new ArrayBufferWriter<byte>(estimatedRowSize);
-		using var valueWriter = isScalar ? null : new Utf8JsonWriter(valueBuffer!, SkipValidationWriterOptions);
-		using var scalarWriter = isScalar ? new Utf8JsonWriter(rowBuffer, SkipValidationWriterOptions) : null;
+		var rowBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
+		var valueBuffer = plan.IsScalar ? null : new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
+		await using var valueWriter = plan.IsScalar ? null : new Utf8JsonWriter(valueBuffer!, SkipValidationWriterOptions);
+		await using var scalarWriter = plan.IsScalar ? new Utf8JsonWriter(rowBuffer, SkipValidationWriterOptions) : null;
 
 		T? value = default;
 		var rowCount = 0;
@@ -136,47 +74,121 @@ internal sealed partial class EsqlResponseReader
 
 		while (!done)
 		{
-			if (!syncBuffer.Read() && syncBuffer.IsCompleted && syncBuffer.Buffer.IsEmpty)
+			if (!await cursor.ReadAsync(cancellationToken).ConfigureAwait(false))
 				break;
 
-			var buffer = syncBuffer.Buffer;
-			var isFinalBlock = syncBuffer.IsCompleted;
+			var buffer = cursor.Buffer;
+			ConsumeScalarRowsChunk(
+				ref buffer,
+				cursor.IsCompleted,
+				ref readerState,
+				layout,
+				rowBuffer,
+				valueBuffer,
+				valueWriter,
+				scalarWriter,
+				plan.TypeInfo,
+				Options,
+				ref value,
+				ref rowCount,
+				ref done
+			);
 
-			while (true)
-			{
-				if (rowCount == 0)
-				{
-					if (!TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, rowBuffer, valueBuffer, valueWriter, scalarWriter, typeInfo, Options, out var item, out var reachedEnd))
-						break;
+			cursor.AdvanceTo(buffer.Start, buffer.End);
 
-					if (reachedEnd)
-					{
-						done = true;
-						break;
-					}
-
-					value = item;
-					rowCount = 1;
-				}
-				else
-				{
-					if (!TrySkipRow(ref buffer, isFinalBlock, ref readerState, out var reachedEnd))
-						break;
-
-					if (reachedEnd)
-					{
-						done = true;
-						break;
-					}
-
-					rowCount++;
-				}
-			}
-
-			syncBuffer.AdvanceTo(buffer.Start, buffer.End);
+			if (cursor.IsCompleted)
+				break;
 		}
 
 		return new ScalarResult<T>(value, rowCount);
+	}
+
+	private ScalarResult<T> ReadScalar<T>(ISyncBufferCursor cursor)
+	{
+		var (columns, readerState, layout) = PrepareRows<T>(cursor);
+		var plan = CreateRowMaterializationPlan<T>(columns, Options);
+
+		var rowBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
+		var valueBuffer = plan.IsScalar ? null : new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
+		using var valueWriter = plan.IsScalar ? null : new Utf8JsonWriter(valueBuffer!, SkipValidationWriterOptions);
+		using var scalarWriter = plan.IsScalar ? new Utf8JsonWriter(rowBuffer, SkipValidationWriterOptions) : null;
+
+		T? value = default;
+		var rowCount = 0;
+		var done = false;
+
+		while (!done)
+		{
+			if (!cursor.Read() && cursor.IsCompleted && cursor.Buffer.IsEmpty)
+				break;
+
+			var buffer = cursor.Buffer;
+			ConsumeScalarRowsChunk(
+				ref buffer,
+				cursor.IsCompleted,
+				ref readerState,
+				layout,
+				rowBuffer,
+				valueBuffer,
+				valueWriter,
+				scalarWriter,
+				plan.TypeInfo,
+				Options,
+				ref value,
+				ref rowCount,
+				ref done
+			);
+
+			cursor.AdvanceTo(buffer.Start, buffer.End);
+		}
+
+		return new ScalarResult<T>(value, rowCount);
+	}
+
+	private static void ConsumeScalarRowsChunk<T>(
+		ref ReadOnlySequence<byte> buffer,
+		bool isFinalBlock,
+		ref JsonReaderState readerState,
+		ColumnLayout layout,
+		ArrayBufferWriter<byte> rowBuffer,
+		ArrayBufferWriter<byte>? valueBuffer,
+		Utf8JsonWriter? valueWriter,
+		Utf8JsonWriter? scalarWriter,
+		JsonTypeInfo<T>? typeInfo,
+		JsonSerializerOptions options,
+		ref T? value,
+		ref int rowCount,
+		ref bool done)
+	{
+		while (true)
+		{
+			if (rowCount == 0)
+			{
+				if (!TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, rowBuffer, valueBuffer, valueWriter, scalarWriter, typeInfo, options, out var item, out var reachedEnd))
+					return;
+
+				if (reachedEnd)
+				{
+					done = true;
+					return;
+				}
+
+				value = item;
+				rowCount = 1;
+				continue;
+			}
+
+			if (!TrySkipRow(ref buffer, isFinalBlock, ref readerState, out var reachedEndSkip))
+				return;
+
+			if (reachedEndSkip)
+			{
+				done = true;
+				return;
+			}
+
+			rowCount++;
+		}
 	}
 
 	private static bool TrySkipRow(

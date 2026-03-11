@@ -4,35 +4,39 @@
 
 using System.Buffers;
 using System.Collections.Concurrent;
+#if NET10_0_OR_GREATER
 using System.IO.Pipelines;
+#endif
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Elastic.Esql.Core;
 
 namespace Elastic.Esql.Materialization;
 
+internal abstract class EsqlResponseState
+{
+	private string? _id;
+	private bool _isRunning;
+
+	/// <summary>Current best-effort metadata snapshot. May be incomplete until rows are fully consumed.</summary>
+	public EsqlStreamMetadata Metadata => new(_id, _isRunning);
+
+	internal void SetId(string? id) => _id = id;
+
+	internal void SetIsRunning(bool isRunning) => _isRunning = isRunning;
+}
+
 /// <summary>
-/// Holds metadata and a lazy row stream from <see cref="EsqlResponseReader.ReadRowsWithMetadataAsync{T}(Stream, CancellationToken)"/> /
-/// <see cref="EsqlResponseReader.ReadRowsWithMetadataAsync{T}(PipeReader, CancellationToken)"/>.
+/// Holds metadata and a lazy row stream from <see cref="EsqlResponseReader.ReadRowsWithMetadataAsync{T}(Stream, CancellationToken)"/>.
 /// <para>
 /// Metadata is <b>progressively populated</b> as the JSON is parsed. Properties found before or during column parsing are available immediately.
 /// Properties that appear after the <c>values</c> array in the JSON are only captured after <see cref="Rows"/> is fully consumed.
 /// </para>
 /// </summary>
-internal sealed class EsqlAsyncResponse<T>
+internal sealed class EsqlAsyncResponse<T> : EsqlResponseState
 {
-	private string? _id;
-	private bool _isRunning;
-
-	/// <summary>Current best-effort metadata snapshot. May be incomplete until <see cref="Rows"/> is fully consumed.</summary>
-	public EsqlStreamMetadata Metadata => new(_id, _isRunning);
-
 	/// <summary>Lazy row stream. Single-consume - the underlying response stream can only be read once.</summary>
 	public IAsyncEnumerable<T> Rows { get; internal set; } = EmptyAsyncEnumerable<T>.Instance;
-
-	internal void SetId(string? id) => _id = id;
-
-	internal void SetIsRunning(bool isRunning) => _isRunning = isRunning;
 }
 
 /// <summary>
@@ -42,20 +46,10 @@ internal sealed class EsqlAsyncResponse<T>
 /// Properties that appear after the <c>values</c> array in the JSON are only captured after <see cref="Rows"/> is fully consumed.
 /// </para>
 /// </summary>
-internal sealed class EsqlResponse<T>
+internal sealed class EsqlResponse<T> : EsqlResponseState
 {
-	private string? _id;
-	private bool _isRunning;
-
-	/// <summary>Current best-effort metadata snapshot. May be incomplete until <see cref="Rows"/> is fully consumed.</summary>
-	public EsqlStreamMetadata Metadata => new(_id, _isRunning);
-
 	/// <summary>Lazy row sequence. Single-consume - the underlying response stream can only be read once.</summary>
 	public IEnumerable<T> Rows { get; internal set; } = [];
-
-	internal void SetId(string? id) => _id = id;
-
-	internal void SetIsRunning(bool isRunning) => _isRunning = isRunning;
 }
 
 /// <summary>
@@ -63,6 +57,7 @@ internal sealed class EsqlResponse<T>
 /// </summary>
 internal sealed partial class EsqlResponseReader
 {
+	private static readonly JsonWriterOptions SkipValidationWriterOptions = new() { SkipValidation = true };
 	private readonly JsonMetadataManager _metadata;
 	private readonly ConcurrentDictionary<ColumnLayoutCacheKey, ColumnLayoutCacheEntry> _columnLayoutCache = [];
 
@@ -106,21 +101,67 @@ internal sealed partial class EsqlResponseReader
 		}
 	}
 
-	private static PipeReader CreatePipeReader(Stream stream) =>
-		PipeReader.Create(stream, new StreamPipeReaderOptions(
-			pool: MemoryPool<byte>.Shared,
-			bufferSize: 16384,
-			leaveOpen: true));
-
-	private static OwnedPipeReader CreateOwnedPipeReader(Stream stream) =>
-		new(CreatePipeReader(stream));
-
-	private sealed class OwnedPipeReader(PipeReader reader) : IAsyncDisposable
+	private interface IBufferCursor
 	{
-		public PipeReader Reader { get; } = reader;
-
-		public ValueTask DisposeAsync() => Reader.CompleteAsync();
+		ReadOnlySequence<byte> Buffer { get; }
+		bool IsCompleted { get; }
+		void AdvanceTo(SequencePosition consumed, SequencePosition examined);
 	}
+
+	private interface IAsyncBufferCursor : IBufferCursor
+	{
+		ValueTask<bool> ReadAsync(CancellationToken cancellationToken);
+	}
+
+	private interface ISyncBufferCursor : IBufferCursor
+	{
+		bool Read();
+	}
+
+	private sealed class AsyncStreamBufferCursor(AsyncStreamBuffer asyncBuffer) : IAsyncBufferCursor
+	{
+		public ReadOnlySequence<byte> Buffer => asyncBuffer.Buffer;
+
+		public bool IsCompleted => asyncBuffer.IsCompleted;
+
+		public ValueTask<bool> ReadAsync(CancellationToken cancellationToken) =>
+			asyncBuffer.ReadAsync(cancellationToken);
+
+		public void AdvanceTo(SequencePosition consumed, SequencePosition examined) =>
+			asyncBuffer.AdvanceTo(consumed, examined);
+	}
+
+	private sealed class SyncStreamBufferCursor(SyncStreamBuffer syncBuffer) : ISyncBufferCursor
+	{
+		public ReadOnlySequence<byte> Buffer => syncBuffer.Buffer;
+
+		public bool IsCompleted => syncBuffer.IsCompleted;
+
+		public bool Read() => syncBuffer.Read();
+
+		public void AdvanceTo(SequencePosition consumed, SequencePosition examined) =>
+			syncBuffer.AdvanceTo(consumed, examined);
+	}
+
+#if NET10_0_OR_GREATER
+	private sealed class PipeReaderCursor(PipeReader pipeReader) : IAsyncBufferCursor
+	{
+		private ReadResult _result;
+
+		public ReadOnlySequence<byte> Buffer => _result.Buffer;
+
+		public bool IsCompleted => _result.IsCompleted;
+
+		public async ValueTask<bool> ReadAsync(CancellationToken cancellationToken)
+		{
+			_result = await pipeReader.ReadAsync(cancellationToken).ConfigureAwait(false);
+			return !_result.Buffer.IsEmpty || !_result.IsCompleted;
+		}
+
+		public void AdvanceTo(SequencePosition consumed, SequencePosition examined) =>
+			pipeReader.AdvanceTo(consumed, examined);
+	}
+#endif
 
 	/// <summary>
 	/// Builds a <see cref="ColumnLayout"/> for the target type and the ES|QL columns.
@@ -164,48 +205,89 @@ internal sealed partial class EsqlResponseReader
 		}
 	}
 
-	/// <summary>
-	/// Incrementally parses columns from the pipe, also capturing any <c>id</c>/<c>is_running</c> metadata properties encountered before the
-	/// <c>columns</c> array.
-	/// </summary>
-	private static async Task<(ColumnInfo[] Columns, JsonReaderState State, SequencePosition Consumed, SequencePosition Examined, string? Id, bool? IsRunning)> ReadColumnsFromPipeAsync(
-		PipeReader pipeReader,
+	private static void ApplyMetadata(EsqlResponseState result, string? id, bool? isRunning)
+	{
+		if (id is not null)
+			result.SetId(id);
+		if (isRunning.HasValue)
+			result.SetIsRunning(isRunning.Value);
+	}
+
+	private readonly record struct RowMaterializationPlan<T>(int EstimatedRowSize, bool IsScalar, JsonTypeInfo<T>? TypeInfo);
+
+	private static RowMaterializationPlan<T> CreateRowMaterializationPlan<T>(ColumnInfo[] columns, JsonSerializerOptions options)
+	{
+		var estimatedRowSize = Math.Max(256, columns.Length * 32);
+		var isScalar = columns.Length == 1 && IsPrimitiveJsonType(typeof(T));
+		var typeInfo = TryResolveTypeInfo<T>(options);
+		return new RowMaterializationPlan<T>(estimatedRowSize, isScalar, typeInfo);
+	}
+
+	private static bool IsPrimitiveJsonType(Type type)
+	{
+		var t = Nullable.GetUnderlyingType(type) ?? type;
+		return t.IsPrimitive || t == typeof(decimal) || t == typeof(string) || t.IsEnum;
+	}
+
+	private async Task<(ColumnInfo[] Columns, JsonReaderState ReaderState, ColumnLayout Layout)> PrepareRowsAsync<T>(
+		IAsyncBufferCursor cursor,
+		CancellationToken cancellationToken)
+	{
+		var (columns, readerState, consumed, _, _) = await ReadColumnsFromAsyncCursorAsync(cursor, cancellationToken).ConfigureAwait(false);
+		cursor.AdvanceTo(consumed, cursor.Buffer.End);
+
+		(readerState, _, _) = await AdvanceToValuesArrayFromAsyncCursorAsync(cursor, readerState, cancellationToken).ConfigureAwait(false);
+		return (columns, readerState, GetColumnLayout<T>(columns));
+	}
+
+	private (ColumnInfo[] Columns, JsonReaderState ReaderState, ColumnLayout Layout) PrepareRows<T>(ISyncBufferCursor cursor)
+	{
+		var (columns, readerState, consumed, _, _) = ReadColumnsFromSyncCursor(cursor);
+		cursor.AdvanceTo(consumed, cursor.Buffer.End);
+
+		(readerState, _, _) = AdvanceToValuesArrayFromSyncCursor(cursor, readerState);
+		return (columns, readerState, GetColumnLayout<T>(columns));
+	}
+
+	private static async Task<(ColumnInfo[] Columns, JsonReaderState State, SequencePosition Consumed, string? Id, bool? IsRunning)> ReadColumnsFromAsyncCursorAsync(
+		IAsyncBufferCursor cursor,
 		CancellationToken ct)
 	{
 		var state = new JsonReaderState();
 		string? id = null;
 		bool? isRunning = null;
 
-		while (true)
+		while (await cursor.ReadAsync(ct).ConfigureAwait(false))
 		{
-			var result = await pipeReader.ReadAsync(ct).ConfigureAwait(false);
-			var buffer = result.Buffer;
+			var buffer = cursor.Buffer;
 
-			if (TryParseColumns(buffer, result.IsCompleted, ref state, out var columns, out var consumed, ref id, ref isRunning))
-				return (columns!, state, consumed, buffer.End, id, isRunning);
+			if (TryParseColumns(buffer, cursor.IsCompleted, ref state, out var columns, out var consumed, ref id, ref isRunning))
+				return (columns!, state, consumed, id, isRunning);
 
-			pipeReader.AdvanceTo(buffer.Start, buffer.End);
+			cursor.AdvanceTo(buffer.Start, buffer.End);
 
-			if (result.IsCompleted)
-				throw new JsonException("Stream ended before \"columns\" array was fully read.");
+			if (cursor.IsCompleted)
+				break;
 		}
+
+		throw new JsonException("Stream ended before \"columns\" array was fully read.");
 	}
 
-	private static (ColumnInfo[] Columns, JsonReaderState State, SequencePosition Consumed, string? Id, bool? IsRunning) ReadColumnsFromStream(
-		SyncStreamBuffer syncBuffer)
+	private static (ColumnInfo[] Columns, JsonReaderState State, SequencePosition Consumed, string? Id, bool? IsRunning) ReadColumnsFromSyncCursor(
+		ISyncBufferCursor cursor)
 	{
 		var state = new JsonReaderState();
 		string? id = null;
 		bool? isRunning = null;
 
-		while (syncBuffer.Read())
+		while (cursor.Read())
 		{
-			var buffer = syncBuffer.Buffer;
+			var buffer = cursor.Buffer;
 
-			if (TryParseColumns(buffer, syncBuffer.IsCompleted, ref state, out var columns, out var consumed, ref id, ref isRunning))
+			if (TryParseColumns(buffer, cursor.IsCompleted, ref state, out var columns, out var consumed, ref id, ref isRunning))
 				return (columns!, state, consumed, id, isRunning);
 
-			syncBuffer.AdvanceTo(buffer.Start, buffer.End);
+			cursor.AdvanceTo(buffer.Start, buffer.End);
 		}
 
 		throw new JsonException("Stream ended before \"columns\" array was fully read.");
@@ -358,54 +440,51 @@ internal sealed partial class EsqlResponseReader
 		return true;
 	}
 
-	/// <summary>
-	/// Advances past everything between <c>columns</c> and the start of the <c>values</c> array,
-	/// also capturing any <c>id</c>/<c>is_running</c> metadata properties encountered along the way.
-	/// </summary>
-	private static async Task<(JsonReaderState State, string? Id, bool? IsRunning)> AdvanceToValuesArrayFromPipeAsync(
-		PipeReader pipeReader,
+	private static async Task<(JsonReaderState State, string? Id, bool? IsRunning)> AdvanceToValuesArrayFromAsyncCursorAsync(
+		IAsyncBufferCursor cursor,
 		JsonReaderState state,
 		CancellationToken ct)
 	{
 		string? id = null;
 		bool? isRunning = null;
 
-		while (true)
+		while (await cursor.ReadAsync(ct).ConfigureAwait(false))
 		{
-			var result = await pipeReader.ReadAsync(ct).ConfigureAwait(false);
-			var buffer = result.Buffer;
+			var buffer = cursor.Buffer;
 
-			if (TryAdvanceToValuesArray(buffer, result.IsCompleted, ref state, out var consumed, ref id, ref isRunning))
+			if (TryAdvanceToValuesArray(buffer, cursor.IsCompleted, ref state, out var consumed, ref id, ref isRunning))
 			{
-				pipeReader.AdvanceTo(consumed, buffer.End);
+				cursor.AdvanceTo(consumed, buffer.End);
 				return (state, id, isRunning);
 			}
 
-			pipeReader.AdvanceTo(consumed, buffer.End);
+			cursor.AdvanceTo(consumed, buffer.End);
 
-			if (result.IsCompleted)
-				throw new JsonException("ES|QL response does not contain a \"values\" property.");
+			if (cursor.IsCompleted)
+				break;
 		}
+
+		throw new JsonException("ES|QL response does not contain a \"values\" property.");
 	}
 
-	private static (JsonReaderState State, string? Id, bool? IsRunning) AdvanceToValuesArrayFromStream(
-		SyncStreamBuffer syncBuffer,
+	private static (JsonReaderState State, string? Id, bool? IsRunning) AdvanceToValuesArrayFromSyncCursor(
+		ISyncBufferCursor cursor,
 		JsonReaderState state)
 	{
 		string? id = null;
 		bool? isRunning = null;
 
-		while (syncBuffer.Read())
+		while (cursor.Read())
 		{
-			var buffer = syncBuffer.Buffer;
+			var buffer = cursor.Buffer;
 
-			if (TryAdvanceToValuesArray(buffer, syncBuffer.IsCompleted, ref state, out var consumed, ref id, ref isRunning))
+			if (TryAdvanceToValuesArray(buffer, cursor.IsCompleted, ref state, out var consumed, ref id, ref isRunning))
 			{
-				syncBuffer.AdvanceTo(consumed, buffer.End);
+				cursor.AdvanceTo(consumed, buffer.End);
 				return (state, id, isRunning);
 			}
 
-			syncBuffer.AdvanceTo(consumed, buffer.End);
+			cursor.AdvanceTo(consumed, buffer.End);
 		}
 
 		throw new JsonException("ES|QL response does not contain a \"values\" property.");

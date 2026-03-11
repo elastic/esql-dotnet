@@ -48,7 +48,7 @@ internal static class TypeHelper
 				}
 			}
 
-			type = type.BaseType!;
+			type = type.BaseType;
 		}
 
 		return null;

@@ -3,7 +3,9 @@
 // See the LICENSE file in the project root for more information
 
 using System.Buffers;
+#if NET10_0_OR_GREATER
 using System.IO.Pipelines;
+#endif
 using System.Text.Json;
 
 namespace Elastic.Esql.Materialization;
@@ -24,37 +26,18 @@ internal sealed partial class EsqlResponseReader
 		Stream stream,
 		CancellationToken cancellationToken = default)
 	{
-		await using var ownedPipeReader = CreateOwnedPipeReader(stream);
-		return await ReadMetadataAsync(ownedPipeReader.Reader, cancellationToken).ConfigureAwait(false);
+		using var asyncBuffer = new AsyncStreamBuffer(stream);
+		var cursor = new AsyncStreamBufferCursor(asyncBuffer);
+		return await ReadMetadataAsync(cursor, cancellationToken).ConfigureAwait(false);
 	}
 
+#if NET10_0_OR_GREATER
 	/// <inheritdoc cref="ReadMetadataAsync(Stream, CancellationToken)"/>
-	public static async Task<EsqlStreamMetadata> ReadMetadataAsync(
+	public static Task<EsqlStreamMetadata> ReadMetadataAsync(
 		PipeReader pipeReader,
-		CancellationToken cancellationToken = default)
-	{
-		var state = new JsonReaderState();
-		string? id = null;
-		var isRunning = false;
-		var depth0Entered = false;
-
-		while (true)
-		{
-			var result = await pipeReader.ReadAsync(cancellationToken).ConfigureAwait(false);
-			var buffer = result.Buffer;
-
-			if (TryParseMetadata(buffer, result.IsCompleted, ref state, ref id, ref isRunning, ref depth0Entered, out var consumed))
-			{
-				pipeReader.AdvanceTo(consumed, buffer.End);
-				return new EsqlStreamMetadata(id, isRunning);
-			}
-
-			pipeReader.AdvanceTo(consumed, buffer.End);
-
-			if (result.IsCompleted)
-				return new EsqlStreamMetadata(id, isRunning);
-		}
-	}
+		CancellationToken cancellationToken = default) =>
+		ReadMetadataAsync(new PipeReaderCursor(pipeReader), cancellationToken);
+#endif
 
 	/// <summary>
 	/// Reads only the async query metadata (<c>id</c>, <c>is_running</c>) from an ES|QL response stream.
@@ -64,23 +47,57 @@ internal sealed partial class EsqlResponseReader
 	public static EsqlStreamMetadata ReadMetadata(Stream stream)
 	{
 		using var syncBuffer = new SyncStreamBuffer(stream);
+		var cursor = new SyncStreamBufferCursor(syncBuffer);
+		return ReadMetadata(cursor);
+	}
 
+	private static async Task<EsqlStreamMetadata> ReadMetadataAsync(
+		IAsyncBufferCursor cursor,
+		CancellationToken cancellationToken)
+	{
 		var state = new JsonReaderState();
 		string? id = null;
 		var isRunning = false;
 		var depth0Entered = false;
 
-		while (syncBuffer.Read())
+		while (await cursor.ReadAsync(cancellationToken).ConfigureAwait(false))
 		{
-			var buffer = syncBuffer.Buffer;
+			var buffer = cursor.Buffer;
 
-			if (TryParseMetadata(buffer, syncBuffer.IsCompleted, ref state, ref id, ref isRunning, ref depth0Entered, out var consumed))
+			if (TryParseMetadata(buffer, cursor.IsCompleted, ref state, ref id, ref isRunning, ref depth0Entered, out var consumed))
 			{
-				syncBuffer.AdvanceTo(consumed, buffer.End);
+				cursor.AdvanceTo(consumed, buffer.End);
 				return new EsqlStreamMetadata(id, isRunning);
 			}
 
-			syncBuffer.AdvanceTo(consumed, buffer.End);
+			cursor.AdvanceTo(consumed, buffer.End);
+
+			if (cursor.IsCompleted)
+				break;
+		}
+
+		return new EsqlStreamMetadata(id, isRunning);
+	}
+
+	private static EsqlStreamMetadata ReadMetadata(
+		ISyncBufferCursor cursor)
+	{
+		var state = new JsonReaderState();
+		string? id = null;
+		var isRunning = false;
+		var depth0Entered = false;
+
+		while (cursor.Read())
+		{
+			var buffer = cursor.Buffer;
+
+			if (TryParseMetadata(buffer, cursor.IsCompleted, ref state, ref id, ref isRunning, ref depth0Entered, out var consumed))
+			{
+				cursor.AdvanceTo(consumed, buffer.End);
+				return new EsqlStreamMetadata(id, isRunning);
+			}
+
+			cursor.AdvanceTo(consumed, buffer.End);
 		}
 
 		return new EsqlStreamMetadata(id, isRunning);
@@ -91,7 +108,7 @@ internal sealed partial class EsqlResponseReader
 	/// for <c>id</c> and <c>is_running</c> that may appear after the <c>values</c> array.
 	/// </summary>
 	private static async Task ScanRemainingMetadataAsync<T>(
-		PipeReader pipeReader,
+		IAsyncBufferCursor cursor,
 		JsonReaderState state,
 		EsqlAsyncResponse<T> result,
 		CancellationToken ct)
@@ -99,59 +116,54 @@ internal sealed partial class EsqlResponseReader
 		string? id = null;
 		bool? isRunning = null;
 
-		while (true)
+		while (await cursor.ReadAsync(ct).ConfigureAwait(false))
 		{
-			var pipeResult = await pipeReader.ReadAsync(ct).ConfigureAwait(false);
-			var buffer = pipeResult.Buffer;
+			var buffer = cursor.Buffer;
+			if (buffer.IsEmpty && cursor.IsCompleted)
+				break;
 
-			if (TryScanRemainingProperties(buffer, pipeResult.IsCompleted, ref state, out var consumed, ref id, ref isRunning, out _))
+			if (TryScanRemainingProperties(buffer, cursor.IsCompleted, ref state, out var consumed, ref id, ref isRunning, out _))
 			{
-				pipeReader.AdvanceTo(consumed, buffer.End);
+				cursor.AdvanceTo(consumed, buffer.End);
 				break;
 			}
 
-			pipeReader.AdvanceTo(consumed, buffer.End);
+			cursor.AdvanceTo(consumed, buffer.End);
 
-			if (pipeResult.IsCompleted)
+			if (cursor.IsCompleted)
 				break;
 		}
 
-		if (id is not null)
-			result.SetId(id);
-		if (isRunning.HasValue)
-			result.SetIsRunning(isRunning.Value);
+		ApplyMetadata(result, id, isRunning);
 	}
 
 	private static void ScanRemainingMetadata<T>(
-		SyncStreamBuffer syncBuffer,
+		ISyncBufferCursor cursor,
 		JsonReaderState state,
 		EsqlResponse<T> result)
 	{
 		string? id = null;
 		bool? isRunning = null;
 
-		while (syncBuffer.Read() || !syncBuffer.IsCompleted)
+		while (cursor.Read() || !cursor.IsCompleted)
 		{
-			var buffer = syncBuffer.Buffer;
-			if (buffer.IsEmpty && syncBuffer.IsCompleted)
+			var buffer = cursor.Buffer;
+			if (buffer.IsEmpty && cursor.IsCompleted)
 				break;
 
-			if (TryScanRemainingProperties(buffer, syncBuffer.IsCompleted, ref state, out var consumed, ref id, ref isRunning, out _))
+			if (TryScanRemainingProperties(buffer, cursor.IsCompleted, ref state, out var consumed, ref id, ref isRunning, out _))
 			{
-				syncBuffer.AdvanceTo(consumed, buffer.End);
+				cursor.AdvanceTo(consumed, buffer.End);
 				break;
 			}
 
-			syncBuffer.AdvanceTo(consumed, buffer.End);
+			cursor.AdvanceTo(consumed, buffer.End);
 
-			if (syncBuffer.IsCompleted)
+			if (cursor.IsCompleted)
 				break;
 		}
 
-		if (id is not null)
-			result.SetId(id);
-		if (isRunning.HasValue)
-			result.SetIsRunning(isRunning.Value);
+		ApplyMetadata(result, id, isRunning);
 	}
 
 	private static bool TryParseMetadata(

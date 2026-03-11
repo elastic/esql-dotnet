@@ -56,9 +56,13 @@ internal static class TranslationExtensions
 
 		return expression switch
 		{
-			MethodCallExpression { Method.Name: "MultiField" } mc
+			MethodCallExpression
+			{
+				Method.Name: "MultiField",
+				Arguments: [var sourceExpression, ConstantExpression { Value: string multiField }]
+			} mc
 				when mc.Method.DeclaringType == typeof(GeneralPurposeExtensions) =>
-				$"{mc.Arguments[0].ResolveFieldName(metadata)}.{(string)((ConstantExpression)mc.Arguments[1]).Value!}",
+				$"{sourceExpression.ResolveFieldName(metadata)}.{multiField}",
 			MemberExpression member => ResolveMemberFieldPath(member, metadata),
 			_ => throw new NotSupportedException($"Cannot extract field name from expression: {expression}")
 		};
