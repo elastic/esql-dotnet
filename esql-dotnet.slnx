@@ -6,6 +6,7 @@
   </Configurations>
   <Folder Name="/examples/">
     <Project Path="examples/esql-aot-smoketest/esql-aot-smoketest.csproj" />
+    <Project Path="examples/esql-translation-showcase/esql-translation-showcase.csproj" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/Elastic.Clients.Esql/Elastic.Clients.Esql.csproj" />

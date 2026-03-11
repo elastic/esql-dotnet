@@ -1,0 +1,28 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net10.0</TargetFramework>
+		<RootNamespace>EsqlTranslationShowcase</RootNamespace>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<NoWarn>SYSLIB1045</NoWarn>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<Content Include="..\..\nuget-icon.png" Link="icon.png">
+			<PackagePath>nuget-icon.png</PackagePath>
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<Pack>True</Pack>
+		</Content>
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="$(SolutionRoot)\src\Elastic.Esql\Elastic.Esql.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Spectre.Console" />
+	</ItemGroup>
+
+</Project>

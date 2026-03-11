@@ -47,6 +47,11 @@ dotnet add package Elastic.Esql
 | [Elastic.Clients.Esql](package-client.md) | LINQ translation + query execution via `Elastic.Transport` | You want to run queries against a cluster and get results back |
 | [Elastic.Esql](package-translation.md)    | LINQ-to-ES\|QL translation only, zero dependencies        | You need string generation, a custom transport, or query inspection |
 
+## Translation deep dive
+
+- [LINQ command mapping reference](linq-translation.md)
+- [LINQ translation architecture](linq-translation-architecture.md)
+
 ## Field name resolution
 
 Field names are resolved automatically from your C# types using `System.Text.Json` conventions:
