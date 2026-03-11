@@ -13,7 +13,7 @@ public class SelectProjectionTests : IntegrationTestBase
 	public async Task Select_AnonymousType_ProjectsFields()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.InStock)
 			.Take(5)
@@ -36,7 +36,7 @@ public class SelectProjectionTests : IntegrationTestBase
 	public async Task Select_AnonymousType_WithMultipleTypes()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(3)
 			.Select(p => new { p.Name, p.Price, p.InStock, p.StockQuantity, p.Category })
@@ -56,7 +56,7 @@ public class SelectProjectionTests : IntegrationTestBase
 	public async Task Select_AnonymousType_OrderFields()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestOrder>()
+			.CreateQuery<TestOrder>()
 			.From(TestDataSeeder.OrderIndex)
 			.Take(5)
 			.Select(o => new { o.Id, o.CustomerId, o.TotalAmount, o.Status })
@@ -77,7 +77,7 @@ public class SelectProjectionTests : IntegrationTestBase
 	public async Task Select_AnonymousType_EventDottedFields()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestEvent>()
+			.CreateQuery<TestEvent>()
 			.From(TestDataSeeder.EventIndex)
 			.Take(5)
 			.Select(e => new { e.Timestamp, e.Level, e.ServiceName, e.Message })
@@ -98,7 +98,7 @@ public class SelectProjectionTests : IntegrationTestBase
 	public async Task Select_FieldSubset_ReducesColumns()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(3)
 			.Select(p => new { p.Id, p.Brand })

@@ -94,7 +94,7 @@ If neither `JsonSerializerContext` nor `JsonSerializerOptions` is provided, `Esq
 ### LINQ fluent syntax
 
 ```csharp
-var results = await client.Query<LogEntry>()
+var results = await client.CreateQuery<LogEntry>()
     .From("logs-*")
     .Where(l => l.Level == "ERROR" && l.Duration > 500)
     .OrderByDescending(l => l.Timestamp)
@@ -106,7 +106,7 @@ var results = await client.Query<LogEntry>()
 
 ```csharp
 var results = await (
-    from l in client.Query<LogEntry>().From("logs-*")
+    from l in client.CreateQuery<LogEntry>().From("logs-*")
     where l.Level == "ERROR"
     orderby l.Timestamp descending
     select new { l.Message, l.Duration }
@@ -147,25 +147,46 @@ await foreach (var item in client.QueryAsync<LogEntry, dynamic>(q =>
 }
 ```
 
+### Raw ES|QL fragments
+
+Use `RawEsql()` to append expert-level ES|QL fragments directly in a query pipeline:
+
+```csharp
+var results = client.Query<LogEntry>(q => q
+    .From("logs-*")
+    .RawEsql("WHERE statusCode >= 500")
+    .RawEsql("| LIMIT 10"));
+```
+
+You can also switch the downstream materialization type:
+
+```csharp
+var rows = client.Query<LogEntry, LogProjection>(q => q
+    .From("logs-*")
+    .RawEsql<LogEntry, LogProjection>("KEEP message, statusCode"));
+```
+
+For Native AOT, include the target type (`LogProjection` in this example) in your source-generated `JsonSerializerContext`.
+
 ## Scalar and single-value queries
 
 ```csharp
-var count = await client.Query<LogEntry>()
+var count = await client.CreateQuery<LogEntry>()
     .From("logs-*")
     .Where(l => l.Level == "ERROR")
     .CountAsync();
 
-var hasErrors = await client.Query<LogEntry>()
+var hasErrors = await client.CreateQuery<LogEntry>()
     .From("logs-*")
     .Where(l => l.Level == "ERROR")
     .AnyAsync();
 
-var first = await client.Query<LogEntry>()
+var first = await client.CreateQuery<LogEntry>()
     .From("logs-*")
     .Where(l => l.Level == "ERROR")
     .FirstOrDefaultAsync();
 
-var single = await client.Query<LogEntry>()
+var single = await client.CreateQuery<LogEntry>()
     .From("logs-*")
     .Where(l => l.Level == "ERROR")
     .Take(1)
@@ -187,7 +208,7 @@ await foreach (var entry in client.QueryAsync<LogEntry>(q =>
 You can also get an `IAsyncEnumerable<T>` from any queryable:
 
 ```csharp
-var query = client.Query<LogEntry>().From("logs-*").Take(100);
+var query = client.CreateQuery<LogEntry>().From("logs-*").Take(100);
 
 await foreach (var entry in query.AsAsyncEnumerable())
 {
@@ -202,7 +223,7 @@ Long-running queries can be submitted asynchronously. The cluster returns a quer
 ### Submit and wait
 
 ```csharp
-await using var asyncQuery = await client.QueryAsyncQuery<LogEntry>(
+await using var asyncQuery = await client.QueryAsyncQueryAsync<LogEntry>(
     q => q.From("logs-*").Where(l => l.Level == "ERROR"),
     new EsqlAsyncQueryOptions
     {
@@ -218,7 +239,7 @@ var results = await asyncQuery.ToListAsync();
 ### Poll manually
 
 ```csharp
-await using var asyncQuery = await client.Query<LogEntry>()
+await using var asyncQuery = await client.CreateQuery<LogEntry>()
     .From("logs-*")
     .Where(l => l.Level == "ERROR")
     .ToAsyncQueryAsync(new EsqlAsyncQueryOptions
@@ -263,13 +284,12 @@ var results = asyncQuery.ToList();
 Use `ROW` + `COMPLETION` in the LINQ pipeline for standalone prompts:
 
 ```csharp
-var results = await client.Query<CompletionResult>()
+var results = await client.CreateQuery<CompletionResult>()
     .Row(() => new { prompt = "Summarize the benefits of Elasticsearch" })
     .Completion("prompt", InferenceEndpoints.OpenAi.Gpt41, column: "answer")
     .ToListAsync();
 ```
 
-`EsqlClient.CompletionAsync<T>()`/`Completion<T>()` are currently pending redesign and throw `NotImplementedException`.
 See the [COMPLETION docs](completion.md) for pipeline patterns and well-known endpoint IDs.
 
 ## Inspect generated ES|QL
@@ -277,7 +297,7 @@ See the [COMPLETION docs](completion.md) for pipeline patterns and well-known en
 Call `.ToString()` or `.ToEsqlString()` on any query to see the generated ES|QL without executing it:
 
 ```csharp
-var query = client.Query<Product>()
+var query = client.CreateQuery<Product>()
     .From("products")
     .Where(p => p.Price > 100)
     .OrderBy(p => p.Name);
@@ -292,7 +312,7 @@ Use `.ToEsqlString(inlineParameters: false)` to see named parameter placeholders
 
 ```csharp
 var minPrice = 100;
-var query = client.Query<Product>()
+var query = client.CreateQuery<Product>()
     .From("products")
     .Where(p => p.Price > minPrice);
 
@@ -314,7 +334,7 @@ Transport and execution errors are thrown as `EsqlExecutionException`, which inc
 ```csharp
 try
 {
-    var results = await client.Query<LogEntry>()
+    var results = await client.CreateQuery<LogEntry>()
         .From("logs-*")
         .ToListAsync();
 }

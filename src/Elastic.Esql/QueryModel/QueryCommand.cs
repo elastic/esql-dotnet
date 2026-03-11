@@ -34,4 +34,5 @@ public interface ICommandVisitor
 	void Visit(RowCommand command);
 	void Visit(RenameCommand command);
 	void Visit(LookupJoinCommand command);
+	void Visit(RawFragmentCommand command);
 }

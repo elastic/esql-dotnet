@@ -12,7 +12,7 @@ Aggregations run inside `.GroupBy(...).Select(...)` or as terminal operators lik
 See [STATS...BY aggregation](linq-translation.md#statsby---aggregation) for details on the GroupBy pattern.
 
 ```csharp
-var topLevels = client.Query<LogEntry>()
+var topLevels = client.CreateQuery<LogEntry>()
     .GroupBy(l => l.Level)
     .Select(g => new {
         Level = g.Key,

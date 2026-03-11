@@ -14,7 +14,7 @@ public class FunctionTests : IntegrationTestBase
 	public async Task ToLower_ConvertsToLowercase()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(5)
 			.Select(p => new { LowerBrand = EsqlFunctions.ToLower(p.Brand) })
@@ -31,7 +31,7 @@ public class FunctionTests : IntegrationTestBase
 	public async Task ToUpper_ConvertsToUppercase()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(5)
 			.Select(p => new { UpperBrand = EsqlFunctions.ToUpper(p.Brand) })
@@ -48,7 +48,7 @@ public class FunctionTests : IntegrationTestBase
 	public async Task Length_ReturnsStringLength()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(5)
 			.Select(p => new { p.Name, NameLen = EsqlFunctions.Length(p.Name) })
@@ -65,7 +65,7 @@ public class FunctionTests : IntegrationTestBase
 	public async Task Trim_RemovesWhitespace()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(5)
 			.Select(p => new { Trimmed = EsqlFunctions.Trim(p.Name) })
@@ -82,7 +82,7 @@ public class FunctionTests : IntegrationTestBase
 	public async Task Substring_ExtractsSubstring()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(5)
 			.Select(p => new { Sub = EsqlFunctions.Substring(p.Name, 0, 3) })
@@ -99,7 +99,7 @@ public class FunctionTests : IntegrationTestBase
 	public async Task Concat_ConcatenatesStrings()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(5)
 			.Select(p => new { FullName = EsqlFunctions.Concat(p.Brand, " - ", p.Name) })
@@ -116,7 +116,7 @@ public class FunctionTests : IntegrationTestBase
 	public async Task Round_RoundsDoubleValue()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(5)
 			.Select(p => new { p.Price, Rounded = EsqlFunctions.Round(p.Price) })
@@ -133,7 +133,7 @@ public class FunctionTests : IntegrationTestBase
 	public async Task Abs_ReturnsAbsoluteValue()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(5)
 			.Select(p => new { AbsPrice = EsqlFunctions.Abs(p.Price) })
@@ -150,7 +150,7 @@ public class FunctionTests : IntegrationTestBase
 	public async Task Ceil_ReturnsCeiling()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(5)
 			.Select(p => new { p.Price, Ceiling = EsqlFunctions.Ceil(p.Price) })
@@ -167,7 +167,7 @@ public class FunctionTests : IntegrationTestBase
 	public async Task Floor_ReturnsFloor()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(5)
 			.Select(p => new { p.Price, Floored = EsqlFunctions.Floor(p.Price) })
@@ -184,7 +184,7 @@ public class FunctionTests : IntegrationTestBase
 	public async Task Like_PatternMatch_FiltersByPattern()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => EsqlFunctions.Like(p.Name, "Product 1*"))
 			.AsEsql()
@@ -197,7 +197,7 @@ public class FunctionTests : IntegrationTestBase
 	public async Task Rlike_RegexMatch_FiltersByPattern()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => EsqlFunctions.Rlike(p.Name, "Product [1-3]"))
 			.AsEsql()
@@ -210,7 +210,7 @@ public class FunctionTests : IntegrationTestBase
 	public async Task Coalesce_ReturnsFirstNonNull()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestOrder>()
+			.CreateQuery<TestOrder>()
 			.From(TestDataSeeder.OrderIndex)
 			.Take(5)
 			.Select(o => new { Ip = EsqlFunctions.Coalesce(o.ClientIp, "unknown") })

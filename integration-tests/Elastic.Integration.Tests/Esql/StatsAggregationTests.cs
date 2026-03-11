@@ -13,7 +13,7 @@ public class StatsAggregationTests : IntegrationTestBase
 	public async Task GroupBy_Count_ByBrand()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.GroupBy(p => p.Brand)
 			.Select(g => new { Brand = g.Key, Count = g.Count() })
@@ -30,7 +30,7 @@ public class StatsAggregationTests : IntegrationTestBase
 	public async Task GroupBy_Sum_TotalAmountByStatus()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestOrder>()
+			.CreateQuery<TestOrder>()
 			.From(TestDataSeeder.OrderIndex)
 			.GroupBy(o => o.Status)
 			.Select(g => new { Status = g.Key, Total = g.Sum(o => o.TotalAmount) })
@@ -47,7 +47,7 @@ public class StatsAggregationTests : IntegrationTestBase
 	public async Task GroupBy_Average_PriceByBrand()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.GroupBy(p => p.Brand)
 			.Select(g => new { Brand = g.Key, AvgPrice = g.Average(p => p.Price) })
@@ -64,7 +64,7 @@ public class StatsAggregationTests : IntegrationTestBase
 	public async Task GroupBy_Min_MinPriceByBrand()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.GroupBy(p => p.Brand)
 			.Select(g => new { Brand = g.Key, MinPrice = g.Min(p => p.Price) })
@@ -81,7 +81,7 @@ public class StatsAggregationTests : IntegrationTestBase
 	public async Task GroupBy_Max_MaxPriceByBrand()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.GroupBy(p => p.Brand)
 			.Select(g => new { Brand = g.Key, MaxPrice = g.Max(p => p.Price) })
@@ -98,7 +98,7 @@ public class StatsAggregationTests : IntegrationTestBase
 	public async Task GroupBy_MultipleAggregations()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.GroupBy(p => p.Brand)
 			.Select(g => new
@@ -126,7 +126,7 @@ public class StatsAggregationTests : IntegrationTestBase
 	public async Task GroupBy_Enum_GroupsByCategory()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.GroupBy(p => p.Category)
 			.Select(g => new { Category = g.Key, Count = g.Count() })
@@ -143,7 +143,7 @@ public class StatsAggregationTests : IntegrationTestBase
 	public async Task GroupBy_String_GroupsByLevel()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestEvent>()
+			.CreateQuery<TestEvent>()
 			.From(TestDataSeeder.EventIndex)
 			.GroupBy(e => e.Level)
 			.Select(g => new { Level = g.Key, Count = g.Count() })
@@ -160,7 +160,7 @@ public class StatsAggregationTests : IntegrationTestBase
 	public async Task GroupBy_WithWhere_FilteredAggregation()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.InStock)
 			.GroupBy(p => p.Brand)

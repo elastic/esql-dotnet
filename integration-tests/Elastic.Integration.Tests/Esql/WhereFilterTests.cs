@@ -15,7 +15,7 @@ public class WhereFilterTests : IntegrationTestBase
 		var expected = TestDataSeeder.Products.Count(p => p.Brand == "TechCorp");
 
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.Brand == "TechCorp")
 			.AsEsql()
@@ -31,7 +31,7 @@ public class WhereFilterTests : IntegrationTestBase
 		var expected = TestDataSeeder.Products.Count(p => p.Price > 500);
 
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.Price > 500)
 			.AsEsql()
@@ -47,7 +47,7 @@ public class WhereFilterTests : IntegrationTestBase
 		var expected = TestDataSeeder.Products.Count(p => p.Price <= 100);
 
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.Price <= 100)
 			.AsEsql()
@@ -62,7 +62,7 @@ public class WhereFilterTests : IntegrationTestBase
 		var expected = TestDataSeeder.Products.Count(p => p.InStock);
 
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.InStock)
 			.AsEsql()
@@ -78,7 +78,7 @@ public class WhereFilterTests : IntegrationTestBase
 		var expected = TestDataSeeder.Products.Count(p => !p.InStock);
 
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => !p.InStock)
 			.AsEsql()
@@ -95,7 +95,7 @@ public class WhereFilterTests : IntegrationTestBase
 			.Count(p => p.InStock && p.Price > 200);
 
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.InStock && p.Price > 200)
 			.AsEsql()
@@ -111,7 +111,7 @@ public class WhereFilterTests : IntegrationTestBase
 			.Count(p => p.Brand is "TechCorp" or "StyleMax");
 
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.Brand == "TechCorp" || p.Brand == "StyleMax")
 			.AsEsql()
@@ -127,7 +127,7 @@ public class WhereFilterTests : IntegrationTestBase
 			.Count(o => o.Status == OrderStatus.Delivered);
 
 		var results = await Fixture.EsqlClient
-			.Query<TestOrder>()
+			.CreateQuery<TestOrder>()
 			.From(TestDataSeeder.OrderIndex)
 			.Where(o => o.Status == OrderStatus.Delivered)
 			.AsEsql()
@@ -144,7 +144,7 @@ public class WhereFilterTests : IntegrationTestBase
 			.Count(p => p.Category == ProductCategory.Electronics);
 
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.Category == ProductCategory.Electronics)
 			.AsEsql()
@@ -161,7 +161,7 @@ public class WhereFilterTests : IntegrationTestBase
 			.Count(p => p.StockQuantity >= 100);
 
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.StockQuantity >= 100)
 			.AsEsql()
@@ -177,7 +177,7 @@ public class WhereFilterTests : IntegrationTestBase
 			.Count(p => p.Price is >= 100 and <= 300);
 
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.Price >= 100 && p.Price <= 300)
 			.AsEsql()
@@ -193,7 +193,7 @@ public class WhereFilterTests : IntegrationTestBase
 			.Count(e => e.Level == "Error");
 
 		var results = await Fixture.EsqlClient
-			.Query<TestEvent>()
+			.CreateQuery<TestEvent>()
 			.From(TestDataSeeder.EventIndex)
 			.Where(e => e.Level == "Error")
 			.AsEsql()
@@ -210,7 +210,7 @@ public class WhereFilterTests : IntegrationTestBase
 			.Count(o => o.TotalAmount > 500);
 
 		var results = await Fixture.EsqlClient
-			.Query<TestOrder>()
+			.CreateQuery<TestOrder>()
 			.From(TestDataSeeder.OrderIndex)
 			.Where(o => o.TotalAmount > 500)
 			.AsEsql()
@@ -226,7 +226,7 @@ public class WhereFilterTests : IntegrationTestBase
 			.Count(o => o.Status is OrderStatus.Pending or OrderStatus.Cancelled);
 
 		var results = await Fixture.EsqlClient
-			.Query<TestOrder>()
+			.CreateQuery<TestOrder>()
 			.From(TestDataSeeder.OrderIndex)
 			.Where(o => o.Status == OrderStatus.Pending || o.Status == OrderStatus.Cancelled)
 			.AsEsql()
@@ -242,7 +242,7 @@ public class WhereFilterTests : IntegrationTestBase
 			.Count(p => (p.Brand == "TechCorp" || p.Brand == "SportPro") && p.InStock);
 
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => (p.Brand == "TechCorp" || p.Brand == "SportPro") && p.InStock)
 			.AsEsql()

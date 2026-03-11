@@ -113,6 +113,8 @@ public class EsqlFormatter : ICommandVisitor
 	public void Visit(LookupJoinCommand command) =>
 		AppendCommand($"LOOKUP JOIN {EscapeIdentifier(command.LookupIndex)} ON {command.OnCondition}");
 
+	public void Visit(RawFragmentCommand command) => AppendCommand(command.Fragment);
+
 	/// <summary>
 	/// Escapes an identifier for ES|QL if needed.
 	/// </summary>

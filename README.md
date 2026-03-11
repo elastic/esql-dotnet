@@ -66,7 +66,7 @@ var transport = new DistributedTransport(
 var settings = new EsqlClientSettings(transport);
 using var client = new EsqlClient(settings);
 
-var errors = await client.Query<LogEntry>()
+var errors = await client.CreateQuery<LogEntry>()
     .From("logs-*")
     .Where(l => l.Level == "ERROR")
     .OrderByDescending(l => l.Timestamp)
@@ -124,6 +124,19 @@ See the [Elastic.Esql README](src/Elastic.Esql) for the full list including stri
 
 Translates `.Where()`, `.Select()`, `.GroupBy()`, `.OrderBy()`, `.Take()`, and more into ES|QL commands: `WHERE`, `EVAL`, `KEEP`, `DROP`, `STATS...BY`, `SORT`, `LIMIT`, `RENAME`, `ROW`, `COMPLETION`, and `LOOKUP JOIN`.
 
+### RawEsql Fragment Append
+
+For expert scenarios, append raw ES|QL fragments inline with `.RawEsql(...)` while keeping the existing typed execution pipeline:
+
+```csharp
+var rows = client.Query<LogEntry>(q => q
+    .From("logs-*")
+    .RawEsql("WHERE log.level == \"ERROR\"")
+    .RawEsql("| LIMIT 25"));
+```
+
+You can also switch the downstream result type with `RawEsql<TSource, TNext>(...)`.
+
 ### 80+ ES|QL Functions
 
 Math (`ABS`, `SQRT`, `ROUND`, ...), string (`TRIM`, `CONCAT`, `REPLACE`, ...), date/time (`DATE_EXTRACT`, `DATE_TRUNC`, `NOW`, ...), search (`MATCH`, `KQL`, `QSTR`, ...), IP (`CIDR_MATCH`, `IP_PREFIX`), cast operators (`::integer`, `::keyword`, ...), grouping (`BUCKET`, `CATEGORIZE`), and aggregation (`PERCENTILE`, `MEDIAN`, `STD_DEV`, `VALUES`, ...).
@@ -133,7 +146,7 @@ Math (`ABS`, `SQRT`, `ROUND`, ...), string (`TRIM`, `CONCAT`, `REPLACE`, ...), d
 Submit long-running queries asynchronously with `ToAsyncQueryAsync()`. Poll for completion, stream results, and auto-cleanup on dispose:
 
 ```csharp
-await using var asyncQuery = await client.Query<LogEntry>()
+await using var asyncQuery = await client.CreateQuery<LogEntry>()
     .From("logs-*")
     .Where(l => l.Level == "ERROR")
     .ToAsyncQueryAsync(new EsqlAsyncQueryOptions
@@ -151,13 +164,13 @@ Run LLM inference directly in ES|QL pipelines or as standalone prompts using pre
 
 ```csharp
 // RAG pipeline
-client.Query<LogEntry>()
+client.CreateQuery<LogEntry>()
     .From("logs-*")
     .Where(l => l.Level == "ERROR")
     .Completion(l => l.Message, InferenceEndpoints.OpenAi.Gpt41, column: "analysis")
 
 // Standalone
-client.Query<Result>()
+client.CreateQuery<Result>()
     .Row(() => new { prompt = "Summarize Elasticsearch" })
     .Completion("prompt", InferenceEndpoints.Anthropic.Claude46Opus, column: "answer")
 ```

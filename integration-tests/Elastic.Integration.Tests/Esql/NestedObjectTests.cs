@@ -13,7 +13,7 @@ public class NestedObjectTests : IntegrationTestBase
 	public async Task ToListAsync_WithNestedObjectFields_DeserializesAddress()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestUserProfile>()
+			.CreateQuery<TestUserProfile>()
 			.From(TestDataSeeder.UserProfileIndex)
 			.AsEsql()
 			.ToListAsync();
@@ -35,7 +35,7 @@ public class NestedObjectTests : IntegrationTestBase
 	public async Task ToListAsync_WithNestedObjectFields_NullAddress_StaysNull()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestUserProfile>()
+			.CreateQuery<TestUserProfile>()
 			.From(TestDataSeeder.UserProfileIndex)
 			.AsEsql()
 			.ToListAsync();
@@ -54,7 +54,7 @@ public class NestedObjectTests : IntegrationTestBase
 	public async Task FirstAsync_WithNestedObjectFields_DeserializesCorrectly()
 	{
 		var result = await Fixture.EsqlClient
-			.Query<TestUserProfile>()
+			.CreateQuery<TestUserProfile>()
 			.From(TestDataSeeder.UserProfileIndex)
 			.Where(u => u.Name == "User 1")
 			.AsEsql()

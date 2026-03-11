@@ -13,7 +13,7 @@ public class BasicQueryTests : IntegrationTestBase
 	public async Task ToListAsync_ReturnsAllProducts()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.AsEsql()
 			.ToListAsync();
@@ -25,7 +25,7 @@ public class BasicQueryTests : IntegrationTestBase
 	public async Task ToArrayAsync_ReturnsAllProducts()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.AsEsql()
 			.ToArrayAsync();
@@ -37,7 +37,7 @@ public class BasicQueryTests : IntegrationTestBase
 	public async Task CountAsync_ReturnsCorrectCount()
 	{
 		var count = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.AsEsql()
 			.CountAsync();
@@ -49,7 +49,7 @@ public class BasicQueryTests : IntegrationTestBase
 	public async Task AnyAsync_ReturnsTrueWhenDataExists()
 	{
 		var any = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.AsEsql()
 			.AnyAsync();
@@ -61,7 +61,7 @@ public class BasicQueryTests : IntegrationTestBase
 	public async Task AnyAsync_ReturnsFalseForImpossibleFilter()
 	{
 		var any = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.Price < 0)
 			.AsEsql()
@@ -74,7 +74,7 @@ public class BasicQueryTests : IntegrationTestBase
 	public async Task FirstAsync_ReturnsFirstProduct()
 	{
 		var first = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.AsEsql()
 			.FirstAsync();
@@ -87,7 +87,7 @@ public class BasicQueryTests : IntegrationTestBase
 	public async Task FirstOrDefaultAsync_ReturnsNullForNoMatches()
 	{
 		var result = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.Price < 0)
 			.AsEsql()
@@ -100,7 +100,7 @@ public class BasicQueryTests : IntegrationTestBase
 	public async Task SingleAsync_WithTake1_ReturnsSingleProduct()
 	{
 		var result = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(1)
 			.AsEsql()
@@ -114,7 +114,7 @@ public class BasicQueryTests : IntegrationTestBase
 	public async Task CountAsync_Orders_ReturnsCorrectCount()
 	{
 		var count = await Fixture.EsqlClient
-			.Query<TestOrder>()
+			.CreateQuery<TestOrder>()
 			.From(TestDataSeeder.OrderIndex)
 			.AsEsql()
 			.CountAsync();
@@ -126,7 +126,7 @@ public class BasicQueryTests : IntegrationTestBase
 	public async Task CountAsync_Events_ReturnsCorrectCount()
 	{
 		var count = await Fixture.EsqlClient
-			.Query<TestEvent>()
+			.CreateQuery<TestEvent>()
 			.From(TestDataSeeder.EventIndex)
 			.AsEsql()
 			.CountAsync();
@@ -139,7 +139,7 @@ public class BasicQueryTests : IntegrationTestBase
 	{
 		var count = 0;
 		await foreach (var product in Fixture.EsqlClient
-						   .Query<TestProduct>()
+						   .CreateQuery<TestProduct>()
 						   .From(TestDataSeeder.ProductIndex)
 						   .AsEsql()
 						   .AsAsyncEnumerable())

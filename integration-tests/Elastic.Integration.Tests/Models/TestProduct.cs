@@ -46,3 +46,11 @@ public enum ProductCategory
 	Home,
 	Sports
 }
+
+public class RawProductSummary
+{
+	[JsonPropertyName("product_id")]
+	public string Id { get; set; } = string.Empty;
+
+	public string Name { get; set; } = string.Empty;
+}

@@ -3,7 +3,7 @@
 Type-safe Elasticsearch [ES|QL](elasticsearch://reference/query-languages/esql.md) development for .NET. Write LINQ expressions, get ES|QL query strings, execute against Elasticsearch. AOT compatible, zero reflection at runtime.
 
 ```csharp
-var results = await client.Query<LogEntry>()
+var results = await client.CreateQuery<LogEntry>()
     .From("logs-*")
     .Where(l => l.Level == "ERROR" && l.Duration > 1000)
     .OrderByDescending(l => l.Timestamp)

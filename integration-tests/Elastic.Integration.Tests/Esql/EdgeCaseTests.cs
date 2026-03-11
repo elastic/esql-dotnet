@@ -14,7 +14,7 @@ public class EdgeCaseTests : IntegrationTestBase
 	public async Task EmptyResultSet_ReturnsEmptyList()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.Price < 0)
 			.AsEsql()
@@ -27,7 +27,7 @@ public class EdgeCaseTests : IntegrationTestBase
 	public async Task EmptyResultSet_CountIsZero()
 	{
 		var count = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.Price < 0)
 			.AsEsql()
@@ -40,7 +40,7 @@ public class EdgeCaseTests : IntegrationTestBase
 	public async Task SingleRow_Take1_ReturnsExactlyOne()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(1)
 			.AsEsql()
@@ -53,7 +53,7 @@ public class EdgeCaseTests : IntegrationTestBase
 	public async Task NonExistentIndex_ThrowsEsqlExecutionException()
 	{
 		var act = async () => await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From("non-existent-index-xyz")
 			.AsEsql()
 			.ToListAsync();
@@ -65,7 +65,7 @@ public class EdgeCaseTests : IntegrationTestBase
 	public async Task VeryLargeLimit_ReturnsAllAvailable()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(100000)
 			.AsEsql()
@@ -78,7 +78,7 @@ public class EdgeCaseTests : IntegrationTestBase
 	public async Task WhereMatchingZeroRows_ReturnsEmptyList()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.Brand == "NonExistentBrand12345")
 			.AsEsql()
@@ -91,7 +91,7 @@ public class EdgeCaseTests : IntegrationTestBase
 	public async Task NullFieldValues_DeserializedAsNull()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestOrder>()
+			.CreateQuery<TestOrder>()
 			.From(TestDataSeeder.OrderIndex)
 			.OrderBy(o => o.Id)
 			.AsEsql()
@@ -116,7 +116,7 @@ public class EdgeCaseTests : IntegrationTestBase
 	public async Task NullableIntField_DeserializedAsNull()
 	{
 		var results = await Fixture.EsqlClient
-			.Query<TestEvent>()
+			.CreateQuery<TestEvent>()
 			.From(TestDataSeeder.EventIndex)
 			.OrderBy(e => e.Timestamp)
 			.AsEsql()
@@ -148,7 +148,7 @@ public class EdgeCaseTests : IntegrationTestBase
 	public async Task FirstAsync_OnEmptySet_Throws()
 	{
 		var act = async () => await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.Price < 0)
 			.AsEsql()
@@ -161,7 +161,7 @@ public class EdgeCaseTests : IntegrationTestBase
 	public async Task SingleAsync_OnMultipleRows_Throws()
 	{
 		var act = async () => await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(2)
 			.AsEsql()
@@ -174,7 +174,7 @@ public class EdgeCaseTests : IntegrationTestBase
 	public async Task SingleOrDefaultAsync_OnEmptySet_ReturnsNull()
 	{
 		var result = await Fixture.EsqlClient
-			.Query<TestProduct>()
+			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.Price < 0)
 			.AsEsql()
