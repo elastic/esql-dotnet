@@ -196,9 +196,11 @@ public sealed class EsqlQueryProvider : IQueryProvider
 		var (esql, query) = TranslateAndFormat(expression);
 
 		if (GetElementType(expression) is not null)
+		{
 			throw new NotSupportedException(
 				$"Collection queries must use {nameof(ExecuteEnumerable)} via GetEnumerator(). " +
 				$"Execute<{typeof(TResult).Name}> is only supported for scalar results.");
+		}
 
 		return ExecuteScalar<TResult>(esql, query, expression);
 	}
@@ -214,17 +216,14 @@ public sealed class EsqlQueryProvider : IQueryProvider
 	}
 
 	/// <summary>Executes a collection query and returns rows as the correct element type.</summary>
-	internal List<TElement> ExecuteEnumerable<TElement>(Expression expression)
+	internal IEnumerable<TElement> ExecuteEnumerable<TElement>(Expression expression)
 	{
 		var (esql, query) = TranslateAndFormat(expression);
 		var options = query.Parameters is { } p ? new EsqlQueryOptions { Parameters = p.ToEsqlParams() } : null;
 		using var response = _executor.ExecuteQuery(esql, options);
-		var list = new List<TElement>();
 
 		foreach (var item in _reader.ReadRows<TElement>(response.Body))
-			list.Add(item);
-
-		return list;
+			yield return item;
 	}
 
 	private static void ValidateScalarCardinality(Expression expression, int rowCount)
