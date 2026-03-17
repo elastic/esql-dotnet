@@ -22,15 +22,11 @@ internal sealed class ThrowingQueryExecutor : IEsqlQueryExecutor
 	public Task<IEsqlAsyncResponse> ExecuteQueryAsync(string esql, EsqlQueryOptions? options, CancellationToken cancellationToken) =>
 		throw NotSupported();
 
-	public IEsqlResponse SubmitAsyncQuery(string esql, EsqlQueryOptions? queryOptions, EsqlAsyncQueryOptions? asyncOptions) =>
+	public IEsqlResponse SubmitAsyncQuery(string esql, EsqlAsyncQueryOptions? options) =>
 		throw NotSupported();
 
-	public Task<IEsqlAsyncResponse> SubmitAsyncQueryAsync(
-		string esql,
-		EsqlQueryOptions? queryOptions,
-		EsqlAsyncQueryOptions? asyncOptions,
-		CancellationToken cancellationToken
-	) => throw NotSupported();
+	public Task<IEsqlAsyncResponse> SubmitAsyncQueryAsync(string esql, EsqlAsyncQueryOptions? options, CancellationToken cancellationToken) =>
+		throw NotSupported();
 
 	public IEsqlResponse PollAsyncQuery(string queryId) => throw NotSupported();
 

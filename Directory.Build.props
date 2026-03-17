@@ -15,8 +15,4 @@
     <Nullable>enable</Nullable>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
   </PropertyGroup>
-
-  <ItemGroup>
-    <Using Include="System.Threading.CancellationToken" Alias="Cancel" />
-  </ItemGroup>
 </Project>

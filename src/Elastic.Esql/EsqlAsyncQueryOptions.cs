@@ -5,7 +5,7 @@
 namespace Elastic.Esql;
 
 /// <summary>Options for async ES|QL query execution.</summary>
-public record EsqlAsyncQueryOptions
+public record EsqlAsyncQueryOptions : EsqlQueryOptions
 {
 	/// <summary>How long to wait before returning async ID. Default: 1s.</summary>
 	public TimeSpan? WaitForCompletionTimeout { get; init; }

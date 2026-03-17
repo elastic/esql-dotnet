@@ -19,15 +19,10 @@ public interface IEsqlQueryExecutor
 	Task<IEsqlAsyncResponse> ExecuteQueryAsync(string esql, EsqlQueryOptions? options, CancellationToken cancellationToken);
 
 	/// <summary>Submits an async ES|QL query synchronously.</summary>
-	IEsqlResponse SubmitAsyncQuery(string esql, EsqlQueryOptions? queryOptions, EsqlAsyncQueryOptions? asyncOptions);
+	IEsqlResponse SubmitAsyncQuery(string esql, EsqlAsyncQueryOptions? options);
 
 	/// <summary>Submits an async ES|QL query asynchronously.</summary>
-	Task<IEsqlAsyncResponse> SubmitAsyncQueryAsync(
-		string esql,
-		EsqlQueryOptions? queryOptions,
-		EsqlAsyncQueryOptions? asyncOptions,
-		CancellationToken cancellationToken
-	);
+	Task<IEsqlAsyncResponse> SubmitAsyncQueryAsync(string esql, EsqlAsyncQueryOptions? options, CancellationToken cancellationToken);
 
 	/// <summary>Polls the state of an async query synchronously.</summary>
 	IEsqlResponse PollAsyncQuery(string queryId);

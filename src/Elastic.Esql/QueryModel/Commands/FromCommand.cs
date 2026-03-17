@@ -7,7 +7,7 @@ namespace Elastic.Esql.QueryModel.Commands;
 /// <summary>
 /// Represents the FROM command.
 /// </summary>
-public class FromCommand(string indexPattern) : QueryCommand
+public class FromCommand(string indexPattern) : SourceCommand
 {
 	public string IndexPattern { get; } = indexPattern ?? throw new ArgumentNullException(nameof(indexPattern));
 
