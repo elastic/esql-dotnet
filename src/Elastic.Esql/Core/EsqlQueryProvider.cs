@@ -113,9 +113,10 @@ public sealed class EsqlQueryProvider : IQueryProvider
 		Verify.NotNull(expression);
 
 		var (esql, query) = TranslateAndFormat(expression);
+		var options = query.Parameters is { } p ? new EsqlQueryOptions { Parameters = p.ToEsqlParams() } : null;
 
 		await using var response = await _executor
-			.ExecuteQueryAsync(esql, ToOptions(query), cancellationToken)
+			.ExecuteQueryAsync(esql, options, cancellationToken)
 			.ConfigureAwait(false);
 
 		var result = await _reader.ReadScalarAsync<TResult>(response.Body, cancellationToken)
@@ -137,9 +138,10 @@ public sealed class EsqlQueryProvider : IQueryProvider
 			throw new ArgumentException($"Expression must return a queryable of '{typeof(TElement).Name}' elements.", nameof(expression));
 
 		var (esql, query) = TranslateAndFormat(expression);
+		var options = query.Parameters is { } p ? new EsqlQueryOptions { Parameters = p.ToEsqlParams() } : null;
 
 		await using var response = await _executor
-			.ExecuteQueryAsync(esql, ToOptions(query), cancellationToken)
+			.ExecuteQueryAsync(esql, options, cancellationToken)
 			.ConfigureAwait(false);
 
 		await foreach (var item in _reader.ReadRowsAsync<TElement>(response.Body, cancellationToken).ConfigureAwait(false))
@@ -161,7 +163,10 @@ public sealed class EsqlQueryProvider : IQueryProvider
 	{
 		var pollInterval = ResolvePollInterval(asyncOptions);
 		var (esql, query) = TranslateAndFormat(expression);
-		var response = _executor.SubmitAsyncQuery(esql, ToOptions(query), asyncOptions);
+		var options = query.Parameters is { } p
+			? (asyncOptions ?? new EsqlAsyncQueryOptions()) with { Parameters = p.ToEsqlParams() }
+			: asyncOptions;
+		var response = _executor.SubmitAsyncQuery(esql, options);
 		var result = _reader.ReadRowsWithMetadata<T>(response.Body);
 		return new EsqlAsyncQuery<T>(_executor, result, response, _reader, pollInterval);
 	}
@@ -174,8 +179,11 @@ public sealed class EsqlQueryProvider : IQueryProvider
 	{
 		var pollInterval = ResolvePollInterval(asyncOptions);
 		var (esql, query) = TranslateAndFormat(expression);
+		var options = query.Parameters is { } p
+			? (asyncOptions ?? new EsqlAsyncQueryOptions()) with { Parameters = p.ToEsqlParams() }
+			: asyncOptions;
 		var response = await _executor
-			.SubmitAsyncQueryAsync(esql, ToOptions(query), asyncOptions, cancellationToken)
+			.SubmitAsyncQueryAsync(esql, options, cancellationToken)
 			.ConfigureAwait(false);
 		var result = await _reader
 			.ReadRowsWithMetadataAsync<T>(response.Body, cancellationToken)
@@ -197,7 +205,8 @@ public sealed class EsqlQueryProvider : IQueryProvider
 
 	private TResult ExecuteScalar<TResult>(string esql, EsqlQuery query, Expression expression)
 	{
-		using var response = _executor.ExecuteQuery(esql, ToOptions(query));
+		var options = query.Parameters is { } p ? new EsqlQueryOptions { Parameters = p.ToEsqlParams() } : null;
+		using var response = _executor.ExecuteQuery(esql, options);
 		var result = _reader.ReadScalar<TResult>(response.Body);
 
 		ValidateScalarCardinality(expression, result.RowCount);
@@ -208,7 +217,8 @@ public sealed class EsqlQueryProvider : IQueryProvider
 	internal List<TElement> ExecuteEnumerable<TElement>(Expression expression)
 	{
 		var (esql, query) = TranslateAndFormat(expression);
-		using var response = _executor.ExecuteQuery(esql, ToOptions(query));
+		var options = query.Parameters is { } p ? new EsqlQueryOptions { Parameters = p.ToEsqlParams() } : null;
+		using var response = _executor.ExecuteQuery(esql, options);
 		var list = new List<TElement>();
 
 		foreach (var item in _reader.ReadRows<TElement>(response.Body))
@@ -275,9 +285,6 @@ public sealed class EsqlQueryProvider : IQueryProvider
 		var esql = new EsqlFormatter().Format(query);
 		return (esql, query);
 	}
-
-	private static EsqlQueryOptions? ToOptions(EsqlQuery query) =>
-		query.Parameters is { } p ? new EsqlQueryOptions { Parameters = p.ToEsqlParams() } : null;
 
 	private static TimeSpan ResolvePollInterval(EsqlAsyncQueryOptions? asyncOptions)
 	{

@@ -52,9 +52,9 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 #endif
 	}
 
-	public IEsqlResponse SubmitAsyncQuery(string esql, EsqlQueryOptions? queryOptions, EsqlAsyncQueryOptions? asyncOptions)
+	public IEsqlResponse SubmitAsyncQuery(string esql, EsqlAsyncQueryOptions? options)
 	{
-		var (postData, endpoint) = BuildAsyncPostData(esql, queryOptions, asyncOptions);
+		var (postData, endpoint) = BuildAsyncPostData(esql, options);
 		var response = _settings.Transport.Request<StreamResponse>(in endpoint, postData, null, null);
 		ThrowIfError(response, "ES|QL async query failed");
 		return new TransportEsqlResponse(response);
@@ -62,11 +62,10 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 
 	public async Task<IEsqlAsyncResponse> SubmitAsyncQueryAsync(
 		string esql,
-		EsqlQueryOptions? queryOptions,
-		EsqlAsyncQueryOptions? asyncOptions,
+		EsqlAsyncQueryOptions? options,
 		CancellationToken cancellationToken)
 	{
-		var (postData, endpoint) = BuildAsyncPostData(esql, queryOptions, asyncOptions);
+		var (postData, endpoint) = BuildAsyncPostData(esql, options);
 
 #if NET10_0_OR_GREATER
 		var response = await _settings.Transport
@@ -190,9 +189,9 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 		return PostData.String(json);
 	}
 
-	private (PostData Data, EndpointPath Endpoint) BuildAsyncPostData(string esql, EsqlQueryOptions? queryOptions, EsqlAsyncQueryOptions? asyncOptions)
+	private (PostData Data, EndpointPath Endpoint) BuildAsyncPostData(string esql, EsqlAsyncQueryOptions? options)
 	{
-		var request = BuildAsyncRequest(esql, queryOptions, asyncOptions);
+		var request = BuildAsyncRequest(esql, options);
 		var endpoint = BuildAsyncQueryEndpoint(request);
 		var json = JsonSerializer.Serialize(request, EsqlRequestJsonContext.Default.EsqlAsyncRequest);
 		return (PostData.String(json), endpoint);
@@ -210,18 +209,18 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 		};
 	}
 
-	private EsqlAsyncRequest BuildAsyncRequest(string esql, EsqlQueryOptions? queryOptions, EsqlAsyncQueryOptions? asyncOptions)
+	private EsqlAsyncRequest BuildAsyncRequest(string esql, EsqlAsyncQueryOptions? options)
 	{
 		var defaults = _settings.Defaults;
 		return new EsqlAsyncRequest
 		{
 			Query = esql,
-			Locale = queryOptions?.Locale ?? defaults.Locale,
-			TimeZone = queryOptions?.TimeZone ?? defaults.TimeZone,
-			Params = queryOptions?.Parameters,
-			WaitForCompletionTimeout = asyncOptions?.WaitForCompletionTimeout,
-			KeepAlive = asyncOptions?.KeepAlive,
-			KeepOnCompletion = asyncOptions?.KeepOnCompletion ?? false
+			Locale = options?.Locale ?? defaults.Locale,
+			TimeZone = options?.TimeZone ?? defaults.TimeZone,
+			Params = options?.Parameters,
+			WaitForCompletionTimeout = options?.WaitForCompletionTimeout,
+			KeepAlive = options?.KeepAlive,
+			KeepOnCompletion = options?.KeepOnCompletion ?? false
 		};
 	}
 
