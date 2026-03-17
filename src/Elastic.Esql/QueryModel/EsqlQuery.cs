@@ -32,7 +32,7 @@ public class EsqlQuery(Type elementType, IReadOnlyList<QueryCommand> commands, E
 	/// <summary>
 	/// Gets the FROM command if present.
 	/// </summary>
-	public FromCommand? From => Commands.OfType<FromCommand>().FirstOrDefault();
+	public FromCommand? From => Commands.OfType<FromCommand>().SingleOrDefault();
 
 	/// <summary>
 	/// Gets all WHERE commands.
@@ -52,7 +52,7 @@ public class EsqlQuery(Type elementType, IReadOnlyList<QueryCommand> commands, E
 	/// <summary>
 	/// Gets the ROW command if present.
 	/// </summary>
-	public RowCommand? Row => Commands.OfType<RowCommand>().FirstOrDefault();
+	public RowCommand? Row => Commands.OfType<RowCommand>().SingleOrDefault();
 
 	/// <summary>
 	/// Gets all COMPLETION commands.

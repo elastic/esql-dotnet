@@ -16,7 +16,7 @@ namespace Elastic.Esql.Translation;
 /// <summary>
 /// Main visitor that translates LINQ expressions to ES|QL query model.
 /// </summary>
-internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? defaultIndexPattern, bool inlineParameters) : ExpressionVisitor
+internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inlineParameters) : ExpressionVisitor
 {
 	// Tracks pending GroupBy key selector for combining with subsequent Select
 	private LambdaExpression? _pendingGroupByKeySelector;
@@ -33,7 +33,6 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 
 	public EsqlQueryProvider Provider { get; } = provider ?? throw new ArgumentNullException(nameof(provider));
 	public EsqlTranslationContext Context { get; } = new() { Metadata = provider.Metadata, InlineParameters = inlineParameters };
-	public string? DefaultIndexPattern { get; } = defaultIndexPattern;
 
 	/// <summary>
 	/// Translates a LINQ expression to an ES|QL query model.
@@ -57,7 +56,6 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 		if (node.Value is IQueryable queryable)
 		{
 			Context.ElementType = queryable.ElementType;
-			Context.Commands.Add(new FromCommand(DefaultIndexPattern ?? string.Empty));
 			return node;
 		}
 
@@ -425,10 +423,10 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 		if (indexPattern is not string indexPatternString)
 			throw new NotSupportedException("The index pattern only supports string constants.");
 
-		var from = Context.Commands.OfType<FromCommand>().Single();
-		var i = Context.Commands.IndexOf(from);
-		Context.Commands.RemoveAt(i);
-		Context.Commands.Insert(i, new FromCommand(indexPatternString));
+		if (Context.Commands.OfType<SourceCommand>().Any())
+			throw new InvalidOperationException("A source command (FROM or ROW) already exists.");
+
+		Context.Commands.Insert(0, new FromCommand(indexPatternString));
 	}
 
 	private void VisitKeep(MethodCallExpression node)
@@ -506,16 +504,10 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 			expressions.Add($"{name} = {formatted}");
 		}
 
-		// ROW is a source command — replace the default FROM
-		var from = Context.Commands.OfType<FromCommand>().SingleOrDefault();
-		if (from != null)
-		{
-			var idx = Context.Commands.IndexOf(from);
-			Context.Commands.RemoveAt(idx);
-			Context.Commands.Insert(idx, new RowCommand(expressions));
-		}
-		else
-			Context.Commands.Add(new RowCommand(expressions));
+		if (Context.Commands.OfType<SourceCommand>().Any())
+			throw new InvalidOperationException("A source command (FROM or ROW) already exists.");
+
+		Context.Commands.Insert(0, new RowCommand(expressions));
 	}
 
 	private void VisitCompletion(MethodCallExpression node)
@@ -1033,7 +1025,7 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, string? 
 		if (innerExpression is ConstantExpression { Value: IQueryable innerQueryable })
 			innerExpression = innerQueryable.Expression;
 
-		var innerVisitor = new EsqlExpressionVisitor(Provider, null, inlineParameters);
+		var innerVisitor = new EsqlExpressionVisitor(Provider, inlineParameters);
 		var innerQuery = innerVisitor.Translate(innerExpression);
 		var from = innerQuery.From;
 

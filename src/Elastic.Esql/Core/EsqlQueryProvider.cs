@@ -153,7 +153,7 @@ public sealed class EsqlQueryProvider : IQueryProvider
 	{
 		Verify.NotNull(expression);
 
-		var visitor = new EsqlExpressionVisitor(this, null /* TODO: Implement */, inlineParameters);
+		var visitor = new EsqlExpressionVisitor(this, inlineParameters);
 
 		return visitor.Translate(expression);
 	}
