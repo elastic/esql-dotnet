@@ -133,9 +133,31 @@ var results = await asyncQuery.ToListAsync();  // Polls until complete
 // Query automatically deleted from cluster when disposed
 ```
 
-## Query options
+## Per-query options
 
-Configure defaults globally through `EsqlClientSettings.Defaults` (for example `TimeZone`, `Locale`, `Profile`, and `Columnar`). Per-query override helpers are not exposed yet.
+Configure defaults globally through `EsqlClientSettings.Defaults`. Override them on individual queries with `.WithOptions()`:
+
+```csharp
+var results = await client.CreateQuery<LogEntry>()
+    .WithOptions(new EsqlQueryOptions { TimeZone = "America/New_York", Locale = "en-US" })
+    .From("logs-*")
+    .Where(l => l.Level == "ERROR")
+    .ToListAsync();
+```
+
+For async queries, combine it with `EsqlAsyncQueryOptions`:
+
+```csharp
+await using var asyncQuery = await client.CreateQuery<LogEntry>()
+    .WithOptions(new EsqlQueryOptions { TimeZone = "UTC" })
+    .From("logs-*")
+    .Where(l => l.Level == "ERROR")
+    .ToAsyncQueryAsync(new EsqlAsyncQueryOptions
+    {
+        WaitForCompletionTimeout = TimeSpan.FromSeconds(5),
+        KeepAlive = TimeSpan.FromMinutes(10)
+    });
+```
 
 ## Testing
 

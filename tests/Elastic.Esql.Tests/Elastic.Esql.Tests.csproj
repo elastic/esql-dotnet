@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -10,5 +10,9 @@
 
   <ItemGroup>
     <ProjectReference Include="$(SolutionRoot)\src\Elastic.Esql\Elastic.Esql.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Execution\" />
   </ItemGroup>
 </Project>

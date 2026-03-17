@@ -12,7 +12,8 @@ namespace Elastic.Esql.QueryModel;
 /// <param name="elementType">The element type.</param>
 /// <param name="commands">The ESQL query commands.</param>
 /// <param name="parameters">The ESQL query parameters.</param>
-public class EsqlQuery(Type elementType, IReadOnlyList<QueryCommand> commands, EsqlParameters? parameters)
+/// <param name="queryOptions">Opaque query options extracted from the expression tree.</param>
+internal sealed class EsqlQuery(Type elementType, IReadOnlyList<QueryCommand> commands, EsqlParameters? parameters, object? queryOptions = null)
 {
 	/// <summary>
 	/// The element type of the query.
@@ -28,6 +29,12 @@ public class EsqlQuery(Type elementType, IReadOnlyList<QueryCommand> commands, E
 	/// Gets the collection of ESQL query parameters.
 	/// </summary>
 	public EsqlParameters? Parameters { get; } = parameters;
+
+	/// <summary>
+	/// Gets the opaque query options extracted from the expression tree.
+	/// The concrete type is defined by the downstream executor implementation.
+	/// </summary>
+	public object? QueryOptions { get; } = queryOptions;
 
 	/// <summary>
 	/// Gets the FROM command if present.

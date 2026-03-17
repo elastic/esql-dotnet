@@ -4,8 +4,8 @@
 
 namespace Elastic.Esql;
 
-/// <summary>Options for async ES|QL query execution.</summary>
-public record EsqlAsyncQueryOptions : EsqlQueryOptions
+/// <summary>Options for async ES|QL query submission behavior.</summary>
+public sealed record EsqlAsyncQueryOptions
 {
 	/// <summary>How long to wait before returning async ID. Default: 1s.</summary>
 	public TimeSpan? WaitForCompletionTimeout { get; init; }
@@ -15,7 +15,4 @@ public record EsqlAsyncQueryOptions : EsqlQueryOptions
 
 	/// <summary>Keep results even if completed within timeout.</summary>
 	public bool KeepOnCompletion { get; init; }
-
-	/// <summary>Polling cadence while waiting for completion. Default: 100ms.</summary>
-	public TimeSpan PollInterval { get; init; } = TimeSpan.FromMilliseconds(100);
 }

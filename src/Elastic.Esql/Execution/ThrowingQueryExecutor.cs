@@ -2,6 +2,8 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using Elastic.Esql.QueryModel;
+
 namespace Elastic.Esql.Execution;
 
 /// <summary>
@@ -17,23 +19,23 @@ internal sealed class ThrowingQueryExecutor : IEsqlQueryExecutor
 	private static InvalidOperationException NotSupported() =>
 		new("This provider does not support query execution. Supply an IEsqlQueryExecutor to enable execution.");
 
-	public IEsqlResponse ExecuteQuery(string esql, EsqlQueryOptions? options) => throw NotSupported();
+	public IEsqlResponse ExecuteQuery(string esql, EsqlParameters? parameters, object? options) => throw NotSupported();
 
-	public Task<IEsqlAsyncResponse> ExecuteQueryAsync(string esql, EsqlQueryOptions? options, CancellationToken cancellationToken) =>
+	public Task<IEsqlAsyncResponse> ExecuteQueryAsync(string esql, EsqlParameters? parameters, object? options, CancellationToken cancellationToken) =>
 		throw NotSupported();
 
-	public IEsqlResponse SubmitAsyncQuery(string esql, EsqlAsyncQueryOptions? options) =>
+	public IEsqlResponse SubmitAsyncQuery(string esql, EsqlParameters? parameters, object? options, EsqlAsyncQueryOptions? asyncOptions) =>
 		throw NotSupported();
 
-	public Task<IEsqlAsyncResponse> SubmitAsyncQueryAsync(string esql, EsqlAsyncQueryOptions? options, CancellationToken cancellationToken) =>
+	public Task<IEsqlAsyncResponse> SubmitAsyncQueryAsync(string esql, EsqlParameters? parameters, object? options, EsqlAsyncQueryOptions? asyncOptions, CancellationToken cancellationToken) =>
 		throw NotSupported();
 
-	public IEsqlResponse PollAsyncQuery(string queryId) => throw NotSupported();
+	public IEsqlResponse PollAsyncQuery(string queryId, object? options) => throw NotSupported();
 
-	public Task<IEsqlAsyncResponse> PollAsyncQueryAsync(string queryId, CancellationToken cancellationToken) =>
+	public Task<IEsqlAsyncResponse> PollAsyncQueryAsync(string queryId, object? options, CancellationToken cancellationToken) =>
 		throw NotSupported();
 
-	public void DeleteAsyncQuery(string queryId) => throw NotSupported();
+	public void DeleteAsyncQuery(string queryId, object? options) => throw NotSupported();
 
-	public Task DeleteAsyncQueryAsync(string queryId, CancellationToken cancellationToken) => throw NotSupported();
+	public Task DeleteAsyncQueryAsync(string queryId, object? options, CancellationToken cancellationToken) => throw NotSupported();
 }

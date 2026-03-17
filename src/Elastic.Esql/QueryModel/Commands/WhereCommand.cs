@@ -7,7 +7,7 @@ namespace Elastic.Esql.QueryModel.Commands;
 /// <summary>
 /// Represents the WHERE command.
 /// </summary>
-public class WhereCommand(string condition) : QueryCommand
+internal sealed class WhereCommand(string condition) : QueryCommand
 {
 	public string Condition { get; } = condition ?? throw new ArgumentNullException(nameof(condition));
 

@@ -7,4 +7,4 @@ namespace Elastic.Esql.QueryModel.Commands;
 /// <summary>
 /// Base class for ES|QL source commands (FROM, ROW).
 /// </summary>
-public abstract class SourceCommand : QueryCommand;
+internal abstract class SourceCommand : QueryCommand;

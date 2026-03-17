@@ -7,7 +7,7 @@ namespace Elastic.Esql.QueryModel.Commands;
 /// <summary>
 /// Represents a raw ES|QL pipeline fragment appended to the query.
 /// </summary>
-public class RawFragmentCommand(string fragment) : QueryCommand
+internal sealed class RawFragmentCommand(string fragment) : QueryCommand
 {
 	public string Fragment { get; } = !string.IsNullOrWhiteSpace(fragment)
 		? fragment

@@ -7,7 +7,7 @@ namespace Elastic.Esql.QueryModel.Commands;
 /// <summary>
 /// Represents the RENAME command.
 /// </summary>
-public class RenameCommand(IEnumerable<(string OldName, string NewName)> fields) : QueryCommand
+internal sealed class RenameCommand(IEnumerable<(string OldName, string NewName)> fields) : QueryCommand
 {
 	public IReadOnlyList<(string OldName, string NewName)> Fields { get; } =
 		fields?.ToList() ?? throw new ArgumentNullException(nameof(fields));

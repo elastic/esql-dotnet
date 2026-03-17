@@ -7,7 +7,7 @@ namespace Elastic.Esql.QueryModel.Commands;
 /// <summary>
 /// Represents the DROP command.
 /// </summary>
-public class DropCommand : QueryCommand
+internal sealed class DropCommand : QueryCommand
 {
 	public IReadOnlyList<string> Fields { get; }
 

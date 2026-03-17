@@ -48,7 +48,7 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 		if (Context.ElementType is null)
 			throw new InvalidOperationException("Failed to determine result type for the given expression.");
 
-		return new EsqlQuery(Context.ElementType, [.. Context.Commands], !Context.Parameters.HasParameters ? null : Context.Parameters);
+		return new EsqlQuery(Context.ElementType, [.. Context.Commands], !Context.Parameters.HasParameters ? null : Context.Parameters, Context.QueryOptions);
 	}
 
 	protected override Expression VisitConstant(ConstantExpression node)
@@ -203,6 +203,14 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 
 			case nameof(Queryable.AsQueryable) when isQueryableMethod:
 				// Transparent query shape conversion; no ES|QL command impact.
+				break;
+
+			// WithOptions extension methods are defined by downstream executor implementations
+			// (e.g., Elastic.Clients.Esql) with their own concrete options types. The core
+			// translator matches by method name only to remain agnostic to specific option
+			// types and their declaring classes.
+			case "WithOptions":
+				VisitWithOptions(node);
 				break;
 
 			default:
@@ -550,6 +558,14 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 			Context.Commands.Add(new RawFragmentCommand(fragment));
 
 		Context.ElementType = ResolveQueryableElementType(node.Method.ReturnType) ?? Context.ElementType;
+	}
+
+	private void VisitWithOptions(MethodCallExpression node)
+	{
+		if (node.Arguments.Count < 2)
+			return;
+
+		Context.QueryOptions = ExpressionConstantResolver.Resolve(node.Arguments[1]);
 	}
 
 	private static IReadOnlyList<string> NormalizeRawFragments(string rawEsql)

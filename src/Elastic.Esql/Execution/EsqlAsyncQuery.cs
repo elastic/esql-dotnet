@@ -19,7 +19,7 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 	private static readonly TimeSpan DefaultPollInterval = TimeSpan.FromMilliseconds(100);
 	private readonly IEsqlQueryExecutor _executor;
 	private readonly EsqlResponseReader _reader;
-	private readonly TimeSpan _pollInterval;
+	private readonly object? _queryOptions;
 	private EsqlAsyncResponse<T>? _asyncResult;
 	private EsqlResponse<T>? _syncResult;
 	private IAsyncDisposable? _ownedAsyncResponse;
@@ -31,13 +31,13 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 		EsqlAsyncResponse<T> result,
 		IEsqlAsyncResponse response,
 		EsqlResponseReader reader,
-		TimeSpan pollInterval)
+		object? queryOptions)
 	{
 		_executor = executor;
 		_asyncResult = result;
 		_ownedAsyncResponse = response;
 		_reader = reader;
-		_pollInterval = pollInterval > TimeSpan.Zero ? pollInterval : DefaultPollInterval;
+		_queryOptions = queryOptions;
 
 		QueryId = result.Metadata.Id;
 		IsCompleted = !result.Metadata.IsRunning;
@@ -48,13 +48,13 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 		EsqlResponse<T> result,
 		IEsqlResponse response,
 		EsqlResponseReader reader,
-		TimeSpan pollInterval)
+		object? queryOptions)
 	{
 		_executor = executor;
 		_syncResult = result;
 		_ownedSyncResponse = response;
 		_reader = reader;
-		_pollInterval = pollInterval > TimeSpan.Zero ? pollInterval : DefaultPollInterval;
+		_queryOptions = queryOptions;
 
 		QueryId = result.Metadata.Id;
 		IsCompleted = !result.Metadata.IsRunning;
@@ -101,7 +101,7 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 		if (IsCompleted || QueryId is null)
 			return;
 
-		var response = await _executor.PollAsyncQueryAsync(QueryId, cancellationToken).ConfigureAwait(false);
+		var response = await _executor.PollAsyncQueryAsync(QueryId, _queryOptions, cancellationToken).ConfigureAwait(false);
 
 		await DisposeOwnedResponseAsync().ConfigureAwait(false);
 		_syncResult = null;
@@ -119,22 +119,23 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 	/// <c>is_running</c> is resolved regardless of JSON property order. After completion, performs
 	/// a final <see cref="RefreshAsync"/> to make the complete result available via <see cref="AsAsyncEnumerable"/>.
 	/// </summary>
-	public async Task WaitForCompletionAsync(CancellationToken cancellationToken = default)
+	public async Task WaitForCompletionAsync(TimeSpan? pollInterval = null, CancellationToken cancellationToken = default)
 	{
 		if (IsCompleted || QueryId is null)
 			return;
 
-		await PollUntilCompletedAsync(cancellationToken).ConfigureAwait(false);
+		var interval = ResolvePollInterval(pollInterval);
+		await PollUntilCompletedAsync(interval, cancellationToken).ConfigureAwait(false);
 
 		IsCompleted = true;
 		await RefreshCoreAsync(cancellationToken).ConfigureAwait(false);
 	}
 
 	/// <summary>Waits for completion if needed, then buffers all rows into a <see cref="List{T}"/>.</summary>
-	public async Task<List<T>> ToListAsync(CancellationToken cancellationToken = default)
+	public async Task<List<T>> ToListAsync(TimeSpan? pollInterval = null, CancellationToken cancellationToken = default)
 	{
 		if (!IsCompleted)
-			await WaitForCompletionAsync(cancellationToken).ConfigureAwait(false);
+			await WaitForCompletionAsync(pollInterval, cancellationToken).ConfigureAwait(false);
 
 		var list = new List<T>();
 		if (_asyncResult is not null)
@@ -159,7 +160,7 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 
 		try
 		{
-			await _executor.DeleteAsyncQueryAsync(QueryId, default).ConfigureAwait(false);
+			await _executor.DeleteAsyncQueryAsync(QueryId, _queryOptions, default).ConfigureAwait(false);
 		}
 		catch (Exception)
 		{
@@ -182,7 +183,7 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 		if (IsCompleted || QueryId is null)
 			return;
 
-		var response = _executor.PollAsyncQuery(QueryId);
+		var response = _executor.PollAsyncQuery(QueryId, _queryOptions);
 
 		DisposeOwnedResponse();
 		_asyncResult = null;
@@ -196,22 +197,23 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 	/// Polls synchronously until the query completes. After completion, performs
 	/// a final <see cref="Refresh"/> to make the complete result available via <see cref="AsEnumerable"/>.
 	/// </summary>
-	public void WaitForCompletion()
+	public void WaitForCompletion(TimeSpan? pollInterval = null)
 	{
 		if (IsCompleted || QueryId is null)
 			return;
 
-		PollUntilCompleted();
+		var interval = ResolvePollInterval(pollInterval);
+		PollUntilCompleted(interval);
 
 		IsCompleted = true;
 		RefreshCore();
 	}
 
 	/// <summary>Waits for completion synchronously if needed, then buffers all rows into a <see cref="List{T}"/>.</summary>
-	public List<T> ToList()
+	public List<T> ToList(TimeSpan? pollInterval = null)
 	{
 		if (!IsCompleted)
-			WaitForCompletion();
+			WaitForCompletion(pollInterval);
 
 		return _syncResult is not null
 			? [.. _syncResult.Rows]
@@ -231,12 +233,23 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 
 		try
 		{
-			_executor.DeleteAsyncQuery(QueryId);
+			_executor.DeleteAsyncQuery(QueryId, _queryOptions);
 		}
 		catch (Exception)
 		{
 			// Best-effort cleanup; executor may throw transport-specific exceptions
 		}
+	}
+
+	private static TimeSpan ResolvePollInterval(TimeSpan? pollInterval)
+	{
+		if (pollInterval is null)
+			return DefaultPollInterval;
+
+		if (pollInterval.Value <= TimeSpan.Zero)
+			throw new ArgumentOutOfRangeException(nameof(pollInterval), "The poll interval must be greater than zero.");
+
+		return pollInterval.Value;
 	}
 
 	private void ApplyMetadata(EsqlStreamMetadata metadata)
@@ -248,11 +261,11 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 			IsCompleted = true;
 	}
 
-	private async Task PollUntilCompletedAsync(CancellationToken cancellationToken)
+	private async Task PollUntilCompletedAsync(TimeSpan pollInterval, CancellationToken cancellationToken)
 	{
 		while (true)
 		{
-			var response = await _executor.PollAsyncQueryAsync(QueryId!, cancellationToken).ConfigureAwait(false);
+			var response = await _executor.PollAsyncQueryAsync(QueryId!, _queryOptions, cancellationToken).ConfigureAwait(false);
 
 			EsqlStreamMetadata metadata;
 			try
@@ -272,15 +285,15 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 			if (!metadata.IsRunning)
 				break;
 
-			await Task.Delay(_pollInterval, cancellationToken).ConfigureAwait(false);
+			await Task.Delay(pollInterval, cancellationToken).ConfigureAwait(false);
 		}
 	}
 
-	private void PollUntilCompleted()
+	private void PollUntilCompleted(TimeSpan pollInterval)
 	{
 		while (true)
 		{
-			using var response = _executor.PollAsyncQuery(QueryId!);
+			using var response = _executor.PollAsyncQuery(QueryId!, _queryOptions);
 			var metadata = EsqlResponseReader.ReadMetadata(response.Body);
 
 			if (metadata.Id is not null)
@@ -289,7 +302,7 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 			if (!metadata.IsRunning)
 				break;
 
-			Thread.Sleep(_pollInterval);
+			Thread.Sleep(pollInterval);
 		}
 	}
 
@@ -298,7 +311,7 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 		if (QueryId is null)
 			return;
 
-		var response = await _executor.PollAsyncQueryAsync(QueryId, cancellationToken).ConfigureAwait(false);
+		var response = await _executor.PollAsyncQueryAsync(QueryId, _queryOptions, cancellationToken).ConfigureAwait(false);
 
 		await DisposeOwnedResponseAsync().ConfigureAwait(false);
 		_ownedAsyncResponse = response;
@@ -312,7 +325,7 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 		if (QueryId is null)
 			return;
 
-		var response = _executor.PollAsyncQuery(QueryId);
+		var response = _executor.PollAsyncQuery(QueryId, _queryOptions);
 
 		DisposeOwnedResponse();
 		_asyncResult = null;

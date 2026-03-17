@@ -7,7 +7,7 @@ namespace Elastic.Esql.QueryModel.Commands;
 /// <summary>
 /// Represents the KEEP command.
 /// </summary>
-public class KeepCommand : QueryCommand
+internal sealed class KeepCommand : QueryCommand
 {
 	public IReadOnlyList<string> Fields { get; }
 
