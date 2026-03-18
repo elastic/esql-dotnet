@@ -228,10 +228,32 @@ await using var asyncQuery = await client.QueryAsyncQueryAsync<LogEntry>(
 
 | Option | Type | Description |
 |---|---|---|
+| `RequestConfiguration` | `IRequestConfiguration?` | Per-request transport overrides |
 | `TimeZone` | `string?` | Timezone for date operations (e.g., `"UTC"`, `"America/New_York"`) |
 | `Locale` | `string?` | Locale for formatting (e.g., `"en-US"`) |
 
 These options are specific to `Elastic.Clients.Esql`. Other downstream implementations may define their own `WithOptions` extensions with different option types.
+
+### Transport-level overrides
+
+Use `RequestConfiguration` to control transport behavior per query -- for example, custom timeouts, authentication, or headers:
+
+```csharp
+var results = await client.CreateQuery<LogEntry>()
+    .WithOptions(new EsqlQueryOptions
+    {
+        RequestConfiguration = new RequestConfiguration
+        {
+            RequestTimeout = TimeSpan.FromSeconds(120),
+            Authentication = new BasicAuthentication("user", "pass"),
+            Headers = new NameValueCollection { { "X-Custom-Header", "value" } }
+        }
+    })
+    .From("logs-*")
+    .ToListAsync();
+```
+
+The `RequestConfiguration` is forwarded to all transport calls -- including poll and delete operations for async queries.
 
 ## Scalar and single-value queries
 

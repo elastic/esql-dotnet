@@ -27,7 +27,7 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 	{
 		var typedOptions = ResolveOptions(options);
 		var postData = BuildPostData(esql, parameters, typedOptions);
-		var response = _settings.Transport.Request<StreamResponse>(in QueryEndpoint, postData, null, null);
+		var response = _settings.Transport.Request<StreamResponse>(in QueryEndpoint, postData, null, typedOptions?.RequestConfiguration);
 		ThrowIfError(response, "ES|QL query failed");
 		return new TransportEsqlResponse(response);
 	}
@@ -40,16 +40,17 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 	{
 		var typedOptions = ResolveOptions(options);
 		var postData = BuildPostData(esql, parameters, typedOptions);
+		var requestConfig = typedOptions?.RequestConfiguration;
 
 #if NET10_0_OR_GREATER
 		var response = await _settings.Transport
-			.RequestAsync<PipeResponse>(in QueryEndpoint, postData, null, null, cancellationToken)
+			.RequestAsync<PipeResponse>(in QueryEndpoint, postData, null, requestConfig, cancellationToken)
 			.ConfigureAwait(false);
 		await ThrowIfErrorAsync(response, "ES|QL query failed", cancellationToken).ConfigureAwait(false);
 		return new TransportEsqlAsyncResponse(response);
 #else
 		var response = await _settings.Transport
-			.RequestAsync<StreamResponse>(in QueryEndpoint, postData, null, null, cancellationToken)
+			.RequestAsync<StreamResponse>(in QueryEndpoint, postData, null, requestConfig, cancellationToken)
 			.ConfigureAwait(false);
 		ThrowIfError(response, "ES|QL query failed");
 		return new TransportEsqlAsyncResponse(response);
@@ -60,7 +61,7 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 	{
 		var typedOptions = ResolveOptions(options);
 		var (postData, endpoint) = BuildAsyncPostData(esql, parameters, typedOptions, asyncOptions);
-		var response = _settings.Transport.Request<StreamResponse>(in endpoint, postData, null, null);
+		var response = _settings.Transport.Request<StreamResponse>(in endpoint, postData, null, typedOptions?.RequestConfiguration);
 		ThrowIfError(response, "ES|QL async query failed");
 		return new TransportEsqlResponse(response);
 	}
@@ -74,16 +75,17 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 	{
 		var typedOptions = ResolveOptions(options);
 		var (postData, endpoint) = BuildAsyncPostData(esql, parameters, typedOptions, asyncOptions);
+		var requestConfig = typedOptions?.RequestConfiguration;
 
 #if NET10_0_OR_GREATER
 		var response = await _settings.Transport
-			.RequestAsync<PipeResponse>(in endpoint, postData, null, null, cancellationToken)
+			.RequestAsync<PipeResponse>(in endpoint, postData, null, requestConfig, cancellationToken)
 			.ConfigureAwait(false);
 		await ThrowIfErrorAsync(response, "ES|QL async query failed", cancellationToken).ConfigureAwait(false);
 		return new TransportEsqlAsyncResponse(response);
 #else
 		var response = await _settings.Transport
-			.RequestAsync<StreamResponse>(in endpoint, postData, null, null, cancellationToken)
+			.RequestAsync<StreamResponse>(in endpoint, postData, null, requestConfig, cancellationToken)
 			.ConfigureAwait(false);
 		ThrowIfError(response, "ES|QL async query failed");
 		return new TransportEsqlAsyncResponse(response);
@@ -92,25 +94,28 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 
 	public IEsqlResponse PollAsyncQuery(string queryId, object? options)
 	{
+		var typedOptions = ResolveOptions(options);
 		var endpointPath = new EndpointPath(HttpMethod.GET, $"/_query/async/{queryId}");
-		var response = _settings.Transport.Request<StreamResponse>(in endpointPath, null, null, null);
+		var response = _settings.Transport.Request<StreamResponse>(in endpointPath, null, null, typedOptions?.RequestConfiguration);
 		ThrowIfError(response, "Failed to get async query status");
 		return new TransportEsqlResponse(response);
 	}
 
 	public async Task<IEsqlAsyncResponse> PollAsyncQueryAsync(string queryId, object? options, CancellationToken cancellationToken)
 	{
+		var typedOptions = ResolveOptions(options);
 		var endpointPath = new EndpointPath(HttpMethod.GET, $"/_query/async/{queryId}");
+		var requestConfig = typedOptions?.RequestConfiguration;
 
 #if NET10_0_OR_GREATER
 		var response = await _settings.Transport
-			.RequestAsync<PipeResponse>(in endpointPath, null, null, null, cancellationToken)
+			.RequestAsync<PipeResponse>(in endpointPath, null, null, requestConfig, cancellationToken)
 			.ConfigureAwait(false);
 		await ThrowIfErrorAsync(response, "Failed to get async query status", cancellationToken).ConfigureAwait(false);
 		return new TransportEsqlAsyncResponse(response);
 #else
 		var response = await _settings.Transport
-			.RequestAsync<StreamResponse>(in endpointPath, null, null, null, cancellationToken)
+			.RequestAsync<StreamResponse>(in endpointPath, null, null, requestConfig, cancellationToken)
 			.ConfigureAwait(false);
 		ThrowIfError(response, "Failed to get async query status");
 		return new TransportEsqlAsyncResponse(response);
@@ -119,16 +124,18 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 
 	public void DeleteAsyncQuery(string queryId, object? options)
 	{
+		var typedOptions = ResolveOptions(options);
 		var endpointPath = new EndpointPath(HttpMethod.DELETE, $"/_query/async/{queryId}");
-		using var response = _settings.Transport.Request<StreamResponse>(in endpointPath, null, null, null);
+		using var response = _settings.Transport.Request<StreamResponse>(in endpointPath, null, null, typedOptions?.RequestConfiguration);
 		ThrowIfError(response, "Failed to delete async query");
 	}
 
 	public async Task DeleteAsyncQueryAsync(string queryId, object? options, CancellationToken cancellationToken)
 	{
+		var typedOptions = ResolveOptions(options);
 		var endpointPath = new EndpointPath(HttpMethod.DELETE, $"/_query/async/{queryId}");
 		using var response = await _settings.Transport
-			.RequestAsync<StreamResponse>(in endpointPath, null, null, null, cancellationToken)
+			.RequestAsync<StreamResponse>(in endpointPath, null, null, typedOptions?.RequestConfiguration, cancellationToken)
 			.ConfigureAwait(false);
 		ThrowIfError(response, "Failed to delete async query");
 	}
@@ -205,8 +212,12 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 	private PostData BuildPostData(string esql, EsqlParameters? parameters, EsqlQueryOptions? options)
 	{
 		var request = BuildRequest(esql, parameters, options);
-		var json = JsonSerializer.Serialize(request, EsqlRequestJsonContext.Default.EsqlRequest);
-		return PostData.String(json);
+		return PostData.StreamHandler(
+			request,
+			static (req, stream) => JsonSerializer.Serialize(stream, req, EsqlRequestJsonContext.Default.EsqlRequest),
+			static async (req, stream, ct) =>
+				await JsonSerializer.SerializeAsync(stream, req, EsqlRequestJsonContext.Default.EsqlRequest, ct).ConfigureAwait(false)
+		);
 	}
 
 	private (PostData Data, EndpointPath Endpoint) BuildAsyncPostData(
@@ -217,8 +228,13 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 	{
 		var request = BuildAsyncRequest(esql, parameters, options, asyncOptions);
 		var endpoint = BuildAsyncQueryEndpoint(request);
-		var json = JsonSerializer.Serialize(request, EsqlRequestJsonContext.Default.EsqlAsyncRequest);
-		return (PostData.String(json), endpoint);
+		var postData = PostData.StreamHandler(
+			request,
+			static (req, stream) => JsonSerializer.Serialize(stream, req, EsqlRequestJsonContext.Default.EsqlAsyncRequest),
+			static async (req, stream, ct) =>
+				await JsonSerializer.SerializeAsync(stream, req, EsqlRequestJsonContext.Default.EsqlAsyncRequest, ct).ConfigureAwait(false)
+		);
+		return (postData, endpoint);
 	}
 
 	private EsqlRequest BuildRequest(string esql, EsqlParameters? parameters, EsqlQueryOptions? options)

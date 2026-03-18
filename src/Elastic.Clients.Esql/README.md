@@ -145,6 +145,18 @@ var results = await client.CreateQuery<LogEntry>()
     .ToListAsync();
 ```
 
+Use `RequestConfiguration` for transport-level overrides (timeouts, authentication, headers):
+
+```csharp
+var results = await client.CreateQuery<LogEntry>()
+    .WithOptions(new EsqlQueryOptions
+    {
+        RequestConfiguration = new RequestConfiguration { RequestTimeout = TimeSpan.FromSeconds(120) }
+    })
+    .From("logs-*")
+    .ToListAsync();
+```
+
 For async queries, combine it with `EsqlAsyncQueryOptions`:
 
 ```csharp
