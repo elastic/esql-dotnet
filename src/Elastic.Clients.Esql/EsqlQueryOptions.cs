@@ -2,11 +2,9 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-using System.Text.Json;
+namespace Elastic.Clients.Esql;
 
-namespace Elastic.Esql;
-
-/// <summary>Per-query options that override client defaults.</summary>
+/// <summary>Per-query options that override client defaults for the Elasticsearch transport executor.</summary>
 public record EsqlQueryOptions
 {
 	/// <summary>Locale for formatting (e.g., "en-US").</summary>
@@ -14,7 +12,4 @@ public record EsqlQueryOptions
 
 	/// <summary>Timezone for date operations (e.g., "UTC", "America/New_York").</summary>
 	public string? TimeZone { get; init; }
-
-	/// <summary>Query parameters for parameterized queries (for ? placeholders in raw ES|QL).</summary>
-	public IReadOnlyList<IReadOnlyDictionary<string, JsonElement>>? Parameters { get; init; }
 }

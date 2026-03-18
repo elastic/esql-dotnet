@@ -7,7 +7,7 @@ namespace Elastic.Esql.QueryModel.Commands;
 /// <summary>
 /// Represents the EVAL command.
 /// </summary>
-public class EvalCommand : QueryCommand
+internal sealed class EvalCommand : QueryCommand
 {
 	public IReadOnlyList<string> Expressions { get; }
 

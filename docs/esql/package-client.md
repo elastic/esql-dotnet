@@ -168,6 +168,71 @@ var rows = client.Query<LogEntry, LogProjection>(q => q
 
 For Native AOT, include the target type (`LogProjection` in this example) in your source-generated `JsonSerializerContext`.
 
+## Per-query options
+
+Use `.WithOptions()` to attach options to individual queries.
+
+### Sync / streaming queries
+
+```csharp
+var results = await client.CreateQuery<LogEntry>()
+    .WithOptions(new EsqlQueryOptions { TimeZone = "America/New_York", Locale = "en-US" })
+    .From("logs-*")
+    .Where(l => l.Level == "ERROR")
+    .Take(50)
+    .ToListAsync();
+```
+
+It works with all execution styles -- lambda, query syntax, and streaming:
+
+```csharp
+await foreach (var entry in client.QueryAsync<LogEntry>(q => q
+     .WithOptions(new EsqlQueryOptions { TimeZone = "UTC" })
+     .From("logs-*")
+     .Where(l => l.Level == "ERROR")))
+{
+    Console.WriteLine(entry.Message);
+}
+```
+
+### Async queries
+
+For async queries, `EsqlAsyncQueryOptions` controls the async submission behavior. Can be used together with `.WithOptions()`:
+
+```csharp
+await using var asyncQuery = await client.CreateQuery<LogEntry>()
+    .WithOptions(new EsqlQueryOptions { TimeZone = "UTC" })
+    .From("logs-*")
+    .Where(l => l.Level == "ERROR")
+    .ToAsyncQueryAsync(new EsqlAsyncQueryOptions
+    {
+        WaitForCompletionTimeout = TimeSpan.FromSeconds(5),
+        KeepAlive = TimeSpan.FromMinutes(10)
+    });
+
+var results = await asyncQuery.ToListAsync();
+```
+
+Or via the `EsqlClient` convenience methods:
+
+```csharp
+await using var asyncQuery = await client.QueryAsyncQueryAsync<LogEntry>(
+    q => q.WithOptions(new EsqlQueryOptions { TimeZone = "UTC" })
+          .From("logs-*")
+          .Where(l => l.Level == "ERROR"),
+    new EsqlAsyncQueryOptions { KeepOnCompletion = true }
+);
+```
+
+### Available options
+
+| Option | Type | Description |
+|---|---|---|
+| `TimeZone` | `string?` | Timezone for date operations (e.g., `"UTC"`, `"America/New_York"`) |
+| `Locale` | `string?` | Locale for formatting (e.g., `"en-US"`) |
+
+These options are specific to `Elastic.Clients.Esql`. Other downstream implementations may define their own `WithOptions` extensions with different option types.
+
 ## Scalar and single-value queries
 
 ```csharp
@@ -277,7 +342,12 @@ var results = asyncQuery.ToList();
 | `WaitForCompletionTimeout` | 1s | How long to wait before returning an async query ID |
 | `KeepAlive` | 5d | How long to keep results on the cluster |
 | `KeepOnCompletion` | `false` | Whether to keep results even if completed within the timeout |
-| `PollInterval` | 100ms | Polling cadence used while waiting for async query completion |
+
+The polling interval for `WaitForCompletion` / `WaitForCompletionAsync` can be set via the `pollInterval` parameter (default: 100ms):
+
+```csharp
+await asyncQuery.WaitForCompletionAsync(pollInterval: TimeSpan.FromMilliseconds(500));
+```
 
 ## Completion queries
 

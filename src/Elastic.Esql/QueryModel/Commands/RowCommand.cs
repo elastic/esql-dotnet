@@ -7,7 +7,7 @@ namespace Elastic.Esql.QueryModel.Commands;
 /// <summary>
 /// Represents the ROW source command.
 /// </summary>
-public class RowCommand : SourceCommand
+internal sealed class RowCommand : SourceCommand
 {
 	public IReadOnlyList<string> Expressions { get; }
 

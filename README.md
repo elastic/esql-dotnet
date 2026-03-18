@@ -188,6 +188,18 @@ query.LookupJoin<Order, Customer, string, OrderWithCustomer>(
 )
 ```
 
+### Per-Query Options
+
+Override client defaults on individual queries with `.WithOptions()`:
+
+```csharp
+var results = await client.CreateQuery<LogEntry>()
+    .WithOptions(new EsqlQueryOptions { TimeZone = "America/New_York", Locale = "en-US" })
+    .From("logs-*")
+    .Where(l => l.Level == "ERROR")
+    .ToListAsync();
+```
+
 ### Named Parameters
 
 Extract captured variables as named `?param` placeholders instead of inlining them:

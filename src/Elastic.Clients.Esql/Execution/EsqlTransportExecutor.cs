@@ -5,6 +5,7 @@
 using System.Text.Json;
 using Elastic.Esql;
 using Elastic.Esql.Execution;
+using Elastic.Esql.QueryModel;
 using Elastic.Transport;
 using Elastic.Transport.Products.Elasticsearch;
 using HttpMethod = Elastic.Transport.HttpMethod;
@@ -22,9 +23,10 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 	private static readonly EndpointPath QueryEndpoint = new(HttpMethod.POST, "/_query");
 	private static readonly EndpointPath AsyncQueryEndpoint = new(HttpMethod.POST, "/_query/async");
 
-	public IEsqlResponse ExecuteQuery(string esql, EsqlQueryOptions? options)
+	public IEsqlResponse ExecuteQuery(string esql, EsqlParameters? parameters, object? options)
 	{
-		var postData = BuildPostData(esql, options);
+		var typedOptions = ResolveOptions(options);
+		var postData = BuildPostData(esql, parameters, typedOptions);
 		var response = _settings.Transport.Request<StreamResponse>(in QueryEndpoint, postData, null, null);
 		ThrowIfError(response, "ES|QL query failed");
 		return new TransportEsqlResponse(response);
@@ -32,10 +34,12 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 
 	public async Task<IEsqlAsyncResponse> ExecuteQueryAsync(
 		string esql,
-		EsqlQueryOptions? options,
+		EsqlParameters? parameters,
+		object? options,
 		CancellationToken cancellationToken)
 	{
-		var postData = BuildPostData(esql, options);
+		var typedOptions = ResolveOptions(options);
+		var postData = BuildPostData(esql, parameters, typedOptions);
 
 #if NET10_0_OR_GREATER
 		var response = await _settings.Transport
@@ -52,9 +56,10 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 #endif
 	}
 
-	public IEsqlResponse SubmitAsyncQuery(string esql, EsqlAsyncQueryOptions? options)
+	public IEsqlResponse SubmitAsyncQuery(string esql, EsqlParameters? parameters, object? options, EsqlAsyncQueryOptions? asyncOptions)
 	{
-		var (postData, endpoint) = BuildAsyncPostData(esql, options);
+		var typedOptions = ResolveOptions(options);
+		var (postData, endpoint) = BuildAsyncPostData(esql, parameters, typedOptions, asyncOptions);
 		var response = _settings.Transport.Request<StreamResponse>(in endpoint, postData, null, null);
 		ThrowIfError(response, "ES|QL async query failed");
 		return new TransportEsqlResponse(response);
@@ -62,10 +67,13 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 
 	public async Task<IEsqlAsyncResponse> SubmitAsyncQueryAsync(
 		string esql,
-		EsqlAsyncQueryOptions? options,
+		EsqlParameters? parameters,
+		object? options,
+		EsqlAsyncQueryOptions? asyncOptions,
 		CancellationToken cancellationToken)
 	{
-		var (postData, endpoint) = BuildAsyncPostData(esql, options);
+		var typedOptions = ResolveOptions(options);
+		var (postData, endpoint) = BuildAsyncPostData(esql, parameters, typedOptions, asyncOptions);
 
 #if NET10_0_OR_GREATER
 		var response = await _settings.Transport
@@ -82,7 +90,7 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 #endif
 	}
 
-	public IEsqlResponse PollAsyncQuery(string queryId)
+	public IEsqlResponse PollAsyncQuery(string queryId, object? options)
 	{
 		var endpointPath = new EndpointPath(HttpMethod.GET, $"/_query/async/{queryId}");
 		var response = _settings.Transport.Request<StreamResponse>(in endpointPath, null, null, null);
@@ -90,7 +98,7 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 		return new TransportEsqlResponse(response);
 	}
 
-	public async Task<IEsqlAsyncResponse> PollAsyncQueryAsync(string queryId, CancellationToken cancellationToken)
+	public async Task<IEsqlAsyncResponse> PollAsyncQueryAsync(string queryId, object? options, CancellationToken cancellationToken)
 	{
 		var endpointPath = new EndpointPath(HttpMethod.GET, $"/_query/async/{queryId}");
 
@@ -109,20 +117,32 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 #endif
 	}
 
-	public void DeleteAsyncQuery(string queryId)
+	public void DeleteAsyncQuery(string queryId, object? options)
 	{
 		var endpointPath = new EndpointPath(HttpMethod.DELETE, $"/_query/async/{queryId}");
 		using var response = _settings.Transport.Request<StreamResponse>(in endpointPath, null, null, null);
 		ThrowIfError(response, "Failed to delete async query");
 	}
 
-	public async Task DeleteAsyncQueryAsync(string queryId, CancellationToken cancellationToken)
+	public async Task DeleteAsyncQueryAsync(string queryId, object? options, CancellationToken cancellationToken)
 	{
 		var endpointPath = new EndpointPath(HttpMethod.DELETE, $"/_query/async/{queryId}");
 		using var response = await _settings.Transport
 			.RequestAsync<StreamResponse>(in endpointPath, null, null, null, cancellationToken)
 			.ConfigureAwait(false);
 		ThrowIfError(response, "Failed to delete async query");
+	}
+
+	private static EsqlQueryOptions? ResolveOptions(object? options)
+	{
+		if (options is null)
+			return null;
+
+		if (options is EsqlQueryOptions typed)
+			return typed;
+
+		throw new InvalidOperationException(
+			$"Expected options of type '{nameof(EsqlQueryOptions)}' but received '{options.GetType().FullName}'.");
 	}
 
 	private static void ThrowIfError(StreamResponse response, string operation)
@@ -182,22 +202,26 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 	}
 #endif
 
-	private PostData BuildPostData(string esql, EsqlQueryOptions? options)
+	private PostData BuildPostData(string esql, EsqlParameters? parameters, EsqlQueryOptions? options)
 	{
-		var request = BuildRequest(esql, options);
+		var request = BuildRequest(esql, parameters, options);
 		var json = JsonSerializer.Serialize(request, EsqlRequestJsonContext.Default.EsqlRequest);
 		return PostData.String(json);
 	}
 
-	private (PostData Data, EndpointPath Endpoint) BuildAsyncPostData(string esql, EsqlAsyncQueryOptions? options)
+	private (PostData Data, EndpointPath Endpoint) BuildAsyncPostData(
+		string esql,
+		EsqlParameters? parameters,
+		EsqlQueryOptions? options,
+		EsqlAsyncQueryOptions? asyncOptions)
 	{
-		var request = BuildAsyncRequest(esql, options);
+		var request = BuildAsyncRequest(esql, parameters, options, asyncOptions);
 		var endpoint = BuildAsyncQueryEndpoint(request);
 		var json = JsonSerializer.Serialize(request, EsqlRequestJsonContext.Default.EsqlAsyncRequest);
 		return (PostData.String(json), endpoint);
 	}
 
-	private EsqlRequest BuildRequest(string esql, EsqlQueryOptions? options)
+	private EsqlRequest BuildRequest(string esql, EsqlParameters? parameters, EsqlQueryOptions? options)
 	{
 		var defaults = _settings.Defaults;
 		return new EsqlRequest
@@ -205,11 +229,15 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 			Query = esql,
 			Locale = options?.Locale ?? defaults.Locale,
 			TimeZone = options?.TimeZone ?? defaults.TimeZone,
-			Params = options?.Parameters
+			Params = FormatParameters(parameters)
 		};
 	}
 
-	private EsqlAsyncRequest BuildAsyncRequest(string esql, EsqlAsyncQueryOptions? options)
+	private EsqlAsyncRequest BuildAsyncRequest(
+		string esql,
+		EsqlParameters? parameters,
+		EsqlQueryOptions? options,
+		EsqlAsyncQueryOptions? asyncOptions)
 	{
 		var defaults = _settings.Defaults;
 		return new EsqlAsyncRequest
@@ -217,10 +245,10 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 			Query = esql,
 			Locale = options?.Locale ?? defaults.Locale,
 			TimeZone = options?.TimeZone ?? defaults.TimeZone,
-			Params = options?.Parameters,
-			WaitForCompletionTimeout = options?.WaitForCompletionTimeout,
-			KeepAlive = options?.KeepAlive,
-			KeepOnCompletion = options?.KeepOnCompletion ?? false
+			Params = FormatParameters(parameters),
+			WaitForCompletionTimeout = asyncOptions?.WaitForCompletionTimeout,
+			KeepAlive = asyncOptions?.KeepAlive,
+			KeepOnCompletion = asyncOptions?.KeepOnCompletion ?? false
 		};
 	}
 
@@ -237,6 +265,14 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 		return queryParams.Count > 0
 			? new EndpointPath(HttpMethod.POST, $"/_query/async?{string.Join("&", queryParams)}")
 			: AsyncQueryEndpoint;
+	}
+
+	private static IReadOnlyList<IReadOnlyDictionary<string, JsonElement>>? FormatParameters(EsqlParameters? parameters)
+	{
+		if (parameters is null || !parameters.HasParameters)
+			return null;
+
+		return [.. parameters.Parameters.Select(kvp => new Dictionary<string, JsonElement> { [kvp.Key] = kvp.Value })];
 	}
 
 	private static string FormatTimeSpan(TimeSpan ts) =>

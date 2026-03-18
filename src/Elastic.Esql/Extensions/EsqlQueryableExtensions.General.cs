@@ -35,4 +35,17 @@ public static partial class EsqlQueryableExtensions
 
 		return esqlQueryable.GetParameters();
 	}
+
+	/// <summary>
+	/// Casts an <see cref="IQueryable{T}"/> back to <see cref="IEsqlQueryable{T}"/> after standard LINQ operators
+	/// (e.g. <c>.Where()</c>, <c>.OrderBy()</c>) have returned the base interface.
+	/// </summary>
+	/// <exception cref="InvalidOperationException">Thrown if the queryable is not backed by an ES|QL provider.</exception>
+	public static IEsqlQueryable<T> AsEsqlQueryable<T>(this IQueryable<T> queryable)
+	{
+		if (queryable is not IEsqlQueryable<T> esqlQueryable)
+			throw new InvalidOperationException("Query is not an ES|QL query.");
+
+		return esqlQueryable;
+	}
 }

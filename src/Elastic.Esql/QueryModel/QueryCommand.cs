@@ -9,7 +9,7 @@ namespace Elastic.Esql.QueryModel;
 /// <summary>
 /// Base class for all ES|QL query commands.
 /// </summary>
-public abstract class QueryCommand
+internal abstract class QueryCommand
 {
 	/// <summary>
 	/// Accepts a visitor for generating ES|QL.
@@ -20,7 +20,7 @@ public abstract class QueryCommand
 /// <summary>
 /// Visitor interface for processing query commands.
 /// </summary>
-public interface ICommandVisitor
+internal interface ICommandVisitor
 {
 	void Visit(FromCommand command);
 	void Visit(WhereCommand command);

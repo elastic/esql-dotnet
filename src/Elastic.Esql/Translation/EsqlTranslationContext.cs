@@ -25,6 +25,7 @@ internal sealed class EsqlTranslationContext
 	public Type? ElementType { get; set; }
 	public List<QueryCommand> Commands { get; } = [];
 	public EsqlParameters Parameters { get; } = new();
+	public object? QueryOptions { get; set; }
 
 	private Dictionary<Type, HashSet<string>>? _anonymousTypeFields;
 

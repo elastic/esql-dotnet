@@ -7,7 +7,7 @@ namespace Elastic.Esql.QueryModel.Commands;
 /// <summary>
 /// Represents the LIMIT command.
 /// </summary>
-public class LimitCommand : QueryCommand
+internal sealed class LimitCommand : QueryCommand
 {
 	public int Count { get; }
 

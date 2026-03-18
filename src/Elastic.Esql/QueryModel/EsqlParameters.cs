@@ -41,12 +41,4 @@ public sealed class EsqlParameters
 
 	/// <summary>Whether any parameters have been collected.</summary>
 	public bool HasParameters => _parameters.Count > 0;
-
-	// TODO: Move to specific implementation.
-
-	/// <summary>
-	/// Converts to ES|QL API format: a list of single-entry dictionaries.
-	/// </summary>
-	public IReadOnlyList<IReadOnlyDictionary<string, JsonElement>> ToEsqlParams() =>
-		[.. _parameters.Select(kvp => new Dictionary<string, JsonElement> { [kvp.Key] = kvp.Value })];
 }

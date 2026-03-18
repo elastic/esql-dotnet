@@ -7,7 +7,7 @@ namespace Elastic.Esql.QueryModel.Commands;
 /// <summary>
 /// Represents the LOOKUP JOIN command.
 /// </summary>
-public class LookupJoinCommand(string lookupIndex, string onCondition) : QueryCommand
+internal sealed class LookupJoinCommand(string lookupIndex, string onCondition) : QueryCommand
 {
 	/// <summary>The lookup index name.</summary>
 	public string LookupIndex { get; } = lookupIndex ?? throw new ArgumentNullException(nameof(lookupIndex));

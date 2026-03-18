@@ -299,12 +299,12 @@ public class ParameterizedQueryTests : EsqlTestBase
 			.Where(l => l.StatusCode >= threshold && l.Level.MultiField("keyword") == level);
 
 		var parameters = queryable.GetParameters();
-		var esqlParams = parameters!.ToEsqlParams();
 
-		_ = esqlParams.Should().HaveCount(2);
+		_ = parameters.Should().NotBeNull();
+		_ = parameters!.Parameters.Should().HaveCount(2);
 
-		_ = esqlParams[0]["threshold"].GetInt32().Should().Be(500);
-		_ = esqlParams[1]["level"].GetString().Should().Be("ERROR");
+		_ = parameters.Parameters["threshold"].GetInt32().Should().Be(500);
+		_ = parameters.Parameters["level"].GetString().Should().Be("ERROR");
 	}
 
 	[Test]

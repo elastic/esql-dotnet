@@ -7,7 +7,7 @@ namespace Elastic.Esql.QueryModel.Commands;
 /// <summary>
 /// Represents the STATS command.
 /// </summary>
-public class StatsCommand(IEnumerable<string> aggregations, IEnumerable<string>? groupBy = null) : QueryCommand
+internal sealed class StatsCommand(IEnumerable<string> aggregations, IEnumerable<string>? groupBy = null) : QueryCommand
 {
 	public IReadOnlyList<string> Aggregations { get; } = aggregations?.ToList() ?? throw new ArgumentNullException(nameof(aggregations));
 	public IReadOnlyList<string>? GroupBy { get; } = groupBy?.ToList();
