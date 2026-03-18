@@ -11,8 +11,4 @@
   <ItemGroup>
     <ProjectReference Include="$(SolutionRoot)\src\Elastic.Esql\Elastic.Esql.csproj" />
   </ItemGroup>
-
-  <ItemGroup>
-    <Folder Include="Execution\" />
-  </ItemGroup>
 </Project>

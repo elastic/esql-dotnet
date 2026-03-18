@@ -88,6 +88,14 @@ public sealed class EsqlQueryable<T> : IEsqlQueryable<T>, IOrderedQueryable<T>
 		return query.Parameters;
 	}
 
+	/// <inheritdoc/>
+	public object? GetQueryOptions()
+	{
+		var query = Provider.TranslateExpression(Expression, true);
+
+		return query.QueryOptions;
+	}
+
 	/// <summary>
 	/// Returns the ES|QL query string representation.
 	/// </summary>

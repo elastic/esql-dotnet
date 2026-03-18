@@ -25,6 +25,11 @@ public interface IEsqlQueryable<out T> : IQueryable<T>
 	EsqlParameters? GetParameters();
 
 	/// <summary>
+	/// Translates the query and returns the opaque query options set via <c>WithOptions</c>, or <see langword="null"/> if none.
+	/// </summary>
+	object? GetQueryOptions();
+
+	/// <summary>
 	/// Returns an async enumerable for streaming query results.
 	/// </summary>
 	/// <param name="cancellationToken">A cancellation token that can be used to cancel the asynchronous iteration.</param>
