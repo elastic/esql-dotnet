@@ -17,7 +17,7 @@ public class EdgeCaseTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.Price < 0)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().BeEmpty();
@@ -30,7 +30,7 @@ public class EdgeCaseTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.Price < 0)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.CountAsync();
 
 		count.Should().Be(0);
@@ -43,7 +43,7 @@ public class EdgeCaseTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(1)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(1);
@@ -55,7 +55,7 @@ public class EdgeCaseTests : IntegrationTestBase
 		var act = async () => await Fixture.EsqlClient
 			.CreateQuery<TestProduct>()
 			.From("non-existent-index-xyz")
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		await act.Should().ThrowAsync<EsqlExecutionException>();
@@ -68,7 +68,7 @@ public class EdgeCaseTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(100000)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(100);
@@ -81,7 +81,7 @@ public class EdgeCaseTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.Brand == "NonExistentBrand12345")
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().BeEmpty();
@@ -94,7 +94,7 @@ public class EdgeCaseTests : IntegrationTestBase
 			.CreateQuery<TestOrder>()
 			.From(TestDataSeeder.OrderIndex)
 			.OrderBy(o => o.Id)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		var expected = TestDataSeeder.Orders.OrderBy(o => o.Id).ToList();
@@ -119,7 +119,7 @@ public class EdgeCaseTests : IntegrationTestBase
 			.CreateQuery<TestEvent>()
 			.From(TestDataSeeder.EventIndex)
 			.OrderBy(e => e.Timestamp)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		var expected = TestDataSeeder.Events.OrderBy(e => e.Timestamp).ToList();
@@ -151,7 +151,7 @@ public class EdgeCaseTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.Price < 0)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.FirstAsync();
 
 		await act.Should().ThrowAsync<InvalidOperationException>();
@@ -164,7 +164,7 @@ public class EdgeCaseTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(2)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.SingleAsync();
 
 		await act.Should().ThrowAsync<InvalidOperationException>();
@@ -177,7 +177,7 @@ public class EdgeCaseTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.Price < 0)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.SingleOrDefaultAsync();
 
 		result.Should().BeNull();

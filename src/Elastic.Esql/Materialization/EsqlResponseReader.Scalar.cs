@@ -60,7 +60,8 @@ internal sealed partial class EsqlResponseReader
 		IAsyncBufferCursor cursor,
 		CancellationToken cancellationToken)
 	{
-		var (columns, readerState, layout) = await PrepareRowsAsync<T>(cursor, cancellationToken).ConfigureAwait(false);
+		var prepared = await PrepareRowsAsync<T>(cursor, cancellationToken).ConfigureAwait(false);
+		var (columns, readerState, layout) = (prepared.Columns, prepared.ReaderState, prepared.Layout);
 		var plan = CreateRowMaterializationPlan<T>(columns, Options);
 
 		var rowBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
@@ -105,7 +106,8 @@ internal sealed partial class EsqlResponseReader
 
 	private ScalarResult<T> ReadScalar<T>(ISyncBufferCursor cursor)
 	{
-		var (columns, readerState, layout) = PrepareRows<T>(cursor);
+		var prepared = PrepareRows<T>(cursor);
+		var (columns, readerState, layout) = (prepared.Columns, prepared.ReaderState, prepared.Layout);
 		var plan = CreateRowMaterializationPlan<T>(columns, Options);
 
 		var rowBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize);

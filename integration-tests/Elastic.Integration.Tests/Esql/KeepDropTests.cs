@@ -17,7 +17,7 @@ public class KeepDropTests : IntegrationTestBase
 			.From(TestDataSeeder.ProductIndex)
 			.Keep("product_id", "name", "price_usd")
 			.Take(5)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(5);
@@ -40,7 +40,7 @@ public class KeepDropTests : IntegrationTestBase
 			.From(TestDataSeeder.ProductIndex)
 			.Keep(p => p.Id, p => p.Name)
 			.Take(5)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(5);
@@ -60,7 +60,7 @@ public class KeepDropTests : IntegrationTestBase
 			.From(TestDataSeeder.ProductIndex)
 			.Drop("tags", "sale_price_usd", "created_at")
 			.Take(5)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(5);
@@ -82,7 +82,7 @@ public class KeepDropTests : IntegrationTestBase
 			.From(TestDataSeeder.ProductIndex)
 			.Drop(p => p.Tags, p => p.SalePrice)
 			.Take(5)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(5);

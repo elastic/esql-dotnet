@@ -20,15 +20,16 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 	private readonly IEsqlQueryExecutor _executor;
 	private readonly EsqlResponseReader _reader;
 	private readonly object? _queryOptions;
-	private EsqlAsyncResponse<T>? _asyncResult;
-	private EsqlResponse<T>? _syncResult;
+	private EsqlAsyncResults<T>? _asyncResult;
+	private EsqlResults<T>? _syncResult;
 	private IAsyncDisposable? _ownedAsyncResponse;
 	private IDisposable? _ownedSyncResponse;
 	private int _disposed;
 
+	/// <summary>Constructs from an async transport response.</summary>
 	internal EsqlAsyncQuery(
 		IEsqlQueryExecutor executor,
-		EsqlAsyncResponse<T> result,
+		EsqlAsyncResults<T> result,
 		IEsqlAsyncResponse response,
 		EsqlResponseReader reader,
 		object? queryOptions)
@@ -39,13 +40,14 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 		_reader = reader;
 		_queryOptions = queryOptions;
 
-		QueryId = result.Metadata.Id;
-		IsCompleted = !result.Metadata.IsRunning;
+		QueryId = result.Id;
+		IsCompleted = result.IsRunning != true;
 	}
 
+	/// <summary>Constructs from a sync transport response.</summary>
 	internal EsqlAsyncQuery(
 		IEsqlQueryExecutor executor,
-		EsqlResponse<T> result,
+		EsqlResults<T> result,
 		IEsqlResponse response,
 		EsqlResponseReader reader,
 		object? queryOptions)
@@ -56,8 +58,8 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 		_reader = reader;
 		_queryOptions = queryOptions;
 
-		QueryId = result.Metadata.Id;
-		IsCompleted = !result.Metadata.IsRunning;
+		QueryId = result.Id;
+		IsCompleted = result.IsRunning != true;
 	}
 
 	/// <summary>The async query ID (null if completed synchronously without <c>keep_on_completion</c>).</summary>
@@ -70,81 +72,96 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 	public bool IsCompleted { get; private set; }
 
 	/// <summary>
-	/// Returns the rows from the current response as a lazy <see cref="IAsyncEnumerable{T}"/>.
+	/// Waits for the query to complete if still running, then returns the rows as a lazy <see cref="IAsyncEnumerable{T}"/>.
+	/// Calls <see cref="WaitForCompletionAsync"/> internally before returning rows.
 	/// Each response's rows can only be consumed once (the underlying stream is single-read).
-	/// After calling <see cref="RefreshAsync"/> or <see cref="WaitForCompletionAsync"/>,
-	/// this returns rows from the new response.
 	/// </summary>
-	public IAsyncEnumerable<T> AsAsyncEnumerable(CancellationToken cancellationToken = default)
+	public async IAsyncEnumerable<T> AsAsyncEnumerable([EnumeratorCancellation] CancellationToken cancellationToken = default)
 	{
-		if (_asyncResult is null)
-			return EmptyAsyncEnumerable<T>.Instance;
+		if (!IsCompleted)
+			await WaitForCompletionAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
 
-		if (!cancellationToken.CanBeCanceled)
-			return _asyncResult.Rows;
+		var source = _asyncResult?.Rows
+			?? (_syncResult is not null ? new SyncToAsyncEnumerable(_syncResult.Rows) : null);
 
-		return new CancellableAsyncEnumerable(_asyncResult.Rows, cancellationToken);
+		if (source is null)
+			yield break;
+
+		await foreach (var item in source.WithCancellation(cancellationToken).ConfigureAwait(false))
+			yield return item;
 	}
 
 	/// <summary>
-	/// Performs a single poll to refresh the query state. Does not loop.
-	/// <para>
-	/// Metadata update is <b>best-effort</b>: <see cref="IsRunning"/> and <see cref="IsCompleted"/> are updated
-	/// based on <c>id</c>/<c>is_running</c> properties found during the initial JSON parsing phase (before/around
-	/// the <c>columns</c> array). If these properties appear after <c>values</c> in the response JSON, they will
-	/// only be captured after <see cref="AsAsyncEnumerable"/> is fully consumed.
-	/// Use <see cref="WaitForCompletionAsync"/> for guaranteed completion detection.
-	/// </para>
+	/// Waits for the query to complete if still running, then returns the rows as a lazy <see cref="IEnumerable{T}"/>.
+	/// Calls <see cref="WaitForCompletion"/> internally before returning rows.
+	/// Each response's rows can only be consumed once (the underlying stream is single-read).
+	/// </summary>
+	public IEnumerable<T> AsEnumerable()
+	{
+		if (!IsCompleted)
+			WaitForCompletion();
+
+		if (_syncResult is not null)
+			return _syncResult.Rows;
+
+		if (_asyncResult is not null)
+			return new AsyncToSyncEnumerable(_asyncResult.Rows);
+
+		return [];
+	}
+
+	/// <summary>
+	/// Performs a single poll to refresh the query state.
 	/// </summary>
 	public async Task RefreshAsync(CancellationToken cancellationToken = default)
 	{
-		if (IsCompleted || QueryId is null)
+		if (IsCompleted)
 			return;
+
+		if (QueryId is null)
+			throw new InvalidOperationException("Cannot refresh an async query without a query ID.");
 
 		var response = await _executor.PollAsyncQueryAsync(QueryId, _queryOptions, cancellationToken).ConfigureAwait(false);
 
 		await DisposeOwnedResponseAsync().ConfigureAwait(false);
-		_syncResult = null;
+		DisposeResults();
 		_ownedAsyncResponse = response;
 
-		_asyncResult = await _reader
-			.ReadRowsWithMetadataAsync<T>(response.Body, cancellationToken)
-			.ConfigureAwait(false);
-
-		ApplyMetadata(_asyncResult.Metadata);
+		_asyncResult = await _reader.ReadRowsAsync<T>(response.Body, cancellationToken: cancellationToken).ConfigureAwait(false);
+		_syncResult = null;
+		ApplyMetadata(_asyncResult);
 	}
 
 	/// <summary>
-	/// Polls until the query completes, using a lightweight metadata-only reader that guarantees
-	/// <c>is_running</c> is resolved regardless of JSON property order. After completion, performs
-	/// a final <see cref="RefreshAsync"/> to make the complete result available via <see cref="AsAsyncEnumerable"/>.
+	/// Polls until the query completes.
 	/// </summary>
 	public async Task WaitForCompletionAsync(TimeSpan? pollInterval = null, CancellationToken cancellationToken = default)
 	{
-		if (IsCompleted || QueryId is null)
+		if (IsCompleted)
 			return;
 
+		if (QueryId is null)
+			throw new InvalidOperationException("Cannot wait for completion of an async query without a query ID.");
+
 		var interval = ResolvePollInterval(pollInterval);
-		await PollUntilCompletedAsync(interval, cancellationToken).ConfigureAwait(false);
 
-		IsCompleted = true;
-		await RefreshCoreAsync(cancellationToken).ConfigureAwait(false);
-	}
-
-	/// <summary>Waits for completion if needed, then buffers all rows into a <see cref="List{T}"/>.</summary>
-	public async Task<List<T>> ToListAsync(TimeSpan? pollInterval = null, CancellationToken cancellationToken = default)
-	{
-		if (!IsCompleted)
-			await WaitForCompletionAsync(pollInterval, cancellationToken).ConfigureAwait(false);
-
-		var list = new List<T>();
-		if (_asyncResult is not null)
+		while (true)
 		{
-			await foreach (var item in _asyncResult.Rows.WithCancellation(cancellationToken).ConfigureAwait(false))
-				list.Add(item);
-		}
+			var response = await _executor.PollAsyncQueryAsync(QueryId, _queryOptions, cancellationToken).ConfigureAwait(false);
 
-		return list;
+			await DisposeOwnedResponseAsync().ConfigureAwait(false);
+			DisposeResults();
+			_ownedAsyncResponse = response;
+
+			_asyncResult = await _reader.ReadRowsAsync<T>(response.Body, cancellationToken: cancellationToken).ConfigureAwait(false);
+			_syncResult = null;
+			ApplyMetadata(_asyncResult);
+
+			if (IsCompleted)
+				return;
+
+			await Task.Delay(interval, cancellationToken).ConfigureAwait(false);
+		}
 	}
 
 	/// <summary>Disposes the owned response and DELETEs the async query from the cluster (best-effort).</summary>
@@ -153,6 +170,7 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 		if (Interlocked.Exchange(ref _disposed, 1) != 0)
 			return;
 
+		DisposeResults();
 		await DisposeOwnedResponseAsync().ConfigureAwait(false);
 
 		if (QueryId is null)
@@ -168,45 +186,57 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 		}
 	}
 
-	/// <summary>
-	/// Returns the rows from the current response as a lazy <see cref="IEnumerable{T}"/>.
-	/// Each response's rows can only be consumed once (the underlying stream is single-read).
-	/// After calling <see cref="Refresh"/> or <see cref="WaitForCompletion"/>,
-	/// this returns rows from the new response.
-	/// </summary>
-	public IEnumerable<T> AsEnumerable() =>
-		_syncResult?.Rows ?? [];
-
 	/// <summary>Performs a single synchronous poll to refresh the query state. Does not loop.</summary>
 	public void Refresh()
 	{
-		if (IsCompleted || QueryId is null)
+		if (IsCompleted)
 			return;
+
+		if (QueryId is null)
+			throw new InvalidOperationException("Cannot refresh an async query without a query ID.");
 
 		var response = _executor.PollAsyncQuery(QueryId, _queryOptions);
 
 		DisposeOwnedResponse();
-		_asyncResult = null;
+		DisposeResults();
 		_ownedSyncResponse = response;
 
-		_syncResult = _reader.ReadRowsWithMetadata<T>(response.Body);
-		ApplyMetadata(_syncResult.Metadata);
+		_syncResult = _reader.ReadRows<T>(response.Body);
+		_asyncResult = null;
+		ApplyMetadata(_syncResult);
 	}
 
 	/// <summary>
-	/// Polls synchronously until the query completes. After completion, performs
-	/// a final <see cref="Refresh"/> to make the complete result available via <see cref="AsEnumerable"/>.
+	/// Polls synchronously until the query completes. When <c>is_running: true</c>, the response reader
+	/// returns immediately with empty rows. The final poll's result contains the rows.
 	/// </summary>
 	public void WaitForCompletion(TimeSpan? pollInterval = null)
 	{
-		if (IsCompleted || QueryId is null)
+		if (IsCompleted)
 			return;
 
-		var interval = ResolvePollInterval(pollInterval);
-		PollUntilCompleted(interval);
+		if (QueryId is null)
+			throw new InvalidOperationException("Cannot wait for completion of an async query without a query ID.");
 
-		IsCompleted = true;
-		RefreshCore();
+		var interval = ResolvePollInterval(pollInterval);
+
+		while (true)
+		{
+			var response = _executor.PollAsyncQuery(QueryId, _queryOptions);
+
+			DisposeOwnedResponse();
+			DisposeResults();
+			_ownedSyncResponse = response;
+
+			_syncResult = _reader.ReadRows<T>(response.Body);
+			_asyncResult = null;
+			ApplyMetadata(_syncResult);
+
+			if (IsCompleted)
+				return;
+
+			Thread.Sleep(interval);
+		}
 	}
 
 	/// <summary>Waits for completion synchronously if needed, then buffers all rows into a <see cref="List{T}"/>.</summary>
@@ -215,9 +245,7 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 		if (!IsCompleted)
 			WaitForCompletion(pollInterval);
 
-		return _syncResult is not null
-			? [.. _syncResult.Rows]
-			: [];
+		return [.. AsEnumerable()];
 	}
 
 	/// <summary>Disposes the owned response and DELETEs the async query from the cluster (best-effort).</summary>
@@ -226,6 +254,7 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 		if (Interlocked.Exchange(ref _disposed, 1) != 0)
 			return;
 
+		DisposeResults();
 		DisposeOwnedResponse();
 
 		if (QueryId is null)
@@ -252,86 +281,30 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 		return pollInterval.Value;
 	}
 
-	private void ApplyMetadata(EsqlStreamMetadata metadata)
+	private void ApplyMetadata(EsqlAsyncResults<T> result)
 	{
-		if (metadata.Id is not null)
-			QueryId = metadata.Id;
+		if (result.Id is not null)
+			QueryId = result.Id;
 
-		if (!metadata.IsRunning)
+		if (result.IsRunning == false)
 			IsCompleted = true;
 	}
 
-	private async Task PollUntilCompletedAsync(TimeSpan pollInterval, CancellationToken cancellationToken)
+	private void ApplyMetadata(EsqlResults<T> result)
 	{
-		while (true)
-		{
-			var response = await _executor.PollAsyncQueryAsync(QueryId!, _queryOptions, cancellationToken).ConfigureAwait(false);
+		if (result.Id is not null)
+			QueryId = result.Id;
 
-			EsqlStreamMetadata metadata;
-			try
-			{
-				metadata = await EsqlResponseReader
-					.ReadMetadataAsync(response.Body, cancellationToken)
-					.ConfigureAwait(false);
-			}
-			finally
-			{
-				await response.DisposeAsync().ConfigureAwait(false);
-			}
-
-			if (metadata.Id is not null)
-				QueryId = metadata.Id;
-
-			if (!metadata.IsRunning)
-				break;
-
-			await Task.Delay(pollInterval, cancellationToken).ConfigureAwait(false);
-		}
+		if (result.IsRunning == false)
+			IsCompleted = true;
 	}
 
-	private void PollUntilCompleted(TimeSpan pollInterval)
+	private void DisposeResults()
 	{
-		while (true)
-		{
-			using var response = _executor.PollAsyncQuery(QueryId!, _queryOptions);
-			var metadata = EsqlResponseReader.ReadMetadata(response.Body);
-
-			if (metadata.Id is not null)
-				QueryId = metadata.Id;
-
-			if (!metadata.IsRunning)
-				break;
-
-			Thread.Sleep(pollInterval);
-		}
-	}
-
-	private async Task RefreshCoreAsync(CancellationToken cancellationToken)
-	{
-		if (QueryId is null)
-			return;
-
-		var response = await _executor.PollAsyncQueryAsync(QueryId, _queryOptions, cancellationToken).ConfigureAwait(false);
-
-		await DisposeOwnedResponseAsync().ConfigureAwait(false);
-		_ownedAsyncResponse = response;
-
-		_asyncResult = await _reader.ReadRowsWithMetadataAsync<T>(
-			response.Body, cancellationToken).ConfigureAwait(false);
-	}
-
-	private void RefreshCore()
-	{
-		if (QueryId is null)
-			return;
-
-		var response = _executor.PollAsyncQuery(QueryId, _queryOptions);
-
-		DisposeOwnedResponse();
+		_asyncResult?.DisposeAsync().AsTask().GetAwaiter().GetResult();
 		_asyncResult = null;
-		_ownedSyncResponse = response;
-
-		_syncResult = _reader.ReadRowsWithMetadata<T>(response.Body);
+		_syncResult?.Dispose();
+		_syncResult = null;
 	}
 
 	private void DisposeOwnedResponse()
@@ -365,6 +338,53 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 				: cancellationToken;
 
 			return source.GetAsyncEnumerator(effectiveCancellationToken);
+		}
+	}
+
+	private sealed class SyncToAsyncEnumerable(IEnumerable<T> source) : IAsyncEnumerable<T>
+	{
+		public IAsyncEnumerator<T> GetAsyncEnumerator(CancellationToken cancellationToken = default) =>
+			new Enumerator(source.GetEnumerator(), cancellationToken);
+
+		private sealed class Enumerator(IEnumerator<T> inner, CancellationToken ct) : IAsyncEnumerator<T>
+		{
+			public T Current => inner.Current;
+
+			public ValueTask<bool> MoveNextAsync()
+			{
+				ct.ThrowIfCancellationRequested();
+				return new ValueTask<bool>(inner.MoveNext());
+			}
+
+			public ValueTask DisposeAsync()
+			{
+				inner.Dispose();
+				return default;
+			}
+		}
+	}
+
+	private sealed class AsyncToSyncEnumerable(IAsyncEnumerable<T> source) : IEnumerable<T>
+	{
+		public IEnumerator<T> GetEnumerator() =>
+			new Enumerator(source.GetAsyncEnumerator());
+
+		System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+
+		private sealed class Enumerator(IAsyncEnumerator<T> inner) : IEnumerator<T>
+		{
+			public T Current => inner.Current;
+
+			object? System.Collections.IEnumerator.Current => Current;
+
+			public bool MoveNext() =>
+				inner.MoveNextAsync().AsTask().GetAwaiter().GetResult();
+
+			public void Reset() =>
+				throw new NotSupportedException();
+
+			public void Dispose() =>
+				inner.DisposeAsync().AsTask().GetAwaiter().GetResult();
 		}
 	}
 }

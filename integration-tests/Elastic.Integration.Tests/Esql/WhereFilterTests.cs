@@ -18,7 +18,7 @@ public class WhereFilterTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.Brand == "TechCorp")
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(expected);
@@ -34,7 +34,7 @@ public class WhereFilterTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.Price > 500)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(expected);
@@ -50,7 +50,7 @@ public class WhereFilterTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.Price <= 100)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(expected);
@@ -65,7 +65,7 @@ public class WhereFilterTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.InStock)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(expected);
@@ -81,7 +81,7 @@ public class WhereFilterTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => !p.InStock)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(expected);
@@ -98,7 +98,7 @@ public class WhereFilterTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.InStock && p.Price > 200)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(expected);
@@ -114,7 +114,7 @@ public class WhereFilterTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.Brand == "TechCorp" || p.Brand == "StyleMax")
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(expected);
@@ -130,7 +130,7 @@ public class WhereFilterTests : IntegrationTestBase
 			.CreateQuery<TestOrder>()
 			.From(TestDataSeeder.OrderIndex)
 			.Where(o => o.Status == OrderStatus.Delivered)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(expected);
@@ -147,7 +147,7 @@ public class WhereFilterTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.Category == ProductCategory.Electronics)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(expected);
@@ -164,7 +164,7 @@ public class WhereFilterTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.StockQuantity >= 100)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(expected);
@@ -180,7 +180,7 @@ public class WhereFilterTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.Price >= 100 && p.Price <= 300)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(expected);
@@ -196,7 +196,7 @@ public class WhereFilterTests : IntegrationTestBase
 			.CreateQuery<TestEvent>()
 			.From(TestDataSeeder.EventIndex)
 			.Where(e => e.Level == "Error")
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(expected);
@@ -213,7 +213,7 @@ public class WhereFilterTests : IntegrationTestBase
 			.CreateQuery<TestOrder>()
 			.From(TestDataSeeder.OrderIndex)
 			.Where(o => o.TotalAmount > 500)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(expected);
@@ -229,7 +229,7 @@ public class WhereFilterTests : IntegrationTestBase
 			.CreateQuery<TestOrder>()
 			.From(TestDataSeeder.OrderIndex)
 			.Where(o => o.Status == OrderStatus.Pending || o.Status == OrderStatus.Cancelled)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(expected);
@@ -245,7 +245,7 @@ public class WhereFilterTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => (p.Brand == "TechCorp" || p.Brand == "SportPro") && p.InStock)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(expected);

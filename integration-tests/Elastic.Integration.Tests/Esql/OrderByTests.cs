@@ -17,7 +17,7 @@ public class OrderByTests : IntegrationTestBase
 			.From(TestDataSeeder.ProductIndex)
 			.OrderBy(p => p.Price)
 			.Take(10)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(10);
@@ -32,7 +32,7 @@ public class OrderByTests : IntegrationTestBase
 			.From(TestDataSeeder.ProductIndex)
 			.OrderByDescending(p => p.Price)
 			.Take(10)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(10);
@@ -53,7 +53,7 @@ public class OrderByTests : IntegrationTestBase
 			.From(TestDataSeeder.ProductIndex)
 			.OrderByDescending(p => p.Price)
 			.Take(10)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		for (var i = 0; i < results.Count; i++)
@@ -69,7 +69,7 @@ public class OrderByTests : IntegrationTestBase
 			.OrderBy(p => p.Brand)
 			.ThenByDescending(p => p.Price)
 			.Take(20)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(20);
@@ -96,7 +96,7 @@ public class OrderByTests : IntegrationTestBase
 			.Where(p => p.InStock)
 			.OrderByDescending(p => p.Price)
 			.Take(5)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCountLessThanOrEqualTo(5);
@@ -112,7 +112,7 @@ public class OrderByTests : IntegrationTestBase
 			.From(TestDataSeeder.OrderIndex)
 			.OrderByDescending(o => o.Timestamp)
 			.Take(10)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(10);
@@ -127,7 +127,7 @@ public class OrderByTests : IntegrationTestBase
 			.From(TestDataSeeder.ProductIndex)
 			.OrderByDescending(p => p.StockQuantity)
 			.Take(10)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(10);

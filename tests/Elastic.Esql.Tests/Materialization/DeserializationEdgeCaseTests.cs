@@ -714,15 +714,18 @@ public class DeserializationEdgeCaseTests
 			}
 			""";
 
-		var metadata = ReadMetadata(json);
+		var (id, isRunning) = ReadMetadata(json);
 
-		metadata.Id.Should().Be("query-123");
-		metadata.IsRunning.Should().BeTrue();
+		id.Should().Be("query-123");
+		isRunning.Should().BeTrue();
 	}
 
 	[Test]
-	public void ReadMetadata_MetadataAfterValues_CapturesIdAndIsRunning()
+	public void ReadMetadata_MetadataAfterValues_OnlyCapturedBeforeValues()
 	{
+		// Metadata after values is not captured in the streaming path — id/is_running
+		// must appear before or between columns/values to be captured without buffering.
+		// The inference rule applies: columns/values present → is_running = false.
 		var json = """
 			{
 			  "columns": [
@@ -736,15 +739,17 @@ public class DeserializationEdgeCaseTests
 			}
 			""";
 
-		var metadata = ReadMetadata(json);
+		var (id, isRunning) = ReadMetadata(json);
 
-		metadata.Id.Should().Be("query-456");
-		metadata.IsRunning.Should().BeFalse();
+		id.Should().BeNull();
+		isRunning.Should().Be(false);
 	}
 
 	[Test]
-	public void ReadMetadata_MetadataSplitAroundValues_CapturesBoth()
+	public void ReadMetadata_MetadataSplitAroundValues_CapturesIdBeforeValues()
 	{
+		// id appears before values (captured), is_running appears after values (not captured).
+		// Inference: columns/values present → is_running = false.
 		var json = """
 			{
 			  "id": "query-789",
@@ -758,15 +763,16 @@ public class DeserializationEdgeCaseTests
 			}
 			""";
 
-		var metadata = ReadMetadata(json);
+		var (id, isRunning) = ReadMetadata(json);
 
-		metadata.Id.Should().Be("query-789");
-		metadata.IsRunning.Should().BeTrue();
+		id.Should().Be("query-789");
+		isRunning.Should().Be(false);
 	}
 
 	[Test]
-	public void ReadMetadata_NoMetadataProperties_DefaultValues()
+	public void ReadMetadata_NoMetadataProperties_InfersNotRunningFromColumnsValues()
 	{
+		// No explicit metadata, but columns/values are present → is_running inferred as false.
 		var json = """
 			{
 			  "columns": [
@@ -778,10 +784,10 @@ public class DeserializationEdgeCaseTests
 			}
 			""";
 
-		var metadata = ReadMetadata(json);
+		var (id, isRunning) = ReadMetadata(json);
 
-		metadata.Id.Should().BeNull();
-		metadata.IsRunning.Should().BeFalse();
+		id.Should().BeNull();
+		isRunning.Should().Be(false);
 	}
 
 	[Test]
@@ -798,10 +804,10 @@ public class DeserializationEdgeCaseTests
 			}
 			""";
 
-		var metadata = ReadMetadata(json);
+		var (id, isRunning) = ReadMetadata(json);
 
-		metadata.Id.Should().Be("done-query");
-		metadata.IsRunning.Should().BeFalse();
+		id.Should().Be("done-query");
+		isRunning.Should().Be(false);
 	}
 
 	// =========================================================================
@@ -935,12 +941,19 @@ public class DeserializationEdgeCaseTests
 		};
 		var metadata = new JsonMetadataManager(options);
 		var reader = new EsqlResponseReader(metadata);
-		return reader.ReadRows<T>(stream).ToList();
+		using var results = reader.ReadRows<T>(stream);
+		return results.Rows.ToList();
 	}
 
-	private static EsqlStreamMetadata ReadMetadata(string json)
+	private static (string? Id, bool? IsRunning) ReadMetadata(string json)
 	{
+		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+		var metadata = new JsonMetadataManager(options);
+		var reader = new EsqlResponseReader(metadata);
 		using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
-		return EsqlResponseReader.ReadMetadata(stream);
+		using var results = reader.ReadRows<object>(stream);
+		// Force enumeration to completion so metadata is fully captured
+		_ = results.Rows.ToList();
+		return (results.Id, results.IsRunning);
 	}
 }

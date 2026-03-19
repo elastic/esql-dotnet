@@ -32,7 +32,7 @@ public class EsqlResponseReaderAsyncTests
 		var reader = CreateReader();
 		var rows = new List<ScalarStringModel>();
 
-		await foreach (var row in reader.ReadRowsAsync<ScalarStringModel>(stream))
+		await foreach (var row in (await reader.ReadRowsAsync<ScalarStringModel>(stream)).Rows)
 			rows.Add(row);
 
 		rows.Should().HaveCount(2);
@@ -68,39 +68,42 @@ public class EsqlResponseReaderAsyncTests
 	}
 
 	[Test]
-	public async Task ReadRowsWithMetadataAsync_Stream_MetadataAfterValues_UpdatesAfterRowsConsumed()
+	public async Task ReadRowsAsync_Stream_MetadataBeforeValues_CapturedImmediately()
 	{
 		var json = """
 			{
+			  "id": "query-123",
+			  "is_running": false,
 			  "columns": [
 			    { "name": "value", "type": "keyword" }
 			  ],
 			  "values": [
 			    ["row-1"]
-			  ],
-			  "id": "query-123",
-			  "is_running": false
+			  ]
 			}
 			""";
 
 		using var stream = CreateStream(json);
 		var reader = CreateReader();
 
-		var response = await reader.ReadRowsWithMetadataAsync<string>(stream);
-		response.Metadata.Id.Should().BeNull();
+		var response = await reader.ReadRowsAsync<string>(stream);
+
+		// Metadata is eagerly populated before returning
+		response.Id.Should().Be("query-123");
+		response.IsRunning.Should().Be(false);
 
 		var rows = new List<string>();
 		await foreach (var row in response.Rows)
 			rows.Add(row);
 
 		rows.Should().Equal(["row-1"]);
-		response.Metadata.Id.Should().Be("query-123");
-		response.Metadata.IsRunning.Should().BeFalse();
 	}
 
 	[Test]
-	public async Task ReadMetadataAsync_Stream_MetadataAfterValues_CapturesProperties()
+	public async Task ReadRowsAsync_Stream_MetadataAfterValues_InfersIsRunningFalse()
 	{
+		// Metadata after values is not captured in streaming path.
+		// Inference: columns/values present → is_running = false.
 		var json = """
 			{
 			  "columns": [
@@ -115,11 +118,17 @@ public class EsqlResponseReaderAsyncTests
 			""";
 
 		using var stream = CreateStream(json);
+		var reader = CreateReader();
 
-		var metadata = await EsqlResponseReader.ReadMetadataAsync(stream);
+		var response = await reader.ReadRowsAsync<int>(stream);
 
-		metadata.Id.Should().Be("query-456");
-		metadata.IsRunning.Should().BeTrue();
+		await foreach (var _ in response.Rows)
+		{
+		}
+
+		// id after values is not captured; is_running inferred false from columns/values presence
+		response.Id.Should().BeNull();
+		response.IsRunning.Should().Be(false);
 	}
 
 	[Test]
@@ -142,7 +151,7 @@ public class EsqlResponseReaderAsyncTests
 
 		var act = async () =>
 		{
-			await foreach (var _ in reader.ReadRowsAsync<string>(stream, cancellationToken))
+			await foreach (var _ in (await reader.ReadRowsAsync<string>(stream, cancellationToken: cancellationToken)).Rows)
 			{
 			}
 		};

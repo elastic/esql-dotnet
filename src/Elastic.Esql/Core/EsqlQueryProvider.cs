@@ -142,7 +142,8 @@ public sealed class EsqlQueryProvider : IQueryProvider
 			.ExecuteQueryAsync(esql, query.Parameters, query.QueryOptions, cancellationToken)
 			.ConfigureAwait(false);
 
-		await foreach (var item in _reader.ReadRowsAsync<TElement>(response.Body, cancellationToken).ConfigureAwait(false))
+		await using var results = await _reader.ReadRowsAsync<TElement>(response.Body, cancellationToken: cancellationToken).ConfigureAwait(false);
+		await foreach (var item in results.Rows.ConfigureAwait(false))
 			yield return item;
 	}
 
@@ -160,8 +161,9 @@ public sealed class EsqlQueryProvider : IQueryProvider
 	internal EsqlAsyncQuery<T> SubmitAsyncQuery<T>(Expression expression, EsqlAsyncQueryOptions? asyncOptions)
 	{
 		var (esql, query) = TranslateAndFormat(expression);
+		var requireId = asyncOptions?.KeepOnCompletion == true;
 		var response = _executor.SubmitAsyncQuery(esql, query.Parameters, query.QueryOptions, asyncOptions);
-		var result = _reader.ReadRowsWithMetadata<T>(response.Body);
+		var result = _reader.ReadRows<T>(response.Body, requireId: requireId);
 		return new EsqlAsyncQuery<T>(_executor, result, response, _reader, query.QueryOptions);
 	}
 
@@ -171,13 +173,12 @@ public sealed class EsqlQueryProvider : IQueryProvider
 		EsqlAsyncQueryOptions? asyncOptions,
 		CancellationToken cancellationToken)
 	{
+		var requireId = asyncOptions?.KeepOnCompletion == true;
 		var (esql, query) = TranslateAndFormat(expression);
 		var response = await _executor
 			.SubmitAsyncQueryAsync(esql, query.Parameters, query.QueryOptions, asyncOptions, cancellationToken)
 			.ConfigureAwait(false);
-		var result = await _reader
-			.ReadRowsWithMetadataAsync<T>(response.Body, cancellationToken)
-			.ConfigureAwait(false);
+		var result = await _reader.ReadRowsAsync<T>(response.Body, requireId, cancellationToken).ConfigureAwait(false);
 		return new EsqlAsyncQuery<T>(_executor, result, response, _reader, query.QueryOptions);
 	}
 
@@ -209,8 +210,9 @@ public sealed class EsqlQueryProvider : IQueryProvider
 	{
 		var (esql, query) = TranslateAndFormat(expression);
 		using var response = _executor.ExecuteQuery(esql, query.Parameters, query.QueryOptions);
+		using var results = _reader.ReadRows<TElement>(response.Body);
 
-		foreach (var item in _reader.ReadRows<TElement>(response.Body))
+		foreach (var item in results.Rows)
 			yield return item;
 	}
 

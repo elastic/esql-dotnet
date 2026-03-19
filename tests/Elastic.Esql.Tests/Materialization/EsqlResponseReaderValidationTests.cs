@@ -60,7 +60,7 @@ public class EsqlResponseReaderValidationTests
 		using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
 		var metadata = new JsonMetadataManager(new JsonSerializerOptions(JsonSerializerDefaults.Web));
 		var reader = new EsqlResponseReader(metadata);
-		_ = reader.ReadRows<T>(stream).ToList();
+		_ = reader.ReadRows<T>(stream).Rows.ToList();
 	}
 
 	private sealed class TestRow

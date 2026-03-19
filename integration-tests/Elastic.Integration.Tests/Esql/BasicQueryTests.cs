@@ -15,7 +15,7 @@ public class BasicQueryTests : IntegrationTestBase
 		var results = await Fixture.EsqlClient
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(100);
@@ -27,7 +27,7 @@ public class BasicQueryTests : IntegrationTestBase
 		var results = await Fixture.EsqlClient
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToArrayAsync();
 
 		results.Should().HaveCount(100);
@@ -39,7 +39,7 @@ public class BasicQueryTests : IntegrationTestBase
 		var count = await Fixture.EsqlClient
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.CountAsync();
 
 		count.Should().Be(100);
@@ -51,7 +51,7 @@ public class BasicQueryTests : IntegrationTestBase
 		var any = await Fixture.EsqlClient
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.AnyAsync();
 
 		any.Should().BeTrue();
@@ -64,7 +64,7 @@ public class BasicQueryTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.Price < 0)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.AnyAsync();
 
 		any.Should().BeFalse();
@@ -76,7 +76,7 @@ public class BasicQueryTests : IntegrationTestBase
 		var first = await Fixture.EsqlClient
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.FirstAsync();
 
 		first.Should().NotBeNull();
@@ -90,7 +90,7 @@ public class BasicQueryTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.Price < 0)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.FirstOrDefaultAsync();
 
 		result.Should().BeNull();
@@ -103,7 +103,7 @@ public class BasicQueryTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(1)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.SingleAsync();
 
 		result.Should().NotBeNull();
@@ -116,7 +116,7 @@ public class BasicQueryTests : IntegrationTestBase
 		var count = await Fixture.EsqlClient
 			.CreateQuery<TestOrder>()
 			.From(TestDataSeeder.OrderIndex)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.CountAsync();
 
 		count.Should().Be(100);
@@ -128,7 +128,7 @@ public class BasicQueryTests : IntegrationTestBase
 		var count = await Fixture.EsqlClient
 			.CreateQuery<TestEvent>()
 			.From(TestDataSeeder.EventIndex)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.CountAsync();
 
 		count.Should().Be(100);
@@ -141,7 +141,7 @@ public class BasicQueryTests : IntegrationTestBase
 		await foreach (var product in Fixture.EsqlClient
 						   .CreateQuery<TestProduct>()
 						   .From(TestDataSeeder.ProductIndex)
-						   .AsEsql()
+						   .AsEsqlQueryable()
 						   .AsAsyncEnumerable())
 		{
 			product.Should().NotBeNull();
