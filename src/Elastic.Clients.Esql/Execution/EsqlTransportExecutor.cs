@@ -276,13 +276,16 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 
 	private EndpointPath BuildEndpoint(EndpointPath basePath, EsqlQueryOptions? options)
 	{
-		if (options?.AllowPartialResults is null)
+		if (options?.AllowPartialResults is null && options?.DropNullColumns is null)
 			return basePath;
 
 		var parameters = new DefaultRequestParameters();
 
-		if (options.AllowPartialResults is { } allowPartial)
+		if (options?.AllowPartialResults is { } allowPartial)
 			parameters.SetQueryString("allow_partial_results", allowPartial);
+
+		if (options?.DropNullColumns is { } dropNull)
+			parameters.SetQueryString("drop_null_columns", dropNull);
 
 		var pathWithQuery = parameters.CreatePathWithQueryStrings(basePath.PathAndQuery, _settings.Transport.Configuration);
 		return new EndpointPath(basePath.Method, pathWithQuery);
