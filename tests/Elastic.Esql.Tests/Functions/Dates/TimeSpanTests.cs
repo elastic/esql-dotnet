@@ -82,6 +82,40 @@ public class TimeSpanTests : EsqlTestBase
 	}
 
 	[Test]
+	public void TimeSpan_CapturedVariable_WithNonWholeHours_PreservesPrecision()
+	{
+		var window = TimeSpan.FromMinutes(90);
+
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Timestamp > EsqlFunctions.Now() - window)
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| WHERE @timestamp > NOW() - 90 minutes
+			""".NativeLineEndings());
+	}
+
+	[Test]
+	public void TimeSpan_CapturedVariable_WithNonWholeSeconds_PreservesMilliseconds()
+	{
+		var window = TimeSpan.FromMilliseconds(1500);
+
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Timestamp > EsqlFunctions.Now() - window)
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| WHERE @timestamp > NOW() - 1500 milliseconds
+			""".NativeLineEndings());
+	}
+
+	[Test]
 	public void TimeSpan_LargeValue_InWhere_GeneratesTimeInterval()
 	{
 		var esql = CreateQuery<LogEntry>()

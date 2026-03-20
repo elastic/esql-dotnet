@@ -13,6 +13,7 @@ using var client = new EsqlClient(new Uri("https://my-cluster:9200"));
 
 // LINQ query -- translates and executes in one step
 var errors = await client.CreateQuery<LogEntry>()
+    .From("logs-*")
     .Where(l => l.Level == "ERROR")
     .OrderByDescending(l => l.Timestamp)
     .Take(10)
@@ -50,6 +51,7 @@ using var client = new EsqlClient(settings);
 
 ```csharp
 var topBrands = await client.CreateQuery<Product>()
+    .From("products")
     .Where(p => p.InStock)
     .GroupBy(p => p.Brand)
     .Select(g => new { Brand = g.Key, Avg = g.Average(p => p.Price), Count = g.Count() })
@@ -62,7 +64,7 @@ var topBrands = await client.CreateQuery<Product>()
 
 ```csharp
 var results = await (
-    from log in client.CreateQuery<LogEntry>()
+    from log in client.CreateQuery<LogEntry>().From("logs-*")
     where log.Level == "ERROR"
     where log.Duration > 500
     orderby log.Timestamp descending
@@ -74,7 +76,7 @@ var results = await (
 
 ```csharp
 var results = await client.QueryAsync<LogEntry>(q =>
-    q.Where(l => l.Level == "ERROR").Take(10));
+    q.From("logs-*").Where(l => l.Level == "ERROR").Take(10));
 ```
 
 ### Raw ES|QL fragments
@@ -118,8 +120,8 @@ Console.WriteLine(query.ToString());
 For long-running queries, use the async query API. Results auto-delete from the cluster on dispose:
 
 ```csharp
-await using var asyncQuery = await client.QueryAsyncQueryAsync<LogEntry>(
-    q => q.Where(l => l.Level == "ERROR"),
+await using var asyncQuery = await client.SubmitAsyncQueryAsync<LogEntry>(
+    q => q.From("logs-*").Where(l => l.Level == "ERROR"),
     new EsqlAsyncQueryOptions
     {
         WaitForCompletionTimeout = TimeSpan.FromSeconds(5),

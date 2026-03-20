@@ -8,6 +8,7 @@ ES|QL is powerful but building query strings by hand is error-prone. **Elastic.E
 
 ```csharp
 var esql = new EsqlQueryable<LogEntry>()
+    .From("logs-*")
     .Where(l => l.Level == "ERROR" && l.Duration > 1000)
     .OrderByDescending(l => l.Timestamp)
     .Take(50)
@@ -29,10 +30,13 @@ FROM logs-*
 
 ```csharp
 // Reflection-based field resolution
-var query = new EsqlQueryable<Order>();
+var query = new EsqlQueryable<Order>()
+    .From("orders");
 
-// Or with a source-generated mapping context (from Elastic.Mapping) -- AOT safe
-var query = new EsqlQueryable<Order>(MyContext.Instance);
+// Or with a source-generated JsonSerializerContext -- AOT safe
+var provider = new EsqlQueryProvider(MyContext.Default);
+query = new EsqlQueryable<Order>(provider)
+    .From("orders");
 
 var esql = query
     .Where(o => o.Status == "shipped" && o.Total > 100)
@@ -45,7 +49,7 @@ var esql = query
 
 ```csharp
 var esql = (
-    from o in new EsqlQueryable<Order>()
+    from o in new EsqlQueryable<Order>().From("orders")
     where o.Status == "shipped"
     where o.Total > 100
     orderby o.CreatedAt descending
@@ -142,6 +146,7 @@ Elastic.Esql is a pure translation library -- it generates ES|QL strings but doe
 ```csharp
 var provider = new MyCustomQueryProvider(fieldResolver);
 var results = await new EsqlQueryable<Order>(provider)
+    .From("orders")
     .Where(o => o.Total > 100)
     .ToListAsync();
 ```
@@ -155,7 +160,9 @@ When paired with the `Elastic.Mapping` source generator, field names resolve fro
 ```csharp
 // Field names come from [JsonPropertyName], [Text], [Keyword], etc.
 // Aligned with your System.Text.Json source-generated serialization context
-var query = new EsqlQueryable<Product>(MyContext.Instance)
+var provider = new EsqlQueryProvider(MyContext.Default);
+var query = new EsqlQueryable<Product>(provider)
+    .From("products")
     .Where(p => p.Name.Contains("laptop"))  // Uses generated field name
     .ToString();
 ```

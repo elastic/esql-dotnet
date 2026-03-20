@@ -34,7 +34,7 @@ internal sealed partial class EsqlResponseReader
 
 		var forceBuffer = requireId && result.Id is null && !prepared.ValuesFirst && prepared.IsRunning != true;
 		result.Rows = forceBuffer
-			? ReadFromBufferedResponseAsync<T>(cursor, result, cancellationToken)
+			? StreamRowsThenScanForIdAsync(cursor, prepared, result, cancellationToken)
 			: BuildAsyncRows(cursor, prepared, result, cancellationToken);
 		return result;
 	}
@@ -52,7 +52,7 @@ internal sealed partial class EsqlResponseReader
 
 		var forceBuffer = requireId && result.Id is null && !prepared.ValuesFirst && prepared.IsRunning != true;
 		result.Rows = forceBuffer
-			? ReadFromBufferedResponseAsync<T>(cursor, result, cancellationToken)
+			? StreamRowsThenScanForIdWithPipeCleanupAsync(cursor, pipeReader, prepared, result, cancellationToken)
 			: BuildAsyncRowsWithPipeCleanup(cursor, pipeReader, prepared, result, cancellationToken);
 		return result;
 	}
@@ -71,7 +71,7 @@ internal sealed partial class EsqlResponseReader
 
 		var forceBuffer = requireId && result.Id is null && !prepared.ValuesFirst && prepared.IsRunning != true;
 		result.Rows = forceBuffer
-			? ReadFromBufferedResponse<T>(cursor, result)
+			? StreamRowsThenScanForId(cursor, prepared, result)
 			: BuildSyncRows(cursor, prepared, result);
 		return result;
 	}
@@ -168,18 +168,67 @@ internal sealed partial class EsqlResponseReader
 			yield return item;
 	}
 
-	private readonly record struct BufferedStreamResult<T>(IEnumerable<T> Rows, string? Id, bool? IsRunning);
-
-	private BufferedStreamResult<T> StreamFromBuffer<T>(byte[] buffer)
+	private async IAsyncEnumerable<T> StreamRowsThenScanForIdAsync<T>(
+		IAsyncBufferCursor cursor,
+		PrepareRowsResult prepared,
+		EsqlAsyncResults<T> result,
+		[EnumeratorCancellation] CancellationToken cancellationToken)
 	{
-		var (columns, valuesOffset, id, isRunning) = ParseColumnsFromBuffer(buffer, buffer.Length);
-		var layout = GetColumnLayout<T>(columns);
-		return new BufferedStreamResult<T>(StreamRowsFromBuffer<T>(buffer, valuesOffset, columns, layout), id, isRunning);
+		var tracker = new ReaderStateTracker(prepared.ReaderState);
+
+		await foreach (var item in StreamRowsAsync<T>(cursor, prepared.ReaderState, prepared.Columns, prepared.Layout, Options, cancellationToken, tracker).ConfigureAwait(false))
+			yield return item;
+
+		var (id, _) = await ScanForIdAsync(cursor, tracker.State, cancellationToken).ConfigureAwait(false);
+		result.Id ??= id;
 	}
 
-	private IEnumerable<T> StreamRowsFromBuffer<T>(byte[] buffer, int valuesOffset, ColumnInfo[] columns, ColumnLayout layout)
+#if NET10_0_OR_GREATER
+	private async IAsyncEnumerable<T> StreamRowsThenScanForIdWithPipeCleanupAsync<T>(
+		PipeReaderCursor cursor,
+		PipeReader pipeReader,
+		PrepareRowsResult prepared,
+		EsqlAsyncResults<T> result,
+		[EnumeratorCancellation] CancellationToken cancellationToken)
 	{
-		using var memoryStream = new MemoryStream(buffer, valuesOffset, buffer.Length - valuesOffset, writable: false);
+		try
+		{
+			await foreach (var item in StreamRowsThenScanForIdAsync(cursor, prepared, result, cancellationToken).ConfigureAwait(false))
+				yield return item;
+		}
+		finally
+		{
+			await pipeReader.CompleteAsync().ConfigureAwait(false);
+		}
+	}
+#endif
+
+	private IEnumerable<T> StreamRowsThenScanForId<T>(
+		ISyncBufferCursor cursor,
+		PrepareRowsResult prepared,
+		EsqlResults<T> result)
+	{
+		var tracker = new ReaderStateTracker(prepared.ReaderState);
+
+		foreach (var item in StreamRows<T>(cursor, prepared.ReaderState, prepared.Columns, prepared.Layout, Options, tracker))
+			yield return item;
+
+		var (id, _) = ScanForId(cursor, tracker.State);
+		result.Id ??= id;
+	}
+
+	private readonly record struct BufferedStreamResult<T>(IEnumerable<T> Rows, string? Id, bool? IsRunning);
+
+	private BufferedStreamResult<T> StreamFromBuffer<T>(byte[] buffer, int length)
+	{
+		var (columns, valuesOffset, id, isRunning) = ParseColumnsFromBuffer(buffer, length);
+		var layout = GetColumnLayout<T>(columns);
+		return new BufferedStreamResult<T>(StreamRowsFromBuffer<T>(buffer, length, valuesOffset, columns, layout), id, isRunning);
+	}
+
+	private IEnumerable<T> StreamRowsFromBuffer<T>(byte[] buffer, int length, int valuesOffset, ColumnInfo[] columns, ColumnLayout layout)
+	{
+		using var memoryStream = new MemoryStream(buffer, valuesOffset, length - valuesOffset, writable: false);
 		using var syncBuf = new SyncStreamBuffer(memoryStream);
 		var bufferCursor = new SyncStreamBufferCursor(syncBuf);
 
@@ -196,10 +245,10 @@ internal sealed partial class EsqlResponseReader
 		EsqlAsyncResults<T> result,
 		[EnumeratorCancellation] CancellationToken cancellationToken)
 	{
-		var buffer = await DrainToBufferAsync(cursor, cancellationToken).ConfigureAwait(false);
-		result.SetBuffer(buffer);
+		var drained = await DrainToBufferAsync(cursor, cancellationToken).ConfigureAwait(false);
+		result.SetBuffer(drained.Buffer, drained.IsRented);
 
-		var parsed = StreamFromBuffer<T>(buffer);
+		var parsed = StreamFromBuffer<T>(drained.Buffer, drained.Length);
 		result.Id ??= parsed.Id;
 		result.IsRunning ??= parsed.IsRunning;
 
@@ -213,10 +262,10 @@ internal sealed partial class EsqlResponseReader
 		ISyncBufferCursor cursor,
 		EsqlResults<T> result)
 	{
-		var buffer = DrainToBuffer(cursor);
-		result.SetBuffer(buffer);
+		var drained = DrainToBuffer(cursor);
+		result.SetBuffer(drained.Buffer, drained.IsRented);
 
-		var parsed = StreamFromBuffer<T>(buffer);
+		var parsed = StreamFromBuffer<T>(drained.Buffer, drained.Length);
 		result.Id ??= parsed.Id;
 		result.IsRunning ??= parsed.IsRunning;
 

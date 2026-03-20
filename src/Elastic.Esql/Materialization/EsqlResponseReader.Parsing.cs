@@ -10,6 +10,7 @@ namespace Elastic.Esql.Materialization;
 internal sealed partial class EsqlResponseReader
 {
 	internal readonly record struct PrepareRowsResult(ColumnInfo[] Columns, JsonReaderState ReaderState, ColumnLayout Layout, string? Id, bool? IsRunning, bool ValuesFirst);
+	private readonly record struct DrainedBuffer(byte[] Buffer, int Length, bool IsRented);
 
 	private async Task<PrepareRowsResult> PrepareRowsAsync<T>(
 		IAsyncBufferCursor cursor,
@@ -40,35 +41,73 @@ internal sealed partial class EsqlResponseReader
 	}
 
 	/// <summary>Drains all remaining data from an async cursor into a byte array.</summary>
-	private static async Task<byte[]> DrainToBufferAsync(IAsyncBufferCursor cursor, CancellationToken ct)
+	private static async Task<DrainedBuffer> DrainToBufferAsync(IAsyncBufferCursor cursor, CancellationToken ct)
 	{
-		while (!cursor.IsCompleted)
+		var rented = ArrayPool<byte>.Shared.Rent(16_384);
+		var written = 0;
+
+		while (await cursor.ReadAsync(ct).ConfigureAwait(false))
 		{
-			if (!await cursor.ReadAsync(ct).ConfigureAwait(false))
+			var buffer = cursor.Buffer;
+			written = CopyBuffer(buffer, ref rented, written);
+			cursor.AdvanceTo(buffer.End, buffer.End);
+
+			if (cursor.IsCompleted)
 				break;
-			cursor.AdvanceTo(cursor.Buffer.Start, cursor.Buffer.End);
 		}
 
-		var buffer = cursor.Buffer;
-		var bytes = new byte[buffer.Length];
-		buffer.CopyTo(bytes);
-		return bytes;
+		if (written == 0)
+		{
+			ArrayPool<byte>.Shared.Return(rented);
+			return new DrainedBuffer([], 0, false);
+		}
+
+		return new DrainedBuffer(rented, written, true);
 	}
 
 	/// <summary>Drains all remaining data from a sync cursor into a byte array.</summary>
-	private static byte[] DrainToBuffer(ISyncBufferCursor cursor)
+	private static DrainedBuffer DrainToBuffer(ISyncBufferCursor cursor)
 	{
-		while (!cursor.IsCompleted)
+		var rented = ArrayPool<byte>.Shared.Rent(16_384);
+		var written = 0;
+
+		while (cursor.Read())
 		{
-			if (!cursor.Read())
+			var buffer = cursor.Buffer;
+			written = CopyBuffer(buffer, ref rented, written);
+			cursor.AdvanceTo(buffer.End, buffer.End);
+
+			if (cursor.IsCompleted)
 				break;
-			cursor.AdvanceTo(cursor.Buffer.Start, cursor.Buffer.End);
 		}
 
-		var buffer = cursor.Buffer;
-		var bytes = new byte[buffer.Length];
-		buffer.CopyTo(bytes);
-		return bytes;
+		if (written == 0)
+		{
+			ArrayPool<byte>.Shared.Return(rented);
+			return new DrainedBuffer([], 0, false);
+		}
+
+		return new DrainedBuffer(rented, written, true);
+	}
+
+	private static int CopyBuffer(ReadOnlySequence<byte> buffer, ref byte[] rented, int written)
+	{
+		foreach (var segment in buffer)
+		{
+			var required = written + segment.Length;
+			if (required > rented.Length)
+			{
+				var bigger = ArrayPool<byte>.Shared.Rent(required * 2);
+				rented.AsSpan(0, written).CopyTo(bigger);
+				ArrayPool<byte>.Shared.Return(rented);
+				rented = bigger;
+			}
+
+			segment.Span.CopyTo(rented.AsSpan(written));
+			written += segment.Length;
+		}
+
+		return written;
 	}
 
 	/// <summary>Parses columns and locates the values array from a fully buffered response.</summary>

@@ -216,7 +216,7 @@ var results = await asyncQuery.ToListAsync();
 Or via the `EsqlClient` convenience methods:
 
 ```csharp
-await using var asyncQuery = await client.QueryAsyncQueryAsync<LogEntry>(
+await using var asyncQuery = await client.SubmitAsyncQueryAsync<LogEntry>(
     q => q.WithOptions(new EsqlQueryOptions { TimeZone = "UTC" })
           .From("logs-*")
           .Where(l => l.Level == "ERROR"),
@@ -312,7 +312,7 @@ Long-running queries can be submitted asynchronously. The cluster returns a quer
 ### Submit and wait
 
 ```csharp
-await using var asyncQuery = await client.QueryAsyncQueryAsync<LogEntry>(
+await using var asyncQuery = await client.SubmitAsyncQueryAsync<LogEntry>(
     q => q.From("logs-*").Where(l => l.Level == "ERROR"),
     new EsqlAsyncQueryOptions
     {
@@ -352,7 +352,7 @@ await foreach (var entry in asyncQuery.AsAsyncEnumerable())
 ### Synchronous async queries
 
 ```csharp
-using var asyncQuery = client.QueryAsyncQuery<LogEntry>(
+using var asyncQuery = client.SubmitAsyncQuery<LogEntry>(
     q => q.From("logs-*").Where(l => l.Level == "ERROR"));
 
 asyncQuery.WaitForCompletion();

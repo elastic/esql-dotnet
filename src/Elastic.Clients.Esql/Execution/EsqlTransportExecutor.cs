@@ -2,6 +2,7 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Globalization;
 using System.Text.Json;
 using Elastic.Esql;
 using Elastic.Esql.Execution;
@@ -100,7 +101,7 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 	public IEsqlResponse PollAsyncQuery(string queryId, object? options)
 	{
 		var typedOptions = ResolveOptions(options);
-		var endpointPath = new EndpointPath(HttpMethod.GET, $"/_query/async/{queryId}");
+		var endpointPath = BuildAsyncQueryEndpoint(HttpMethod.GET, queryId);
 		var requestConfig = EnsureAsyncHeaders(typedOptions?.RequestConfiguration);
 		var response = _settings.Transport.Request<StreamResponse>(in endpointPath, null, null, requestConfig);
 		ThrowIfError(response, "Failed to get async query status");
@@ -110,7 +111,7 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 	public async Task<IEsqlAsyncResponse> PollAsyncQueryAsync(string queryId, object? options, CancellationToken cancellationToken)
 	{
 		var typedOptions = ResolveOptions(options);
-		var endpointPath = new EndpointPath(HttpMethod.GET, $"/_query/async/{queryId}");
+		var endpointPath = BuildAsyncQueryEndpoint(HttpMethod.GET, queryId);
 		var requestConfig = EnsureAsyncHeaders(typedOptions?.RequestConfiguration);
 
 #if NET10_0_OR_GREATER
@@ -131,7 +132,7 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 	public void DeleteAsyncQuery(string queryId, object? options)
 	{
 		var typedOptions = ResolveOptions(options);
-		var endpointPath = new EndpointPath(HttpMethod.DELETE, $"/_query/async/{queryId}");
+		var endpointPath = BuildAsyncQueryEndpoint(HttpMethod.DELETE, queryId);
 		using var response = _settings.Transport.Request<StreamResponse>(in endpointPath, null, null, typedOptions?.RequestConfiguration);
 		ThrowIfError(response, "Failed to delete async query");
 	}
@@ -139,7 +140,7 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 	public async Task DeleteAsyncQueryAsync(string queryId, object? options, CancellationToken cancellationToken)
 	{
 		var typedOptions = ResolveOptions(options);
-		var endpointPath = new EndpointPath(HttpMethod.DELETE, $"/_query/async/{queryId}");
+		var endpointPath = BuildAsyncQueryEndpoint(HttpMethod.DELETE, queryId);
 		using var response = await _settings.Transport
 			.RequestAsync<StreamResponse>(in endpointPath, null, null, typedOptions?.RequestConfiguration, cancellationToken)
 			.ConfigureAwait(false);
@@ -156,6 +157,14 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 
 		throw new InvalidOperationException(
 			$"Expected options of type '{nameof(EsqlQueryOptions)}' but received '{options.GetType().FullName}'.");
+	}
+
+	private static EndpointPath BuildAsyncQueryEndpoint(HttpMethod method, string queryId)
+	{
+		if (string.IsNullOrWhiteSpace(queryId))
+			throw new ArgumentException("Async query ID cannot be null or empty.", nameof(queryId));
+
+		return new EndpointPath(method, $"/_query/async/{Uri.EscapeDataString(queryId)}");
 	}
 
 	private static void ThrowIfError(StreamResponse response, string operation)
@@ -299,8 +308,21 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 		return [.. parameters.Parameters.Select(kvp => new Dictionary<string, JsonElement> { [kvp.Key] = kvp.Value })];
 	}
 
-	private static string FormatTimeSpan(TimeSpan ts) =>
-		ts.TotalMilliseconds < 1000 ? $"{(int)ts.TotalMilliseconds}ms" : $"{(int)ts.TotalSeconds}s";
+	private static string FormatTimeSpan(TimeSpan ts)
+	{
+		if (ts.Ticks % TimeSpan.TicksPerDay == 0)
+			return $"{ts.Ticks / TimeSpan.TicksPerDay}d";
+		if (ts.Ticks % TimeSpan.TicksPerHour == 0)
+			return $"{ts.Ticks / TimeSpan.TicksPerHour}h";
+		if (ts.Ticks % TimeSpan.TicksPerMinute == 0)
+			return $"{ts.Ticks / TimeSpan.TicksPerMinute}m";
+		if (ts.Ticks % TimeSpan.TicksPerSecond == 0)
+			return $"{ts.Ticks / TimeSpan.TicksPerSecond}s";
+		if (ts.Ticks % TimeSpan.TicksPerMillisecond == 0)
+			return $"{ts.Ticks / TimeSpan.TicksPerMillisecond}ms";
+
+		return $"{ts.TotalMilliseconds.ToString("0.###", CultureInfo.InvariantCulture)}ms";
+	}
 
 	private static IRequestConfiguration EnsureAsyncHeaders(IRequestConfiguration? userConfig)
 	{
