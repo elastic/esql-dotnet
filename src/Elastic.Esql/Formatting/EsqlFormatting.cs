@@ -72,15 +72,18 @@ internal static class EsqlFormatting
 	/// </summary>
 	internal static string FormatTimeSpanRaw(TimeSpan ts)
 	{
-		if (ts.TotalDays >= 1)
-			return $"{(long)ts.TotalDays} days";
-		if (ts.TotalHours >= 1)
-			return $"{(long)ts.TotalHours} hours";
-		if (ts.TotalMinutes >= 1)
-			return $"{(long)ts.TotalMinutes} minutes";
-		if (ts.TotalSeconds >= 1)
-			return $"{(long)ts.TotalSeconds} seconds";
-		return $"{(long)ts.TotalMilliseconds} milliseconds";
+		if (ts.Ticks % TimeSpan.TicksPerDay == 0)
+			return $"{ts.Ticks / TimeSpan.TicksPerDay} days";
+		if (ts.Ticks % TimeSpan.TicksPerHour == 0)
+			return $"{ts.Ticks / TimeSpan.TicksPerHour} hours";
+		if (ts.Ticks % TimeSpan.TicksPerMinute == 0)
+			return $"{ts.Ticks / TimeSpan.TicksPerMinute} minutes";
+		if (ts.Ticks % TimeSpan.TicksPerSecond == 0)
+			return $"{ts.Ticks / TimeSpan.TicksPerSecond} seconds";
+		if (ts.Ticks % TimeSpan.TicksPerMillisecond == 0)
+			return $"{ts.Ticks / TimeSpan.TicksPerMillisecond} milliseconds";
+
+		return $"{ts.TotalMilliseconds.ToString("0.###", InvariantCulture)} milliseconds";
 	}
 
 	private static string FormatDateTime(DateTime dt) =>

@@ -400,25 +400,8 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		if (declaringType == typeof(Math))
 			return VisitMathMethod(node);
 
-		// Enumerable methods (Contains for IN operator)
-		if (declaringType == typeof(Enumerable) ||
-			(declaringType?.IsGenericType == true &&
-			 declaringType.GetGenericTypeDefinition() == typeof(List<>)))
-		{
-			if (methodName == "Contains")
-				return VisitContains(node);
-		}
-
-		// List<T>.Contains
-		if (node.Object != null && methodName == "Contains")
-		{
-			var objectType = node.Object.Type;
-			if (objectType.IsGenericType &&
-				(objectType.GetGenericTypeDefinition() == typeof(List<>) ||
-				 objectType.GetGenericTypeDefinition() == typeof(ICollection<>) ||
-				 objectType.GetGenericTypeDefinition() == typeof(IEnumerable<>)))
-				return VisitListContains(node);
-		}
+		if (methodName == "Contains" && TryVisitCollectionContains(node))
+			return node;
 
 		// DateTime methods
 		if (declaringType == typeof(DateTime) || declaringType == typeof(DateTimeOffset))
@@ -599,50 +582,129 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		return node;
 	}
 
-	private Expression VisitContains(MethodCallExpression node)
+	private bool TryVisitCollectionContains(MethodCallExpression node)
 	{
-		// Enumerable.Contains(collection, value) → value IN (...)
-		var collection = GetConstantValue(node.Arguments[0]) as IEnumerable;
-		var valueExpr = node.Arguments[1];
-
-		_ = Visit(valueExpr);
-		_ = _builder.Append(" IN (");
-
-		var first = true;
-		foreach (var item in collection!)
+		if (TryGetContainsArguments(node, out var valueExpression, out var collection))
 		{
-			if (!first)
-				_ = _builder.Append(", ");
-			_ = _builder.Append(_context.FormatValue(item));
-			first = false;
+			AppendContainsCollection(valueExpression, collection);
+			return true;
 		}
 
-		_ = _builder.Append(')');
-
-		return node;
+		return false;
 	}
 
-	private Expression VisitListContains(MethodCallExpression node)
+	private static bool TryGetContainsArguments(MethodCallExpression node, out Expression valueExpression, out IEnumerable? collection)
 	{
-		// list.Contains(value) → value IN (...)
-		var collection = GetConstantValue(node.Object!) as IEnumerable;
-		var valueExpr = node.Arguments[0];
+		valueExpression = null!;
+		collection = null;
 
-		_ = Visit(valueExpr);
+		if (node.Method.IsStatic)
+		{
+			if (node.Method.DeclaringType == typeof(Enumerable) && node.Arguments.Count >= 2)
+			{
+				valueExpression = node.Arguments[1];
+				return TryGetCollectionValue(node.Arguments[0], out collection);
+			}
+
+			if (node.Method.DeclaringType == typeof(MemoryExtensions) && node.Arguments.Count >= 2)
+			{
+				var source = TryUnwrapMemoryExtensionsSource(node.Arguments[0]);
+				if (source is null)
+					return false;
+
+				valueExpression = node.Arguments[1];
+				return TryGetCollectionValue(source, out collection);
+			}
+
+			return false;
+		}
+
+		if (node.Object is null || node.Arguments.Count != 1 || !IsEnumerableType(node.Object.Type))
+			return false;
+
+		valueExpression = node.Arguments[0];
+		return TryGetCollectionValue(node.Object, out collection);
+	}
+
+	private static Expression? TryUnwrapMemoryExtensionsSource(Expression expression)
+	{
+		var current = expression;
+
+		while (true)
+		{
+			// Handle implicit/explicit conversions (e.g., array -> ReadOnlySpan<T>)
+			while (current is UnaryExpression { NodeType: ExpressionType.Convert or ExpressionType.ConvertChecked } unary)
+				current = unary.Operand;
+
+			if (current is not MethodCallExpression methodCall || methodCall.Arguments.Count == 0)
+				break;
+
+			// Handle explicit AsSpan(...) wrappers emitted in expression trees.
+			if (methodCall.Method.DeclaringType == typeof(MemoryExtensions) && methodCall.Method.Name == "AsSpan")
+			{
+				current = methodCall.Arguments[0];
+				continue;
+			}
+
+			// Handle op_Implicit wrappers used for array -> ReadOnlySpan<T> conversions.
+			if (methodCall.Method.Name == "op_Implicit")
+			{
+				current = methodCall.Arguments[0];
+				continue;
+			}
+
+			break;
+		}
+
+		return IsEnumerableType(current.Type) ? current : null;
+	}
+
+	private static bool IsEnumerableType(Type type) =>
+		type != typeof(string) && typeof(IEnumerable).IsAssignableFrom(type);
+
+	private static bool TryGetCollectionValue(Expression expression, out IEnumerable? collection)
+	{
+		collection = null;
+
+		if (!IsEnumerableType(expression.Type))
+			return false;
+
+		try
+		{
+			collection = GetConstantValue(expression) as IEnumerable;
+			return true;
+		}
+		catch (NotSupportedException)
+		{
+			return false;
+		}
+	}
+
+	private void AppendContainsCollection(Expression valueExpression, IEnumerable? collection)
+	{
+		// Enumerable/List Contains over an empty set is always false.
+		if (collection is null)
+			throw new ArgumentNullException(nameof(collection), "Collection used with Contains cannot be null.");
+
+		var values = collection.Cast<object?>().ToList();
+		if (values.Count == 0)
+		{
+			_ = _builder.Append("false");
+			return;
+		}
+
+		_ = Visit(valueExpression);
 		_ = _builder.Append(" IN (");
 
-		var first = true;
-		foreach (var item in collection!)
+		for (var i = 0; i < values.Count; i++)
 		{
-			if (!first)
+			if (i > 0)
 				_ = _builder.Append(", ");
-			_ = _builder.Append(_context.FormatValue(item));
-			first = false;
+
+			_ = _builder.Append(_context.FormatValue(values[i]));
 		}
 
 		_ = _builder.Append(')');
-
-		return node;
 	}
 
 	private static string GetOperator(ExpressionType nodeType) =>

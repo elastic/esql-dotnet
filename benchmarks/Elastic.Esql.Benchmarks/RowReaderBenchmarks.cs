@@ -64,7 +64,8 @@ public class RowReaderBenchmarks
 	public List<FlatDocument> Esql_Flat()
 	{
 		using var stream = new MemoryStream(_esqlFlatPayload, writable: false);
-		return _reader.ReadRows<FlatDocument>(stream).ToList();
+		using var result = _reader.ReadRows<FlatDocument>(stream);
+		return result.Rows.ToList();
 	}
 
 	[Benchmark(Baseline = true)]
@@ -79,7 +80,8 @@ public class RowReaderBenchmarks
 	public List<NestedDocument> Esql_NestedOneLevel()
 	{
 		using var stream = new MemoryStream(_esqlNestedPayload, writable: false);
-		return _reader.ReadRows<NestedDocument>(stream).ToList();
+		using var result = _reader.ReadRows<NestedDocument>(stream);
+		return result.Rows.ToList();
 	}
 
 	[Benchmark]
@@ -94,7 +96,8 @@ public class RowReaderBenchmarks
 	public List<DeepDocument> Esql_DeepThreeLevels()
 	{
 		using var stream = new MemoryStream(_esqlDeepPayload, writable: false);
-		return _reader.ReadRows<DeepDocument>(stream).ToList();
+		using var result = _reader.ReadRows<DeepDocument>(stream);
+		return result.Rows.ToList();
 	}
 
 	[Benchmark]
@@ -109,7 +112,8 @@ public class RowReaderBenchmarks
 	public List<WideDocument> Esql_WideFlat()
 	{
 		using var stream = new MemoryStream(_esqlWidePayload, writable: false);
-		return _reader.ReadRows<WideDocument>(stream).ToList();
+		using var result = _reader.ReadRows<WideDocument>(stream);
+		return result.Rows.ToList();
 	}
 
 	[Benchmark]
@@ -124,7 +128,8 @@ public class RowReaderBenchmarks
 	public List<MixedDocument> Esql_MixedFlatAndNested()
 	{
 		using var stream = new MemoryStream(_esqlMixedPayload, writable: false);
-		return _reader.ReadRows<MixedDocument>(stream).ToList();
+		using var result = _reader.ReadRows<MixedDocument>(stream);
+		return result.Rows.ToList();
 	}
 
 	[Benchmark]

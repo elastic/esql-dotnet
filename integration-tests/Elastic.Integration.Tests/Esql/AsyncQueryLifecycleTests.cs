@@ -206,6 +206,48 @@ public class AsyncQueryLifecycleTests : IntegrationTestBase
 	}
 
 	[Test]
+	public async Task KeepAlive_WithNonWholeHours_AcceptedByServer()
+	{
+		var options = new EsqlAsyncQueryOptions
+		{
+			KeepAlive = TimeSpan.FromMinutes(90),
+			KeepOnCompletion = true
+		};
+
+		await using var asyncQuery = await Fixture.EsqlClient
+			.CreateQuery<TestProduct>()
+			.From(TestDataSeeder.ProductIndex)
+			.Take(5)
+			.AsEsqlQueryable()
+			.ToAsyncQueryAsync(options);
+
+		var results = asyncQuery.AsEnumerable().ToList();
+
+		results.Should().HaveCount(5);
+	}
+
+	[Test]
+	public async Task WaitForCompletionTimeout_WithFractionalSeconds_AcceptedByServer()
+	{
+		var options = new EsqlAsyncQueryOptions
+		{
+			WaitForCompletionTimeout = TimeSpan.FromMilliseconds(1500),
+			KeepOnCompletion = true
+		};
+
+		await using var asyncQuery = await Fixture.EsqlClient
+			.CreateQuery<TestProduct>()
+			.From(TestDataSeeder.ProductIndex)
+			.Take(5)
+			.AsEsqlQueryable()
+			.ToAsyncQueryAsync(options);
+
+		var results = asyncQuery.AsEnumerable().ToList();
+
+		results.Should().HaveCount(5);
+	}
+
+	[Test]
 	public async Task SubmitAsyncQueryAsync_WithFilter_ReturnsFilteredRows()
 	{
 		var expected = TestDataSeeder.Products.Count(p => p.InStock);

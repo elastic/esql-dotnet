@@ -40,9 +40,10 @@ public class AsyncRowPathBenchmarks
 	public async Task<int> Flat_Stream()
 	{
 		using var stream = new MemoryStream(_flatPayload, writable: false);
+		await using var result = await _reader.ReadRowsAsync<FlatDocument>(stream);
 		var count = 0;
 
-		await foreach (var _ in _reader.ReadRowsAsync<FlatDocument>(stream))
+		await foreach (var _ in result.Rows)
 			count++;
 
 		return count;
@@ -57,7 +58,8 @@ public class AsyncRowPathBenchmarks
 
 		try
 		{
-			await foreach (var _ in _reader.ReadRowsAsync<FlatDocument>(pipeReader))
+			await using var result = await _reader.ReadRowsAsync<FlatDocument>(pipeReader);
+			await foreach (var _ in result.Rows)
 				count++;
 		}
 		finally
@@ -72,9 +74,10 @@ public class AsyncRowPathBenchmarks
 	public async Task<int> Wide_Stream()
 	{
 		using var stream = new MemoryStream(_widePayload, writable: false);
+		await using var result = await _reader.ReadRowsAsync<WideDocument>(stream);
 		var count = 0;
 
-		await foreach (var _ in _reader.ReadRowsAsync<WideDocument>(stream))
+		await foreach (var _ in result.Rows)
 			count++;
 
 		return count;
@@ -89,7 +92,8 @@ public class AsyncRowPathBenchmarks
 
 		try
 		{
-			await foreach (var _ in _reader.ReadRowsAsync<WideDocument>(pipeReader))
+			await using var result = await _reader.ReadRowsAsync<WideDocument>(pipeReader);
+			await foreach (var _ in result.Rows)
 				count++;
 		}
 		finally

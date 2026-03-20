@@ -14,19 +14,27 @@ internal sealed class EsqlResults<T> : IDisposable
 	public bool? IsRunning { get; internal set; }
 
 	private IDisposable? _ownedResource;
-	private byte[]? _rentedBuffer;
+	private byte[]? _buffer;
+	private bool _bufferIsRented;
 
 	internal void SetOwnedResource(IDisposable resource) => _ownedResource = resource;
 
-	internal void SetBuffer(byte[] buffer) => _rentedBuffer = buffer;
+	internal void SetBuffer(byte[] buffer, bool isRented)
+	{
+		_buffer = buffer;
+		_bufferIsRented = isRented;
+	}
 
 	internal void ReleaseBuffer()
 	{
-		if (_rentedBuffer is null)
+		if (_buffer is null)
 			return;
 
-		ArrayPool<byte>.Shared.Return(_rentedBuffer);
-		_rentedBuffer = null;
+		if (_bufferIsRented)
+			ArrayPool<byte>.Shared.Return(_buffer);
+
+		_buffer = null;
+		_bufferIsRented = false;
 	}
 
 	public void Dispose()
@@ -45,19 +53,27 @@ internal sealed class EsqlAsyncResults<T> : IAsyncDisposable
 	public bool? IsRunning { get; internal set; }
 
 	private IDisposable? _ownedResource;
-	private byte[]? _rentedBuffer;
+	private byte[]? _buffer;
+	private bool _bufferIsRented;
 
 	internal void SetOwnedResource(IDisposable resource) => _ownedResource = resource;
 
-	internal void SetBuffer(byte[] buffer) => _rentedBuffer = buffer;
+	internal void SetBuffer(byte[] buffer, bool isRented)
+	{
+		_buffer = buffer;
+		_bufferIsRented = isRented;
+	}
 
 	internal void ReleaseBuffer()
 	{
-		if (_rentedBuffer is null)
+		if (_buffer is null)
 			return;
 
-		ArrayPool<byte>.Shared.Return(_rentedBuffer);
-		_rentedBuffer = null;
+		if (_bufferIsRented)
+			ArrayPool<byte>.Shared.Return(_buffer);
+
+		_buffer = null;
+		_bufferIsRented = false;
 	}
 
 	public ValueTask DisposeAsync()

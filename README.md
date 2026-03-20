@@ -242,7 +242,10 @@ Supports `netstandard2.0`, `net8.0`, and `net10.0` with polyfills for older targ
 ```bash
 dotnet build esql-dotnet.slnx
 
-# Run tests (TUnit -- uses dotnet run, not dotnet test)
+# Run tests
+dotnet test --project tests/Elastic.Esql.Tests/Elastic.Esql.Tests.csproj
+
+# Or run the TUnit runner directly
 dotnet run --project tests/Elastic.Esql.Tests
 
 # Or use the build script
@@ -253,8 +256,7 @@ dotnet run --project tests/Elastic.Esql.Tests
 
 The [`examples/`](examples/) directory contains working applications:
 
-- **`Elastic.Examples.Domain`** -- shared domain types
-- **`Elastic.Examples.Esql`** -- ES|QL queries against a live cluster
+- **`esql-aot-smoketest`** -- Native AOT smoke test for query translation and execution
 
 ## License
 
