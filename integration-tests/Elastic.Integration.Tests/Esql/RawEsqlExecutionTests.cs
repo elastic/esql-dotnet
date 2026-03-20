@@ -16,7 +16,7 @@ public class RawEsqlExecutionTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.RawEsql("LIMIT 5")
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToList();
 
 		results.Should().HaveCount(5);
@@ -36,7 +36,7 @@ public class RawEsqlExecutionTests : IntegrationTestBase
                                | LIMIT 7
                                """
 						   )
-						   .AsEsql()
+						   .AsEsqlQueryable()
 						   .AsAsyncEnumerable())
 		{
 			results.Add(product);
@@ -53,10 +53,10 @@ public class RawEsqlExecutionTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.RawEsql("LIMIT 4")
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToAsyncQueryAsync();
 
-		var results = await asyncQuery.ToListAsync();
+		var results = asyncQuery.AsEnumerable().ToList();
 
 		results.Should().HaveCount(4);
 	}
@@ -68,7 +68,7 @@ public class RawEsqlExecutionTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.RawEsql("LIMIT 3")
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToAsyncQuery();
 
 		var results = asyncQuery.ToList();
@@ -88,7 +88,7 @@ public class RawEsqlExecutionTests : IntegrationTestBase
                 | LIMIT 6
                 """
 			)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(6);

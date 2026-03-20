@@ -18,7 +18,7 @@ public class FunctionTests : IntegrationTestBase
 			.From(TestDataSeeder.ProductIndex)
 			.Take(5)
 			.Select(p => new { LowerBrand = EsqlFunctions.ToLower(p.Brand) })
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().NotBeEmpty();
@@ -35,7 +35,7 @@ public class FunctionTests : IntegrationTestBase
 			.From(TestDataSeeder.ProductIndex)
 			.Take(5)
 			.Select(p => new { UpperBrand = EsqlFunctions.ToUpper(p.Brand) })
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().NotBeEmpty();
@@ -52,7 +52,7 @@ public class FunctionTests : IntegrationTestBase
 			.From(TestDataSeeder.ProductIndex)
 			.Take(5)
 			.Select(p => new { p.Name, NameLen = EsqlFunctions.Length(p.Name) })
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().NotBeEmpty();
@@ -69,7 +69,7 @@ public class FunctionTests : IntegrationTestBase
 			.From(TestDataSeeder.ProductIndex)
 			.Take(5)
 			.Select(p => new { Trimmed = EsqlFunctions.Trim(p.Name) })
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().NotBeEmpty();
@@ -86,7 +86,7 @@ public class FunctionTests : IntegrationTestBase
 			.From(TestDataSeeder.ProductIndex)
 			.Take(5)
 			.Select(p => new { Sub = EsqlFunctions.Substring(p.Name, 0, 3) })
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().NotBeEmpty();
@@ -103,7 +103,7 @@ public class FunctionTests : IntegrationTestBase
 			.From(TestDataSeeder.ProductIndex)
 			.Take(5)
 			.Select(p => new { FullName = EsqlFunctions.Concat(p.Brand, " - ", p.Name) })
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().NotBeEmpty();
@@ -120,7 +120,7 @@ public class FunctionTests : IntegrationTestBase
 			.From(TestDataSeeder.ProductIndex)
 			.Take(5)
 			.Select(p => new { p.Price, Rounded = EsqlFunctions.Round(p.Price) })
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().NotBeEmpty();
@@ -137,7 +137,7 @@ public class FunctionTests : IntegrationTestBase
 			.From(TestDataSeeder.ProductIndex)
 			.Take(5)
 			.Select(p => new { AbsPrice = EsqlFunctions.Abs(p.Price) })
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().NotBeEmpty();
@@ -154,7 +154,7 @@ public class FunctionTests : IntegrationTestBase
 			.From(TestDataSeeder.ProductIndex)
 			.Take(5)
 			.Select(p => new { p.Price, Ceiling = EsqlFunctions.Ceil(p.Price) })
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().NotBeEmpty();
@@ -171,7 +171,7 @@ public class FunctionTests : IntegrationTestBase
 			.From(TestDataSeeder.ProductIndex)
 			.Take(5)
 			.Select(p => new { p.Price, Floored = EsqlFunctions.Floor(p.Price) })
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().NotBeEmpty();
@@ -187,7 +187,7 @@ public class FunctionTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => EsqlFunctions.Like(p.Name, "Product 1*"))
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().NotBeEmpty();
@@ -200,7 +200,7 @@ public class FunctionTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => EsqlFunctions.Rlike(p.Name, "Product [1-3]"))
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().NotBeEmpty();
@@ -214,7 +214,7 @@ public class FunctionTests : IntegrationTestBase
 			.From(TestDataSeeder.OrderIndex)
 			.Take(5)
 			.Select(o => new { Ip = EsqlFunctions.Coalesce(o.ClientIp, "unknown") })
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().NotBeEmpty();

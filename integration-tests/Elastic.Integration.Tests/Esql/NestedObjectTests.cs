@@ -15,7 +15,7 @@ public class NestedObjectTests : IntegrationTestBase
 		var results = await Fixture.EsqlClient
 			.CreateQuery<TestUserProfile>()
 			.From(TestDataSeeder.UserProfileIndex)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(10);
@@ -37,7 +37,7 @@ public class NestedObjectTests : IntegrationTestBase
 		var results = await Fixture.EsqlClient
 			.CreateQuery<TestUserProfile>()
 			.From(TestDataSeeder.UserProfileIndex)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		var withoutAddress = results.Where(u => u.Address is null).ToList();
@@ -57,7 +57,7 @@ public class NestedObjectTests : IntegrationTestBase
 			.CreateQuery<TestUserProfile>()
 			.From(TestDataSeeder.UserProfileIndex)
 			.Where(u => u.Name == "User 1")
-			.AsEsql()
+			.AsEsqlQueryable()
 			.FirstAsync();
 
 		result.Should().NotBeNull();

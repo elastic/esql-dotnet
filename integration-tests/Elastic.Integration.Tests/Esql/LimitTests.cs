@@ -16,7 +16,7 @@ public class LimitTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(10)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(10);
@@ -30,7 +30,7 @@ public class LimitTests : IntegrationTestBase
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.InStock)
 			.Take(5)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCountLessThanOrEqualTo(5);
@@ -45,7 +45,7 @@ public class LimitTests : IntegrationTestBase
 			.From(TestDataSeeder.ProductIndex)
 			.OrderByDescending(p => p.Price)
 			.Take(3)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(3);
@@ -59,7 +59,7 @@ public class LimitTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(1)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(1);
@@ -72,7 +72,7 @@ public class LimitTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.Take(10000)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(100);

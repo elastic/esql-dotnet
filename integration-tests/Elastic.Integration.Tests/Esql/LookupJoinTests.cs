@@ -26,7 +26,7 @@ public class LookupJoinTests : IntegrationTestBase
 				c => c.CategoryId,
 				(p, c) => new { p.Id, p.Name, p.CategoryId, c!.CategoryLabel }
 			)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(10);
@@ -44,7 +44,7 @@ public class LookupJoinTests : IntegrationTestBase
 				c => c.CategoryId,
 				(p, c) => new { p.Id, p.CategoryId, c!.CategoryLabel, c.Region }
 			)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(100);
@@ -67,7 +67,7 @@ public class LookupJoinTests : IntegrationTestBase
 				(p, c) => new { p.Id, p.Name, p.CategoryId, c!.CategoryLabel }
 			)
 			.Take(10)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(Math.Min(10, electronicsCount));
@@ -94,7 +94,7 @@ public class LookupJoinTests : IntegrationTestBase
 				c => c.CategoryId,
 				(p, c) => new CollisionBothResult { OuterName = p.Name, InnerName = c!.Name }
 			)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(10);
@@ -121,7 +121,7 @@ public class LookupJoinTests : IntegrationTestBase
 				c => c.CategoryId,
 				(p, c) => new CollisionOuterResult { ProductName = p.Name, Region = c!.Region }
 			)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(5);
@@ -147,7 +147,7 @@ public class LookupJoinTests : IntegrationTestBase
 				c => c.CategoryId,
 				(p, c) => new CollisionInnerResult { Name = c!.Name, Region = c.Region }
 			)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(5);
@@ -170,7 +170,7 @@ public class LookupJoinTests : IntegrationTestBase
 				c => c.CategoryId,
 				(p, c) => new CollisionOriginalNameResult { Name = p.Name, Region = c!.Region }
 			)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(5);

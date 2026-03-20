@@ -22,7 +22,7 @@ public class SerializationTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.OrderBy(p => p.Id)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(products.Count);
@@ -47,7 +47,7 @@ public class SerializationTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.OrderBy(p => p.Id)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		for (var i = 0; i < results.Count; i++)
@@ -65,7 +65,7 @@ public class SerializationTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.OrderBy(p => p.Id)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		for (var i = 0; i < results.Count; i++)
@@ -83,7 +83,7 @@ public class SerializationTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.OrderBy(p => p.Id)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		for (var i = 0; i < results.Count; i++)
@@ -101,7 +101,7 @@ public class SerializationTests : IntegrationTestBase
 			.CreateQuery<TestOrder>()
 			.From(TestDataSeeder.OrderIndex)
 			.OrderBy(o => o.Id)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		for (var i = 0; i < results.Count; i++)
@@ -122,7 +122,7 @@ public class SerializationTests : IntegrationTestBase
 			.CreateQuery<TestOrder>()
 			.From(TestDataSeeder.OrderIndex)
 			.OrderBy(o => o.Id)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		for (var i = 0; i < results.Count; i++)
@@ -140,7 +140,7 @@ public class SerializationTests : IntegrationTestBase
 			.CreateQuery<TestOrder>()
 			.From(TestDataSeeder.OrderIndex)
 			.OrderBy(o => o.Id)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		for (var i = 0; i < results.Count; i++)
@@ -158,7 +158,7 @@ public class SerializationTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.OrderBy(p => p.Id)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		for (var i = 0; i < results.Count; i++)
@@ -180,7 +180,7 @@ public class SerializationTests : IntegrationTestBase
 			.CreateQuery<TestProduct>()
 			.From(TestDataSeeder.ProductIndex)
 			.OrderBy(p => p.Id)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		var nullCount = 0;
@@ -215,7 +215,7 @@ public class SerializationTests : IntegrationTestBase
 			.CreateQuery<TestOrder>()
 			.From(TestDataSeeder.OrderIndex)
 			.OrderBy(o => o.Id)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		var nullCount = 0;
@@ -250,7 +250,7 @@ public class SerializationTests : IntegrationTestBase
 			.CreateQuery<TestEvent>()
 			.From(TestDataSeeder.EventIndex)
 			.OrderBy(e => e.Timestamp)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(expected.Count);
@@ -275,7 +275,7 @@ public class SerializationTests : IntegrationTestBase
 			.From(TestDataSeeder.ProductIndex)
 			.Where(p => p.InStock)
 			.OrderBy(p => p.Id)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().NotBeEmpty();
@@ -304,7 +304,7 @@ public class SerializationTests : IntegrationTestBase
 			.From(TestDataSeeder.ProductIndex)
 			.Take(3)
 			.Select(p => new { p.Id, p.Price, p.InStock, p.StockQuantity })
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(3);
@@ -324,7 +324,7 @@ public class SerializationTests : IntegrationTestBase
 			.From(TestDataSeeder.OrderIndex)
 			.Take(3)
 			.Select(o => new { o.Id, o.Timestamp, o.Status, o.TotalAmount })
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(3);
@@ -345,7 +345,7 @@ public class SerializationTests : IntegrationTestBase
 			.OrderBy(p => p.Id)
 			.Take(10)
 			.Select(p => new { p.Id, p.SalePrice })
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(10);
@@ -384,7 +384,7 @@ public class SerializationTests : IntegrationTestBase
 			.From(TestDataSeeder.ProductIndex)
 			.Keep("product_id", "price_usd", "in_stock")
 			.Take(5)
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(5);

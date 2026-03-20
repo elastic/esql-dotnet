@@ -35,6 +35,25 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 	protected override Expression VisitBinary(BinaryExpression node)
 	{
+		if (node.NodeType is ExpressionType.Equal or ExpressionType.NotEqual)
+		{
+			var nullOp = node.NodeType == ExpressionType.Equal ? "IS NULL" : "IS NOT NULL";
+
+			if (IsNullConstant(node.Right))
+			{
+				_ = Visit(node.Left);
+				_ = _builder.Append(' ').Append(nullOp);
+				return node;
+			}
+
+			if (IsNullConstant(node.Left))
+			{
+				_ = Visit(node.Right);
+				_ = _builder.Append(' ').Append(nullOp);
+				return node;
+			}
+		}
+
 		// Only add parentheses for logical operators (AND/OR) to ensure proper grouping
 		var isLogicalOperator = node.NodeType is ExpressionType.AndAlso or ExpressionType.OrElse;
 

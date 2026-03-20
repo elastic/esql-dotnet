@@ -25,12 +25,15 @@ internal sealed class EsqlAsyncRequest
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? TimeZone { get; init; }
 
-	[JsonIgnore]
-	public TimeSpan? WaitForCompletionTimeout { get; init; }
+	[JsonPropertyName("wait_for_completion_timeout")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? WaitForCompletionTimeout { get; init; }
 
-	[JsonIgnore]
-	public TimeSpan? KeepAlive { get; init; }
+	[JsonPropertyName("keep_alive")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? KeepAlive { get; init; }
 
-	[JsonIgnore]
+	[JsonPropertyName("keep_on_completion")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
 	public bool KeepOnCompletion { get; init; }
 }

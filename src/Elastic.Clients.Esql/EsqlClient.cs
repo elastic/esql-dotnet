@@ -145,7 +145,7 @@ public class EsqlClient : IDisposable
 	}
 
 	/// <summary>
-	/// Starts a server-side asynchronous query based on the specified query and options.
+	/// Submits a server-side asynchronous query based on the specified query and options.
 	/// </summary>
 	/// <remarks>
 	///	Disposing the returned <see cref="EsqlAsyncQuery{T}"/> will automatically cancel the underlying server-side query and release resources.
@@ -155,7 +155,7 @@ public class EsqlClient : IDisposable
 	/// <param name="options">Optional settings that control the behavior of the asynchronous query. May be <see langword="null"/> to use default options.</param>
 	/// <returns>An <see cref="EsqlAsyncQuery{T}"/> representing the configured asynchronous query.</returns>
 	/// <exception cref="InvalidOperationException">Thrown if the configured query does not return an <see cref="IEsqlQueryable{T}"/> instance.</exception>
-	public EsqlAsyncQuery<T> QueryAsyncQuery<T>(
+	public EsqlAsyncQuery<T> SubmitAsyncQuery<T>(
 		Func<IQueryable<T>, IQueryable<T>> query,
 		EsqlAsyncQueryOptions? options = null) where T : class
 	{
@@ -168,7 +168,7 @@ public class EsqlClient : IDisposable
 	}
 
 	/// <summary>
-	/// Starts a server-side asynchronous query based on the specified query and options.
+	/// Submits a server-side asynchronous query based on the specified query and options.
 	/// </summary>
 	/// <remarks>
 	///	Disposing the returned <see cref="EsqlAsyncQuery{T}"/> will automatically cancel the underlying server-side query and release resources.
@@ -179,7 +179,7 @@ public class EsqlClient : IDisposable
 	/// <param name="options">Optional settings that control the behavior of the asynchronous query. May be <see langword="null"/> to use default options.</param>
 	/// <returns>An <see cref="EsqlAsyncQuery{T}"/> representing the configured asynchronous query.</returns>
 	/// <exception cref="InvalidOperationException">Thrown if the configured query does not return an <see cref="IEsqlQueryable{TResult}"/> instance.</exception>
-	public EsqlAsyncQuery<TResult> QueryAsyncQuery<T, TResult>(
+	public EsqlAsyncQuery<TResult> SubmitAsyncQuery<T, TResult>(
 		Func<IQueryable<T>, IQueryable<TResult>> query,
 		EsqlAsyncQueryOptions? options = null) where T : class
 	{
@@ -192,7 +192,7 @@ public class EsqlClient : IDisposable
 	}
 
 	/// <summary>
-	/// Asynchronously starts a server-side asynchronous query based on the specified query and options.
+	/// Asynchronously submits a server-side asynchronous query based on the specified query and options.
 	/// </summary>
 	/// <remarks>
 	///	Disposing the returned <see cref="EsqlAsyncQuery{T}"/> will automatically cancel the underlying server-side query and release resources.
@@ -203,7 +203,7 @@ public class EsqlClient : IDisposable
 	/// <param name="cancellationToken">A cancellation token that can be used to cancel the asynchronous query operation.</param>
 	/// <returns>An <see cref="EsqlAsyncQuery{T}"/> representing the configured asynchronous query.</returns>
 	/// <exception cref="InvalidOperationException">Thrown if the configured query does not return an <see cref="IEsqlQueryable{T}"/> instance.</exception>
-	public Task<EsqlAsyncQuery<T>> QueryAsyncQueryAsync<T>(
+	public Task<EsqlAsyncQuery<T>> SubmitAsyncQueryAsync<T>(
 		Func<IQueryable<T>, IQueryable<T>> query,
 		EsqlAsyncQueryOptions? options = null,
 		CancellationToken cancellationToken = default) where T : class
@@ -217,7 +217,7 @@ public class EsqlClient : IDisposable
 	}
 
 	/// <summary>
-	/// Asynchronously starts a server-side asynchronous query based on the specified query and options.
+	/// Asynchronously submits a server-side asynchronous query based on the specified query and options.
 	/// </summary>
 	/// <remarks>
 	///	Disposing the returned <see cref="EsqlAsyncQuery{T}"/> will automatically cancel the underlying server-side query and release resources.
@@ -229,7 +229,7 @@ public class EsqlClient : IDisposable
 	/// <param name="cancellationToken">A cancellation token that can be used to cancel the asynchronous query operation.</param>
 	/// <returns>An <see cref="EsqlAsyncQuery{T}"/> representing the configured asynchronous query.</returns>
 	/// <exception cref="InvalidOperationException">Thrown if the configured query does not return an <see cref="IEsqlQueryable{TResult}"/> instance.</exception>
-	public Task<EsqlAsyncQuery<TResult>> QueryAsyncQueryAsync<T, TResult>(
+	public Task<EsqlAsyncQuery<TResult>> SubmitAsyncQueryAsync<T, TResult>(
 		Func<IQueryable<T>, IQueryable<TResult>> query,
 		EsqlAsyncQueryOptions? options = null,
 		CancellationToken cancellationToken = default) where T : class

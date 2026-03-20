@@ -229,6 +229,8 @@ await using var asyncQuery = await client.QueryAsyncQueryAsync<LogEntry>(
 | Option | Type | Description |
 |---|---|---|
 | `RequestConfiguration` | `IRequestConfiguration?` | Per-request transport overrides |
+| `AllowPartialResults` | `bool?` | Allow partial results when shards are unavailable |
+| `DropNullColumns` | `bool?` | Omit columns where every value is null from the response |
 | `TimeZone` | `string?` | Timezone for date operations (e.g., `"UTC"`, `"America/New_York"`) |
 | `Locale` | `string?` | Locale for formatting (e.g., `"en-US"`) |
 

@@ -888,7 +888,7 @@ public class NestedObjectDeserializationTests
 		};
 		var metadata = new JsonMetadataManager(options);
 		var reader = new EsqlResponseReader(metadata);
-		return reader.ReadRows<T>(stream).ToList();
+		return reader.ReadRows<T>(stream).Rows.ToList();
 	}
 
 	private static List<T> ReadRowsWithMaxDepth<T>(string json, int maxDepth)
@@ -904,6 +904,6 @@ public class NestedObjectDeserializationTests
 		};
 		var metadata = new JsonMetadataManager(options);
 		var reader = new EsqlResponseReader(metadata);
-		return reader.ReadRows<T>(stream).ToList();
+		return reader.ReadRows<T>(stream).Rows.ToList();
 	}
 }

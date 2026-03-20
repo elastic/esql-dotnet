@@ -17,12 +17,12 @@ public class NullCheckTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE clientIp == null
+            | WHERE clientIp IS NULL
             """.NativeLineEndings());
 	}
 
 	[Test]
-	public void Where_NotEqualsNull_GeneratesComparison()
+	public void Where_NotEqualsNull_GeneratesIsNotNull()
 	{
 		var esql = CreateQuery<LogEntry>()
 			.From("logs-*")
@@ -32,7 +32,7 @@ public class NullCheckTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE clientIp != null
+            | WHERE clientIp IS NOT NULL
             """.NativeLineEndings());
 	}
 }

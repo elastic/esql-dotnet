@@ -18,7 +18,7 @@ public class SelectProjectionTests : IntegrationTestBase
 			.Where(p => p.InStock)
 			.Take(5)
 			.Select(p => new { p.Id, p.Name, p.Price })
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().NotBeEmpty();
@@ -40,7 +40,7 @@ public class SelectProjectionTests : IntegrationTestBase
 			.From(TestDataSeeder.ProductIndex)
 			.Take(3)
 			.Select(p => new { p.Name, p.Price, p.InStock, p.StockQuantity, p.Category })
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(3);
@@ -60,7 +60,7 @@ public class SelectProjectionTests : IntegrationTestBase
 			.From(TestDataSeeder.OrderIndex)
 			.Take(5)
 			.Select(o => new { o.Id, o.CustomerId, o.TotalAmount, o.Status })
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().NotBeEmpty();
@@ -81,7 +81,7 @@ public class SelectProjectionTests : IntegrationTestBase
 			.From(TestDataSeeder.EventIndex)
 			.Take(5)
 			.Select(e => new { e.Timestamp, e.Level, e.ServiceName, e.Message })
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().NotBeEmpty();
@@ -102,7 +102,7 @@ public class SelectProjectionTests : IntegrationTestBase
 			.From(TestDataSeeder.ProductIndex)
 			.Take(3)
 			.Select(p => new { p.Id, p.Brand })
-			.AsEsql()
+			.AsEsqlQueryable()
 			.ToListAsync();
 
 		results.Should().HaveCount(3);

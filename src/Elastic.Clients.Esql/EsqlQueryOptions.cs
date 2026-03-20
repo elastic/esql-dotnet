@@ -12,6 +12,12 @@ public record EsqlQueryOptions
 	/// <summary>Per-request transport configuration.</summary>
 	public IRequestConfiguration? RequestConfiguration { get; init; }
 
+	/// <summary>Whether to allow partial results when shards are unavailable.</summary>
+	public bool? AllowPartialResults { get; init; }
+
+	/// <summary>Whether to omit columns where every value is null from the response.</summary>
+	public bool? DropNullColumns { get; init; }
+
 	/// <summary>Locale for formatting (e.g., "en-US").</summary>
 	public string? Locale { get; init; }
 

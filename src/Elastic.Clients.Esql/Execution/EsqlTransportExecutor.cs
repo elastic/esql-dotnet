@@ -22,12 +22,15 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 
 	private static readonly EndpointPath QueryEndpoint = new(HttpMethod.POST, "/_query");
 	private static readonly EndpointPath AsyncQueryEndpoint = new(HttpMethod.POST, "/_query/async");
+	private static readonly HeadersList AsyncHeaders = new(["X-Elasticsearch-Async-Id", "X-Elasticsearch-Async-Is-Running"]);
+	private static readonly RequestConfiguration DefaultAsyncRequestConfig = new() { ResponseHeadersToParse = AsyncHeaders };
 
 	public IEsqlResponse ExecuteQuery(string esql, EsqlParameters? parameters, object? options)
 	{
 		var typedOptions = ResolveOptions(options);
 		var postData = BuildPostData(esql, parameters, typedOptions);
-		var response = _settings.Transport.Request<StreamResponse>(in QueryEndpoint, postData, null, typedOptions?.RequestConfiguration);
+		var endpoint = BuildEndpoint(QueryEndpoint, typedOptions);
+		var response = _settings.Transport.Request<StreamResponse>(in endpoint, postData, null, typedOptions?.RequestConfiguration);
 		ThrowIfError(response, "ES|QL query failed");
 		return new TransportEsqlResponse(response);
 	}
@@ -40,17 +43,18 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 	{
 		var typedOptions = ResolveOptions(options);
 		var postData = BuildPostData(esql, parameters, typedOptions);
+		var endpoint = BuildEndpoint(QueryEndpoint, typedOptions);
 		var requestConfig = typedOptions?.RequestConfiguration;
 
 #if NET10_0_OR_GREATER
 		var response = await _settings.Transport
-			.RequestAsync<PipeResponse>(in QueryEndpoint, postData, null, requestConfig, cancellationToken)
+			.RequestAsync<PipeResponse>(in endpoint, postData, null, requestConfig, cancellationToken)
 			.ConfigureAwait(false);
 		await ThrowIfErrorAsync(response, "ES|QL query failed", cancellationToken).ConfigureAwait(false);
 		return new TransportEsqlAsyncResponse(response);
 #else
 		var response = await _settings.Transport
-			.RequestAsync<StreamResponse>(in QueryEndpoint, postData, null, requestConfig, cancellationToken)
+			.RequestAsync<StreamResponse>(in endpoint, postData, null, requestConfig, cancellationToken)
 			.ConfigureAwait(false);
 		ThrowIfError(response, "ES|QL query failed");
 		return new TransportEsqlAsyncResponse(response);
@@ -61,7 +65,8 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 	{
 		var typedOptions = ResolveOptions(options);
 		var (postData, endpoint) = BuildAsyncPostData(esql, parameters, typedOptions, asyncOptions);
-		var response = _settings.Transport.Request<StreamResponse>(in endpoint, postData, null, typedOptions?.RequestConfiguration);
+		var requestConfig = EnsureAsyncHeaders(typedOptions?.RequestConfiguration);
+		var response = _settings.Transport.Request<StreamResponse>(in endpoint, postData, null, requestConfig);
 		ThrowIfError(response, "ES|QL async query failed");
 		return new TransportEsqlResponse(response);
 	}
@@ -75,7 +80,7 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 	{
 		var typedOptions = ResolveOptions(options);
 		var (postData, endpoint) = BuildAsyncPostData(esql, parameters, typedOptions, asyncOptions);
-		var requestConfig = typedOptions?.RequestConfiguration;
+		var requestConfig = EnsureAsyncHeaders(typedOptions?.RequestConfiguration);
 
 #if NET10_0_OR_GREATER
 		var response = await _settings.Transport
@@ -96,7 +101,8 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 	{
 		var typedOptions = ResolveOptions(options);
 		var endpointPath = new EndpointPath(HttpMethod.GET, $"/_query/async/{queryId}");
-		var response = _settings.Transport.Request<StreamResponse>(in endpointPath, null, null, typedOptions?.RequestConfiguration);
+		var requestConfig = EnsureAsyncHeaders(typedOptions?.RequestConfiguration);
+		var response = _settings.Transport.Request<StreamResponse>(in endpointPath, null, null, requestConfig);
 		ThrowIfError(response, "Failed to get async query status");
 		return new TransportEsqlResponse(response);
 	}
@@ -105,7 +111,7 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 	{
 		var typedOptions = ResolveOptions(options);
 		var endpointPath = new EndpointPath(HttpMethod.GET, $"/_query/async/{queryId}");
-		var requestConfig = typedOptions?.RequestConfiguration;
+		var requestConfig = EnsureAsyncHeaders(typedOptions?.RequestConfiguration);
 
 #if NET10_0_OR_GREATER
 		var response = await _settings.Transport
@@ -227,7 +233,7 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 		EsqlAsyncQueryOptions? asyncOptions)
 	{
 		var request = BuildAsyncRequest(esql, parameters, options, asyncOptions);
-		var endpoint = BuildAsyncQueryEndpoint(request);
+		var endpoint = BuildEndpoint(AsyncQueryEndpoint, options);
 		var postData = PostData.StreamHandler(
 			request,
 			static (req, stream) => JsonSerializer.Serialize(stream, req, EsqlRequestJsonContext.Default.EsqlAsyncRequest),
@@ -262,25 +268,27 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 			Locale = options?.Locale ?? defaults.Locale,
 			TimeZone = options?.TimeZone ?? defaults.TimeZone,
 			Params = FormatParameters(parameters),
-			WaitForCompletionTimeout = asyncOptions?.WaitForCompletionTimeout,
-			KeepAlive = asyncOptions?.KeepAlive,
+			WaitForCompletionTimeout = asyncOptions?.WaitForCompletionTimeout is { } wfc ? FormatTimeSpan(wfc) : null,
+			KeepAlive = asyncOptions?.KeepAlive is { } ka ? FormatTimeSpan(ka) : null,
 			KeepOnCompletion = asyncOptions?.KeepOnCompletion ?? false
 		};
 	}
 
-	private static EndpointPath BuildAsyncQueryEndpoint(EsqlAsyncRequest request)
+	private EndpointPath BuildEndpoint(EndpointPath basePath, EsqlQueryOptions? options)
 	{
-		var queryParams = new List<string>();
-		if (request.WaitForCompletionTimeout.HasValue)
-			queryParams.Add($"wait_for_completion_timeout={FormatTimeSpan(request.WaitForCompletionTimeout.Value)}");
-		if (request.KeepAlive.HasValue)
-			queryParams.Add($"keep_alive={FormatTimeSpan(request.KeepAlive.Value)}");
-		if (request.KeepOnCompletion)
-			queryParams.Add("keep_on_completion=true");
+		if (options?.AllowPartialResults is null && options?.DropNullColumns is null)
+			return basePath;
 
-		return queryParams.Count > 0
-			? new EndpointPath(HttpMethod.POST, $"/_query/async?{string.Join("&", queryParams)}")
-			: AsyncQueryEndpoint;
+		var parameters = new DefaultRequestParameters();
+
+		if (options?.AllowPartialResults is { } allowPartial)
+			parameters.SetQueryString("allow_partial_results", allowPartial);
+
+		if (options?.DropNullColumns is { } dropNull)
+			parameters.SetQueryString("drop_null_columns", dropNull);
+
+		var pathWithQuery = parameters.CreatePathWithQueryStrings(basePath.PathAndQuery, _settings.Transport.Configuration);
+		return new EndpointPath(basePath.Method, pathWithQuery);
 	}
 
 	private static IReadOnlyList<IReadOnlyDictionary<string, JsonElement>>? FormatParameters(EsqlParameters? parameters)
@@ -293,6 +301,33 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 
 	private static string FormatTimeSpan(TimeSpan ts) =>
 		ts.TotalMilliseconds < 1000 ? $"{(int)ts.TotalMilliseconds}ms" : $"{(int)ts.TotalSeconds}s";
+
+	private static IRequestConfiguration EnsureAsyncHeaders(IRequestConfiguration? userConfig)
+	{
+		if (userConfig is null)
+			return DefaultAsyncRequestConfig;
+
+		var existing = userConfig.ResponseHeadersToParse;
+		if (existing is not null && ContainsAllAsyncHeaders(existing.Value))
+			return userConfig;
+
+		return new RequestConfiguration(userConfig)
+		{
+			ResponseHeadersToParse = existing is not null
+				? new HeadersList(existing, AsyncHeaders)
+				: AsyncHeaders
+		};
+
+		static bool ContainsAllAsyncHeaders(HeadersList headers)
+		{
+			foreach (var required in AsyncHeaders)
+			{
+				if (!headers.Contains(required, StringComparer.OrdinalIgnoreCase))
+					return false;
+			}
+			return true;
+		}
+	}
 }
 
 /// <summary>Wraps a <see cref="StreamResponse"/> as an <see cref="IEsqlResponse"/>.</summary>
