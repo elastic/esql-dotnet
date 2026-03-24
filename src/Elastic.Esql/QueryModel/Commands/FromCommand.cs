@@ -7,9 +7,9 @@ namespace Elastic.Esql.QueryModel.Commands;
 /// <summary>
 /// Represents the FROM command.
 /// </summary>
-internal sealed class FromCommand(string indexPattern) : SourceCommand
+public sealed class FromCommand(string indexPattern) : SourceCommand
 {
 	public string IndexPattern { get; } = indexPattern ?? throw new ArgumentNullException(nameof(indexPattern));
 
-	public override void Accept(ICommandVisitor visitor) => visitor.Visit(this);
+	internal override void Accept(ICommandVisitor visitor) => visitor.Visit(this);
 }

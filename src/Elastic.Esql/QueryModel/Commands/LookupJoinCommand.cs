@@ -7,7 +7,7 @@ namespace Elastic.Esql.QueryModel.Commands;
 /// <summary>
 /// Represents the LOOKUP JOIN command.
 /// </summary>
-internal sealed class LookupJoinCommand(string lookupIndex, string onCondition) : QueryCommand
+public sealed class LookupJoinCommand(string lookupIndex, string onCondition) : QueryCommand
 {
 	/// <summary>The lookup index name.</summary>
 	public string LookupIndex { get; } = lookupIndex ?? throw new ArgumentNullException(nameof(lookupIndex));
@@ -15,5 +15,5 @@ internal sealed class LookupJoinCommand(string lookupIndex, string onCondition) 
 	/// <summary>The translated ON condition (simple field names or expression-based conditions).</summary>
 	public string OnCondition { get; } = onCondition ?? throw new ArgumentNullException(nameof(onCondition));
 
-	public override void Accept(ICommandVisitor visitor) => visitor.Visit(this);
+	internal override void Accept(ICommandVisitor visitor) => visitor.Visit(this);
 }

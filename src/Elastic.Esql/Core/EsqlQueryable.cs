@@ -74,7 +74,7 @@ public sealed class EsqlQueryable<T> : IEsqlQueryable<T>, IOrderedQueryable<T>
 	/// <inheritdoc/>
 	public string ToEsqlString(bool inlineParameters)
 	{
-		var query = Provider.TranslateExpression(Expression, inlineParameters);
+		var query = Provider.TranslateAndIntercept(Expression, inlineParameters);
 		var formatter = new EsqlFormatter();
 
 		return formatter.Format(query);
@@ -83,7 +83,7 @@ public sealed class EsqlQueryable<T> : IEsqlQueryable<T>, IOrderedQueryable<T>
 	/// <inheritdoc/>
 	public EsqlParameters? GetParameters()
 	{
-		var query = Provider.TranslateExpression(Expression, false);
+		var query = Provider.TranslateAndIntercept(Expression, false);
 
 		return query.Parameters;
 	}

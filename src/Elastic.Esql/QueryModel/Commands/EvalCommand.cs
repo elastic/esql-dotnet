@@ -7,7 +7,7 @@ namespace Elastic.Esql.QueryModel.Commands;
 /// <summary>
 /// Represents the EVAL command.
 /// </summary>
-internal sealed class EvalCommand : QueryCommand
+public sealed class EvalCommand : QueryCommand
 {
 	public IReadOnlyList<string> Expressions { get; }
 
@@ -15,5 +15,5 @@ internal sealed class EvalCommand : QueryCommand
 
 	public EvalCommand(IEnumerable<string> expressions) => Expressions = expressions?.ToList() ?? throw new ArgumentNullException(nameof(expressions));
 
-	public override void Accept(ICommandVisitor visitor) => visitor.Visit(this);
+	internal override void Accept(ICommandVisitor visitor) => visitor.Visit(this);
 }

@@ -7,7 +7,7 @@ namespace Elastic.Esql.QueryModel.Commands;
 /// <summary>
 /// Represents the LIMIT command.
 /// </summary>
-internal sealed class LimitCommand : QueryCommand
+public sealed class LimitCommand : QueryCommand
 {
 	public int Count { get; }
 
@@ -18,5 +18,5 @@ internal sealed class LimitCommand : QueryCommand
 		Count = count;
 	}
 
-	public override void Accept(ICommandVisitor visitor) => visitor.Visit(this);
+	internal override void Accept(ICommandVisitor visitor) => visitor.Visit(this);
 }

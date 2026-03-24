@@ -7,7 +7,7 @@ namespace Elastic.Esql.QueryModel.Commands;
 /// <summary>
 /// Represents the SORT command.
 /// </summary>
-internal sealed class SortCommand : QueryCommand
+public sealed class SortCommand : QueryCommand
 {
 	public IReadOnlyList<SortField> Fields { get; }
 
@@ -15,13 +15,13 @@ internal sealed class SortCommand : QueryCommand
 
 	public SortCommand(IEnumerable<SortField> fields) => Fields = fields?.ToList() ?? throw new ArgumentNullException(nameof(fields));
 
-	public override void Accept(ICommandVisitor visitor) => visitor.Visit(this);
+	internal override void Accept(ICommandVisitor visitor) => visitor.Visit(this);
 }
 
 /// <summary>
 /// Represents a field in a SORT command.
 /// </summary>
-internal sealed class SortField(string fieldName, bool descending = false)
+public sealed class SortField(string fieldName, bool descending = false)
 {
 	public string FieldName { get; } = fieldName ?? throw new ArgumentNullException(nameof(fieldName));
 	public bool Descending { get; } = descending;

@@ -7,7 +7,7 @@ namespace Elastic.Esql.QueryModel.Commands;
 /// <summary>
 /// Represents the COMPLETION command for LLM inference within ES|QL queries.
 /// </summary>
-internal sealed class CompletionCommand(string prompt, string inferenceId, string? column = null) : QueryCommand
+public sealed class CompletionCommand(string prompt, string inferenceId, string? column = null) : QueryCommand
 {
 	/// <summary>The field reference or expression for the prompt.</summary>
 	public string Prompt { get; } = prompt ?? throw new ArgumentNullException(nameof(prompt));
@@ -18,5 +18,5 @@ internal sealed class CompletionCommand(string prompt, string inferenceId, strin
 	/// <summary>Optional output column name (ES|QL defaults to "completion").</summary>
 	public string? Column { get; } = column;
 
-	public override void Accept(ICommandVisitor visitor) => visitor.Visit(this);
+	internal override void Accept(ICommandVisitor visitor) => visitor.Visit(this);
 }

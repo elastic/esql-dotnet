@@ -9,12 +9,12 @@ namespace Elastic.Esql.QueryModel;
 /// <summary>
 /// Base class for all ES|QL query commands.
 /// </summary>
-internal abstract class QueryCommand
+public abstract class QueryCommand
 {
 	/// <summary>
 	/// Accepts a visitor for generating ES|QL.
 	/// </summary>
-	public abstract void Accept(ICommandVisitor visitor);
+	internal abstract void Accept(ICommandVisitor visitor);
 }
 
 /// <summary>
