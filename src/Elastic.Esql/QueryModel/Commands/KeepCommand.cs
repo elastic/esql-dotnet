@@ -7,7 +7,7 @@ namespace Elastic.Esql.QueryModel.Commands;
 /// <summary>
 /// Represents the KEEP command.
 /// </summary>
-internal sealed class KeepCommand : QueryCommand
+public sealed class KeepCommand : QueryCommand
 {
 	public IReadOnlyList<string> Fields { get; }
 
@@ -15,5 +15,5 @@ internal sealed class KeepCommand : QueryCommand
 
 	public KeepCommand(IEnumerable<string> fields) => Fields = fields?.ToList() ?? throw new ArgumentNullException(nameof(fields));
 
-	public override void Accept(ICommandVisitor visitor) => visitor.Visit(this);
+	internal override void Accept(ICommandVisitor visitor) => visitor.Visit(this);
 }

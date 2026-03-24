@@ -13,7 +13,7 @@ namespace Elastic.Esql.QueryModel;
 /// <param name="commands">The ESQL query commands.</param>
 /// <param name="parameters">The ESQL query parameters.</param>
 /// <param name="queryOptions">Opaque query options extracted from the expression tree.</param>
-internal sealed class EsqlQuery(Type elementType, IReadOnlyList<QueryCommand> commands, EsqlParameters? parameters, object? queryOptions = null)
+public sealed class EsqlQuery(Type elementType, IReadOnlyList<QueryCommand> commands, EsqlParameters? parameters, object? queryOptions = null)
 {
 	/// <summary>
 	/// The element type of the query.
@@ -37,9 +37,19 @@ internal sealed class EsqlQuery(Type elementType, IReadOnlyList<QueryCommand> co
 	public object? QueryOptions { get; } = queryOptions;
 
 	/// <summary>
+	/// Get the source command (e.g. FROM, ROW, etc.) if present.
+	/// </summary>
+	public SourceCommand? Source => Commands.OfType<SourceCommand>().SingleOrDefault();
+
+	/// <summary>
 	/// Gets the FROM command if present.
 	/// </summary>
 	public FromCommand? From => Commands.OfType<FromCommand>().SingleOrDefault();
+
+	/// <summary>
+	/// Gets the ROW command if present.
+	/// </summary>
+	public RowCommand? Row => Commands.OfType<RowCommand>().SingleOrDefault();
 
 	/// <summary>
 	/// Gets all WHERE commands.
@@ -57,11 +67,6 @@ internal sealed class EsqlQuery(Type elementType, IReadOnlyList<QueryCommand> co
 	public IEnumerable<SortCommand> SortCommands => Commands.OfType<SortCommand>();
 
 	/// <summary>
-	/// Gets the ROW command if present.
-	/// </summary>
-	public RowCommand? Row => Commands.OfType<RowCommand>().SingleOrDefault();
-
-	/// <summary>
 	/// Gets all COMPLETION commands.
 	/// </summary>
 	public IEnumerable<CompletionCommand> CompletionCommands => Commands.OfType<CompletionCommand>();
@@ -70,4 +75,36 @@ internal sealed class EsqlQuery(Type elementType, IReadOnlyList<QueryCommand> co
 	/// Gets all LOOKUP JOIN commands.
 	/// </summary>
 	public IEnumerable<LookupJoinCommand> LookupJoinCommands => Commands.OfType<LookupJoinCommand>();
+
+	/// <summary>Creates a copy with a different command list.</summary>
+	public EsqlQuery WithCommands(IReadOnlyList<QueryCommand> commands) =>
+		new(ElementType, commands, Parameters, QueryOptions);
+
+	/// <summary>Creates a copy with different parameters.</summary>
+	public EsqlQuery WithParameters(EsqlParameters? parameters) =>
+		new(ElementType, Commands, parameters, QueryOptions);
+
+	/// <summary>Creates a copy with the source command set to FROM with the specified index pattern. Replaces an existing source command or prepends one.</summary>
+	public EsqlQuery WithSource(string indexPattern)
+	{
+		var list = Commands.ToList();
+		var existing = list.FindIndex(c => c is SourceCommand);
+		if (existing >= 0)
+			list[existing] = new FromCommand(indexPattern);
+		else
+			list.Insert(0, new FromCommand(indexPattern));
+		return new(ElementType, list, Parameters, QueryOptions);
+	}
+
+	/// <summary>Creates a copy with the LIMIT set to the specified count. Replaces an existing LIMIT or appends one.</summary>
+	public EsqlQuery WithLimit(int count)
+	{
+		var list = Commands.ToList();
+		var existing = list.FindLastIndex(c => c is LimitCommand);
+		if (existing >= 0)
+			list[existing] = new LimitCommand(count);
+		else
+			list.Add(new LimitCommand(count));
+		return new(ElementType, list, Parameters, QueryOptions);
+	}
 }

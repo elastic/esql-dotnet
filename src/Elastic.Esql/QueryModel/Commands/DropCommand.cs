@@ -7,7 +7,7 @@ namespace Elastic.Esql.QueryModel.Commands;
 /// <summary>
 /// Represents the DROP command.
 /// </summary>
-internal sealed class DropCommand : QueryCommand
+public sealed class DropCommand : QueryCommand
 {
 	public IReadOnlyList<string> Fields { get; }
 
@@ -17,5 +17,5 @@ internal sealed class DropCommand : QueryCommand
 	public DropCommand(IEnumerable<string> fields) =>
 		Fields = fields?.ToList() ?? throw new ArgumentNullException(nameof(fields));
 
-	public override void Accept(ICommandVisitor visitor) => visitor.Visit(this);
+	internal override void Accept(ICommandVisitor visitor) => visitor.Visit(this);
 }

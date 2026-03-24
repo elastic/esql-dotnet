@@ -7,11 +7,11 @@ namespace Elastic.Esql.QueryModel.Commands;
 /// <summary>
 /// Represents a raw ES|QL pipeline fragment appended to the query.
 /// </summary>
-internal sealed class RawFragmentCommand(string fragment) : QueryCommand
+public sealed class RawFragmentCommand(string fragment) : QueryCommand
 {
 	public string Fragment { get; } = !string.IsNullOrWhiteSpace(fragment)
 		? fragment
 		: throw new ArgumentException("Raw ES|QL fragment must not be empty.", nameof(fragment));
 
-	public override void Accept(ICommandVisitor visitor) => visitor.Visit(this);
+	internal override void Accept(ICommandVisitor visitor) => visitor.Visit(this);
 }

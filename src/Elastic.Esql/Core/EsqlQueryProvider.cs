@@ -32,6 +32,9 @@ public sealed class EsqlQueryProvider : IQueryProvider
 	/// <summary>Centralized STJ metadata manager with provider-scoped caching.</summary>
 	internal JsonMetadataManager Metadata { get; }
 
+	/// <summary>Optional interceptor invoked after translation but before formatting and execution.</summary>
+	public IEsqlQueryInterceptor? Interceptor { get; init; }
+
 	/// <summary>Creates a translation-only provider using default camelCase JSON options.</summary>
 	public EsqlQueryProvider() : this(CreateDefaultJsonOptions()) { }
 
@@ -143,7 +146,7 @@ public sealed class EsqlQueryProvider : IQueryProvider
 			.ConfigureAwait(false);
 
 		await using var results = await _reader.ReadRowsAsync<TElement>(response.Body, cancellationToken: cancellationToken).ConfigureAwait(false);
-		await foreach (var item in results.Rows.ConfigureAwait(false))
+		await foreach (var item in results.Rows.ConfigureAwait(false).WithCancellation(cancellationToken))
 			yield return item;
 	}
 
@@ -155,6 +158,13 @@ public sealed class EsqlQueryProvider : IQueryProvider
 		var visitor = new EsqlExpressionVisitor(this, inlineParameters);
 
 		return visitor.Translate(expression);
+	}
+
+	/// <summary>Translates and applies the query interceptor if one is configured.</summary>
+	internal EsqlQuery TranslateAndIntercept(Expression expression, bool inlineParameters)
+	{
+		var query = TranslateExpression(expression, inlineParameters);
+		return Interceptor is not null ? Interceptor.Intercept(query) : query;
 	}
 
 	/// <summary>Submits an async ES|QL query from a LINQ expression. Used by extension methods.</summary>
@@ -270,7 +280,7 @@ public sealed class EsqlQueryProvider : IQueryProvider
 
 	private (string Esql, EsqlQuery Query) TranslateAndFormat(Expression expression)
 	{
-		var query = TranslateExpression(expression, false);
+		var query = TranslateAndIntercept(expression, false);
 		var esql = new EsqlFormatter().Format(query);
 		return (esql, query);
 	}

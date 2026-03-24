@@ -7,7 +7,7 @@ namespace Elastic.Esql.QueryModel.Commands;
 /// <summary>
 /// Represents the ROW source command.
 /// </summary>
-internal sealed class RowCommand : SourceCommand
+public sealed class RowCommand : SourceCommand
 {
 	public IReadOnlyList<string> Expressions { get; }
 
@@ -17,5 +17,5 @@ internal sealed class RowCommand : SourceCommand
 	public RowCommand(IEnumerable<string> expressions) =>
 		Expressions = expressions?.ToList() ?? throw new ArgumentNullException(nameof(expressions));
 
-	public override void Accept(ICommandVisitor visitor) => visitor.Visit(this);
+	internal override void Accept(ICommandVisitor visitor) => visitor.Visit(this);
 }
