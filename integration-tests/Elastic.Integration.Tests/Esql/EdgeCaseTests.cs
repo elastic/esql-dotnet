@@ -58,7 +58,13 @@ public class EdgeCaseTests : IntegrationTestBase
 			.AsEsqlQueryable()
 			.ToListAsync();
 
-		await act.Should().ThrowAsync<EsqlExecutionException>();
+		var ex = (await act.Should().ThrowAsync<EsqlExecutionException>()).Which;
+
+		ex.StatusCode.Should().NotBeNull().And.BeOneOf(400, 404);
+		ex.ResponseBody.Should().NotBeNullOrEmpty();
+		ex.ApiCallDetails.Should().NotBeNull();
+		ex.ServerError.Should().NotBeNull();
+		ex.ServerError!.Error?.Type.Should().Be("verification_exception");
 	}
 
 	[Test]

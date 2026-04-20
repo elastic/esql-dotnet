@@ -31,18 +31,28 @@ public class EsqlClientSettings
 	/// <summary>Creates settings with a node URI.</summary>
 	public EsqlClientSettings(Uri nodeUri)
 	{
-		var config = new TransportConfiguration(nodeUri ?? throw new ArgumentNullException(nameof(nodeUri)));
+		var config = new TransportConfiguration(
+			nodeUri ?? throw new ArgumentNullException(nameof(nodeUri)),
+			productRegistration: EsqlProductRegistration.Default
+		);
 		Transport = new DistributedTransport(config);
 	}
 
-	/// <summary>Creates settings with a custom transport.</summary>
+	/// <summary>
+	/// Creates settings with a custom transport.
+	/// The provided transport is responsible for its own product registration;
+	/// see <see cref="EsqlProductRegistration.Default"/> for the recommended value.
+	/// </summary>
 	public EsqlClientSettings(ITransport transport) =>
 		Transport = transport ?? throw new ArgumentNullException(nameof(transport));
 
 	/// <summary>Creates settings with a connection pool.</summary>
 	public EsqlClientSettings(NodePool nodePool)
 	{
-		var config = new TransportConfiguration(nodePool ?? throw new ArgumentNullException(nameof(nodePool)));
+		var config = new TransportConfiguration(
+			nodePool ?? throw new ArgumentNullException(nameof(nodePool)),
+			productRegistration: EsqlProductRegistration.Default
+		);
 		Transport = new DistributedTransport(config);
 	}
 
