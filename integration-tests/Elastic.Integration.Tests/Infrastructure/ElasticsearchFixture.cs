@@ -72,7 +72,7 @@ public sealed class ElasticsearchFixture : IAsyncDisposable
 		).Authentication(new ApiKey(apiKey));
 		var esClient = new ElasticsearchClient(esSettings);
 
-		var transportConfig = new TransportConfiguration(new Uri(url))
+		var transportConfig = new TransportConfiguration(new Uri(url), EsqlProductRegistration.Default)
 		{
 			Authentication = new ApiKey(apiKey)
 		};
@@ -103,7 +103,7 @@ public sealed class ElasticsearchFixture : IAsyncDisposable
 			.ServerCertificateValidationCallback(CertificateValidations.AllowAll);
 		var esClient = new ElasticsearchClient(esSettings);
 
-		var transportConfig = new TransportConfiguration(baseUrl)
+		var transportConfig = new TransportConfiguration(baseUrl, EsqlProductRegistration.Default)
 		{
 			Authentication = new BasicAuthentication("elastic", ContainerPassword),
 			ServerCertificateValidationCallback = CertificateValidations.AllowAll
