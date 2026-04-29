@@ -6,6 +6,8 @@ using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
+
+using Elastic.Esql.Serialization;
 using Elastic.Transport;
 
 namespace Elastic.Clients.Esql;
@@ -27,6 +29,20 @@ public class EsqlClientSettings
 	/// When set, takes precedence over <see cref="JsonSerializerOptions"/>.
 	/// </summary>
 	public JsonSerializerContext? JsonSerializerContext { get; init; }
+
+	/// <summary>
+	/// Wire-format encoding for <see cref="Elastic.Esql.Vectors.FloatVector"/> values when serialized
+	/// as ES|QL request parameters. Defaults to <see cref="FloatVectorEncoding.Legacy"/> (JSON array)
+	/// for compatibility with all server versions.
+	/// </summary>
+	public FloatVectorEncoding FloatVectorEncoding { get; init; } = FloatVectorEncoding.Legacy;
+
+	/// <summary>
+	/// Wire-format encoding for <see cref="Elastic.Esql.Vectors.ByteVector"/> values when serialized
+	/// as ES|QL request parameters. Defaults to <see cref="ByteVectorEncoding.Legacy"/> (JSON array)
+	/// for compatibility with all server versions.
+	/// </summary>
+	public ByteVectorEncoding ByteVectorEncoding { get; init; } = ByteVectorEncoding.Legacy;
 
 	/// <summary>Creates settings with a node URI.</summary>
 	public EsqlClientSettings(Uri nodeUri)
@@ -61,6 +77,13 @@ public class EsqlClientSettings
 	[UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "DefaultJsonTypeInfoResolver is a fallback; the user-provided JsonSerializerContext is expected to include an AOT-safe TypeInfoResolver.")]
 	internal JsonSerializerOptions ResolveJsonOptions()
 	{
+		var options = ResolveBaseJsonOptions();
+		AttachVectorEncodingContext(options);
+		return options;
+	}
+
+	private JsonSerializerOptions ResolveBaseJsonOptions()
+	{
 		if (JsonSerializerContext is not null)
 		{
 			return new JsonSerializerOptions
@@ -74,6 +97,19 @@ public class EsqlClientSettings
 		}
 
 		return JsonSerializerOptions ?? CreateDefaultJsonOptions();
+	}
+
+	private void AttachVectorEncodingContext(JsonSerializerOptions options)
+	{
+		// Avoid re-registering when the same options object is reused across resolves.
+		foreach (var converter in options.Converters)
+		{
+			if (converter is ContextProvider<EsqlVectorEncodingContext>)
+				return;
+		}
+
+		var ctx = new EsqlVectorEncodingContext(FloatVectorEncoding, ByteVectorEncoding);
+		options.Converters.Add(new ContextProvider<EsqlVectorEncodingContext>(ctx));
 	}
 
 	private static JsonSerializerOptions CreateDefaultJsonOptions() =>

@@ -20,8 +20,24 @@ internal static class ExpressionConstantResolver
 			ConstantExpression constant => constant.Value,
 			MemberExpression member => ResolveMember(member),
 			UnaryExpression { NodeType: ExpressionType.Convert or ExpressionType.ConvertChecked } unary => ResolveUnary(unary),
+			NewArrayExpression { NodeType: ExpressionType.NewArrayInit } newArray => ResolveNewArray(newArray),
 			_ => throw new NotSupportedException($"Expression of type '{expression.GetType().Name}' ({expression.NodeType}) is not supported.")
 		};
+	}
+
+	private static object? ResolveNewArray(NewArrayExpression newArray)
+	{
+		var elementType = newArray.Type.GetElementType()
+			?? throw new NotSupportedException($"Array type '{newArray.Type}' has no element type.");
+
+		var array = Array.CreateInstance(elementType, newArray.Expressions.Count);
+		for (var i = 0; i < newArray.Expressions.Count; i++)
+		{
+			var value = Resolve(newArray.Expressions[i]);
+			array.SetValue(value, i);
+		}
+
+		return array;
 	}
 
 	private static object? ResolveMember(MemberExpression member)

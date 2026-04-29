@@ -11,6 +11,7 @@ using System.Text;
 using Elastic.Esql.Core;
 using Elastic.Esql.Extensions;
 using Elastic.Esql.Functions;
+using Elastic.Esql.Vectors;
 
 namespace Elastic.Esql.Translation;
 
@@ -182,6 +183,12 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 			case ExpressionType.Convert:
 			case ExpressionType.ConvertChecked:
+				// Implicit/explicit conversion to FloatVector/ByteVector wraps a closure-captured
+				// float[]/byte[] etc. Resolve the source value and wrap it so the dedicated
+				// converter is used during parameter serialization (and inline literal formatting).
+				if (TryEmitVectorConvert(node))
+					return node;
+
 				// Just visit the operand, ES|QL handles type coercion
 				_ = Visit(node.Operand);
 				break;
@@ -191,6 +198,41 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		}
 
 		return node;
+	}
+
+	private bool TryEmitVectorConvert(UnaryExpression node)
+	{
+		var targetType = node.Type;
+		if (targetType != typeof(FloatVector) && targetType != typeof(ByteVector))
+			return false;
+
+		// If the operand is a parameter-rooted member access (e.g. d.Embedding), let the
+		// regular VisitMember path emit the field name.
+		if (node.Operand is MemberExpression member && ExpressionTranslationHelpers.IsRootedInParameter(member))
+			return false;
+
+		// If the operand is itself a vector value (e.g. another FloatVector), no wrapping required.
+		if (node.Operand.Type == typeof(FloatVector) || node.Operand.Type == typeof(ByteVector))
+			return false;
+
+		var resolved = ExpressionConstantResolver.Resolve(node.Operand);
+		object? wrapped = (targetType == typeof(FloatVector), resolved) switch
+		{
+			(true, float[] arr) => (FloatVector)arr,
+			(true, ReadOnlyMemory<float> mem) => (FloatVector)mem,
+			(true, List<float> list) => (FloatVector)list,
+			(false, byte[] arr) => (ByteVector)arr,
+			(false, ReadOnlyMemory<byte> mem) => (ByteVector)mem,
+			(false, List<byte> list) => (ByteVector)list,
+			_ => null
+		};
+
+		if (wrapped is null)
+			return false;
+
+		var memberName = node.Operand is MemberExpression me ? me.Member.Name : "vector";
+		_ = _builder.Append(_context.GetValueOrParameterName(memberName, wrapped));
+		return true;
 	}
 
 	protected override Expression VisitMember(MemberExpression node)
@@ -245,6 +287,13 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 					_ = _builder.Append(mathConst);
 					return node;
 				}
+			}
+
+			// EsqlMetadata.* marker access -> emit underscore-prefixed ES|QL identifier.
+			if (declaringType == typeof(EsqlMetadata))
+			{
+				_ = _builder.Append(_context.ResolveMetadataMemberOrThrow(memberName));
+				return node;
 			}
 
 			// For other static members, evaluate the value

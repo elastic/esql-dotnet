@@ -189,6 +189,14 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 				VisitLookupJoin(node);
 				break;
 
+			case nameof(EsqlQueryableExtensions.Fork) when isEsqlExtensionMethod:
+				VisitFork(node);
+				break;
+
+			case nameof(EsqlQueryableExtensions.Fuse) when isEsqlExtensionMethod:
+				VisitFuse(node);
+				break;
+
 			case nameof(Queryable.Join) when isQueryableMethod:
 				VisitJoin(node);
 				break;
@@ -249,6 +257,7 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 				var statsCommand = groupByVisitor.Translate(_pendingGroupByKeySelector, lambda);
 				Context.Commands.Add(statsCommand);
 				_pendingGroupByKeySelector = null;
+				ClearMetadataAfterStats();
 				return;
 			}
 
@@ -295,6 +304,11 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 	private string ExtractSortExpression(Expression expression)
 	{
 		expression = expression.UnwrapConvertExpressions();
+
+		// EsqlMetadata.X marker access -> emit underscore-prefixed identifier.
+		if (expression is MemberExpression { Expression: null, Member: { } metaMember }
+			&& metaMember.DeclaringType == typeof(EsqlMetadata))
+			return Context.ResolveMetadataMemberOrThrow(metaMember.Name);
 
 		if (expression is MethodCallExpression methodCall && methodCall.Method.DeclaringType != typeof(GeneralPurposeExtensions))
 		{
@@ -371,6 +385,7 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 		}
 
 		Context.Commands.Add(new StatsCommand(["count = COUNT(*)"]));
+		ClearMetadataAfterStats();
 	}
 
 	private void VisitAggregation(MethodCallExpression node, string function)
@@ -386,6 +401,17 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 
 		var resultName = function.ToLowerInvariant();
 		Context.Commands.Add(new StatsCommand([$"{resultName} = {function}({fieldName})"]));
+		ClearMetadataAfterStats();
+	}
+
+	/// <summary>
+	/// After a STATS command, document metadata fields are no longer accessible to subsequent
+	/// commands per ES|QL semantics. Clear active metadata to reflect that.
+	/// </summary>
+	private void ClearMetadataAfterStats()
+	{
+		Context.ActiveMetadata = MetadataField.None;
+		Context.ForkActive = false;
 	}
 
 	private void VisitAny(MethodCallExpression node)
@@ -431,10 +457,19 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 		if (indexPattern is not string indexPatternString)
 			throw new NotSupportedException("The index pattern only supports string constants.");
 
+		var metadata = MetadataField.None;
+		if (node.Arguments.Count >= 3)
+		{
+			var resolved = ExpressionConstantResolver.Resolve(node.Arguments[2]);
+			if (resolved is MetadataField flags)
+				metadata = flags;
+		}
+
 		if (Context.Commands.OfType<SourceCommand>().Any())
 			throw new InvalidOperationException("A source command (FROM or ROW) already exists.");
 
-		Context.Commands.Insert(0, new FromCommand(indexPatternString));
+		Context.Commands.Insert(0, new FromCommand(indexPatternString, metadata));
+		Context.ActiveMetadata = metadata;
 	}
 
 	private void VisitKeep(MethodCallExpression node)
@@ -566,6 +601,119 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 			return;
 
 		Context.QueryOptions = ExpressionConstantResolver.Resolve(node.Arguments[1]);
+	}
+
+	private void VisitFork(MethodCallExpression node)
+	{
+		if (node.Arguments.Count < 2)
+			throw new NotSupportedException("Fork requires at least one branch.");
+
+		var branchesArg = ExpressionConstantResolver.Resolve(node.Arguments[1]);
+		if (branchesArg is not Array branchesArray || branchesArray.Length == 0)
+			throw new NotSupportedException("Fork requires at least one branch.");
+
+		var elementType = Context.ElementType
+			?? throw new InvalidOperationException("Fork must follow a typed source command (FROM or ROW).");
+
+		var branchFragments = new List<IReadOnlyList<string>>(branchesArray.Length);
+		var inheritedMetadata = Context.ActiveMetadata;
+
+		foreach (var branchObj in branchesArray)
+		{
+			if (branchObj is not LambdaExpression branchLambda)
+				throw new NotSupportedException("Fork branches must be lambda expressions.");
+
+			var fragments = ForkBranchVisitor.Translate(Provider, branchLambda, elementType, inheritedMetadata, inlineParameters);
+			if (fragments.Count == 0)
+				throw new NotSupportedException("Fork branch produced no commands.");
+
+			branchFragments.Add(fragments);
+		}
+
+		Context.Commands.Add(new ForkCommand(branchFragments));
+		Context.ForkActive = true;
+		_lastForkBranchCount = branchesArray.Length;
+	}
+
+	private int _lastForkBranchCount;
+
+	private void VisitFuse(MethodCallExpression node)
+	{
+		// Fuse parameters: (source, method, rankConstant, normalizer, weights, score, group, key)
+		var method = node.Arguments.Count >= 2 ? (FuseMethod)(ExpressionConstantResolver.Resolve(node.Arguments[1]) ?? FuseMethod.Rrf) : FuseMethod.Rrf;
+		var rankConstant = node.Arguments.Count >= 3 ? ExpressionConstantResolver.Resolve(node.Arguments[2]) as int? : null;
+		var normalizer = node.Arguments.Count >= 4 ? (ScoreNormalizer)(ExpressionConstantResolver.Resolve(node.Arguments[3]) ?? ScoreNormalizer.None) : ScoreNormalizer.None;
+		var weights = node.Arguments.Count >= 5 ? ExpressionConstantResolver.Resolve(node.Arguments[4]) as double[] : null;
+		var scoreLambda = node.Arguments.Count >= 6 ? ExpressionConstantResolver.Resolve(node.Arguments[5]) as LambdaExpression : null;
+		var groupLambda = node.Arguments.Count >= 7 ? ExpressionConstantResolver.Resolve(node.Arguments[6]) as LambdaExpression : null;
+		var keyLambda = node.Arguments.Count >= 8 ? ExpressionConstantResolver.Resolve(node.Arguments[7]) as LambdaExpression : null;
+
+		ValidateFuseFollowsFork(weights);
+
+		var scoreColumn = scoreLambda is not null ? ResolveColumnFromLambda(scoreLambda) : null;
+		var groupColumn = groupLambda is not null ? ResolveColumnFromLambda(groupLambda) : null;
+		var keyColumns = keyLambda is not null ? ResolveKeyColumnsFromLambda(keyLambda) : null;
+
+		Context.Commands.Add(new FuseCommand(
+			method: method,
+			rankConstant: rankConstant,
+			normalizer: normalizer,
+			weights: weights,
+			scoreColumn: scoreColumn,
+			groupColumn: groupColumn,
+			keyColumns: keyColumns));
+	}
+
+	private void ValidateFuseFollowsFork(double[]? weights)
+	{
+		var lastCommand = Context.Commands.Count > 0 ? Context.Commands[^1] : null;
+		if (lastCommand is not ForkCommand)
+			throw new InvalidOperationException("'Fuse' must immediately follow a 'Fork' command.");
+
+		if (weights is not null && weights.Length != _lastForkBranchCount)
+			throw new ArgumentException(
+				$"Fuse weights count ({weights.Length}) must match the preceding Fork branch count ({_lastForkBranchCount}).",
+				nameof(weights));
+	}
+
+	private string ResolveColumnFromLambda(LambdaExpression lambda)
+	{
+		var body = lambda.Body.UnwrapConvertExpressions();
+
+		// EsqlMetadata.X marker access -> emit underscore-prefixed identifier.
+		if (body is MemberExpression { Expression: null, Member: { } metaMember }
+			&& metaMember.DeclaringType == typeof(EsqlMetadata))
+			return Context.ResolveMetadataMemberOrThrow(metaMember.Name);
+
+		return body.ResolveFieldName(Context.Metadata);
+	}
+
+	private List<string> ResolveKeyColumnsFromLambda(LambdaExpression lambda)
+	{
+		var body = lambda.Body.UnwrapConvertExpressions();
+
+		// Composite key via anonymous type: x => new { x.Id, x.Index } or new { Id = EsqlMetadata.Id, Index = EsqlMetadata.Index }
+		if (body is NewExpression { Members: not null } newExpr)
+		{
+			var result = new List<string>(newExpr.Arguments.Count);
+			for (var i = 0; i < newExpr.Arguments.Count; i++)
+			{
+				var arg = newExpr.Arguments[i].UnwrapConvertExpressions();
+
+				if (arg is MemberExpression { Expression: null, Member: { } metaMember }
+					&& metaMember.DeclaringType == typeof(EsqlMetadata))
+				{
+					result.Add(Context.ResolveMetadataMemberOrThrow(metaMember.Name));
+					continue;
+				}
+
+				result.Add(arg.ResolveFieldName(Context.Metadata));
+			}
+			return result;
+		}
+
+		// Single key column.
+		return [ResolveColumnFromLambda(lambda)];
 	}
 
 	private static IReadOnlyList<string> NormalizeRawFragments(string rawEsql)
@@ -801,6 +949,8 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 	/// <summary>
 	/// Emits RENAME, EVAL, and KEEP commands in the correct order from a projection result.
 	/// KEEP is always emitted to reduce the result set to only the projected fields.
+	/// Active metadata fields requested on the source <c>FROM</c> are auto-retained unless
+	/// the projection itself consumes them (e.g. via <c>EsqlMetadata.X</c> as a rename source).
 	/// </summary>
 	private void EmitProjectionCommands(SelectProjectionVisitor.ProjectionResult result)
 	{
@@ -816,8 +966,39 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 		foreach (var evalExpr in result.EvalExpressions)
 			allKeepFields.Add(evalExpr.Split('=')[0].Trim());
 
+		AppendRetainedMetadataNames(allKeepFields, result);
+
 		if (allKeepFields.Count > 0)
 			Context.Commands.Add(new KeepCommand(allKeepFields));
+	}
+
+	/// <summary>
+	/// Appends active-metadata identifiers to <paramref name="keepFields"/> so they survive
+	/// the auto-emitted KEEP. Metadata fields whose underscore-prefixed name was used as a
+	/// rename source in the projection are skipped (they've been consumed by the projection).
+	/// </summary>
+	private void AppendRetainedMetadataNames(List<string> keepFields, SelectProjectionVisitor.ProjectionResult result)
+	{
+		if (Context.ActiveMetadata == MetadataField.None && !Context.ForkActive)
+			return;
+
+		var consumed = new HashSet<string>(StringComparer.Ordinal);
+		foreach (var (source, _) in result.RenameFields)
+			_ = consumed.Add(source);
+
+		foreach (var name in MetadataFieldHelper.EnumerateNames(Context.ActiveMetadata))
+		{
+			if (consumed.Contains(name))
+				continue;
+
+			if (keepFields.Contains(name))
+				continue;
+
+			keepFields.Add(name);
+		}
+
+		if (Context.ForkActive && !consumed.Contains("_fork") && !keepFields.Contains("_fork"))
+			keepFields.Add("_fork");
 	}
 
 	/// <summary>
@@ -892,6 +1073,8 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 			allKeepFields.Add(target);
 		foreach (var evalExpr in evalExpressions)
 			allKeepFields.Add(evalExpr.Split('=')[0].Trim());
+
+		AppendRetainedMetadataNames(allKeepFields, result);
 
 		if (allKeepFields.Count > 0)
 			Context.Commands.Add(new KeepCommand(allKeepFields));

@@ -4,6 +4,8 @@
 
 #pragma warning disable IDE0060 // All parameters are intentionally unused — these are marker methods for expression tree translation
 
+using Elastic.Esql.Vectors;
+
 namespace Elastic.Esql.Functions;
 
 /// <summary>
@@ -366,4 +368,45 @@ public static class EsqlFunctions
 
 	/// <summary>True if field is present in any row. Translates to PRESENT(field).</summary>
 	public static bool Present<TSource, TField>(IEnumerable<TSource> source, Func<TSource, TField> selector) => Throw<bool>();
+
+	// ============================================================================
+	// Dense vector functions
+	// ============================================================================
+
+	/// <summary>Approximate k-nearest-neighbour search over a <c>dense_vector</c> (float) field. Translates to KNN(field, query).</summary>
+	public static bool Knn(FloatVector field, FloatVector query) => Throw<bool>();
+
+	/// <summary>
+	/// Approximate k-nearest-neighbour search over a <c>dense_vector</c> (float) field with named options
+	/// (e.g. <c>new { k = 10, num_candidates = 100, similarity_threshold = 0.5 }</c>).
+	/// Translates to KNN(field, query, { ... }).
+	/// </summary>
+	public static bool Knn(FloatVector field, FloatVector query, object options) => Throw<bool>();
+
+	/// <summary>Approximate k-nearest-neighbour search over a <c>dense_vector</c> (byte) field. Translates to KNN(field, query).</summary>
+	public static bool Knn(ByteVector field, ByteVector query) => Throw<bool>();
+
+	/// <summary>
+	/// Approximate k-nearest-neighbour search over a <c>dense_vector</c> (byte) field with named options.
+	/// Translates to KNN(field, query, { ... }).
+	/// </summary>
+	public static bool Knn(ByteVector field, ByteVector query, object options) => Throw<bool>();
+
+	/// <summary>Generates a query vector from text using the given inference endpoint. Translates to TEXT_EMBEDDING(text, inferenceId).</summary>
+	public static FloatVector TextEmbedding(string text, string inferenceId) => Throw<FloatVector>();
+
+	/// <summary>Cosine similarity between two dense vectors. Translates to V_COSINE(a, b).</summary>
+	public static double VCosine(FloatVector a, FloatVector b) => Throw<double>();
+
+	/// <summary>Dot product between two dense vectors. Translates to V_DOT_PRODUCT(a, b).</summary>
+	public static double VDotProduct(FloatVector a, FloatVector b) => Throw<double>();
+
+	/// <summary>Hamming distance between two byte vectors. Translates to V_HAMMING(a, b).</summary>
+	public static double VHamming(ByteVector a, ByteVector b) => Throw<double>();
+
+	/// <summary>L1 (Manhattan) norm between two dense vectors. Translates to V_L1_NORM(a, b).</summary>
+	public static double VL1Norm(FloatVector a, FloatVector b) => Throw<double>();
+
+	/// <summary>L2 (Euclidean) norm between two dense vectors. Translates to V_L2_NORM(a, b).</summary>
+	public static double VL2Norm(FloatVector a, FloatVector b) => Throw<double>();
 }

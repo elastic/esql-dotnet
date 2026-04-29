@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information
 
 using System.Text;
+using Elastic.Esql.Core;
 using Elastic.Esql.QueryModel;
 using Elastic.Esql.QueryModel.Commands;
 
@@ -45,7 +46,15 @@ internal sealed class EsqlFormatter : ICommandVisitor
 		}
 	}
 
-	public void Visit(FromCommand command) => AppendCommand($"FROM {EscapeIdentifier(command.IndexPattern)}");
+	public void Visit(FromCommand command)
+	{
+		var from = $"FROM {EscapeIdentifier(command.IndexPattern)}";
+
+		if (command.Metadata != MetadataField.None)
+			from = $"{from} METADATA {string.Join(", ", MetadataFieldHelper.EnumerateNames(command.Metadata))}";
+
+		AppendCommand(from);
+	}
 
 	public void Visit(WhereCommand command) => AppendCommand($"WHERE {command.Condition}");
 
@@ -114,6 +123,71 @@ internal sealed class EsqlFormatter : ICommandVisitor
 		AppendCommand($"LOOKUP JOIN {EscapeIdentifier(command.LookupIndex)} ON {command.OnCondition}");
 
 	public void Visit(RawFragmentCommand command) => AppendCommand(command.Fragment);
+
+	public void Visit(ForkCommand command)
+	{
+		if (command.Branches.Count == 0)
+			return;
+
+		var sb = new StringBuilder("FORK");
+		var first = true;
+
+		foreach (var branch in command.Branches)
+		{
+			if (branch.Count == 0)
+				continue;
+
+			_ = sb.Append(first ? " (" : " (");
+			first = false;
+
+			for (var i = 0; i < branch.Count; i++)
+			{
+				if (i > 0)
+					_ = sb.Append(" | ");
+				_ = sb.Append(branch[i]);
+			}
+
+			_ = sb.Append(')');
+		}
+
+		AppendCommand(sb.ToString());
+	}
+
+	public void Visit(FuseCommand command)
+	{
+		var sb = new StringBuilder("FUSE");
+
+		if (command.Method == FuseMethod.Linear)
+			_ = sb.Append(" LINEAR");
+
+		if (command.ScoreColumn is not null)
+			_ = sb.Append(" SCORE BY ").Append(command.ScoreColumn);
+
+		if (command.GroupColumn is not null)
+			_ = sb.Append(" GROUP BY ").Append(command.GroupColumn);
+
+		if (command.KeyColumns is { Count: > 0 } keys)
+			_ = sb.Append(" KEY BY ").Append(string.Join(", ", keys));
+
+		var withParts = new List<string>();
+		if (command.Method == FuseMethod.Rrf && command.RankConstant is { } rc)
+			withParts.Add($"\"rank_constant\": {rc.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+
+		if (command.Method == FuseMethod.Linear && command.Normalizer == ScoreNormalizer.MinMax)
+			withParts.Add("\"normalizer\": \"minmax\"");
+
+		if (command.Weights is { Count: > 0 } w)
+		{
+			var weightItems = w
+				.Select((value, idx) => $"\"fork{idx + 1}\": {value.ToString("G", System.Globalization.CultureInfo.InvariantCulture)}");
+			withParts.Add($"\"weights\": {{ {string.Join(", ", weightItems)} }}");
+		}
+
+		if (withParts.Count > 0)
+			_ = sb.Append(" WITH { ").Append(string.Join(", ", withParts)).Append(" }");
+
+		AppendCommand(sb.ToString());
+	}
 
 	/// <summary>
 	/// Escapes an identifier for ES|QL if needed.

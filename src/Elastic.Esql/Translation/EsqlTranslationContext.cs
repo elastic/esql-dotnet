@@ -27,6 +27,43 @@ internal sealed class EsqlTranslationContext
 	public EsqlParameters Parameters { get; } = new();
 	public object? QueryOptions { get; set; }
 
+	/// <summary>
+	/// Document metadata fields that are currently in scope (either requested via
+	/// <c>FROM ... METADATA</c> or implicitly added by FORK).
+	/// </summary>
+	public MetadataField ActiveMetadata { get; set; } = MetadataField.None;
+
+	/// <summary>True when the <c>FORK</c> command is in scope and <c>_fork</c> is therefore implicitly available.</summary>
+	public bool ForkActive { get; set; }
+
+	/// <summary>
+	/// Resolves a <see cref="EsqlMetadata"/> member name to its ES|QL identifier
+	/// (e.g. <c>_id</c>) and validates that the corresponding <see cref="MetadataField"/>
+	/// flag was requested on the <c>FROM</c> command (or that <c>_fork</c> is in scope).
+	/// </summary>
+	public string ResolveMetadataMemberOrThrow(string memberName)
+	{
+		var name = MetadataFieldHelper.FromMemberName(memberName)
+			?? throw new NotSupportedException($"'{nameof(EsqlMetadata)}.{memberName}' is not a recognized metadata member.");
+
+		var flag = MetadataFieldHelper.FlagFromMemberName(memberName);
+
+		if (flag is null or MetadataField.None)
+		{
+			if (memberName == nameof(EsqlMetadata.Fork) && !ForkActive)
+				throw new InvalidOperationException(
+					$"'{nameof(EsqlMetadata)}.{nameof(EsqlMetadata.Fork)}' can only be referenced after a 'Fork' command.");
+
+			return name;
+		}
+
+		if ((ActiveMetadata & flag.Value) == 0)
+			throw new InvalidOperationException(
+				$"'{nameof(EsqlMetadata)}.{memberName}' was referenced but '{nameof(MetadataField)}.{flag}' was not requested on 'From'.");
+
+		return name;
+	}
+
 	private Dictionary<Type, HashSet<string>>? _anonymousTypeFields;
 
 	/// <summary>

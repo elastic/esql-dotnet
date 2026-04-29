@@ -3,7 +3,10 @@
 // See the LICENSE file in the project root for more information
 
 using System.Diagnostics.CodeAnalysis;
+using System.Text;
 using System.Text.Json;
+
+using Elastic.Esql.Vectors;
 
 using static System.Globalization.CultureInfo;
 
@@ -36,9 +39,39 @@ internal static class EsqlFormatting
 			TimeSpan ts => FormatTimeSpan(ts),
 			float f => FormatFloat(f),
 			double d => FormatDouble(d),
+			FloatVector fv => FormatFloatVector(fv),
+			ByteVector bv => FormatByteVector(bv),
 			_ => FormatJsonElement(
 				JsonSerializer.SerializeToElement(value, value.GetType(), options))
 		};
+
+	internal static string FormatFloatVector(FloatVector vector)
+	{
+		var span = vector.Data.Span;
+		var sb = new StringBuilder("[");
+		for (var i = 0; i < span.Length; i++)
+		{
+			if (i > 0)
+				_ = sb.Append(", ");
+			_ = sb.Append(FormatFloat(span[i]));
+		}
+		_ = sb.Append(']');
+		return sb.ToString();
+	}
+
+	internal static string FormatByteVector(ByteVector vector)
+	{
+		var span = vector.Data.Span;
+		var sb = new StringBuilder("[");
+		for (var i = 0; i < span.Length; i++)
+		{
+			if (i > 0)
+				_ = sb.Append(", ");
+			_ = sb.Append(unchecked((sbyte)span[i]).ToString(InvariantCulture));
+		}
+		_ = sb.Append(']');
+		return sb.ToString();
+	}
 
 	/// <summary>
 	/// Converts a <see cref="JsonElement"/> to an ES|QL literal string.

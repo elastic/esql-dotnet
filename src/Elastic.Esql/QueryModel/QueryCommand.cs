@@ -35,4 +35,6 @@ internal interface ICommandVisitor
 	void Visit(RenameCommand command);
 	void Visit(LookupJoinCommand command);
 	void Visit(RawFragmentCommand command);
+	void Visit(ForkCommand command);
+	void Visit(FuseCommand command);
 }

@@ -177,6 +177,14 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 
 	protected override Expression VisitMember(MemberExpression node)
 	{
+		// Top-level EsqlMetadata.X access in a projection (rare; usually appears inside a NewExpression)
+		if (node.Expression is null && node.Member.DeclaringType == typeof(EsqlMetadata))
+		{
+			var metaName = _context.ResolveMetadataMemberOrThrow(node.Member.Name);
+			_projections.Add(new ProjectionEntry(ProjectionKind.Keep, metaName, metaName, null));
+			return node;
+		}
+
 		var fieldName = node.ResolveFieldName(_context.Metadata);
 		if (ExpressionTranslationHelpers.IsObjectSelectionType(node.Type))
 			fieldName = $"{fieldName}.*";
@@ -196,6 +204,31 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 
 		if (TryClassifyNestedProjection(resultField, sourceExpression))
 			return;
+
+		// EsqlMetadata.X used as a projection source -> rename _x AS resultField (or keep when name matches).
+		if (sourceExpression is MemberExpression { Expression: null, Member: { } metaMember }
+			&& metaMember.DeclaringType == typeof(EsqlMetadata))
+		{
+			var metaName = _context.ResolveMetadataMemberOrThrow(metaMember.Name);
+			_projections.Add(metaName == resultField
+				? new ProjectionEntry(ProjectionKind.Keep, metaName, metaName, null)
+				: new ProjectionEntry(ProjectionKind.Rename, resultField, metaName, null));
+			return;
+		}
+
+		// EsqlMetadata.SourceAs<T>() -> KEEP _source (target type is reflected by the destination property).
+		if (sourceExpression is MethodCallExpression
+			{
+				Method: { Name: nameof(EsqlMetadata.SourceAs), DeclaringType: var sourceAsDecl }
+			}
+			&& sourceAsDecl == typeof(EsqlMetadata))
+		{
+			var metaName = _context.ResolveMetadataMemberOrThrow(nameof(EsqlMetadata.Source));
+			_projections.Add(metaName == resultField
+				? new ProjectionEntry(ProjectionKind.Keep, metaName, metaName, null)
+				: new ProjectionEntry(ProjectionKind.Rename, resultField, metaName, null));
+			return;
+		}
 
 		if (sourceExpression is MemberExpression memberExpr)
 		{

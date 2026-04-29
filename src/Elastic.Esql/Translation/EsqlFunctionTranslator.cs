@@ -2,7 +2,9 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Globalization;
 using System.Linq.Expressions;
+using System.Text;
 using Elastic.Esql.Functions;
 
 namespace Elastic.Esql.Translation;
@@ -149,7 +151,56 @@ internal static class EsqlFunctionTranslator
 			nameof(EsqlFunctions.TBucket) => $"TBUCKET({translate(args[0])}, {translate(args[1])})",
 			nameof(EsqlFunctions.Categorize) => $"CATEGORIZE({translate(args[0])})",
 
+			// Dense vector functions
+			nameof(EsqlFunctions.Knn) when args.Count == 2 => $"KNN({translate(args[0])}, {translate(args[1])})",
+			nameof(EsqlFunctions.Knn) when args.Count == 3 => $"KNN({translate(args[0])}, {translate(args[1])}, {TranslateOptionsObject(args[2])})",
+			nameof(EsqlFunctions.TextEmbedding) => $"TEXT_EMBEDDING({translate(args[0])}, {translate(args[1])})",
+			nameof(EsqlFunctions.VCosine) => $"V_COSINE({translate(args[0])}, {translate(args[1])})",
+			nameof(EsqlFunctions.VDotProduct) => $"V_DOT_PRODUCT({translate(args[0])}, {translate(args[1])})",
+			nameof(EsqlFunctions.VHamming) => $"V_HAMMING({translate(args[0])}, {translate(args[1])})",
+			nameof(EsqlFunctions.VL1Norm) => $"V_L1_NORM({translate(args[0])}, {translate(args[1])})",
+			nameof(EsqlFunctions.VL2Norm) => $"V_L2_NORM({translate(args[0])}, {translate(args[1])})",
+
 			_ => null
+		};
+
+	/// <summary>
+	/// Renders an anonymous-object options expression (e.g. <c>new { k = 10, num_candidates = 100 }</c>)
+	/// as ES|QL named-parameter JSON: <c>{ "k": 10, "num_candidates": 100 }</c>.
+	/// </summary>
+	private static string TranslateOptionsObject(Expression expression)
+	{
+		while (expression is UnaryExpression { NodeType: ExpressionType.Convert or ExpressionType.ConvertChecked } convert)
+			expression = convert.Operand;
+
+		if (expression is not NewExpression newExpr || newExpr.Members is null)
+			throw new NotSupportedException("Vector function options must be specified as an anonymous object literal, e.g. 'new { k = 10 }'.");
+
+		var sb = new StringBuilder("{ ");
+		for (var i = 0; i < newExpr.Arguments.Count; i++)
+		{
+			if (i > 0)
+				_ = sb.Append(", ");
+
+			var name = newExpr.Members[i].Name;
+			var value = ExpressionConstantResolver.Resolve(newExpr.Arguments[i]);
+
+			_ = sb.Append('"').Append(name).Append("\": ").Append(FormatOptionValue(value));
+		}
+		_ = sb.Append(" }");
+		return sb.ToString();
+	}
+
+	private static string FormatOptionValue(object? value) =>
+		value switch
+		{
+			null => "null",
+			bool b => b ? "true" : "false",
+			string s => $"\"{s.Replace("\\", "\\\\").Replace("\"", "\\\"")}\"",
+			float f => f.ToString("G", CultureInfo.InvariantCulture),
+			double d => d.ToString("G", CultureInfo.InvariantCulture),
+			IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
+			_ => value.ToString() ?? "null"
 		};
 
 	/// <summary>Translates a Math.* method call to ES|QL. Returns null if not recognized.</summary>

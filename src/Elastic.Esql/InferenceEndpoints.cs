@@ -5,7 +5,7 @@
 namespace Elastic.Esql;
 
 /// <summary>
-/// Well-known serverless inference endpoint IDs for use with the COMPLETION command.
+/// Well-known serverless inference endpoint IDs for use with the COMPLETION and TEXT_EMBEDDING commands.
 /// </summary>
 public static class InferenceEndpoints
 {
@@ -34,5 +34,15 @@ public static class InferenceEndpoints
 		public const string Gpt41Mini = ".openai-gpt-4.1-mini-completion";
 		public const string Gpt52 = ".openai-gpt-5.2-completion";
 		public const string GptOss120B = ".openai-gpt-oss-120b-completion";
+	}
+
+	/// <summary>Well-known serverless text-embedding inference endpoint IDs.</summary>
+	public static class TextEmbedding
+	{
+		/// <summary>Elastic's ELSER v2 sparse text-embedding model.</summary>
+		public const string ElserV2 = ".elser-v2-elasticsearch";
+
+		/// <summary>Elastic's E5 multilingual small text-embedding model.</summary>
+		public const string MultilingualE5Small = ".multilingual-e5-small-elasticsearch";
 	}
 }
