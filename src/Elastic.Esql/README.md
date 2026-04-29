@@ -133,6 +133,27 @@ using static Elastic.Esql.Functions.EsqlFunctions;
 .Where(l => Like(l.Path, "/api/v?/users"))                  // WHERE path LIKE "/api/v?/users"
 ```
 
+### Vector and hybrid search
+
+`KNN`, `TEXT_EMBEDDING`, dense vector similarity (`V_COSINE`, `V_DOT_PRODUCT`, `V_HAMMING`, `V_L1_NORM`, `V_L2_NORM`), `FROM ... METADATA`, and `FORK` + `FUSE` for hybrid lexical + semantic search are all supported. Vectors are passed via `FloatVector` / `ByteVector` wrapper structs that accept `float[]` / `byte[]` / `ReadOnlyMemory<T>` / `List<T>` via implicit conversions.
+
+```csharp
+// KNN with metadata-driven scoring
+.From("books", MetadataField.Score)
+.Where(b => EsqlFunctions.Knn(b.Embedding, queryVec, new { k = 10 }))
+.OrderByDescending(_ => EsqlMetadata.Score)
+// FROM books METADATA _score | WHERE KNN(embedding, [...], { "k": 10 }) | SORT _score DESC
+
+// Hybrid lexical + semantic with FORK + FUSE
+.From("books", MetadataField.Id | MetadataField.Index | MetadataField.Score)
+.Fork(
+    b => b.Where(x => EsqlFunctions.Match(x.Title, "shakespeare")).Take(50),
+    b => b.Where(x => EsqlFunctions.Knn(x.TitleVec, queryVec)).Take(50))
+.Fuse(method: FuseMethod.Linear, normalizer: ScoreNormalizer.MinMax, weights: [0.7, 0.3])
+```
+
+The `MetadataField` flags enum selects which document metadata fields to request via the `METADATA` directive (`_id`, `_score`, `_source`, etc.); the `EsqlMetadata` static marker class exposes them for use inside `Where` / `OrderBy` / `Select` / `Fuse` lambdas.
+
 ## AOT Compatible
 
 Elastic.Esql has no dependency on `Elastic.Transport` or any HTTP library. The entire translation pipeline -- expression visitors, query model, ES|QL generation -- is pure computation with no reflection-based serialization, no dynamic code generation, and no runtime type emission.

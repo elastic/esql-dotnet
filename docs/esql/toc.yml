@@ -5,3 +5,4 @@ toc:
   - file: functions-reference.md
   - file: linq-translation.md
   - file: completion.md
+  - file: vector-search.md

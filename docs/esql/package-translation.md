@@ -166,6 +166,25 @@ See the [functions reference](functions-reference.md) for the complete list and 
 
 See the [COMPLETION docs](completion.md) for pipeline patterns, standalone completions, and well-known endpoint constants.
 
+### Vector and hybrid search
+
+```csharp
+// KNN with metadata-driven scoring
+.From("books", MetadataField.Score)
+.Where(b => EsqlFunctions.Knn(b.Embedding, queryVec, new { k = 10 }))
+.OrderByDescending(_ => EsqlMetadata.Score)
+// FROM books METADATA _score | WHERE KNN(embedding, [...], { "k": 10 }) | SORT _score DESC
+
+// Hybrid lexical + semantic with FORK + FUSE
+.From("books", MetadataField.Id | MetadataField.Index | MetadataField.Score)
+.Fork(
+    b => b.Where(x => EsqlFunctions.Match(x.Title, "shakespeare")).Take(50),
+    b => b.Where(x => EsqlFunctions.Knn(x.TitleVec, queryVec)).Take(50))
+.Fuse(method: FuseMethod.Linear, normalizer: ScoreNormalizer.MinMax, weights: [0.7, 0.3])
+```
+
+See the [vector and hybrid search docs](vector-search.md) for the full API including `FloatVector` / `ByteVector` wrappers, `TEXT_EMBEDDING`, `V_*` similarity functions, and FORK/FUSE configuration.
+
 ### ES|QL-specific functions
 
 ```csharp
