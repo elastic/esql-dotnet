@@ -623,7 +623,7 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 			if (branchObj is not LambdaExpression branchLambda)
 				throw new NotSupportedException("Fork branches must be lambda expressions.");
 
-			var fragments = ForkBranchVisitor.Translate(Provider, branchLambda, elementType, inheritedMetadata, inlineParameters);
+			var fragments = ForkBranchVisitor.Translate(Provider, branchLambda, elementType, inheritedMetadata, inlineParameters, Context);
 			if (fragments.Count == 0)
 				throw new NotSupportedException("Fork branch produced no commands.");
 
@@ -666,9 +666,26 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 
 	private void ValidateFuseFollowsFork(double[]? weights)
 	{
-		var lastCommand = Context.Commands.Count > 0 ? Context.Commands[^1] : null;
-		if (lastCommand is not ForkCommand)
-			throw new InvalidOperationException("'Fuse' must immediately follow a 'Fork' command.");
+		// Fuse requires a Fork earlier in the pipeline (not necessarily immediately preceding).
+		// ES|QL allows row-shape transformations like DROP / KEEP / RENAME / EVAL / WHERE between
+		// them -- in particular DROP is recommended to remove dense_vector columns that FUSE rejects.
+		// Aggregations (STATS) however collapse the fork-discriminator column and break FUSE.
+		var sawFork = false;
+		for (var i = Context.Commands.Count - 1; i >= 0; i--)
+		{
+			var cmd = Context.Commands[i];
+			if (cmd is ForkCommand)
+			{
+				sawFork = true;
+				break;
+			}
+
+			if (cmd is StatsCommand)
+				throw new InvalidOperationException("'Fuse' cannot follow a 'Stats' / aggregation command; aggregations break the FORK row layout.");
+		}
+
+		if (!sawFork)
+			throw new InvalidOperationException("'Fuse' must follow a 'Fork' command earlier in the pipeline.");
 
 		if (weights is not null && weights.Length != _lastForkBranchCount)
 			throw new ArgumentException(

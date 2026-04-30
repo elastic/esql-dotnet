@@ -47,10 +47,25 @@ public sealed class ContextProvider<TContext>(TContext context) : JsonConverterF
 			}
 		}
 
-		if (options.GetConverter(typeof(Marker)) is Converter provider)
+		// Fallback: when the factory was registered indirectly (e.g. via [JsonConverter] on the marker
+		// type), 'GetConverter' resolves it through the type-info resolver. Wrap in a try/catch because
+		// source-gen-only resolvers (used by other clients) treat unknown types as a hard failure
+		// rather than returning null -- and our marker is intentionally not registered there.
+		try
 		{
-			context = provider.Context;
-			return true;
+			if (options.GetConverter(typeof(Marker)) is Converter provider)
+			{
+				context = provider.Context;
+				return true;
+			}
+		}
+		catch (NotSupportedException)
+		{
+			// Source-gen resolver does not know about Marker; treat as 'no context registered'.
+		}
+		catch (InvalidOperationException)
+		{
+			// Combined / strict resolvers may surface unknown-type errors as InvalidOperationException.
 		}
 
 		context = default;

@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using Elastic.Esql.Core;
 using Elastic.Esql.Functions;
+using Elastic.Esql.Vectors;
 
 namespace Elastic.Esql.Translation;
 
@@ -447,11 +448,52 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 			BinaryExpression binary => TranslateBinary(binary),
 			MemberExpression member => TranslateMemberExpression(member),
 			ConstantExpression constant => _context.FormatValue(constant.Value),
-			UnaryExpression { NodeType: ExpressionType.Convert, Operand: var operand } => TranslateExpression(operand),
+			UnaryExpression { NodeType: ExpressionType.Convert } convert => TranslateConvert(convert),
 			MethodCallExpression methodCall => TranslateMethodCall(methodCall),
 			ConditionalExpression conditional => TranslateConditional(conditional),
 			_ => throw new NotSupportedException($"Expression type {expression.GetType().Name} is not supported in projections.")
 		};
+
+	private string TranslateConvert(UnaryExpression convert)
+	{
+		// Implicit/explicit conversion to FloatVector / ByteVector wraps a closure-captured
+		// float[] / byte[]. Resolve and wrap so the dedicated converter handles serialization.
+		if (TryTranslateVectorConvert(convert, out var vectorLiteral))
+			return vectorLiteral;
+
+		return TranslateExpression(convert.Operand);
+	}
+
+	private bool TryTranslateVectorConvert(UnaryExpression convert, out string result)
+	{
+		result = string.Empty;
+		var targetType = convert.Type;
+		if (targetType != typeof(FloatVector) && targetType != typeof(ByteVector))
+			return false;
+
+		// Parameter-rooted member access (e.g. b.TitleVec) -> regular field name path.
+		if (convert.Operand is MemberExpression member && ExpressionTranslationHelpers.IsRootedInParameter(member))
+			return false;
+
+		var resolved = ExpressionConstantResolver.Resolve(convert.Operand);
+		object? wrapped = (targetType == typeof(FloatVector), resolved) switch
+		{
+			(true, float[] arr) => (FloatVector)arr,
+			(true, ReadOnlyMemory<float> mem) => (FloatVector)mem,
+			(true, List<float> list) => (FloatVector)list,
+			(false, byte[] arr) => (ByteVector)arr,
+			(false, ReadOnlyMemory<byte> mem) => (ByteVector)mem,
+			(false, List<byte> list) => (ByteVector)list,
+			_ => null
+		};
+
+		if (wrapped is null)
+			return false;
+
+		var memberName = convert.Operand is MemberExpression me ? me.Member.Name : "vector";
+		result = _context.GetValueOrParameterName(memberName, wrapped);
+		return true;
+	}
 
 	private string TranslateMemberExpression(MemberExpression member)
 	{

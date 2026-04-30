@@ -17,7 +17,7 @@ namespace Elastic.Esql.Integration.Tests.Infrastructure;
 /// </summary>
 public sealed class ElasticsearchFixture : IAsyncDisposable
 {
-	private const string ContainerImage = "docker.elastic.co/elasticsearch/elasticsearch:8.19.12";
+	private const string ContainerImage = "docker.elastic.co/elasticsearch/elasticsearch:9.3.3";
 	private const string ContainerPassword = "elastic-integration-tests";
 
 	private readonly ElasticsearchContainer? _container;

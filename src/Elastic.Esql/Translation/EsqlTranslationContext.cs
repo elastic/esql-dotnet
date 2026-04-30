@@ -24,7 +24,13 @@ internal sealed class EsqlTranslationContext
 
 	public Type? ElementType { get; set; }
 	public List<QueryCommand> Commands { get; } = [];
-	public EsqlParameters Parameters { get; } = new();
+
+	/// <summary>
+	/// Named-parameter accumulator. Settable internally so sub-pipeline visitors (e.g. FORK
+	/// branches) can share the parent's instance and avoid losing parameters at branch boundaries.
+	/// </summary>
+	public EsqlParameters Parameters { get; internal set; } = new();
+
 	public object? QueryOptions { get; set; }
 
 	/// <summary>

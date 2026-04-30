@@ -23,7 +23,10 @@ public sealed class ByteVectorJsonConverter : JsonConverter<ByteVector>
 		{
 			JsonTokenType.Null => default,
 			JsonTokenType.StartArray => new ByteVector(
-				reader.ReadCollectionValue<byte>(options, static (ref r, _) => unchecked((byte)r.GetSByte()))!.ToArray()),
+				// ES|QL returns dense_vector byte values as signed-semantics JSON floats (e.g. [-1.0, 0.0, 0.0]
+				// for [255, 0, 0]). Read via GetDouble + unchecked int + byte cast: handles float-formatted
+				// signed output from ES (-1.0 -> 255) and signed/unsigned integer input from clients alike.
+				reader.ReadCollectionValue<byte>(options, static (ref r, _) => unchecked((byte)(int)r.GetDouble()))!.ToArray()),
 			JsonTokenType.String => ReadStringValue(ref reader, options),
 			_ => throw reader.UnexpectedTokenException(JsonTokenType.StartArray, JsonTokenType.String)
 		};

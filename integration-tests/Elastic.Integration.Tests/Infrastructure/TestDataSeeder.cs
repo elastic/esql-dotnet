@@ -3,7 +3,9 @@
 // See the LICENSE file in the project root for more information
 
 using Elastic.Clients.Elasticsearch;
+using Elastic.Clients.Elasticsearch.Mapping;
 using Elastic.Esql.Integration.Tests.Models;
+using Elastic.Esql.Vectors;
 
 namespace Elastic.Esql.Integration.Tests.Infrastructure;
 
@@ -15,6 +17,7 @@ public static class TestDataSeeder
 	public const string CategoryLookupIndex = "test-categories";
 	public const string CategoryOverlapIndex = "test-category-overlap";
 	public const string UserProfileIndex = "test-user-profiles";
+	public const string BookIndex = "test-books";
 
 	public static IReadOnlyList<TestProduct> Products { get; } = CreateProducts();
 	public static IReadOnlyList<TestOrder> Orders { get; } = CreateOrders();
@@ -22,17 +25,39 @@ public static class TestDataSeeder
 	public static IReadOnlyList<TestCategoryLookup> CategoryLookups { get; } = CreateCategoryLookups();
 	public static IReadOnlyList<TestCategoryOverlap> CategoryOverlaps { get; } = CreateCategoryOverlaps();
 	public static IReadOnlyList<TestUserProfile> UserProfiles { get; } = CreateUserProfiles();
+	public static IReadOnlyList<TestBook> Books { get; } = CreateBooks();
 
 	public static async Task SeedAllAsync(ElasticsearchClient client, CancellationToken ct = default)
 	{
+		await EnsureTrialLicenseAsync(client, ct).ConfigureAwait(false);
+
 		await SeedProductsAsync(client, ct).ConfigureAwait(false);
 		await SeedOrdersAsync(client, ct).ConfigureAwait(false);
 		await SeedEventsAsync(client, ct).ConfigureAwait(false);
 		await SeedCategoryLookupAsync(client, ct).ConfigureAwait(false);
 		await SeedCategoryOverlapAsync(client, ct).ConfigureAwait(false);
 		await SeedUserProfilesAsync(client, ct).ConfigureAwait(false);
+		await SeedBooksAsync(client, ct).ConfigureAwait(false);
 
 		await client.Indices.RefreshAsync(Indices.All, ct).ConfigureAwait(false);
+	}
+
+	/// <summary>
+	/// Activates a trial license on the cluster so that platinum/enterprise features (e.g. FUSE)
+	/// can be exercised by integration tests. No-op when the license is already trial / platinum /
+	/// enterprise. Idempotent across runs against the same external cluster.
+	/// </summary>
+	private static async Task EnsureTrialLicenseAsync(ElasticsearchClient client, CancellationToken ct)
+	{
+		var licenseInfo = await client.LicenseManagement.GetAsync(ct).ConfigureAwait(false);
+		if (licenseInfo.IsValidResponse && licenseInfo.License?.Type is { } type)
+		{
+			var typeName = type.ToString().ToLowerInvariant();
+			if (typeName is "trial" or "platinum" or "enterprise")
+				return;
+		}
+
+		_ = await client.LicenseManagement.PostStartTrialAsync(p => p.Acknowledge(true), ct).ConfigureAwait(false);
 	}
 
 	private static async Task SeedProductsAsync(ElasticsearchClient client, CancellationToken ct)
@@ -222,6 +247,51 @@ public static class TestDataSeeder
 		if (response.Errors)
 			throw new InvalidOperationException($"Bulk index user profiles failed: {response.DebugInformation}");
 	}
+
+	private static async Task SeedBooksAsync(ElasticsearchClient client, CancellationToken ct)
+	{
+		await client.Indices.CreateAsync(BookIndex, i => i
+			.Settings(s => s.NumberOfShards(1).NumberOfReplicas(0))
+			.Mappings(m => m
+				.Properties<TestBook>(p => p
+					.Keyword(b => b.Id)
+					.Text(b => b.Title, t => t.Fields(f => f.Keyword("keyword")))
+					.Text(b => b.Description)
+					.DenseVector("title_vec", v => v
+						.Dims(4)
+						.Similarity(DenseVectorSimilarity.Cosine))
+					.DenseVector("rgb_vector", v => v
+						.Dims(3)
+						.ElementType(DenseVectorElementType.Byte)
+						.Similarity(DenseVectorSimilarity.L2Norm))
+				)
+			), ct).ConfigureAwait(false);
+
+		var response = await client.BulkAsync(b => b.Index(BookIndex).IndexMany(Books), ct).ConfigureAwait(false);
+		if (response.Errors)
+			throw new InvalidOperationException($"Bulk index books failed: {response.DebugInformation}");
+	}
+
+	/// <summary>
+	/// Twelve hand-picked books with deterministic 4-dim float vectors and 3-dim byte (RGB) vectors.
+	/// The vectors are arranged so that KNN ordering and V_* similarity scores are reproducible:
+	/// books 1-3 cluster around the unit-x axis, 4-6 around unit-y, 7-9 around unit-z, 10-12 around (1,1,1)/sqrt(3).
+	/// </summary>
+	private static IReadOnlyList<TestBook> CreateBooks() =>
+	[
+		new() { Id = "book-01", Title = "Programming Patterns", Description = "Software design patterns and best practices.", TitleVec = new float[] { 1.00f, 0.00f, 0.00f, 0.00f }, RgbVector = new byte[] { 255, 0, 0 } },
+		new() { Id = "book-02", Title = "Clean Programming", Description = "Writing readable maintainable code.", TitleVec = new float[] { 0.95f, 0.10f, 0.00f, 0.00f }, RgbVector = new byte[] { 200, 20, 0 } },
+		new() { Id = "book-03", Title = "Programming in Practice", Description = "Practical software engineering.", TitleVec = new float[] { 0.90f, 0.20f, 0.05f, 0.00f }, RgbVector = new byte[] { 180, 40, 10 } },
+		new() { Id = "book-04", Title = "Cooking with Vegetables", Description = "Healthy plant-based recipes.", TitleVec = new float[] { 0.00f, 1.00f, 0.00f, 0.00f }, RgbVector = new byte[] { 0, 255, 0 } },
+		new() { Id = "book-05", Title = "Vegetarian Curry Recipes", Description = "Spicy curries from around the world.", TitleVec = new float[] { 0.10f, 0.90f, 0.10f, 0.00f }, RgbVector = new byte[] { 20, 200, 20 } },
+		new() { Id = "book-06", Title = "The Vegetable Cookbook", Description = "Simple weeknight vegetable dinners.", TitleVec = new float[] { 0.05f, 0.95f, 0.00f, 0.00f }, RgbVector = new byte[] { 10, 220, 0 } },
+		new() { Id = "book-07", Title = "Shakespeare on Stage", Description = "Performing Shakespeare in modern theatre.", TitleVec = new float[] { 0.00f, 0.00f, 1.00f, 0.00f }, RgbVector = new byte[] { 0, 0, 255 } },
+		new() { Id = "book-08", Title = "Shakespeare for Programmers", Description = "Cross-disciplinary essays on language design and the bard.", TitleVec = new float[] { 0.50f, 0.00f, 0.85f, 0.00f }, RgbVector = new byte[] { 100, 0, 200 } },
+		new() { Id = "book-09", Title = "The Complete Shakespeare", Description = "All plays and sonnets in one volume.", TitleVec = new float[] { 0.10f, 0.10f, 0.95f, 0.00f }, RgbVector = new byte[] { 20, 20, 220 } },
+		new() { Id = "book-10", Title = "Mixed Topics Anthology", Description = "Essays spanning many subjects.", TitleVec = new float[] { 0.50f, 0.50f, 0.50f, 0.50f }, RgbVector = new byte[] { 128, 128, 128 } },
+		new() { Id = "book-11", Title = "Generalist Knowledge", Description = "A primer on broad subject expertise.", TitleVec = new float[] { 0.40f, 0.40f, 0.40f, 0.40f }, RgbVector = new byte[] { 100, 100, 100 } },
+		new() { Id = "book-12", Title = "Outlier Volume", Description = "Niche material on obscure topics.", TitleVec = new float[] { 0.00f, 0.00f, 0.00f, 1.00f }, RgbVector = new byte[] { 0, 0, 0 } }
+	];
 
 	private static IReadOnlyList<TestUserProfile> CreateUserProfiles()
 	{

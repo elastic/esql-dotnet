@@ -27,7 +27,8 @@ internal static class ForkBranchVisitor
 		LambdaExpression branchLambda,
 		Type elementType,
 		MetadataField inheritedMetadata,
-		bool inlineParameters)
+		bool inlineParameters,
+		EsqlTranslationContext parentContext)
 	{
 		// Compile and invoke the branch lambda against a synthetic root IQueryable<T>.
 		var queryableType = typeof(EsqlQueryable<>).MakeGenericType(elementType);
@@ -42,6 +43,10 @@ internal static class ForkBranchVisitor
 		var visitor = new EsqlExpressionVisitor(provider, inlineParameters);
 		visitor.Context.ElementType = elementType;
 		visitor.Context.ActiveMetadata = inheritedMetadata;
+
+		// Share the parent's parameter accumulator so closure-captured values inside branches
+		// land in the final params payload (and uniquely-suffixed names are reserved across branches).
+		visitor.Context.Parameters = parentContext.Parameters;
 
 		var query = visitor.Translate(branchQueryable.Expression);
 
