@@ -32,7 +32,7 @@ internal static class ForkBranchVisitor
 	{
 		// Compile and invoke the branch lambda against a synthetic root IQueryable<T>.
 		var queryableType = typeof(EsqlQueryable<>).MakeGenericType(elementType);
-		var rootQueryable = Activator.CreateInstance(queryableType, provider)!;
+		var rootQueryable = Activator.CreateInstance(queryableType, provider);
 
 		var compiled = branchLambda.Compile();
 		var branchResult = compiled.DynamicInvoke(rootQueryable)

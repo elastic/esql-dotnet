@@ -2,6 +2,7 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -41,8 +42,14 @@ internal static class JsonReaderHelpers
 	}
 
 	/// <summary>
-	/// Reads a JSON array as a <see cref="List{T}"/>.
+	/// Reads a JSON array as a <see cref="List{T}"/>. When <paramref name="readElement"/> is null,
+	/// falls back to <see cref="JsonSerializerOptions.GetConverter(Type)"/> which requires reflection
+	/// and is therefore unsafe under trimming / AOT for unknown <typeparamref name="T"/>.
+	/// The vector converters use this with <c>readElement</c> always non-null for byte vectors and
+	/// rely on the well-known <c>float</c> converter for float vectors.
 	/// </summary>
+	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "GetConverter fallback only triggers when readElement is null; vector converters always supply a delegate or use well-known primitive types.")]
+	[UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "GetConverter fallback only triggers when readElement is null; vector converters always supply a delegate or use well-known primitive types.")]
 	public static List<T>? ReadCollectionValue<T>(this ref Utf8JsonReader reader, JsonSerializerOptions options, JsonReadFunc<T>? readElement)
 	{
 		if (reader.TokenType is JsonTokenType.Null)
