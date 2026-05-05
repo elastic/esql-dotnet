@@ -38,6 +38,7 @@ internal static class ForkBranchVisitor
 		var visitor = new EsqlExpressionVisitor(provider, inlineParameters);
 		visitor.Context.ElementType = elementType;
 		visitor.Context.ActiveMetadata = inheritedMetadata;
+		visitor.Context.InsideForkBranch = true;
 
 		// Share the parent's parameter accumulator so closure-captured values inside branches
 		// land in the final params payload (and uniquely-suffixed names are reserved across branches).

@@ -606,6 +606,14 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 
 	private void VisitFork(MethodCallExpression node)
 	{
+		if (Context.InsideForkBranch)
+			throw new InvalidOperationException(
+				"Nested 'Fork' is not supported: a 'Fork' command cannot appear inside another fork's branch lambda.");
+
+		if (Context.Commands.OfType<ForkCommand>().Any())
+			throw new InvalidOperationException(
+				"Only one 'Fork' command is supported per query (per the ES|QL spec).");
+
 		if (node.Arguments.Count < 2)
 			throw new NotSupportedException("Fork requires at least one branch.");
 

@@ -185,4 +185,76 @@ public class ForkFuseTests : IntegrationTestBase
 		results.Should().HaveCount(2);
 		results.Select(r => r.Id).Should().OnlyHaveUniqueItems();
 	}
+
+	[Test]
+	public async Task Fuse_AfterFork_ConsumesForkColumn()
+	{
+		// After FUSE the _fork column must no longer appear in the response. We verify this by
+		// projecting into a plain BookIdScore (which has no _fork mapping) and asserting the
+		// row materialises cleanly. If FUSE left _fork on the wire and our auto-retain still
+		// included it, the projection columns would diverge from the deserialiser's expectation.
+		var query = new float[] { 0f, 0f, 1f, 0f };
+
+		var results = await Fixture.EsqlClient
+			.CreateQuery<TestBook>()
+			.From(TestDataSeeder.BookIndex, MetadataField.Id | MetadataField.Index | MetadataField.Score)
+			.Fork(
+				b => b.Where(x => Match(x.Title, "Shakespeare")).Take(10),
+				b => b.Where(x => Knn(x.TitleVec, query)).Take(10))
+			.Drop("title_vec", "rgb_vector")
+			.Fuse()
+			.Select(b => new BookIdScore { Id = b.Id, Score = EsqlMetadata.Score })
+			.OrderByDescending(r => r.Score)
+			.Take(3)
+			.AsEsqlQueryable()
+			.ToListAsync();
+
+		results.Should().NotBeEmpty();
+		results.Should().AllSatisfy(r => r.Id.Should().NotBeNullOrEmpty());
+	}
+
+	[Test]
+	public async Task Fork_NestedViaRawEsql_RejectedByServer()
+	{
+		// Bypasses our translator-time guard via RawEsql to confirm the server also rejects
+		// nested FORK. Documents the server-side contract our guard encodes.
+		var act = async () =>
+		{
+			_ = await Fixture.EsqlClient
+				.CreateQuery<TestBook>()
+				.From(TestDataSeeder.BookIndex)
+				.RawEsql(
+					"""
+					| FORK
+					    ( FORK ( WHERE title == "x" | LIMIT 1 ) ( WHERE title == "y" | LIMIT 1 ) )
+					    ( WHERE title == "z" | LIMIT 1 )
+					""")
+				.AsEsqlQueryable()
+				.ToListAsync();
+		};
+
+		_ = await act.Should().ThrowAsync<Exception>();
+	}
+
+	[Test]
+	public async Task Fork_DuplicateViaRawEsql_RejectedByServer()
+	{
+		// Bypasses our translator-time guard to verify the server rejects multiple FORKs
+		// per the documented "Using more than one FORK command in a query is not supported".
+		var act = async () =>
+		{
+			_ = await Fixture.EsqlClient
+				.CreateQuery<TestBook>()
+				.From(TestDataSeeder.BookIndex)
+				.RawEsql(
+					"""
+					| FORK ( WHERE title == "x" | LIMIT 1 ) ( WHERE title == "y" | LIMIT 1 )
+					| FORK ( WHERE title == "p" | LIMIT 1 ) ( WHERE title == "q" | LIMIT 1 )
+					""")
+				.AsEsqlQueryable()
+				.ToListAsync();
+		};
+
+		_ = await act.Should().ThrowAsync<Exception>();
+	}
 }
