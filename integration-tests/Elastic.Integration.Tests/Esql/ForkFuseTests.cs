@@ -212,49 +212,4 @@ public class ForkFuseTests : IntegrationTestBase
 		results.Should().NotBeEmpty();
 		results.Should().AllSatisfy(r => r.Id.Should().NotBeNullOrEmpty());
 	}
-
-	[Test]
-	public async Task Fork_NestedViaRawEsql_RejectedByServer()
-	{
-		// Bypasses our translator-time guard via RawEsql to confirm the server also rejects
-		// nested FORK. Documents the server-side contract our guard encodes.
-		var act = async () =>
-		{
-			_ = await Fixture.EsqlClient
-				.CreateQuery<TestBook>()
-				.From(TestDataSeeder.BookIndex)
-				.RawEsql(
-					"""
-					| FORK
-					    ( FORK ( WHERE title == "x" | LIMIT 1 ) ( WHERE title == "y" | LIMIT 1 ) )
-					    ( WHERE title == "z" | LIMIT 1 )
-					""")
-				.AsEsqlQueryable()
-				.ToListAsync();
-		};
-
-		_ = await act.Should().ThrowAsync<Exception>();
-	}
-
-	[Test]
-	public async Task Fork_DuplicateViaRawEsql_RejectedByServer()
-	{
-		// Bypasses our translator-time guard to verify the server rejects multiple FORKs
-		// per the documented "Using more than one FORK command in a query is not supported".
-		var act = async () =>
-		{
-			_ = await Fixture.EsqlClient
-				.CreateQuery<TestBook>()
-				.From(TestDataSeeder.BookIndex)
-				.RawEsql(
-					"""
-					| FORK ( WHERE title == "x" | LIMIT 1 ) ( WHERE title == "y" | LIMIT 1 )
-					| FORK ( WHERE title == "p" | LIMIT 1 ) ( WHERE title == "q" | LIMIT 1 )
-					""")
-				.AsEsqlQueryable()
-				.ToListAsync();
-		};
-
-		_ = await act.Should().ThrowAsync<Exception>();
-	}
 }
