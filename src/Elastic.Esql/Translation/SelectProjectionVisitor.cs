@@ -455,40 +455,16 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 
 	private string TranslateConvert(UnaryExpression convert)
 	{
-		// Implicit/explicit conversion to ReadOnlyMemory<float> from a closure-captured
-		// float[] / List<float> / ReadOnlyMemory<float>. Resolve and emit as a parameter
-		// so System.Text.Json renders the JSON array directly.
+		// Implicit/explicit conversion to a DenseVector<T> from a closure-captured T[] /
+		// ReadOnlyMemory<T>. Resolve through the implicit operator and emit as parameter / literal.
 		if (TryTranslateVectorConvert(convert, out var vectorLiteral))
 			return vectorLiteral;
 
 		return TranslateExpression(convert.Operand);
 	}
 
-	private bool TryTranslateVectorConvert(UnaryExpression convert, out string result)
-	{
-		result = string.Empty;
-		if (convert.Type != typeof(ReadOnlyMemory<float>))
-			return false;
-
-		// Parameter-rooted member access (e.g. b.TitleVec) -> regular field name path.
-		if (convert.Operand is MemberExpression member && ExpressionTranslationHelpers.IsRootedInParameter(member))
-			return false;
-
-		ReadOnlyMemory<float>? wrapped = ExpressionConstantResolver.Resolve(convert.Operand) switch
-		{
-			float[] arr => new ReadOnlyMemory<float>(arr),
-			ReadOnlyMemory<float> mem => mem,
-			List<float> list => new ReadOnlyMemory<float>(list.ToArray()),
-			_ => null
-		};
-
-		if (wrapped is null)
-			return false;
-
-		var memberName = convert.Operand is MemberExpression me ? me.Member.Name : "vector";
-		result = _context.GetValueOrParameterName(memberName, wrapped.Value);
-		return true;
-	}
+	private bool TryTranslateVectorConvert(UnaryExpression convert, out string result) =>
+		DenseVectorTypeHelper.TryEmitDenseVectorLiteral(convert, _context, out result);
 
 	private string TranslateMemberExpression(MemberExpression member)
 	{

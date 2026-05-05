@@ -171,7 +171,7 @@ See the [COMPLETION docs](completion.md) for pipeline patterns, standalone compl
 ```csharp
 // KNN with metadata-driven scoring
 .From("books", MetadataField.Score)
-.Where(b => EsqlFunctions.Knn(b.Embedding, queryVec, new { k = 10 }))
+.Where(b => EsqlFunctions.Knn(b.Embedding, queryVec, new KnnOptions { K = 10 }))
 .OrderByDescending(_ => EsqlMetadata.Score)
 // FROM books METADATA _score | WHERE KNN(embedding, [...], { "k": 10 }) | SORT _score DESC
 
@@ -183,7 +183,7 @@ See the [COMPLETION docs](completion.md) for pipeline patterns, standalone compl
 .Fuse(method: FuseMethod.Linear, normalizer: ScoreNormalizer.MinMax, weights: [0.7, 0.3])
 ```
 
-See the [vector and hybrid search docs](vector-search.md) for the full API including the `ReadOnlyMemory<float>` vector type, `TEXT_EMBEDDING`, `V_*` similarity functions, and FORK/FUSE configuration.
+See the [vector and hybrid search docs](vector-search.md) for the full API including the `DenseVector<T>` vector type, `TEXT_EMBEDDING`, `V_*` similarity functions, and FORK/FUSE configuration.
 
 ### ES|QL-specific functions
 

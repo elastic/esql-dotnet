@@ -149,7 +149,7 @@ Math (`ABS`, `SQRT`, `ROUND`, ...), string (`TRIM`, `CONCAT`, `REPLACE`, ...), d
 
 ### Vector and Hybrid Search
 
-Run KNN, exact similarity, and hybrid (lexical + semantic) search using `ReadOnlyMemory<float>` vector parameters (with implicit conversion from `float[]`) and the `Fork` / `Fuse` extensions. The same C# type covers `dense_vector` fields with element types `float`, `byte`, and `bit`. Document metadata fields are exposed via the `MetadataField` flags enum and the `EsqlMetadata` static marker class:
+Run KNN, exact similarity, and hybrid (lexical + semantic) search using `DenseVector<T>` vector parameters (with implicit conversion from `T[]` and `ReadOnlyMemory<T>`) and the `Fork` / `Fuse` extensions. Use `DenseVector<float>` for `element_type: "float"` and `DenseVector<byte>` for both `element_type: "byte"` and `element_type: "bit"`. Document metadata fields are exposed via the `MetadataField` flags enum and the `EsqlMetadata` static marker class:
 
 ```csharp
 var queryVec = new float[] { 0.12f, -0.03f, 0.98f /* ... */ };

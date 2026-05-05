@@ -6,24 +6,29 @@ navigation_title: Vector & hybrid search
 
 ES|QL supports first-class [dense vector search](elasticsearch://reference/query-languages/esql/functions-operators/dense-vector-functions.md) and [hybrid search](elasticsearch://reference/query-languages/esql/commands/fuse.md) (combining lexical and semantic results). Elastic.Esql exposes the full surface area through:
 
-- `ReadOnlyMemory<float>` for every `dense_vector` field and parameter (with implicit conversion from `float[]`)
+- `DenseVector<T>` (with `T = float` or `T = byte`) for every `dense_vector` field and parameter, with implicit conversions from `T[]` and `ReadOnlyMemory<T>`
 - `EsqlFunctions.Knn`, `EsqlFunctions.TextEmbedding`, and `V_*` similarity functions
 - `MetadataField` flags + `EsqlMetadata` static markers for `_id` / `_score` / `_source` / etc.
 - `Fork(...)` + `Fuse(...)` extension methods for hybrid search
 
 ## Vector type
 
-Vectors are represented as `ReadOnlyMemory<float>` everywhere — model properties, function parameters, and `TextEmbedding` return values. The same C# type covers `dense_vector` fields with element types `float`, `byte`, and `bit`, since ES|QL's wire format is uniformly a JSON array of floats in all four directions (ingestion, ES|QL parameters, ES|QL responses, and `_search` responses).
+Vectors are represented as `DenseVector<T>` everywhere — model properties, function parameters, and `TextEmbedding` return values. Two element types are supported:
+
+- `DenseVector<float>` for `dense_vector` fields with `element_type: "float"`.
+- `DenseVector<byte>` for both `element_type: "byte"` and `element_type: "bit"`. The wire format is identical (a JSON array of signed bytes); the bundled JSON converter handles the signed-byte encoding so callers pass natural unsigned `byte` values.
+
+Implicit conversions let you pass `T[]` or `ReadOnlyMemory<T>` directly:
 
 ```csharp
-ReadOnlyMemory<float> queryVec = new float[] { 0.1f, 0.2f, 0.3f };  // float[] -> ReadOnlyMemory<float>
+DenseVector<float> queryVec = new float[] { 0.5f, 0.25f, 0.75f };  // float[] -> DenseVector<float>
+DenseVector<byte>  rgbRed   = new byte[]  { 255, 0, 0 };           // byte[]  -> DenseVector<byte>
 ```
 
-For `dense_vector` fields with `element_type` of `byte` or `bit`, supply **signed-semantics whole-number values** in `[-128, 127]`. ES|QL validates the range and integrality at query / ingest time and returns a clear error otherwise. RGB-style users should map unsigned bytes to signed: `255` (red) → `-1`, `200` → `-56`, etc. Bit vectors store 8 bits per signed-byte element, so a `dims: 16` bit vector is a `ReadOnlyMemory<float>` of length 2.
+For bit vectors, the user is responsible for the bit-packing semantics: 8 bits per byte, so a `dims: 16` bit vector is a `DenseVector<byte>` of length 2.
 
 ```csharp
-ReadOnlyMemory<float> rgbRed = new float[] { -1, 0, 0 };  // byte vector for RGB [255, 0, 0]
-ReadOnlyMemory<float> bit16 = new float[] { -1, 0 };      // 16-dim bit vector (16 bits packed into 2 signed bytes)
+DenseVector<byte> bit16 = new byte[] { 0xFF, 0x00 };  // 16-dim bit vector (16 bits packed into 2 bytes)
 ```
 
 ## Approximate KNN search
@@ -34,10 +39,10 @@ The [`KNN` function](elasticsearch://reference/query-languages/esql/functions-op
 public class Book
 {
     public string Title { get; set; } = "";
-    public ReadOnlyMemory<float> Embedding { get; set; }
+    public DenseVector<float> Embedding { get; set; }
 }
 
-var queryVec = new float[] { 0.12f, -0.03f, 0.98f /* ... */ };
+var queryVec = new float[] { 0.5f, 0.25f, 0.75f /* ... */ };
 
 var results = await client.CreateQuery<Book>()
     .From("books", MetadataField.Score)
@@ -49,7 +54,7 @@ var results = await client.CreateQuery<Book>()
 
 ```esql
 FROM books METADATA _score
-| WHERE KNN(embedding, [0.12, -0.03, 0.98, ...])
+| WHERE KNN(embedding, [0.5, 0.25, 0.75, ...])
 | SORT _score DESC
 | LIMIT 10
 ```
@@ -58,44 +63,42 @@ The `LIMIT` automatically becomes the per-shard `k`. Any other `Where(...)` clau
 
 ### KNN options
 
-For fine-grained control, pass an anonymous-object literal as the third argument. Each property maps to an [ES|QL named parameter](elasticsearch://reference/query-languages/esql/functions-operators/dense-vector-functions/knn.md):
+For fine-grained control, pass a typed `KnnOptions` record as the third argument. Each set property maps to an [ES|QL named parameter](elasticsearch://reference/query-languages/esql/functions-operators/dense-vector-functions/knn.md):
 
 ```csharp
-.Where(b => EsqlFunctions.Knn(b.Embedding, queryVec, new
+.Where(b => EsqlFunctions.Knn(b.Embedding, queryVec, new KnnOptions
 {
-    k = 10,
-    num_candidates = 100,
-    similarity_threshold = 0.5,
-    boost = 1.5
+    K = 10,
+    MinCandidates = 100,
+    Similarity = 0.5,
+    Boost = 1.5
 }))
 ```
 
 ```esql
-| WHERE KNN(embedding, [...], { "k": 10, "num_candidates": 100, "similarity_threshold": 0.5, "boost": 1.5 })
+| WHERE KNN(embedding, [...], { "k": 10, "min_candidates": 100, "similarity": 0.5, "boost": 1.5 })
 ```
 
-Available options: `k`, `num_candidates`, `similarity_threshold`, `boost`, `visit_percentage`, `oversample`. See the [KNN function reference](elasticsearch://reference/query-languages/esql/functions-operators/dense-vector-functions/knn.md) for details.
+Available options on `KnnOptions`: `K`, `MinCandidates`, `Similarity`, `Boost`, `VisitPercentage`, `RescoreOversample`. See the [KNN function reference](elasticsearch://reference/query-languages/esql/functions-operators/dense-vector-functions/knn.md) for accepted values.
 
 ### KNN over byte and bit vectors
 
-`KNN` also works with `dense_vector` fields whose element type is `byte` or `bit`. The C# type is the same `ReadOnlyMemory<float>`; supply signed-semantics whole-number values in `[-128, 127]`:
+`KNN` also works with `dense_vector` fields whose element type is `byte` or `bit`. Use `DenseVector<byte>` and pass natural unsigned `byte` values; the JSON converter renders the signed-byte wire format expected by ES|QL.
 
 ```csharp
 public class Color
 {
     public string Name { get; set; } = "";
-    public ReadOnlyMemory<float> RgbVector { get; set; }   // dense_vector { element_type: "byte", dims: 3 }
+    public DenseVector<byte> RgbVector { get; set; }   // dense_vector { element_type: "byte", dims: 3 }
 }
 
 await client.CreateQuery<Color>()
     .From("colors", MetadataField.Score)
-    .Where(c => EsqlFunctions.Knn(c.RgbVector, new float[] { 0, 120, 0 }))
+    .Where(c => EsqlFunctions.Knn(c.RgbVector, new byte[] { 0, 120, 0 }))
     .OrderByDescending(_ => EsqlMetadata.Score)
     .Take(5)
     .ToListAsync();
 ```
-
-Unsigned RGB users should pre-convert: `255 → -1`, `128 → -128`, etc.
 
 ## Semantic search with `TEXT_EMBEDDING`
 
@@ -125,13 +128,19 @@ You can pass any string for custom endpoints.
 For small datasets or after restrictive prefilters, use the `V_*` functions for exact similarity computation on retrieved rows. They live on `EsqlFunctions` and return `double`, so they can be used in `Where`, `Select`, and `OrderBy`:
 
 ```csharp
+public class Color
+{
+    public string Name { get; set; } = "";
+    public DenseVector<float> Embedding { get; set; }
+}
+
 await client.CreateQuery<Color>()
     .From("colors")
     .Where(c => c.Name != "black")
     .Select(c => new
     {
         c.Name,
-        Similarity = EsqlFunctions.VCosine(c.RgbVector, new float[] { 0, -1, -1 })
+        Similarity = EsqlFunctions.VCosine(c.Embedding, new float[] { 0f, 1f, 1f })
     })
     .OrderByDescending(c => c.Similarity)
     .Take(10)
@@ -141,7 +150,7 @@ await client.CreateQuery<Color>()
 ```esql
 FROM colors
 | WHERE name != "black"
-| EVAL similarity = V_COSINE(rgbVector, [0, -1, -1])
+| EVAL similarity = V_COSINE(embedding, [0, 1, 1])
 | SORT similarity DESC
 | KEEP name, similarity
 | LIMIT 10
@@ -282,7 +291,7 @@ All parameters have sensible defaults. The most common call is just `.Fuse()`.
 public class Book
 {
     public string Title { get; set; } = "";
-    public ReadOnlyMemory<float> TitleVec { get; set; }
+    public DenseVector<float> TitleVec { get; set; }
 }
 
 var queryVec = await GetEmbeddingAsync("vegetarian curry");
@@ -383,18 +392,18 @@ FROM books METADATA _score
 
 ### Marker methods on `EsqlFunctions`
 
-All `dense_vector` parameters use `ReadOnlyMemory<float>` (with implicit `float[]` → `ReadOnlyMemory<float>` conversion). The same C# type covers `dense_vector` fields with `element_type` of `float`, `byte`, or `bit`.
+All `dense_vector` parameters use `DenseVector<T>`. `Knn<T>` is generic over the element type; `V_*` and `TextEmbedding` constrain `T` to the type that ES|QL accepts. Implicit conversions from `T[]` and `ReadOnlyMemory<T>` cover the common call sites.
 
 | Method | ES\|QL |
 |---|---|
-| `Knn(ReadOnlyMemory<float> field, ReadOnlyMemory<float> query)` | `KNN(field, query)` |
-| `Knn(ReadOnlyMemory<float> field, ReadOnlyMemory<float> query, object options)` | `KNN(field, query, { ... })` |
+| `Knn<T>(DenseVector<T> field, DenseVector<T> query)` | `KNN(field, query)` |
+| `Knn<T>(DenseVector<T> field, DenseVector<T> query, KnnOptions options)` | `KNN(field, query, { ... })` |
 | `TextEmbedding(string text, string inferenceId)` | `TEXT_EMBEDDING("text", "id")` |
-| `VCosine(ReadOnlyMemory<float> a, ReadOnlyMemory<float> b)` | `V_COSINE(a, b)` |
-| `VDotProduct(ReadOnlyMemory<float> a, ReadOnlyMemory<float> b)` | `V_DOT_PRODUCT(a, b)` |
-| `VHamming(ReadOnlyMemory<float> a, ReadOnlyMemory<float> b)` | `V_HAMMING(a, b)` (byte / bit vectors) |
-| `VL1Norm(ReadOnlyMemory<float> a, ReadOnlyMemory<float> b)` | `V_L1_NORM(a, b)` |
-| `VL2Norm(ReadOnlyMemory<float> a, ReadOnlyMemory<float> b)` | `V_L2_NORM(a, b)` |
+| `VCosine(DenseVector<float> a, DenseVector<float> b)` | `V_COSINE(a, b)` |
+| `VDotProduct(DenseVector<float> a, DenseVector<float> b)` | `V_DOT_PRODUCT(a, b)` |
+| `VHamming(DenseVector<byte> a, DenseVector<byte> b)` | `V_HAMMING(a, b)` (byte vectors only) |
+| `VL1Norm(DenseVector<float> a, DenseVector<float> b)` | `V_L1_NORM(a, b)` |
+| `VL2Norm(DenseVector<float> a, DenseVector<float> b)` | `V_L2_NORM(a, b)` |
 
 ### Extension methods
 

@@ -373,34 +373,33 @@ public static class EsqlFunctions
 
 	/// <summary>Approximate k-nearest-neighbour search over a <c>dense_vector</c> field. Translates to KNN(field, query).</summary>
 	/// <remarks>
-	/// Works for <c>dense_vector</c> fields with <c>element_type</c> of <c>float</c>, <c>byte</c>, or <c>bit</c>.
-	/// For byte / bit element types, supply signed-semantics whole-number values in <c>[-128, 127]</c>; the server
-	/// validates the range and integrality at query time.
+	/// Use <see cref="DenseVector{T}"/> with <c>T = float</c> for <c>element_type: "float"</c> fields, and
+	/// <c>T = byte</c> for both <c>element_type: "byte"</c> and <c>element_type: "bit"</c>. The vector
+	/// converter handles signed-byte wire semantics for <c>byte</c> vectors automatically.
 	/// </remarks>
-	public static bool Knn(ReadOnlyMemory<float> field, ReadOnlyMemory<float> query) => Throw<bool>();
+	public static bool Knn<T>(DenseVector<T> field, DenseVector<T> query) where T : struct => Throw<bool>();
 
 	/// <summary>
-	/// Approximate k-nearest-neighbour search with named options
-	/// (e.g. <c>new { k = 10, num_candidates = 100, similarity_threshold = 0.5 }</c>).
-	/// Translates to KNN(field, query, { ... }).
+	/// Approximate k-nearest-neighbour search with typed <see cref="KnnOptions"/>. Translates to
+	/// KNN(field, query, { ... }) where each set property renders as its snake_case ES|QL counterpart.
 	/// </summary>
-	public static bool Knn(ReadOnlyMemory<float> field, ReadOnlyMemory<float> query, object options) => Throw<bool>();
+	public static bool Knn<T>(DenseVector<T> field, DenseVector<T> query, KnnOptions options) where T : struct => Throw<bool>();
 
 	/// <summary>Generates a query vector from text using the given inference endpoint. Translates to TEXT_EMBEDDING(text, inferenceId).</summary>
-	public static ReadOnlyMemory<float> TextEmbedding(string text, string inferenceId) => Throw<ReadOnlyMemory<float>>();
+	public static DenseVector<float> TextEmbedding(string text, string inferenceId) => Throw<DenseVector<float>>();
 
-	/// <summary>Cosine similarity between two dense vectors. Translates to V_COSINE(a, b).</summary>
-	public static double VCosine(ReadOnlyMemory<float> a, ReadOnlyMemory<float> b) => Throw<double>();
+	/// <summary>Cosine similarity between two float dense vectors. Translates to V_COSINE(a, b).</summary>
+	public static double VCosine(DenseVector<float> a, DenseVector<float> b) => Throw<double>();
 
-	/// <summary>Dot product between two dense vectors. Translates to V_DOT_PRODUCT(a, b).</summary>
-	public static double VDotProduct(ReadOnlyMemory<float> a, ReadOnlyMemory<float> b) => Throw<double>();
+	/// <summary>Dot product between two float dense vectors. Translates to V_DOT_PRODUCT(a, b).</summary>
+	public static double VDotProduct(DenseVector<float> a, DenseVector<float> b) => Throw<double>();
 
-	/// <summary>Hamming distance between two byte vectors. Translates to V_HAMMING(a, b).</summary>
-	public static double VHamming(ReadOnlyMemory<float> a, ReadOnlyMemory<float> b) => Throw<double>();
+	/// <summary>Hamming distance between two byte dense vectors. Translates to V_HAMMING(a, b).</summary>
+	public static double VHamming(DenseVector<byte> a, DenseVector<byte> b) => Throw<double>();
 
-	/// <summary>L1 (Manhattan) norm between two dense vectors. Translates to V_L1_NORM(a, b).</summary>
-	public static double VL1Norm(ReadOnlyMemory<float> a, ReadOnlyMemory<float> b) => Throw<double>();
+	/// <summary>L1 (Manhattan) norm between two float dense vectors. Translates to V_L1_NORM(a, b).</summary>
+	public static double VL1Norm(DenseVector<float> a, DenseVector<float> b) => Throw<double>();
 
-	/// <summary>L2 (Euclidean) norm between two dense vectors. Translates to V_L2_NORM(a, b).</summary>
-	public static double VL2Norm(ReadOnlyMemory<float> a, ReadOnlyMemory<float> b) => Throw<double>();
+	/// <summary>L2 (Euclidean) norm between two float dense vectors. Translates to V_L2_NORM(a, b).</summary>
+	public static double VL2Norm(DenseVector<float> a, DenseVector<float> b) => Throw<double>();
 }

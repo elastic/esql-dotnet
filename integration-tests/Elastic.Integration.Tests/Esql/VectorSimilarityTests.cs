@@ -91,8 +91,8 @@ public class VectorSimilarityTests : IntegrationTestBase
 	[Test]
 	public async Task VHamming_Byte_OrdersByHammingDistance()
 	{
-		// Pure red query against RGB vectors; book-01 is exact red ([-1, 0, 0] signed = [255, 0, 0] unsigned).
-		var query = new float[] { -1, 0, 0 };
+		// Pure red query against RGB vectors; book-01 is exact red (255, 0, 0).
+		var query = new byte[] { 255, 0, 0 };
 
 		var results = await Fixture.EsqlClient
 			.CreateQuery<TestBook>()

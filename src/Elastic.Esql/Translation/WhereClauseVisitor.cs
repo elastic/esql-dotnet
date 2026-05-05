@@ -182,10 +182,9 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 			case ExpressionType.Convert:
 			case ExpressionType.ConvertChecked:
-				// Implicit/explicit conversion to ReadOnlyMemory<float> from a closure-captured
-				// float[] / List<float>. Resolve the source value and emit it as a parameter so
-				// System.Text.Json renders the JSON array directly (and inline-literal formatting
-				// goes through EsqlFormatting.FormatFloatVector).
+				// Implicit/explicit conversion to a DenseVector<T> from a closure-captured
+				// T[] / ReadOnlyMemory<T>. Resolve the converted value (the implicit operator
+				// is invoked by ExpressionConstantResolver) and emit as a parameter / inline literal.
 				if (TryEmitVectorConvert(node))
 					return node;
 
@@ -202,27 +201,10 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 	private bool TryEmitVectorConvert(UnaryExpression node)
 	{
-		if (node.Type != typeof(ReadOnlyMemory<float>))
+		if (!DenseVectorTypeHelper.TryEmitDenseVectorLiteral(node, _context, out var literal))
 			return false;
 
-		// If the operand is a parameter-rooted member access (e.g. d.Embedding), let the
-		// regular VisitMember path emit the field name.
-		if (node.Operand is MemberExpression member && ExpressionTranslationHelpers.IsRootedInParameter(member))
-			return false;
-
-		ReadOnlyMemory<float>? wrapped = ExpressionConstantResolver.Resolve(node.Operand) switch
-		{
-			float[] arr => new ReadOnlyMemory<float>(arr),
-			ReadOnlyMemory<float> mem => mem,
-			List<float> list => new ReadOnlyMemory<float>(list.ToArray()),
-			_ => null
-		};
-
-		if (wrapped is null)
-			return false;
-
-		var memberName = node.Operand is MemberExpression me ? me.Member.Name : "vector";
-		_ = _builder.Append(_context.GetValueOrParameterName(memberName, wrapped.Value));
+		_ = _builder.Append(literal);
 		return true;
 	}
 

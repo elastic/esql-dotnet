@@ -153,7 +153,7 @@ internal static class EsqlFunctionTranslator
 
 			// Dense vector functions
 			nameof(EsqlFunctions.Knn) when args.Count == 2 => $"KNN({translate(args[0])}, {translate(args[1])})",
-			nameof(EsqlFunctions.Knn) when args.Count == 3 => $"KNN({translate(args[0])}, {translate(args[1])}, {TranslateOptionsObject(args[2])})",
+			nameof(EsqlFunctions.Knn) when args.Count == 3 => $"KNN({translate(args[0])}, {translate(args[1])}, {TranslateKnnOptions(args[2])})",
 			nameof(EsqlFunctions.TextEmbedding) => $"TEXT_EMBEDDING({translate(args[0])}, {translate(args[1])})",
 			nameof(EsqlFunctions.VCosine) => $"V_COSINE({translate(args[0])}, {translate(args[1])})",
 			nameof(EsqlFunctions.VDotProduct) => $"V_DOT_PRODUCT({translate(args[0])}, {translate(args[1])})",
@@ -165,43 +165,55 @@ internal static class EsqlFunctionTranslator
 		};
 
 	/// <summary>
-	/// Renders an anonymous-object options expression (e.g. <c>new { k = 10, num_candidates = 100 }</c>)
-	/// as ES|QL named-parameter JSON: <c>{ "k": 10, "num_candidates": 100 }</c>.
+	/// Renders a <see cref="KnnOptions"/> argument expression as the ES|QL named-parameter object
+	/// literal (e.g. <c>{ "k": 10, "num_candidates": 100 }</c>). Only non-null properties are emitted.
 	/// </summary>
-	private static string TranslateOptionsObject(Expression expression)
+	private static string TranslateKnnOptions(Expression expression)
 	{
-		while (expression is UnaryExpression { NodeType: ExpressionType.Convert or ExpressionType.ConvertChecked } convert)
-			expression = convert.Operand;
+		var resolved = ExpressionConstantResolver.Resolve(expression)
+			?? throw new NotSupportedException("KnnOptions argument must not be null. Use the two-argument 'Knn' overload to omit options.");
 
-		if (expression is not NewExpression newExpr || newExpr.Members is null)
-			throw new NotSupportedException("Vector function options must be specified as an anonymous object literal, e.g. 'new { k = 10 }'.");
+		if (resolved is not KnnOptions options)
+			throw new NotSupportedException(
+				$"Knn options argument must be a '{nameof(KnnOptions)}' value (got '{resolved.GetType().Name}').");
 
 		var sb = new StringBuilder("{ ");
-		for (var i = 0; i < newExpr.Arguments.Count; i++)
-		{
-			if (i > 0)
-				_ = sb.Append(", ");
+		var first = true;
 
-			var name = newExpr.Members[i].Name;
-			var value = ExpressionConstantResolver.Resolve(newExpr.Arguments[i]);
+		AppendIntOption(sb, ref first, "k", options.K);
+		AppendIntOption(sb, ref first, "min_candidates", options.MinCandidates);
+		AppendDoubleOption(sb, ref first, "similarity", options.Similarity);
+		AppendDoubleOption(sb, ref first, "boost", options.Boost);
+		AppendDoubleOption(sb, ref first, "visit_percentage", options.VisitPercentage);
+		AppendDoubleOption(sb, ref first, "rescore_oversample", options.RescoreOversample);
 
-			_ = sb.Append('"').Append(name).Append("\": ").Append(FormatOptionValue(value));
-		}
 		_ = sb.Append(" }");
 		return sb.ToString();
 	}
 
-	private static string FormatOptionValue(object? value) =>
-		value switch
-		{
-			null => "null",
-			bool b => b ? "true" : "false",
-			string s => $"\"{s.Replace("\\", "\\\\").Replace("\"", "\\\"")}\"",
-			float f => f.ToString("G", CultureInfo.InvariantCulture),
-			double d => d.ToString("G", CultureInfo.InvariantCulture),
-			IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
-			_ => value.ToString() ?? "null"
-		};
+	private static void AppendIntOption(StringBuilder sb, ref bool first, string name, int? value)
+	{
+		if (value is null)
+			return;
+
+		if (!first)
+			_ = sb.Append(", ");
+		first = false;
+
+		_ = sb.Append('"').Append(name).Append("\": ").Append(value.Value.ToString(CultureInfo.InvariantCulture));
+	}
+
+	private static void AppendDoubleOption(StringBuilder sb, ref bool first, string name, double? value)
+	{
+		if (value is null)
+			return;
+
+		if (!first)
+			_ = sb.Append(", ");
+		first = false;
+
+		_ = sb.Append('"').Append(name).Append("\": ").Append(value.Value.ToString("G", CultureInfo.InvariantCulture));
+	}
 
 	/// <summary>Translates a Math.* method call to ES|QL. Returns null if not recognized.</summary>
 	public static string? TryTranslateMath(string methodName, Func<Expression, string> translate, IReadOnlyList<Expression> args) =>

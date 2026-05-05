@@ -55,7 +55,7 @@ public class KnnTests : IntegrationTestBase
 		var results = await Fixture.EsqlClient
 			.CreateQuery<TestBook>()
 			.From(TestDataSeeder.BookIndex, MetadataField.Score)
-			.Where(b => Knn(b.TitleVec, query, new { k = 2, min_candidates = 50 }))
+			.Where(b => Knn(b.TitleVec, query, new KnnOptions { K = 2, MinCandidates = 50 }))
 			.OrderByDescending(_ => EsqlMetadata.Score)
 			.AsEsqlQueryable()
 			.ToListAsync();
@@ -76,7 +76,7 @@ public class KnnTests : IntegrationTestBase
 		var results = await Fixture.EsqlClient
 			.CreateQuery<TestBook>()
 			.From(TestDataSeeder.BookIndex, MetadataField.Score)
-			.Where(b => Knn(b.TitleVec, query, new { similarity = 0.99 }))
+			.Where(b => Knn(b.TitleVec, query, new KnnOptions { Similarity = 0.99 }))
 			.AsEsqlQueryable()
 			.ToListAsync();
 
@@ -133,8 +133,9 @@ public class KnnTests : IntegrationTestBase
 	[Test]
 	public async Task Knn_Byte_BasicSearch_ReturnsExactMatchFirst()
 	{
-		// Pure red byte vector should rank book-01 (RGB [-1, 0, 0] signed = [255, 0, 0] unsigned) first.
-		var query = new float[] { -1, 0, 0 };
+		// Pure red byte vector should rank book-01 (RGB 255, 0, 0) first.
+		// The DenseVector<byte> converter renders unsigned 255 as signed -1 on the wire.
+		var query = new byte[] { 255, 0, 0 };
 
 		var results = await Fixture.EsqlClient
 			.CreateQuery<TestBook>()
@@ -150,9 +151,9 @@ public class KnnTests : IntegrationTestBase
 	}
 
 	[Test]
-	public async Task Knn_Byte_WithExplicitReadOnlyMemory_ProducesIdenticalResultsAsImplicit()
+	public async Task Knn_Byte_WithExplicitDenseVector_ProducesIdenticalResultsAsImplicit()
 	{
-		var query = new ReadOnlyMemory<float>(new float[] { 0, -1, 0 });
+		var query = new DenseVector<byte>(new byte[] { 0, 255, 0 });
 
 		var results = await Fixture.EsqlClient
 			.CreateQuery<TestBook>()

@@ -20,10 +20,10 @@ public class TestBook
 	public string Description { get; set; } = string.Empty;
 
 	[JsonPropertyName("title_vec")]
-	public ReadOnlyMemory<float> TitleVec { get; set; }
+	public DenseVector<float> TitleVec { get; set; }
 
 	[JsonPropertyName("rgb_vector")]
-	public ReadOnlyMemory<float> RgbVector { get; set; }
+	public DenseVector<byte> RgbVector { get; set; }
 }
 
 /// <summary>Result projection that exposes the document <c>_id</c> and <c>_score</c> via <see cref="EsqlMetadata"/> markers.</summary>

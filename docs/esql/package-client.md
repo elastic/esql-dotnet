@@ -388,7 +388,7 @@ See the [COMPLETION docs](completion.md) for pipeline patterns and well-known en
 
 ## Vector and hybrid search
 
-Run KNN, exact similarity, and hybrid (lexical + semantic) search using `ReadOnlyMemory<float>` vector parameters and the `Fork(...)` / `Fuse(...)` extensions:
+Run KNN, exact similarity, and hybrid (lexical + semantic) search using `DenseVector<T>` vector parameters and the `Fork(...)` / `Fuse(...)` extensions:
 
 ```csharp
 var queryVec = new float[] { 0.12f, -0.03f, 0.98f /* ... */ };

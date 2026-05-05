@@ -37,8 +37,8 @@ public class BookDocument
 {
 	public string Title { get; set; } = string.Empty;
 	public string Description { get; set; } = string.Empty;
-	public ReadOnlyMemory<float> TitleVec { get; set; }
-	public ReadOnlyMemory<float> RgbVector { get; set; }
+	public DenseVector<float> TitleVec { get; set; }
+	public DenseVector<byte> RgbVector { get; set; }
 }
 
 /// <summary>Result projection for FORK/FUSE tests that includes metadata-derived columns.</summary>

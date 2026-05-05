@@ -37,19 +37,43 @@ internal static class EsqlFormatting
 			TimeSpan ts => FormatTimeSpan(ts),
 			float f => FormatFloat(f),
 			double d => FormatDouble(d),
-			ReadOnlyMemory<float> v => FormatFloatVector(v.Span),
+			DenseVector<float> v => FormatFloatVector(v.Span),
+			DenseVector<byte> v => FormatByteVector(v.Span),
 			_ => FormatJsonElement(
 				JsonSerializer.SerializeToElement(value, value.GetType(), options))
 		};
 
 	internal static string FormatFloatVector(ReadOnlySpan<float> span)
 	{
+		// Validate finite values up front; ES|QL has no representation for NaN / Infinity in a vector.
+		for (var i = 0; i < span.Length; i++)
+		{
+			if (float.IsNaN(span[i]) || float.IsInfinity(span[i]))
+				throw new ArgumentException(
+					$"Vector element at index {i} is NaN or Infinity, which cannot be expressed in ES|QL.",
+					nameof(span));
+		}
+
 		var sb = new StringBuilder("[");
 		for (var i = 0; i < span.Length; i++)
 		{
 			if (i > 0)
 				_ = sb.Append(", ");
 			_ = sb.Append(FormatFloat(span[i]));
+		}
+		_ = sb.Append(']');
+		return sb.ToString();
+	}
+
+	internal static string FormatByteVector(ReadOnlySpan<byte> span)
+	{
+		// ES|QL byte / bit vectors are wire-encoded as signed-byte numbers in [-128, 127].
+		var sb = new StringBuilder("[");
+		for (var i = 0; i < span.Length; i++)
+		{
+			if (i > 0)
+				_ = sb.Append(", ");
+			_ = sb.Append(((sbyte)span[i]).ToString(InvariantCulture));
 		}
 		_ = sb.Append(']');
 		return sb.ToString();
@@ -110,7 +134,7 @@ internal static class EsqlFormatting
 	private static string FormatFloat(float f) =>
 		float.IsNaN(f) || float.IsInfinity(f)
 			? "null"
-			: f.ToString("G", InvariantCulture);
+			: f.ToString("G9", InvariantCulture);
 
 	private static string FormatDouble(double d) =>
 		double.IsNaN(d) || double.IsInfinity(d)

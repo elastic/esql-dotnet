@@ -2,6 +2,7 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using System.Text;
@@ -618,14 +619,14 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 		var branchFragments = new List<IReadOnlyList<string>>(branchesArray.Length);
 		var inheritedMetadata = Context.ActiveMetadata;
 
-		foreach (var branchObj in branchesArray)
+		for (var i = 0; i < branchesArray.Length; i++)
 		{
-			if (branchObj is not LambdaExpression branchLambda)
-				throw new NotSupportedException("Fork branches must be lambda expressions.");
+			if (branchesArray.GetValue(i) is not LambdaExpression branchLambda)
+				throw new NotSupportedException($"Fork branch {i + 1} must be a lambda expression.");
 
 			var fragments = ForkBranchVisitor.Translate(Provider, branchLambda, elementType, inheritedMetadata, inlineParameters, Context);
 			if (fragments.Count == 0)
-				throw new NotSupportedException("Fork branch produced no commands.");
+				throw new NotSupportedException($"Fork branch {i + 1} produced no commands.");
 
 			branchFragments.Add(fragments);
 		}
@@ -640,18 +641,20 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 	private void VisitFuse(MethodCallExpression node)
 	{
 		// Fuse parameters: (source, method, rankConstant, normalizer, weights, score, group, key)
-		var method = node.Arguments.Count >= 2 ? (FuseMethod)(ExpressionConstantResolver.Resolve(node.Arguments[1]) ?? FuseMethod.Rrf) : FuseMethod.Rrf;
-		var rankConstant = node.Arguments.Count >= 3 ? ExpressionConstantResolver.Resolve(node.Arguments[2]) as int? : null;
-		var normalizer = node.Arguments.Count >= 4 ? (ScoreNormalizer)(ExpressionConstantResolver.Resolve(node.Arguments[3]) ?? ScoreNormalizer.None) : ScoreNormalizer.None;
-		var weights = node.Arguments.Count >= 5 ? ExpressionConstantResolver.Resolve(node.Arguments[4]) as double[] : null;
-		var scoreLambda = node.Arguments.Count >= 6 ? ExpressionConstantResolver.Resolve(node.Arguments[5]) as LambdaExpression : null;
-		var groupLambda = node.Arguments.Count >= 7 ? ExpressionConstantResolver.Resolve(node.Arguments[6]) as LambdaExpression : null;
-		var keyLambda = node.Arguments.Count >= 8 ? ExpressionConstantResolver.Resolve(node.Arguments[7]) as LambdaExpression : null;
+		Debug.Assert(node.Arguments.Count == 8, "Fuse extension method always passes 8 arguments.");
+
+		var method = (FuseMethod)(ExpressionConstantResolver.Resolve(node.Arguments[1]) ?? FuseMethod.Rrf);
+		var rankConstant = ExpressionConstantResolver.Resolve(node.Arguments[2]) as int?;
+		var normalizer = (ScoreNormalizer)(ExpressionConstantResolver.Resolve(node.Arguments[3]) ?? ScoreNormalizer.None);
+		var weights = ExpressionConstantResolver.Resolve(node.Arguments[4]) as double[];
+		var scoreLambda = ExpressionConstantResolver.Resolve(node.Arguments[5]) as LambdaExpression;
+		var groupLambda = ExpressionConstantResolver.Resolve(node.Arguments[6]) as LambdaExpression;
+		var keyLambda = ExpressionConstantResolver.Resolve(node.Arguments[7]) as LambdaExpression;
 
 		ValidateFuseFollowsFork(weights);
 
-		var scoreColumn = scoreLambda is not null ? ResolveColumnFromLambda(scoreLambda) : null;
-		var groupColumn = groupLambda is not null ? ResolveColumnFromLambda(groupLambda) : null;
+		var scoreColumn = scoreLambda is not null ? ResolveSingleColumnFromLambda(scoreLambda, nameof(EsqlQueryableExtensions.Fuse), "score") : null;
+		var groupColumn = groupLambda is not null ? ResolveSingleColumnFromLambda(groupLambda, nameof(EsqlQueryableExtensions.Fuse), "group") : null;
 		var keyColumns = keyLambda is not null ? ResolveKeyColumnsFromLambda(keyLambda) : null;
 
 		Context.Commands.Add(new FuseCommand(
@@ -662,6 +665,10 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 			scoreColumn: scoreColumn,
 			groupColumn: groupColumn,
 			keyColumns: keyColumns));
+
+		// Once Fuse merges the fork branches, the _fork discriminator is consumed; downstream
+		// projections should not auto-retain it.
+		Context.ForkActive = false;
 	}
 
 	private void ValidateFuseFollowsFork(double[]? weights)
@@ -670,13 +677,13 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 		// ES|QL allows row-shape transformations like DROP / KEEP / RENAME / EVAL / WHERE between
 		// them -- in particular DROP is recommended to remove dense_vector columns that FUSE rejects.
 		// Aggregations (STATS) however collapse the fork-discriminator column and break FUSE.
-		var sawFork = false;
+		ForkCommand? matchingFork = null;
 		for (var i = Context.Commands.Count - 1; i >= 0; i--)
 		{
 			var cmd = Context.Commands[i];
-			if (cmd is ForkCommand)
+			if (cmd is ForkCommand fork)
 			{
-				sawFork = true;
+				matchingFork = fork;
 				break;
 			}
 
@@ -684,16 +691,38 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 				throw new InvalidOperationException("'Fuse' cannot follow a 'Stats' / aggregation command; aggregations break the FORK row layout.");
 		}
 
-		if (!sawFork)
+		if (matchingFork is null)
 			throw new InvalidOperationException("'Fuse' must follow a 'Fork' command earlier in the pipeline.");
 
 		if (weights is not null && weights.Length != _lastForkBranchCount)
 			throw new ArgumentException(
 				$"Fuse weights count ({weights.Length}) must match the preceding Fork branch count ({_lastForkBranchCount}).",
 				nameof(weights));
+
+		// Per the ES|QL FUSE docs (Stack 9.4+ / Serverless), each FORK branch must contain a LIMIT
+		// before FUSE. Older versions inject an implicit LIMIT 1000, but we validate eagerly so the
+		// translator gives a clear error rather than relying on the server response.
+		for (var b = 0; b < matchingFork.Branches.Count; b++)
+		{
+			var branch = matchingFork.Branches[b];
+			var hasLimit = false;
+			foreach (var fragment in branch)
+			{
+				if (fragment.StartsWith("LIMIT ", StringComparison.Ordinal) || fragment.Equals("LIMIT", StringComparison.Ordinal))
+				{
+					hasLimit = true;
+					break;
+				}
+			}
+
+			if (!hasLimit)
+				throw new InvalidOperationException(
+					$"Fork branch {b + 1} must include a 'Take(...)' (LIMIT) before 'Fuse'. " +
+					"ES|QL requires a LIMIT inside each FORK branch when followed by FUSE.");
+		}
 	}
 
-	private string ResolveColumnFromLambda(LambdaExpression lambda)
+	private string ResolveSingleColumnFromLambda(LambdaExpression lambda, string commandName, string parameterName)
 	{
 		var body = lambda.Body.UnwrapConvertExpressions();
 
@@ -702,7 +731,13 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 			&& metaMember.DeclaringType == typeof(EsqlMetadata))
 			return Context.ResolveMetadataMemberOrThrow(metaMember.Name);
 
-		return body.ResolveFieldName(Context.Metadata);
+		// Parameter-rooted member access (e.g. x => x.Score).
+		if (body is MemberExpression member && ExpressionTranslationHelpers.IsRootedInParameter(member))
+			return body.ResolveFieldName(Context.Metadata);
+
+		throw new NotSupportedException(
+			$"'{commandName}({parameterName}:)' must reference a single column " +
+			$"(a parameter-rooted property or '{nameof(EsqlMetadata)}.X' marker), got '{body.NodeType}'.");
 	}
 
 	private List<string> ResolveKeyColumnsFromLambda(LambdaExpression lambda)
@@ -710,12 +745,16 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 		var body = lambda.Body.UnwrapConvertExpressions();
 
 		// Composite key via anonymous type: x => new { x.Id, x.Index } or new { Id = EsqlMetadata.Id, Index = EsqlMetadata.Index }
-		if (body is NewExpression { Members: not null } newExpr)
+		if (body is NewExpression newExpression)
 		{
-			var result = new List<string>(newExpr.Arguments.Count);
-			for (var i = 0; i < newExpr.Arguments.Count; i++)
+			if (newExpression.Members is null)
+				throw new NotSupportedException(
+					"Composite 'Fuse(key:)' must use an anonymous type, e.g. 'x => new { x.Id, x.Index }'.");
+
+			var result = new List<string>(newExpression.Arguments.Count);
+			for (var i = 0; i < newExpression.Arguments.Count; i++)
 			{
-				var arg = newExpr.Arguments[i].UnwrapConvertExpressions();
+				var arg = newExpression.Arguments[i].UnwrapConvertExpressions();
 
 				if (arg is MemberExpression { Expression: null, Member: { } metaMember }
 					&& metaMember.DeclaringType == typeof(EsqlMetadata))
@@ -724,13 +763,20 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 					continue;
 				}
 
-				result.Add(arg.ResolveFieldName(Context.Metadata));
+				if (arg is MemberExpression keyMember && ExpressionTranslationHelpers.IsRootedInParameter(keyMember))
+				{
+					result.Add(arg.ResolveFieldName(Context.Metadata));
+					continue;
+				}
+
+				throw new NotSupportedException(
+					$"Each 'Fuse(key:)' member must be a parameter-rooted property or '{nameof(EsqlMetadata)}.X' marker, got '{arg.NodeType}'.");
 			}
 			return result;
 		}
 
 		// Single key column.
-		return [ResolveColumnFromLambda(lambda)];
+		return [ResolveSingleColumnFromLambda(lambda, nameof(EsqlQueryableExtensions.Fuse), "key")];
 	}
 
 	private static IReadOnlyList<string> NormalizeRawFragments(string rawEsql)

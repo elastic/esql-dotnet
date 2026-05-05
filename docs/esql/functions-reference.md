@@ -161,13 +161,13 @@ Note: `Math.E`, `Math.PI`, and `Math.Tau` are const fields that the C# compiler 
 
 ## Dense vector functions
 
-Vector search and similarity functions for `dense_vector` fields. Vectors are passed as `ReadOnlyMemory<float>` (with implicit conversion from `float[]`). The same C# type covers `dense_vector` fields with element types `float`, `byte`, and `bit`; for `byte`/`bit` fields use signed-semantics whole-number values in `[-128, 127]` and the server validates ranges at query / ingest time.
+Vector search and similarity functions for `dense_vector` fields. Vectors are passed as `DenseVector<T>` (with implicit conversion from `T[]` and `ReadOnlyMemory<T>`). Use `T = float` for `element_type: "float"` and `T = byte` for both `element_type: "byte"` and `element_type: "bit"`; the bundled JSON converter handles the signed-byte wire format for `byte` vectors so you can pass natural unsigned values.
 See the [vector and hybrid search guide](vector-search.md) for the full pattern, including `FROM ... METADATA`, `EsqlMetadata.Score`, and FORK/FUSE hybrid pipelines.
 
 ```csharp
 .From("books", MetadataField.Score)
-.Where(b => EsqlFunctions.Knn(b.Embedding, new float[] { 0.1f, 0.2f, 0.3f }, new { k = 10 }))
-// FROM books METADATA _score | WHERE KNN(embedding, [0.1, 0.2, 0.3], { "k": 10 })
+.Where(b => EsqlFunctions.Knn(b.Embedding, new float[] { 0.5f, 0.25f, 0.75f }, new KnnOptions { K = 10 }))
+// FROM books METADATA _score | WHERE KNN(embedding, [0.5, 0.25, 0.75], { "k": 10 })
 ```
 
 | ES\|QL | `EsqlFunctions` | C# native |
@@ -180,7 +180,7 @@ See the [vector and hybrid search guide](vector-search.md) for the full pattern,
 | [`V_L1_NORM`](elasticsearch://reference/query-languages/esql/functions-operators/dense-vector-functions/v_l1_norm.md) | `EsqlFunctions.VL1Norm(a, b)` | |
 | [`V_L2_NORM`](elasticsearch://reference/query-languages/esql/functions-operators/dense-vector-functions/v_l2_norm.md) | `EsqlFunctions.VL2Norm(a, b)` | |
 
-The optional third argument to `Knn` is any anonymous-object literal; properties translate to ES|QL named parameters (e.g. `new { k = 10, num_candidates = 100 }` -> `{ "k": 10, "num_candidates": 100 }`). Available KNN options include `k`, `num_candidates`, `similarity_threshold`, `boost`, `visit_percentage`, `oversample`.
+The optional third argument to `Knn` is a typed `KnnOptions` record. Set the properties you want to override; only set properties are emitted into the ES|QL named-parameter object (e.g. `new KnnOptions { K = 10, MinCandidates = 100 }` -> `{ "k": 10, "min_candidates": 100 }`). Available properties: `K`, `MinCandidates`, `Similarity`, `Boost`, `VisitPercentage`, `RescoreOversample`.
 
 Not yet supported: `EMBEDDING` (planned, currently serverless-only preview).
 

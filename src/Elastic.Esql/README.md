@@ -135,12 +135,12 @@ using static Elastic.Esql.Functions.EsqlFunctions;
 
 ### Vector and hybrid search
 
-`KNN`, `TEXT_EMBEDDING`, dense vector similarity (`V_COSINE`, `V_DOT_PRODUCT`, `V_HAMMING`, `V_L1_NORM`, `V_L2_NORM`), `FROM ... METADATA`, and `FORK` + `FUSE` for hybrid lexical + semantic search are all supported. Vectors are passed as `ReadOnlyMemory<float>` (with implicit `float[]` → `ReadOnlyMemory<float>` conversion). The same C# type covers `dense_vector` fields with element types `float`, `byte`, and `bit`.
+`KNN`, `TEXT_EMBEDDING`, dense vector similarity (`V_COSINE`, `V_DOT_PRODUCT`, `V_HAMMING`, `V_L1_NORM`, `V_L2_NORM`), `FROM ... METADATA`, and `FORK` + `FUSE` for hybrid lexical + semantic search are all supported. Vectors are passed as `DenseVector<T>` (with `T = float` or `T = byte`); implicit conversions from `T[]` and `ReadOnlyMemory<T>` keep call sites natural, and the bundled JSON converter handles the signed-byte wire format for byte vectors.
 
 ```csharp
 // KNN with metadata-driven scoring
 .From("books", MetadataField.Score)
-.Where(b => EsqlFunctions.Knn(b.Embedding, queryVec, new { k = 10 }))
+.Where(b => EsqlFunctions.Knn(b.Embedding, queryVec, new KnnOptions { K = 10 }))
 .OrderByDescending(_ => EsqlMetadata.Score)
 // FROM books METADATA _score | WHERE KNN(embedding, [...], { "k": 10 }) | SORT _score DESC
 

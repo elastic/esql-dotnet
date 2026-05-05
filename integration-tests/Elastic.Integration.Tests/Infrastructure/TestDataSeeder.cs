@@ -278,18 +278,18 @@ public static class TestDataSeeder
 	/// </summary>
 	private static IReadOnlyList<TestBook> CreateBooks() =>
 	[
-		new() { Id = "book-01", Title = "Programming Patterns", Description = "Software design patterns and best practices.", TitleVec = new float[] { 1.00f, 0.00f, 0.00f, 0.00f }, RgbVector = new float[] { -1, 0, 0 } },
-		new() { Id = "book-02", Title = "Clean Programming", Description = "Writing readable maintainable code.", TitleVec = new float[] { 0.95f, 0.10f, 0.00f, 0.00f }, RgbVector = new float[] { -56, 20, 0 } },
-		new() { Id = "book-03", Title = "Programming in Practice", Description = "Practical software engineering.", TitleVec = new float[] { 0.90f, 0.20f, 0.05f, 0.00f }, RgbVector = new float[] { -76, 40, 10 } },
-		new() { Id = "book-04", Title = "Cooking with Vegetables", Description = "Healthy plant-based recipes.", TitleVec = new float[] { 0.00f, 1.00f, 0.00f, 0.00f }, RgbVector = new float[] { 0, -1, 0 } },
-		new() { Id = "book-05", Title = "Vegetarian Curry Recipes", Description = "Spicy curries from around the world.", TitleVec = new float[] { 0.10f, 0.90f, 0.10f, 0.00f }, RgbVector = new float[] { 20, -56, 20 } },
-		new() { Id = "book-06", Title = "The Vegetable Cookbook", Description = "Simple weeknight vegetable dinners.", TitleVec = new float[] { 0.05f, 0.95f, 0.00f, 0.00f }, RgbVector = new float[] { 10, -36, 0 } },
-		new() { Id = "book-07", Title = "Shakespeare on Stage", Description = "Performing Shakespeare in modern theatre.", TitleVec = new float[] { 0.00f, 0.00f, 1.00f, 0.00f }, RgbVector = new float[] { 0, 0, -1 } },
-		new() { Id = "book-08", Title = "Shakespeare for Programmers", Description = "Cross-disciplinary essays on language design and the bard.", TitleVec = new float[] { 0.50f, 0.00f, 0.85f, 0.00f }, RgbVector = new float[] { 100, 0, -56 } },
-		new() { Id = "book-09", Title = "The Complete Shakespeare", Description = "All plays and sonnets in one volume.", TitleVec = new float[] { 0.10f, 0.10f, 0.95f, 0.00f }, RgbVector = new float[] { 20, 20, -36 } },
-		new() { Id = "book-10", Title = "Mixed Topics Anthology", Description = "Essays spanning many subjects.", TitleVec = new float[] { 0.50f, 0.50f, 0.50f, 0.50f }, RgbVector = new float[] { -128, -128, -128 } },
-		new() { Id = "book-11", Title = "Generalist Knowledge", Description = "A primer on broad subject expertise.", TitleVec = new float[] { 0.40f, 0.40f, 0.40f, 0.40f }, RgbVector = new float[] { 100, 100, 100 } },
-		new() { Id = "book-12", Title = "Outlier Volume", Description = "Niche material on obscure topics.", TitleVec = new float[] { 0.00f, 0.00f, 0.00f, 1.00f }, RgbVector = new float[] { 0, 0, 0 } }
+		new() { Id = "book-01", Title = "Programming Patterns", Description = "Software design patterns and best practices.", TitleVec = new float[] { 1.00f, 0.00f, 0.00f, 0.00f }, RgbVector = new byte[] { 255, 0, 0 } },
+		new() { Id = "book-02", Title = "Clean Programming", Description = "Writing readable maintainable code.", TitleVec = new float[] { 0.95f, 0.10f, 0.00f, 0.00f }, RgbVector = new byte[] { 200, 20, 0 } },
+		new() { Id = "book-03", Title = "Programming in Practice", Description = "Practical software engineering.", TitleVec = new float[] { 0.90f, 0.20f, 0.05f, 0.00f }, RgbVector = new byte[] { 180, 40, 10 } },
+		new() { Id = "book-04", Title = "Cooking with Vegetables", Description = "Healthy plant-based recipes.", TitleVec = new float[] { 0.00f, 1.00f, 0.00f, 0.00f }, RgbVector = new byte[] { 0, 255, 0 } },
+		new() { Id = "book-05", Title = "Vegetarian Curry Recipes", Description = "Spicy curries from around the world.", TitleVec = new float[] { 0.10f, 0.90f, 0.10f, 0.00f }, RgbVector = new byte[] { 20, 200, 20 } },
+		new() { Id = "book-06", Title = "The Vegetable Cookbook", Description = "Simple weeknight vegetable dinners.", TitleVec = new float[] { 0.05f, 0.95f, 0.00f, 0.00f }, RgbVector = new byte[] { 10, 220, 0 } },
+		new() { Id = "book-07", Title = "Shakespeare on Stage", Description = "Performing Shakespeare in modern theatre.", TitleVec = new float[] { 0.00f, 0.00f, 1.00f, 0.00f }, RgbVector = new byte[] { 0, 0, 255 } },
+		new() { Id = "book-08", Title = "Shakespeare for Programmers", Description = "Cross-disciplinary essays on language design and the bard.", TitleVec = new float[] { 0.50f, 0.00f, 0.85f, 0.00f }, RgbVector = new byte[] { 100, 0, 200 } },
+		new() { Id = "book-09", Title = "The Complete Shakespeare", Description = "All plays and sonnets in one volume.", TitleVec = new float[] { 0.10f, 0.10f, 0.95f, 0.00f }, RgbVector = new byte[] { 20, 20, 220 } },
+		new() { Id = "book-10", Title = "Mixed Topics Anthology", Description = "Essays spanning many subjects.", TitleVec = new float[] { 0.50f, 0.50f, 0.50f, 0.50f }, RgbVector = new byte[] { 128, 128, 128 } },
+		new() { Id = "book-11", Title = "Generalist Knowledge", Description = "A primer on broad subject expertise.", TitleVec = new float[] { 0.40f, 0.40f, 0.40f, 0.40f }, RgbVector = new byte[] { 100, 100, 100 } },
+		new() { Id = "book-12", Title = "Outlier Volume", Description = "Niche material on obscure topics.", TitleVec = new float[] { 0.00f, 0.00f, 0.00f, 1.00f }, RgbVector = new byte[] { 0, 0, 0 } }
 	];
 
 	private static IReadOnlyList<TestUserProfile> CreateUserProfiles()

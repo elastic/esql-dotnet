@@ -21,8 +21,52 @@ internal static class ExpressionConstantResolver
 			MemberExpression member => ResolveMember(member),
 			UnaryExpression { NodeType: ExpressionType.Convert or ExpressionType.ConvertChecked } unary => ResolveUnary(unary),
 			NewArrayExpression { NodeType: ExpressionType.NewArrayInit } newArray => ResolveNewArray(newArray),
+			NewExpression newExpression => ResolveNew(newExpression),
+			MemberInitExpression memberInit => ResolveMemberInit(memberInit),
 			_ => throw new NotSupportedException($"Expression of type '{expression.GetType().Name}' ({expression.NodeType}) is not supported.")
 		};
+	}
+
+	private static object? ResolveNew(NewExpression newExpression)
+	{
+		var args = new object?[newExpression.Arguments.Count];
+		for (var i = 0; i < newExpression.Arguments.Count; i++)
+			args[i] = Resolve(newExpression.Arguments[i]);
+
+		if (newExpression.Constructor is not null)
+			return newExpression.Constructor.Invoke(args);
+
+		// Parameterless value-type construction.
+		return Activator.CreateInstance(newExpression.Type);
+	}
+
+	private static object? ResolveMemberInit(MemberInitExpression memberInit)
+	{
+		var instance = ResolveNew(memberInit.NewExpression)
+			?? throw new InvalidOperationException(
+				$"Cannot resolve constructor for '{memberInit.Type}' in MemberInitExpression.");
+
+		foreach (var binding in memberInit.Bindings)
+		{
+			if (binding is not MemberAssignment assignment)
+				throw new NotSupportedException($"MemberInit binding type '{binding.BindingType}' is not supported.");
+
+			var value = Resolve(assignment.Expression);
+			switch (assignment.Member)
+			{
+				case PropertyInfo property:
+					property.SetValue(instance, value);
+					break;
+				case FieldInfo field:
+					field.SetValue(instance, value);
+					break;
+				default:
+					throw new NotSupportedException(
+						$"MemberInit member '{assignment.Member.GetType().Name}' is not supported.");
+			}
+		}
+
+		return instance;
 	}
 
 	private static object? ResolveNewArray(NewArrayExpression newArray)
