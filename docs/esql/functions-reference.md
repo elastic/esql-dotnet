@@ -161,7 +161,7 @@ Note: `Math.E`, `Math.PI`, and `Math.Tau` are const fields that the C# compiler 
 
 ## Dense vector functions
 
-Vector search and similarity functions for `dense_vector` fields. Vectors are passed via the `FloatVector` / `ByteVector` wrapper structs, which accept `float[]` / `byte[]` / `ReadOnlyMemory<T>` / `List<T>` via implicit conversions.
+Vector search and similarity functions for `dense_vector` fields. Vectors are passed as `ReadOnlyMemory<float>` (with implicit conversion from `float[]`). The same C# type covers `dense_vector` fields with element types `float`, `byte`, and `bit`; for `byte`/`bit` fields use signed-semantics whole-number values in `[-128, 127]` and the server validates ranges at query / ingest time.
 See the [vector and hybrid search guide](vector-search.md) for the full pattern, including `FROM ... METADATA`, `EsqlMetadata.Score`, and FORK/FUSE hybrid pipelines.
 
 ```csharp
@@ -180,7 +180,7 @@ See the [vector and hybrid search guide](vector-search.md) for the full pattern,
 | [`V_L1_NORM`](elasticsearch://reference/query-languages/esql/functions-operators/dense-vector-functions/v_l1_norm.md) | `EsqlFunctions.VL1Norm(a, b)` | |
 | [`V_L2_NORM`](elasticsearch://reference/query-languages/esql/functions-operators/dense-vector-functions/v_l2_norm.md) | `EsqlFunctions.VL2Norm(a, b)` | |
 
-`KNN` overloads accept both `FloatVector` and `ByteVector` arguments. The optional third argument is any anonymous-object literal; properties translate to ES|QL named parameters (e.g. `new { k = 10, num_candidates = 100 }` -> `{ "k": 10, "num_candidates": 100 }`). Available KNN options include `k`, `num_candidates`, `similarity_threshold`, `boost`, `visit_percentage`, `oversample`.
+The optional third argument to `Knn` is any anonymous-object literal; properties translate to ES|QL named parameters (e.g. `new { k = 10, num_candidates = 100 }` -> `{ "k": 10, "num_candidates": 100 }`). Available KNN options include `k`, `num_candidates`, `similarity_threshold`, `boost`, `visit_percentage`, `oversample`.
 
 Not yet supported: `EMBEDDING` (planned, currently serverless-only preview).
 

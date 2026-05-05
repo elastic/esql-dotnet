@@ -183,7 +183,7 @@ See the [COMPLETION docs](completion.md) for pipeline patterns, standalone compl
 .Fuse(method: FuseMethod.Linear, normalizer: ScoreNormalizer.MinMax, weights: [0.7, 0.3])
 ```
 
-See the [vector and hybrid search docs](vector-search.md) for the full API including `FloatVector` / `ByteVector` wrappers, `TEXT_EMBEDDING`, `V_*` similarity functions, and FORK/FUSE configuration.
+See the [vector and hybrid search docs](vector-search.md) for the full API including the `ReadOnlyMemory<float>` vector type, `TEXT_EMBEDDING`, `V_*` similarity functions, and FORK/FUSE configuration.
 
 ### ES|QL-specific functions
 

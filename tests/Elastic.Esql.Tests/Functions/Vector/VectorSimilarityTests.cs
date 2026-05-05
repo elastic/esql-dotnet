@@ -37,7 +37,7 @@ public class VectorSimilarityTests : EsqlTestBase
 	{
 		var esql = CreateQuery<BookDocument>()
 			.From("books")
-			.Where(b => EsqlFunctions.VHamming(b.RgbVector, new byte[] { 1, 2, 3 }) < 10)
+			.Where(b => EsqlFunctions.VHamming(b.RgbVector, new float[] { 1, 2, 3 }) < 10)
 			.ToString();
 
 		_ = esql.Should().Contain("V_HAMMING(rgbVector, [1, 2, 3])");

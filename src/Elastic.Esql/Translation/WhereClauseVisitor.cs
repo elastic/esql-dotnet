@@ -11,7 +11,6 @@ using System.Text;
 using Elastic.Esql.Core;
 using Elastic.Esql.Extensions;
 using Elastic.Esql.Functions;
-using Elastic.Esql.Vectors;
 
 namespace Elastic.Esql.Translation;
 
@@ -183,9 +182,10 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 			case ExpressionType.Convert:
 			case ExpressionType.ConvertChecked:
-				// Implicit/explicit conversion to FloatVector/ByteVector wraps a closure-captured
-				// float[]/byte[] etc. Resolve the source value and wrap it so the dedicated
-				// converter is used during parameter serialization (and inline literal formatting).
+				// Implicit/explicit conversion to ReadOnlyMemory<float> from a closure-captured
+				// float[] / List<float>. Resolve the source value and emit it as a parameter so
+				// System.Text.Json renders the JSON array directly (and inline-literal formatting
+				// goes through EsqlFormatting.FormatFloatVector).
 				if (TryEmitVectorConvert(node))
 					return node;
 
@@ -202,8 +202,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 	private bool TryEmitVectorConvert(UnaryExpression node)
 	{
-		var targetType = node.Type;
-		if (targetType != typeof(FloatVector) && targetType != typeof(ByteVector))
+		if (node.Type != typeof(ReadOnlyMemory<float>))
 			return false;
 
 		// If the operand is a parameter-rooted member access (e.g. d.Embedding), let the
@@ -211,19 +210,11 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		if (node.Operand is MemberExpression member && ExpressionTranslationHelpers.IsRootedInParameter(member))
 			return false;
 
-		// If the operand is itself a vector value (e.g. another FloatVector), no wrapping required.
-		if (node.Operand.Type == typeof(FloatVector) || node.Operand.Type == typeof(ByteVector))
-			return false;
-
-		var resolved = ExpressionConstantResolver.Resolve(node.Operand);
-		object? wrapped = (targetType == typeof(FloatVector), resolved) switch
+		ReadOnlyMemory<float>? wrapped = ExpressionConstantResolver.Resolve(node.Operand) switch
 		{
-			(true, float[] arr) => (FloatVector)arr,
-			(true, ReadOnlyMemory<float> mem) => (FloatVector)mem,
-			(true, List<float> list) => (FloatVector)list,
-			(false, byte[] arr) => (ByteVector)arr,
-			(false, ReadOnlyMemory<byte> mem) => (ByteVector)mem,
-			(false, List<byte> list) => (ByteVector)list,
+			float[] arr => new ReadOnlyMemory<float>(arr),
+			ReadOnlyMemory<float> mem => mem,
+			List<float> list => new ReadOnlyMemory<float>(list.ToArray()),
 			_ => null
 		};
 
@@ -231,7 +222,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 			return false;
 
 		var memberName = node.Operand is MemberExpression me ? me.Member.Name : "vector";
-		_ = _builder.Append(_context.GetValueOrParameterName(memberName, wrapped));
+		_ = _builder.Append(_context.GetValueOrParameterName(memberName, wrapped.Value));
 		return true;
 	}
 

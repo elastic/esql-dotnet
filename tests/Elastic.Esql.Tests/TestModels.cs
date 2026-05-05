@@ -5,8 +5,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-using Elastic.Esql.Vectors;
-
 namespace Elastic.Esql.Tests;
 
 // ============================================================================
@@ -39,8 +37,8 @@ public class BookDocument
 {
 	public string Title { get; set; } = string.Empty;
 	public string Description { get; set; } = string.Empty;
-	public FloatVector TitleVec { get; set; }
-	public ByteVector RgbVector { get; set; }
+	public ReadOnlyMemory<float> TitleVec { get; set; }
+	public ReadOnlyMemory<float> RgbVector { get; set; }
 }
 
 /// <summary>Result projection for FORK/FUSE tests that includes metadata-derived columns.</summary>

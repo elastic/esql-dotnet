@@ -149,7 +149,7 @@ Math (`ABS`, `SQRT`, `ROUND`, ...), string (`TRIM`, `CONCAT`, `REPLACE`, ...), d
 
 ### Vector and Hybrid Search
 
-Run KNN, exact similarity, and hybrid (lexical + semantic) search using `FloatVector` / `ByteVector` wrapper types and the `Fork` / `Fuse` extensions. Document metadata fields are exposed via the `MetadataField` flags enum and the `EsqlMetadata` static marker class:
+Run KNN, exact similarity, and hybrid (lexical + semantic) search using `ReadOnlyMemory<float>` vector parameters (with implicit conversion from `float[]`) and the `Fork` / `Fuse` extensions. The same C# type covers `dense_vector` fields with element types `float`, `byte`, and `bit`. Document metadata fields are exposed via the `MetadataField` flags enum and the `EsqlMetadata` static marker class:
 
 ```csharp
 var queryVec = new float[] { 0.12f, -0.03f, 0.98f /* ... */ };
@@ -165,7 +165,7 @@ await client.CreateQuery<Book>()
     .ToListAsync();
 ```
 
-Wire encoding (`Legacy` / `Base64` / `Hex`) is configured on `EsqlClientSettings.FloatVectorEncoding` / `ByteVectorEncoding`. See the [vector and hybrid search docs](docs/esql/vector-search.md) for the full surface.
+See the [vector and hybrid search docs](docs/esql/vector-search.md) for the full surface.
 
 ### Async Query Execution
 

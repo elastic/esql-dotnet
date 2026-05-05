@@ -2,8 +2,6 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-using Elastic.Esql.Vectors;
-
 namespace Elastic.Esql.Tests.Functions.Vector;
 
 public class KnnTests : EsqlTestBase
@@ -38,9 +36,9 @@ public class KnnTests : EsqlTestBase
 	}
 
 	[Test]
-	public void Knn_WithExplicitFloatVector_EmitsKnnCall()
+	public void Knn_WithExplicitReadOnlyMemory_EmitsKnnCall()
 	{
-		var queryVec = new FloatVector(new float[] { 1f, 2f, 3f });
+		var queryVec = new ReadOnlyMemory<float>(new float[] { 1f, 2f, 3f });
 
 		var esql = CreateQuery<BookDocument>()
 			.From("books", MetadataField.Score)
@@ -70,7 +68,7 @@ public class KnnTests : EsqlTestBase
 	{
 		var esql = CreateQuery<BookDocument>()
 			.From("books", MetadataField.Score)
-			.Where(b => EsqlFunctions.Knn(b.RgbVector, new byte[] { 0, 120, 0 }))
+			.Where(b => EsqlFunctions.Knn(b.RgbVector, new float[] { 0, 120, 0 }))
 			.ToString();
 
 		_ = esql.Should().Be(

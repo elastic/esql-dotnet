@@ -45,7 +45,7 @@ public class TextEmbeddingTests : IntegrationTestBase
 			return;
 
 		// Use TEXT_EMBEDDING in an EVAL projection; the result is a dense_vector column
-		// that we materialise into a FloatVector property on a small projection type.
+		// that we materialise into a ReadOnlyMemory<float> property on a small projection type.
 		var results = await Fixture.EsqlClient
 			.CreateQuery<TestBook>()
 			.From(TestDataSeeder.BookIndex)

@@ -2,8 +2,6 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-using Elastic.Esql.Vectors;
-
 using static Elastic.Esql.Functions.EsqlFunctions;
 
 namespace Elastic.Esql.Integration.Tests.Esql;
@@ -108,8 +106,9 @@ public class KnnTests : IntegrationTestBase
 	[Test]
 	public async Task Knn_Float_WithCapturedClosure_RoundtripsThroughConverter()
 	{
-		// The query vector is a closure-captured float[] (no explicit FloatVector cast).
-		// Verifies that the closure path via TryEmitVectorConvert produces a server-acceptable payload.
+		// The query vector is a closure-captured float[] that gets implicitly converted to
+		// ReadOnlyMemory<float>. Verifies that the closure path via TryEmitVectorConvert
+		// produces a server-acceptable payload.
 		var capturedVec = new float[] { 0.5f, 0.5f, 0.5f, 0.5f };
 
 		var results = await Fixture.EsqlClient
@@ -134,8 +133,8 @@ public class KnnTests : IntegrationTestBase
 	[Test]
 	public async Task Knn_Byte_BasicSearch_ReturnsExactMatchFirst()
 	{
-		// Pure red byte vector should rank book-01 (RGB [255, 0, 0]) first.
-		var query = new byte[] { 255, 0, 0 };
+		// Pure red byte vector should rank book-01 (RGB [-1, 0, 0] signed = [255, 0, 0] unsigned) first.
+		var query = new float[] { -1, 0, 0 };
 
 		var results = await Fixture.EsqlClient
 			.CreateQuery<TestBook>()
@@ -151,9 +150,9 @@ public class KnnTests : IntegrationTestBase
 	}
 
 	[Test]
-	public async Task Knn_Byte_WithExplicitByteVector_ProducesIdenticalResultsAsImplicit()
+	public async Task Knn_Byte_WithExplicitReadOnlyMemory_ProducesIdenticalResultsAsImplicit()
 	{
-		var query = new ByteVector(new byte[] { 0, 255, 0 });
+		var query = new ReadOnlyMemory<float>(new float[] { 0, -1, 0 });
 
 		var results = await Fixture.EsqlClient
 			.CreateQuery<TestBook>()

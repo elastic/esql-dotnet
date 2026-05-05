@@ -135,7 +135,7 @@ using static Elastic.Esql.Functions.EsqlFunctions;
 
 ### Vector and hybrid search
 
-`KNN`, `TEXT_EMBEDDING`, dense vector similarity (`V_COSINE`, `V_DOT_PRODUCT`, `V_HAMMING`, `V_L1_NORM`, `V_L2_NORM`), `FROM ... METADATA`, and `FORK` + `FUSE` for hybrid lexical + semantic search are all supported. Vectors are passed via `FloatVector` / `ByteVector` wrapper structs that accept `float[]` / `byte[]` / `ReadOnlyMemory<T>` / `List<T>` via implicit conversions.
+`KNN`, `TEXT_EMBEDDING`, dense vector similarity (`V_COSINE`, `V_DOT_PRODUCT`, `V_HAMMING`, `V_L1_NORM`, `V_L2_NORM`), `FROM ... METADATA`, and `FORK` + `FUSE` for hybrid lexical + semantic search are all supported. Vectors are passed as `ReadOnlyMemory<float>` (with implicit `float[]` → `ReadOnlyMemory<float>` conversion). The same C# type covers `dense_vector` fields with element types `float`, `byte`, and `bit`.
 
 ```csharp
 // KNN with metadata-driven scoring

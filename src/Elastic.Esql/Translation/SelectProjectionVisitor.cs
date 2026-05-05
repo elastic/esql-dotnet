@@ -7,7 +7,6 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using Elastic.Esql.Core;
 using Elastic.Esql.Functions;
-using Elastic.Esql.Vectors;
 
 namespace Elastic.Esql.Translation;
 
@@ -456,8 +455,9 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 
 	private string TranslateConvert(UnaryExpression convert)
 	{
-		// Implicit/explicit conversion to FloatVector / ByteVector wraps a closure-captured
-		// float[] / byte[]. Resolve and wrap so the dedicated converter handles serialization.
+		// Implicit/explicit conversion to ReadOnlyMemory<float> from a closure-captured
+		// float[] / List<float> / ReadOnlyMemory<float>. Resolve and emit as a parameter
+		// so System.Text.Json renders the JSON array directly.
 		if (TryTranslateVectorConvert(convert, out var vectorLiteral))
 			return vectorLiteral;
 
@@ -467,23 +467,18 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 	private bool TryTranslateVectorConvert(UnaryExpression convert, out string result)
 	{
 		result = string.Empty;
-		var targetType = convert.Type;
-		if (targetType != typeof(FloatVector) && targetType != typeof(ByteVector))
+		if (convert.Type != typeof(ReadOnlyMemory<float>))
 			return false;
 
 		// Parameter-rooted member access (e.g. b.TitleVec) -> regular field name path.
 		if (convert.Operand is MemberExpression member && ExpressionTranslationHelpers.IsRootedInParameter(member))
 			return false;
 
-		var resolved = ExpressionConstantResolver.Resolve(convert.Operand);
-		object? wrapped = (targetType == typeof(FloatVector), resolved) switch
+		ReadOnlyMemory<float>? wrapped = ExpressionConstantResolver.Resolve(convert.Operand) switch
 		{
-			(true, float[] arr) => (FloatVector)arr,
-			(true, ReadOnlyMemory<float> mem) => (FloatVector)mem,
-			(true, List<float> list) => (FloatVector)list,
-			(false, byte[] arr) => (ByteVector)arr,
-			(false, ReadOnlyMemory<byte> mem) => (ByteVector)mem,
-			(false, List<byte> list) => (ByteVector)list,
+			float[] arr => new ReadOnlyMemory<float>(arr),
+			ReadOnlyMemory<float> mem => mem,
+			List<float> list => new ReadOnlyMemory<float>(list.ToArray()),
 			_ => null
 		};
 
@@ -491,7 +486,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 			return false;
 
 		var memberName = convert.Operand is MemberExpression me ? me.Member.Name : "vector";
-		result = _context.GetValueOrParameterName(memberName, wrapped);
+		result = _context.GetValueOrParameterName(memberName, wrapped.Value);
 		return true;
 	}
 
