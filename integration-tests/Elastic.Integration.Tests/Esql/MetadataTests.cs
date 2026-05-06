@@ -115,4 +115,26 @@ public class MetadataTests : IntegrationTestBase
 		results.Should().HaveCount(1);
 		results[0].Id.Should().NotBeNullOrEmpty();
 	}
+
+	[Test]
+	public async Task EsqlMetadata_SourceAs_DeserialisesIntoTypedProperty()
+	{
+		// Confirms `EsqlMetadata.SourceAs<T>()` round-trips the original document JSON into a
+		// typed destination property end-to-end (translator + materialiser + STJ).
+		// Note: dense_vector fields are intentionally excluded from `_source` by Elasticsearch by
+		// default for storage efficiency, so TitleVec / RgbVector are not asserted here.
+		var results = await Fixture.EsqlClient
+			.CreateQuery<TestBook>()
+			.From(TestDataSeeder.BookIndex, MetadataField.Source)
+			.Where(b => b.Id == "book-01")
+			.Select(b => new BookSourceProjection { Original = EsqlMetadata.SourceAs<TestBook>() })
+			.AsEsqlQueryable()
+			.ToListAsync();
+
+		results.Should().HaveCount(1);
+		results[0].Original.Should().NotBeNull();
+		results[0].Original!.Id.Should().Be("book-01");
+		results[0].Original!.Title.Should().Be("Programming Patterns");
+		results[0].Original!.Description.Should().NotBeNullOrEmpty();
+	}
 }

@@ -147,4 +147,35 @@ public class ForkFuseTests : EsqlTestBase
 		// _fork must NOT appear in the auto-retained KEEP after FUSE consumes it.
 		_ = esql.Should().NotContain("_fork");
 	}
+
+	[Test]
+	public void Fork_NestedInsideBranch_Throws()
+	{
+		var act = () => CreateQuery<BookDocument>()
+			.From("books", MetadataField.Score)
+			.Fork(
+				b => b.Fork(
+					inner => inner.Where(x => EsqlFunctions.Match(x.Title, "x")).Take(10),
+					inner => inner.Where(x => EsqlFunctions.Match(x.Title, "y")).Take(10)),
+				b => b.Where(x => EsqlFunctions.Match(x.Title, "z")).Take(10))
+			.ToString();
+
+		_ = act.Should().Throw<InvalidOperationException>().WithMessage("*Nested 'Fork'*");
+	}
+
+	[Test]
+	public void Fork_TwiceInPipeline_Throws()
+	{
+		var act = () => CreateQuery<BookDocument>()
+			.From("books", MetadataField.Score)
+			.Fork(
+				b => b.Where(x => EsqlFunctions.Match(x.Title, "x")).Take(10),
+				b => b.Where(x => EsqlFunctions.Match(x.Title, "y")).Take(10))
+			.Fork(
+				b => b.Where(x => EsqlFunctions.Match(x.Title, "p")).Take(10),
+				b => b.Where(x => EsqlFunctions.Match(x.Title, "q")).Take(10))
+			.ToString();
+
+		_ = act.Should().Throw<InvalidOperationException>().WithMessage("*Only one 'Fork'*");
+	}
 }

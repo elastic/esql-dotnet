@@ -43,6 +43,12 @@ internal sealed class EsqlTranslationContext
 	public bool ForkActive { get; set; }
 
 	/// <summary>
+	/// True when this context belongs to a sub-translation driven by <c>ForkBranchVisitor</c>.
+	/// Used to detect (and reject) a <c>Fork</c> command nested inside another fork's branch lambda.
+	/// </summary>
+	public bool InsideForkBranch { get; set; }
+
+	/// <summary>
 	/// Resolves a <see cref="EsqlMetadata"/> member name to its ES|QL identifier
 	/// (e.g. <c>_id</c>) and validates that the corresponding <see cref="MetadataField"/>
 	/// flag was requested on the <c>FROM</c> command (or that <c>_fork</c> is in scope).
