@@ -28,7 +28,26 @@ namespace Elastic.Esql.Tests;
 [JsonSerializable(typeof(NestedSelectionDocument))]
 [JsonSerializable(typeof(NestedHostLookup))]
 [JsonSerializable(typeof(DottedLevelLookup))]
+[JsonSerializable(typeof(BookDocument))]
+[JsonSerializable(typeof(BookProjection))]
 public sealed partial class EsqlTestMappingContext : JsonSerializerContext;
+
+/// <summary>Test document with dense_vector fields for KNN / V_* tests.</summary>
+public class BookDocument
+{
+	public string Title { get; set; } = string.Empty;
+	public string Description { get; set; } = string.Empty;
+	public DenseVector<float> TitleVec { get; set; }
+	public DenseVector<byte> RgbVector { get; set; }
+}
+
+/// <summary>Result projection for FORK/FUSE tests that includes metadata-derived columns.</summary>
+public class BookProjection
+{
+	public string Id { get; set; } = string.Empty;
+	public string Title { get; set; } = string.Empty;
+	public float Score { get; set; }
+}
 
 /// <summary>
 /// Primary test document type with various field types and attributes.

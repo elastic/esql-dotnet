@@ -32,6 +32,29 @@ The `.From()` method accepts any index pattern string:
 
 If `.From()` is not called, the type name is used as the default index pattern with camelCase convention (e.g., `LogEntry` becomes `FROM logEntry`).
 
+### Requesting metadata fields
+
+Pass a `MetadataField` flag value to request ES|QL [document metadata fields](elasticsearch://reference/query-languages/esql/esql-metadata-fields.md) via the `METADATA` directive:
+
+```csharp
+.From("books", MetadataField.Id | MetadataField.Score | MetadataField.Index)
+```
+
+```
+FROM books METADATA _id, _index, _score
+```
+
+Use the `EsqlMetadata` static marker class to reference these fields inside lambdas (`Where`, `OrderBy`, `Select`, `Fuse`):
+
+```csharp
+.From("books", MetadataField.Score)
+.OrderByDescending(_ => EsqlMetadata.Score)
+.Take(10)
+// FROM books METADATA _score | SORT _score DESC | LIMIT 10
+```
+
+See the [vector and hybrid search guide](vector-search.md#document-metadata) for the full pattern, including `SourceAs<T>` typed `_source` projection and auto-retention through subsequent `KEEP` commands.
+
 ## Field name resolution
 
 Field names are resolved from your C# type using `System.Text.Json` conventions:
@@ -519,6 +542,31 @@ ROW a = 1, b = "hello"
 ```
 
 This is primarily used with `COMPLETION` for standalone LLM prompts without querying an index.
+
+## FORK and FUSE - hybrid search
+
+`.Fork(...)` and `.Fuse(...)` translate to the ES|QL [`FORK`](elasticsearch://reference/query-languages/esql/commands/fork.md) and [`FUSE`](elasticsearch://reference/query-languages/esql/commands/fuse.md) commands respectively. Together they enable [hybrid search](vector-search.md#hybrid-search-fork--fuse): run multiple ranking pipelines in parallel and merge them with Reciprocal Rank Fusion (RRF) or linear combination.
+
+```csharp
+client.CreateQuery<Book>()
+    .From("books", MetadataField.Id | MetadataField.Index | MetadataField.Score)
+    .Fork(
+        b => b.Where(x => EsqlFunctions.Match(x.Title, "vegetarian curry")).Take(50),
+        b => b.Where(x => EsqlFunctions.Knn(x.TitleVec, queryVec)).Take(50))
+    .Fuse(method: FuseMethod.Linear, normalizer: ScoreNormalizer.MinMax, weights: [0.7, 0.3])
+    .OrderByDescending(_ => EsqlMetadata.Score)
+    .Take(10);
+```
+
+```
+FROM books METADATA _id, _index, _score
+| FORK (WHERE MATCH(title, "vegetarian curry") | LIMIT 50) (WHERE KNN(titleVec, [...]) | LIMIT 50)
+| FUSE LINEAR WITH { "normalizer": "minmax", "weights": { "fork1": 0.7, "fork2": 0.3 } }
+| SORT _score DESC
+| LIMIT 10
+```
+
+See the [vector and hybrid search guide](vector-search.md) for the complete API, including `weights` validation, custom score / group / key columns, and KNN options.
 
 ## COMPLETION - LLM inference
 

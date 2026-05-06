@@ -115,6 +115,12 @@ var errors = await client.CreateQuery<LogEntry>()
 | `.LeftJoin(...)` / `.LookupJoin(...)` | `LOOKUP JOIN index ON field` |
 | `.Completion(l => l.Message, endpoint)` | `COMPLETION col = message WITH {...}` |
 | `.Row(() => new { prompt = "..." })` | `ROW prompt = "..."` |
+| `.From("books", MetadataField.Score)` | `FROM books METADATA _score` |
+| `_ => EsqlMetadata.Score` (in any lambda) | `_score` |
+| `EsqlFunctions.Knn(field, queryVec, opts)` | `KNN(field, [...], { ... })` |
+| `EsqlFunctions.TextEmbedding(text, id)` | `TEXT_EMBEDDING("text", "id")` |
+| `EsqlFunctions.VCosine(a, b)` etc. | `V_COSINE(a, b)` etc. |
+| `.Fork(b1, b2, ...).Fuse()` | `FORK ( ... ) ( ... ) \| FUSE` |
 
 See the [Elastic.Esql README](src/Elastic.Esql) for the full list including string methods, DateTime arithmetic, and ES|QL-specific functions.
 
@@ -122,7 +128,7 @@ See the [Elastic.Esql README](src/Elastic.Esql) for the full list including stri
 
 ### Full LINQ Translation
 
-Translates `.Where()`, `.Select()`, `.GroupBy()`, `.OrderBy()`, `.Take()`, and more into ES|QL commands: `WHERE`, `EVAL`, `KEEP`, `DROP`, `STATS...BY`, `SORT`, `LIMIT`, `RENAME`, `ROW`, `COMPLETION`, and `LOOKUP JOIN`.
+Translates `.Where()`, `.Select()`, `.GroupBy()`, `.OrderBy()`, `.Take()`, and more into ES|QL commands: `WHERE`, `EVAL`, `KEEP`, `DROP`, `STATS...BY`, `SORT`, `LIMIT`, `RENAME`, `ROW`, `COMPLETION`, `LOOKUP JOIN`, `FORK`, `FUSE`, and `FROM ... METADATA`.
 
 ### RawEsql Fragment Append
 
@@ -139,7 +145,27 @@ You can also switch the downstream result type with `RawEsql<TSource, TNext>(...
 
 ### 80+ ES|QL Functions
 
-Math (`ABS`, `SQRT`, `ROUND`, ...), string (`TRIM`, `CONCAT`, `REPLACE`, ...), date/time (`DATE_EXTRACT`, `DATE_TRUNC`, `NOW`, ...), search (`MATCH`, `KQL`, `QSTR`, ...), IP (`CIDR_MATCH`, `IP_PREFIX`), cast operators (`::integer`, `::keyword`, ...), grouping (`BUCKET`, `CATEGORIZE`), and aggregation (`PERCENTILE`, `MEDIAN`, `STD_DEV`, `VALUES`, ...).
+Math (`ABS`, `SQRT`, `ROUND`, ...), string (`TRIM`, `CONCAT`, `REPLACE`, ...), date/time (`DATE_EXTRACT`, `DATE_TRUNC`, `NOW`, ...), search (`MATCH`, `KQL`, `QSTR`, ...), IP (`CIDR_MATCH`, `IP_PREFIX`), cast operators (`::integer`, `::keyword`, ...), grouping (`BUCKET`, `CATEGORIZE`), aggregation (`PERCENTILE`, `MEDIAN`, `STD_DEV`, `VALUES`, ...), and dense vector (`KNN`, `TEXT_EMBEDDING`, `V_COSINE`, `V_DOT_PRODUCT`, `V_HAMMING`, `V_L1_NORM`, `V_L2_NORM`).
+
+### Vector and Hybrid Search
+
+Run KNN, exact similarity, and hybrid (lexical + semantic) search using `DenseVector<T>` vector parameters (with implicit conversion from `T[]` and `ReadOnlyMemory<T>`) and the `Fork` / `Fuse` extensions. Use `DenseVector<float>` for `element_type: "float"` and `DenseVector<byte>` for both `element_type: "byte"` and `element_type: "bit"`. Document metadata fields are exposed via the `MetadataField` flags enum and the `EsqlMetadata` static marker class:
+
+```csharp
+var queryVec = new float[] { 0.12f, -0.03f, 0.98f /* ... */ };
+
+await client.CreateQuery<Book>()
+    .From("books", MetadataField.Id | MetadataField.Index | MetadataField.Score)
+    .Fork(
+        b => b.Where(x => EsqlFunctions.Match(x.Title, "shakespeare")).Take(50),
+        b => b.Where(x => EsqlFunctions.Knn(x.TitleVec, queryVec)).Take(50))
+    .Fuse(method: FuseMethod.Linear, normalizer: ScoreNormalizer.MinMax, weights: [0.7, 0.3])
+    .OrderByDescending(_ => EsqlMetadata.Score)
+    .Take(10)
+    .ToListAsync();
+```
+
+See the [vector and hybrid search docs](docs/esql/vector-search.md) for the full surface.
 
 ### Async Query Execution
 

@@ -182,6 +182,12 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 			case ExpressionType.Convert:
 			case ExpressionType.ConvertChecked:
+				// Implicit/explicit conversion to a DenseVector<T> from a closure-captured
+				// T[] / ReadOnlyMemory<T>. Resolve the converted value (the implicit operator
+				// is invoked by ExpressionConstantResolver) and emit as a parameter / inline literal.
+				if (TryEmitVectorConvert(node))
+					return node;
+
 				// Just visit the operand, ES|QL handles type coercion
 				_ = Visit(node.Operand);
 				break;
@@ -191,6 +197,15 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		}
 
 		return node;
+	}
+
+	private bool TryEmitVectorConvert(UnaryExpression node)
+	{
+		if (!DenseVectorTypeHelper.TryEmitDenseVectorLiteral(node, _context, out var literal))
+			return false;
+
+		_ = _builder.Append(literal);
+		return true;
 	}
 
 	protected override Expression VisitMember(MemberExpression node)
@@ -245,6 +260,13 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 					_ = _builder.Append(mathConst);
 					return node;
 				}
+			}
+
+			// EsqlMetadata.* marker access -> emit underscore-prefixed ES|QL identifier.
+			if (declaringType == typeof(EsqlMetadata))
+			{
+				_ = _builder.Append(_context.ResolveMetadataMemberOrThrow(memberName));
+				return node;
 			}
 
 			// For other static members, evaluate the value

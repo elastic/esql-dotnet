@@ -25,16 +25,18 @@ public static partial class EsqlQueryableExtensions
 	}
 
 	/// <summary>
-	/// Specifies the index pattern to use for the query.
+	/// Specifies the index pattern to use for the query, optionally requesting metadata
+	/// fields via the ES|QL <c>METADATA</c> directive.
 	/// </summary>
-	public static IQueryable<TSource> From<TSource>(this IQueryable<TSource> source, string indexPattern)
+	public static IQueryable<TSource> From<TSource>(this IQueryable<TSource> source, string indexPattern, MetadataField metadata = MetadataField.None)
 	{
 		Verify.NotNull(source);
 		Verify.NotNullOrEmpty(indexPattern);
 
 		return CreateQuery(source,
-			new Func<IQueryable<TSource>, string, IQueryable<TSource>>(From).Method,
-			Expression.Constant(indexPattern)
+			new Func<IQueryable<TSource>, string, MetadataField, IQueryable<TSource>>(From).Method,
+			Expression.Constant(indexPattern),
+			Expression.Constant(metadata)
 		);
 	}
 }

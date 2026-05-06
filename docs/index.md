@@ -25,7 +25,9 @@ FROM logs-*
 ## Key features
 
 - **Type-safe ES|QL**: write LINQ, get correct ES|QL with full IntelliSense and compile-time checking
-- **80+ translated functions**: math, string, date/time, search, IP, cast, grouping, and aggregation functions
+- **80+ translated functions**: math, string, date/time, search, IP, cast, grouping, aggregation, and dense vector functions
+- **Vector and hybrid search**: KNN, dense vector similarity, `TEXT_EMBEDDING`, and FORK/FUSE for combining lexical and semantic ranking ([guide](esql/vector-search.md))
+- **Document metadata**: type-safe access to `_id` / `_score` / `_source` / etc. via `MetadataField` flags and the `EsqlMetadata` marker class
 - **LOOKUP JOIN**: correlate data across indices with `LeftJoin` and `LookupJoin`
 - **COMPLETION**: run LLM inference directly in ES|QL pipelines with preconfigured inference endpoints
 - **Async queries**: submit long-running queries, poll for completion, stream results

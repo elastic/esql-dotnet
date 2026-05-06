@@ -386,6 +386,26 @@ var results = await client.CreateQuery<CompletionResult>()
 
 See the [COMPLETION docs](completion.md) for pipeline patterns and well-known endpoint IDs.
 
+## Vector and hybrid search
+
+Run KNN, exact similarity, and hybrid (lexical + semantic) search using `DenseVector<T>` vector parameters and the `Fork(...)` / `Fuse(...)` extensions:
+
+```csharp
+var queryVec = new float[] { 0.12f, -0.03f, 0.98f /* ... */ };
+
+var results = await client.CreateQuery<Book>()
+    .From("books", MetadataField.Id | MetadataField.Index | MetadataField.Score)
+    .Fork(
+        b => b.Where(x => EsqlFunctions.Match(x.Title, "shakespeare")).Take(50),
+        b => b.Where(x => EsqlFunctions.Knn(x.TitleVec, queryVec)).Take(50))
+    .Fuse()
+    .OrderByDescending(_ => EsqlMetadata.Score)
+    .Take(10)
+    .ToListAsync();
+```
+
+See the [vector and hybrid search docs](vector-search.md) for the full API surface, including KNN options, `TEXT_EMBEDDING`, `V_*` similarity functions, FORK/FUSE configuration, and `EsqlMetadata` markers.
+
 ## Inspect generated ES|QL
 
 Call `.ToString()` or `.ToEsqlString()` on any query to see the generated ES|QL without executing it:

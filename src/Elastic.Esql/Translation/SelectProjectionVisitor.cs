@@ -177,6 +177,14 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 
 	protected override Expression VisitMember(MemberExpression node)
 	{
+		// Top-level EsqlMetadata.X access in a projection (rare; usually appears inside a NewExpression)
+		if (node.Expression is null && node.Member.DeclaringType == typeof(EsqlMetadata))
+		{
+			var metaName = _context.ResolveMetadataMemberOrThrow(node.Member.Name);
+			_projections.Add(new ProjectionEntry(ProjectionKind.Keep, metaName, metaName, null));
+			return node;
+		}
+
 		var fieldName = node.ResolveFieldName(_context.Metadata);
 		if (ExpressionTranslationHelpers.IsObjectSelectionType(node.Type))
 			fieldName = $"{fieldName}.*";
@@ -196,6 +204,31 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 
 		if (TryClassifyNestedProjection(resultField, sourceExpression))
 			return;
+
+		// EsqlMetadata.X used as a projection source -> rename _x AS resultField (or keep when name matches).
+		if (sourceExpression is MemberExpression { Expression: null, Member: { } metaMember }
+			&& metaMember.DeclaringType == typeof(EsqlMetadata))
+		{
+			var metaName = _context.ResolveMetadataMemberOrThrow(metaMember.Name);
+			_projections.Add(metaName == resultField
+				? new ProjectionEntry(ProjectionKind.Keep, metaName, metaName, null)
+				: new ProjectionEntry(ProjectionKind.Rename, resultField, metaName, null));
+			return;
+		}
+
+		// EsqlMetadata.SourceAs<T>() -> KEEP _source (target type is reflected by the destination property).
+		if (sourceExpression is MethodCallExpression
+			{
+				Method: { Name: nameof(EsqlMetadata.SourceAs), DeclaringType: var sourceAsDecl }
+			}
+			&& sourceAsDecl == typeof(EsqlMetadata))
+		{
+			var metaName = _context.ResolveMetadataMemberOrThrow(nameof(EsqlMetadata.Source));
+			_projections.Add(metaName == resultField
+				? new ProjectionEntry(ProjectionKind.Keep, metaName, metaName, null)
+				: new ProjectionEntry(ProjectionKind.Rename, resultField, metaName, null));
+			return;
+		}
 
 		if (sourceExpression is MemberExpression memberExpr)
 		{
@@ -414,11 +447,24 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 			BinaryExpression binary => TranslateBinary(binary),
 			MemberExpression member => TranslateMemberExpression(member),
 			ConstantExpression constant => _context.FormatValue(constant.Value),
-			UnaryExpression { NodeType: ExpressionType.Convert, Operand: var operand } => TranslateExpression(operand),
+			UnaryExpression { NodeType: ExpressionType.Convert } convert => TranslateConvert(convert),
 			MethodCallExpression methodCall => TranslateMethodCall(methodCall),
 			ConditionalExpression conditional => TranslateConditional(conditional),
 			_ => throw new NotSupportedException($"Expression type {expression.GetType().Name} is not supported in projections.")
 		};
+
+	private string TranslateConvert(UnaryExpression convert)
+	{
+		// Implicit/explicit conversion to a DenseVector<T> from a closure-captured T[] /
+		// ReadOnlyMemory<T>. Resolve through the implicit operator and emit as parameter / literal.
+		if (TryTranslateVectorConvert(convert, out var vectorLiteral))
+			return vectorLiteral;
+
+		return TranslateExpression(convert.Operand);
+	}
+
+	private bool TryTranslateVectorConvert(UnaryExpression convert, out string result) =>
+		DenseVectorTypeHelper.TryEmitDenseVectorLiteral(convert, _context, out result);
 
 	private string TranslateMemberExpression(MemberExpression member)
 	{

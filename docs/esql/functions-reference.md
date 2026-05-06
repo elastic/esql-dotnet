@@ -159,6 +159,31 @@ Standard `Math.*` methods translate to their ES|QL equivalents in both Where and
 
 Note: `Math.E`, `Math.PI`, and `Math.Tau` are const fields that the C# compiler inlines as numeric literals. Use `EsqlFunctions.E()`, `.Pi()`, `.Tau()` instead to generate the ES|QL function calls.
 
+## Dense vector functions
+
+Vector search and similarity functions for `dense_vector` fields. Vectors are passed as `DenseVector<T>` (with implicit conversion from `T[]` and `ReadOnlyMemory<T>`). Use `T = float` for `element_type: "float"` and `T = byte` for both `element_type: "byte"` and `element_type: "bit"`; the bundled JSON converter handles the signed-byte wire format for `byte` vectors so you can pass natural unsigned values.
+See the [vector and hybrid search guide](vector-search.md) for the full pattern, including `FROM ... METADATA`, `EsqlMetadata.Score`, and FORK/FUSE hybrid pipelines.
+
+```csharp
+.From("books", MetadataField.Score)
+.Where(b => EsqlFunctions.Knn(b.Embedding, new float[] { 0.5f, 0.25f, 0.75f }, new KnnOptions { K = 10 }))
+// FROM books METADATA _score | WHERE KNN(embedding, [0.5, 0.25, 0.75], { "k": 10 })
+```
+
+| ES\|QL | `EsqlFunctions` | C# native |
+|---|---|---|
+| [`KNN`](elasticsearch://reference/query-languages/esql/functions-operators/dense-vector-functions/knn.md) | `EsqlFunctions.Knn(field, query[, options])` | |
+| [`TEXT_EMBEDDING`](elasticsearch://reference/query-languages/esql/functions-operators/dense-vector-functions/text_embedding.md) | `EsqlFunctions.TextEmbedding(text, inferenceId)` | |
+| [`V_COSINE`](elasticsearch://reference/query-languages/esql/functions-operators/dense-vector-functions/v_cosine.md) | `EsqlFunctions.VCosine(a, b)` | |
+| [`V_DOT_PRODUCT`](elasticsearch://reference/query-languages/esql/functions-operators/dense-vector-functions/v_dot_product.md) | `EsqlFunctions.VDotProduct(a, b)` | |
+| [`V_HAMMING`](elasticsearch://reference/query-languages/esql/functions-operators/dense-vector-functions/v_hamming.md) | `EsqlFunctions.VHamming(a, b)` | |
+| [`V_L1_NORM`](elasticsearch://reference/query-languages/esql/functions-operators/dense-vector-functions/v_l1_norm.md) | `EsqlFunctions.VL1Norm(a, b)` | |
+| [`V_L2_NORM`](elasticsearch://reference/query-languages/esql/functions-operators/dense-vector-functions/v_l2_norm.md) | `EsqlFunctions.VL2Norm(a, b)` | |
+
+The optional third argument to `Knn` is a typed `KnnOptions` record. Set the properties you want to override; only set properties are emitted into the ES|QL named-parameter object (e.g. `new KnnOptions { K = 10, MinCandidates = 100 }` -> `{ "k": 10, "min_candidates": 100 }`). Available properties: `K`, `MinCandidates`, `Similarity`, `Boost`, `VisitPercentage`, `RescoreOversample`.
+
+Not yet supported: `EMBEDDING` (planned, currently serverless-only preview).
+
 ## Search functions
 
 Full-text search and pattern matching functions available through `EsqlFunctions`.
@@ -301,7 +326,5 @@ The following ES|QL function categories have no Elastic.Esql equivalents yet:
 **[Multivalue functions](elasticsearch://reference/query-languages/esql/functions-operators/mv-functions.md)**: `MV_APPEND`, `MV_AVG`, `MV_CONCAT`, `MV_CONTAINS`, `MV_COUNT`, `MV_DEDUPE`, `MV_FIRST`, `MV_INTERSECTION`, `MV_INTERSECTS`, `MV_LAST`, `MV_MAX`, `MV_MEDIAN`, `MV_MEDIAN_ABSOLUTE_DEVIATION`, `MV_MIN`, `MV_PERCENTILE`, `MV_PSERIES_WEIGHTED_SUM`, `MV_SLICE`, `MV_SORT`, `MV_SUM`, `MV_UNION`, `MV_ZIP`.
 
 **[Type conversion functions](elasticsearch://reference/query-languages/esql/functions-operators/type-conversion-functions.md)**: `TO_BOOLEAN`, `TO_CARTESIANPOINT`, `TO_CARTESIANSHAPE`, `TO_DATEPERIOD`, `TO_DATETIME`, `TO_DATE_NANOS`, `TO_DEGREES`, `TO_DENSE_VECTOR`, `TO_DOUBLE`, `TO_GEOHASH`, `TO_GEOHEX`, `TO_GEOPOINT`, `TO_GEOSHAPE`, `TO_GEOTILE`, `TO_INTEGER`, `TO_IP`, `TO_LONG`, `TO_RADIANS`, `TO_STRING`, `TO_TIMEDURATION`, `TO_UNSIGNED_LONG`, `TO_VERSION`, `TO_AGGREGATE_METRIC_DOUBLE`.
-
-**[Dense vector functions](elasticsearch://reference/query-languages/esql/functions-operators/dense-vector-functions.md)**: `KNN`, `TEXT_EMBEDDING`, `V_COSINE`, `V_DOT_PRODUCT`, `V_HAMMING`, `V_L1_NORM`, `V_L2_NORM`.
 
 **[Time series aggregation functions](elasticsearch://reference/query-languages/esql/functions-operators/time-series-aggregation-functions.md)**: `ABSENT_OVER_TIME`, `AVG_OVER_TIME`, `COUNT_OVER_TIME`, `COUNT_DISTINCT_OVER_TIME`, `DELTA`, `DERIV`, `FIRST_OVER_TIME`, `IDELTA`, `INCREASE`, `IRATE`, `LAST_OVER_TIME`, `MAX_OVER_TIME`, `MIN_OVER_TIME`, `PERCENTILE_OVER_TIME`, `PRESENT_OVER_TIME`, `RATE`, `STDDEV_OVER_TIME`, `VARIANCE_OVER_TIME`, `SUM_OVER_TIME`.

@@ -2,7 +2,9 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Globalization;
 using System.Linq.Expressions;
+using System.Text;
 using Elastic.Esql.Functions;
 
 namespace Elastic.Esql.Translation;
@@ -149,8 +151,69 @@ internal static class EsqlFunctionTranslator
 			nameof(EsqlFunctions.TBucket) => $"TBUCKET({translate(args[0])}, {translate(args[1])})",
 			nameof(EsqlFunctions.Categorize) => $"CATEGORIZE({translate(args[0])})",
 
+			// Dense vector functions
+			nameof(EsqlFunctions.Knn) when args.Count == 2 => $"KNN({translate(args[0])}, {translate(args[1])})",
+			nameof(EsqlFunctions.Knn) when args.Count == 3 => $"KNN({translate(args[0])}, {translate(args[1])}, {TranslateKnnOptions(args[2])})",
+			nameof(EsqlFunctions.TextEmbedding) => $"TEXT_EMBEDDING({translate(args[0])}, {translate(args[1])})",
+			nameof(EsqlFunctions.VCosine) => $"V_COSINE({translate(args[0])}, {translate(args[1])})",
+			nameof(EsqlFunctions.VDotProduct) => $"V_DOT_PRODUCT({translate(args[0])}, {translate(args[1])})",
+			nameof(EsqlFunctions.VHamming) => $"V_HAMMING({translate(args[0])}, {translate(args[1])})",
+			nameof(EsqlFunctions.VL1Norm) => $"V_L1_NORM({translate(args[0])}, {translate(args[1])})",
+			nameof(EsqlFunctions.VL2Norm) => $"V_L2_NORM({translate(args[0])}, {translate(args[1])})",
+
 			_ => null
 		};
+
+	/// <summary>
+	/// Renders a <see cref="KnnOptions"/> argument expression as the ES|QL named-parameter object
+	/// literal (e.g. <c>{ "k": 10, "num_candidates": 100 }</c>). Only non-null properties are emitted.
+	/// </summary>
+	private static string TranslateKnnOptions(Expression expression)
+	{
+		var resolved = ExpressionConstantResolver.Resolve(expression)
+			?? throw new NotSupportedException("KnnOptions argument must not be null. Use the two-argument 'Knn' overload to omit options.");
+
+		if (resolved is not KnnOptions options)
+			throw new NotSupportedException(
+				$"Knn options argument must be a '{nameof(KnnOptions)}' value (got '{resolved.GetType().Name}').");
+
+		var sb = new StringBuilder("{ ");
+		var first = true;
+
+		AppendIntOption(sb, ref first, "k", options.K);
+		AppendIntOption(sb, ref first, "min_candidates", options.MinCandidates);
+		AppendDoubleOption(sb, ref first, "similarity", options.Similarity);
+		AppendDoubleOption(sb, ref first, "boost", options.Boost);
+		AppendDoubleOption(sb, ref first, "visit_percentage", options.VisitPercentage);
+		AppendDoubleOption(sb, ref first, "rescore_oversample", options.RescoreOversample);
+
+		_ = sb.Append(" }");
+		return sb.ToString();
+	}
+
+	private static void AppendIntOption(StringBuilder sb, ref bool first, string name, int? value)
+	{
+		if (value is null)
+			return;
+
+		if (!first)
+			_ = sb.Append(", ");
+		first = false;
+
+		_ = sb.Append('"').Append(name).Append("\": ").Append(value.Value.ToString(CultureInfo.InvariantCulture));
+	}
+
+	private static void AppendDoubleOption(StringBuilder sb, ref bool first, string name, double? value)
+	{
+		if (value is null)
+			return;
+
+		if (!first)
+			_ = sb.Append(", ");
+		first = false;
+
+		_ = sb.Append('"').Append(name).Append("\": ").Append(value.Value.ToString("G", CultureInfo.InvariantCulture));
+	}
 
 	/// <summary>Translates a Math.* method call to ES|QL. Returns null if not recognized.</summary>
 	public static string? TryTranslateMath(string methodName, Func<Expression, string> translate, IReadOnlyList<Expression> args) =>

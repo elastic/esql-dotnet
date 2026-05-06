@@ -20,8 +20,72 @@ internal static class ExpressionConstantResolver
 			ConstantExpression constant => constant.Value,
 			MemberExpression member => ResolveMember(member),
 			UnaryExpression { NodeType: ExpressionType.Convert or ExpressionType.ConvertChecked } unary => ResolveUnary(unary),
+			NewArrayExpression { NodeType: ExpressionType.NewArrayInit } newArray => ResolveNewArray(newArray),
+			NewExpression newExpression => ResolveNew(newExpression),
+			MemberInitExpression memberInit => ResolveMemberInit(memberInit),
 			_ => throw new NotSupportedException($"Expression of type '{expression.GetType().Name}' ({expression.NodeType}) is not supported.")
 		};
+	}
+
+	private static object? ResolveNew(NewExpression newExpression)
+	{
+		// NewExpression.Constructor is null only for default value-type construction (e.g. `new MyStruct()`),
+		// which would require Activator.CreateInstance and is not AOT-safe. The supported callers
+		// (KnnOptions and similar reference types) always carry a non-null Constructor.
+		if (newExpression.Constructor is null)
+			throw new NotSupportedException(
+				$"Cannot resolve 'new {newExpression.Type.Name}()' without an explicit constructor. " +
+				"Use a reference type or a constructor-bearing value type.");
+
+		var args = new object?[newExpression.Arguments.Count];
+		for (var i = 0; i < newExpression.Arguments.Count; i++)
+			args[i] = Resolve(newExpression.Arguments[i]);
+
+		return newExpression.Constructor.Invoke(args);
+	}
+
+	private static object? ResolveMemberInit(MemberInitExpression memberInit)
+	{
+		var instance = ResolveNew(memberInit.NewExpression)
+			?? throw new InvalidOperationException(
+				$"Cannot resolve constructor for '{memberInit.Type}' in MemberInitExpression.");
+
+		foreach (var binding in memberInit.Bindings)
+		{
+			if (binding is not MemberAssignment assignment)
+				throw new NotSupportedException($"MemberInit binding type '{binding.BindingType}' is not supported.");
+
+			var value = Resolve(assignment.Expression);
+			switch (assignment.Member)
+			{
+				case PropertyInfo property:
+					property.SetValue(instance, value);
+					break;
+				case FieldInfo field:
+					field.SetValue(instance, value);
+					break;
+				default:
+					throw new NotSupportedException(
+						$"MemberInit member '{assignment.Member.GetType().Name}' is not supported.");
+			}
+		}
+
+		return instance;
+	}
+
+	private static object? ResolveNewArray(NewArrayExpression newArray)
+	{
+		var elementType = newArray.Type.GetElementType()
+			?? throw new NotSupportedException($"Array type '{newArray.Type}' has no element type.");
+
+		var array = Array.CreateInstance(elementType, newArray.Expressions.Count);
+		for (var i = 0; i < newArray.Expressions.Count; i++)
+		{
+			var value = Resolve(newArray.Expressions[i]);
+			array.SetValue(value, i);
+		}
+
+		return array;
 	}
 
 	private static object? ResolveMember(MemberExpression member)
