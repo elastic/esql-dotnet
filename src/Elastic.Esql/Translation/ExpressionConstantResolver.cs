@@ -29,15 +29,19 @@ internal static class ExpressionConstantResolver
 
 	private static object? ResolveNew(NewExpression newExpression)
 	{
+		// NewExpression.Constructor is null only for default value-type construction (e.g. `new MyStruct()`),
+		// which would require Activator.CreateInstance and is not AOT-safe. The supported callers
+		// (KnnOptions and similar reference types) always carry a non-null Constructor.
+		if (newExpression.Constructor is null)
+			throw new NotSupportedException(
+				$"Cannot resolve 'new {newExpression.Type.Name}()' without an explicit constructor. " +
+				"Use a reference type or a constructor-bearing value type.");
+
 		var args = new object?[newExpression.Arguments.Count];
 		for (var i = 0; i < newExpression.Arguments.Count; i++)
 			args[i] = Resolve(newExpression.Arguments[i]);
 
-		if (newExpression.Constructor is not null)
-			return newExpression.Constructor.Invoke(args);
-
-		// Parameterless value-type construction.
-		return Activator.CreateInstance(newExpression.Type);
+		return newExpression.Constructor.Invoke(args);
 	}
 
 	private static object? ResolveMemberInit(MemberInitExpression memberInit)
