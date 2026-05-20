@@ -228,14 +228,16 @@ internal sealed class EsqlFormatter : ICommandVisitor
 		return false;
 	}
 
-	private static readonly HashSet<string> ReservedKeywords = new(StringComparer.OrdinalIgnoreCase)
-	{
-		"FROM", "WHERE", "EVAL", "STATS", "SORT", "LIMIT", "KEEP", "DROP",
-		"BY", "AS", "AND", "OR", "NOT", "IN", "LIKE", "RLIKE", "IS", "NULL",
-		"TRUE", "FALSE", "ASC", "DESC", "NULLS", "FIRST", "LAST",
-		"ROW", "SHOW", "META", "METADATA", "MV_EXPAND", "RENAME", "DISSECT", "GROK", "ENRICH",
-		"COMPLETION", "JOIN", "LOOKUP"
-	};
+	private static readonly HashSet<string> ReservedKeywords = new(
+		[
+			"FROM", "WHERE", "EVAL", "STATS", "SORT", "LIMIT", "KEEP", "DROP",
+			"BY", "AS", "AND", "OR", "NOT", "IN", "LIKE", "RLIKE", "IS", "NULL",
+			"TRUE", "FALSE", "ASC", "DESC", "NULLS", "FIRST", "LAST",
+			"ROW", "SHOW", "META", "METADATA", "MV_EXPAND", "RENAME", "DISSECT", "GROK", "ENRICH",
+			"COMPLETION", "JOIN", "LOOKUP"
+		],
+		StringComparer.OrdinalIgnoreCase
+	);
 
 	private static bool IsReservedKeyword(string identifier) => ReservedKeywords.Contains(identifier);
 }

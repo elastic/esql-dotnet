@@ -602,7 +602,9 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		Dictionary<string, string>? outerFieldRemappings
 	) : ExpressionVisitor
 	{
+#pragma warning disable IDE0028 // collection-expression suggestion would silently drop the explicit comparer
 		private readonly HashSet<string> _seen = new(StringComparer.Ordinal);
+#pragma warning restore IDE0028
 
 		public List<string> Fields { get; } = [];
 
