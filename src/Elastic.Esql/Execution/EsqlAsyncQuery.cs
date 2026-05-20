@@ -4,6 +4,9 @@
 
 using System.Runtime.CompilerServices;
 using Elastic.Esql.Materialization;
+#if NET10_0_OR_GREATER
+using System.IO.Pipelines;
+#endif
 
 namespace Elastic.Esql.Execution;
 
@@ -121,7 +124,7 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 		if (QueryId is null)
 			throw new InvalidOperationException("Cannot refresh an async query without a query ID.");
 
-		var response = await _executor.PollAsyncQueryAsync(QueryId, _queryOptions, cancellationToken).ConfigureAwait(false);
+		var response = await _executor.PollAsyncQueryAsync(QueryId, _queryOptions, format: null, cancellationToken).ConfigureAwait(false);
 
 		await DisposeOwnedResponseAsync().ConfigureAwait(false);
 		DisposeResults();
@@ -147,7 +150,7 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 
 		while (true)
 		{
-			var response = await _executor.PollAsyncQueryAsync(QueryId, _queryOptions, cancellationToken).ConfigureAwait(false);
+			var response = await _executor.PollAsyncQueryAsync(QueryId, _queryOptions, format: null, cancellationToken).ConfigureAwait(false);
 
 			await DisposeOwnedResponseAsync().ConfigureAwait(false);
 			DisposeResults();
@@ -195,7 +198,7 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 		if (QueryId is null)
 			throw new InvalidOperationException("Cannot refresh an async query without a query ID.");
 
-		var response = _executor.PollAsyncQuery(QueryId, _queryOptions);
+		var response = _executor.PollAsyncQuery(QueryId, _queryOptions, format: null);
 
 		DisposeOwnedResponse();
 		DisposeResults();
@@ -222,7 +225,7 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 
 		while (true)
 		{
-			var response = _executor.PollAsyncQuery(QueryId, _queryOptions);
+			var response = _executor.PollAsyncQuery(QueryId, _queryOptions, format: null);
 
 			DisposeOwnedResponse();
 			DisposeResults();
@@ -386,5 +389,282 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 			public void Dispose() =>
 				inner.DisposeAsync().AsTask().GetAwaiter().GetResult();
 		}
+	}
+}
+
+/// <summary>
+/// Non-generic counterpart to <see cref="EsqlAsyncQuery{T}"/> that returns the raw, server-formatted
+/// response body (CSV, JSON, Arrow, etc.) instead of materialised POCO rows and auto-cleans up on disposal.
+/// <para>
+/// This type is <b>not thread-safe</b>. Do not call <see cref="RefreshAsync"/>/<see cref="Refresh"/>,
+/// <see cref="WaitForCompletionAsync"/>/<see cref="WaitForCompletion"/>, or row enumeration concurrently.
+/// </para>
+/// </summary>
+public sealed class EsqlAsyncQuery : IAsyncDisposable, IDisposable
+{
+	private static readonly TimeSpan DefaultPollInterval = TimeSpan.FromMilliseconds(100);
+
+	private readonly IEsqlQueryExecutor _executor;
+	private readonly object? _queryOptions;
+	private IEsqlAsyncResponse? _ownedAsyncResponse;
+	private IEsqlResponse? _ownedSyncResponse;
+	private int _disposed;
+
+	internal EsqlAsyncQuery(IEsqlQueryExecutor executor, IEsqlAsyncResponse response, EsqlFormat format, object? queryOptions)
+	{
+		_executor = executor;
+		_ownedAsyncResponse = response;
+		Format = format;
+		_queryOptions = queryOptions;
+		ApplyHeaderMetadata(response);
+	}
+
+	internal EsqlAsyncQuery(IEsqlQueryExecutor executor, IEsqlResponse response, EsqlFormat format, object? queryOptions)
+	{
+		_executor = executor;
+		_ownedSyncResponse = response;
+		Format = format;
+		_queryOptions = queryOptions;
+		ApplyHeaderMetadata(response);
+	}
+
+	/// <summary>The async query ID (null if completed synchronously without <c>keep_on_completion</c>).</summary>
+	public string? QueryId { get; private set; }
+
+	/// <summary>Whether the query is still running according to the most recent poll.</summary>
+	public bool IsRunning { get; private set; }
+
+	/// <summary>Whether the query has completed.</summary>
+	public bool IsCompleted => !IsRunning;
+
+	/// <summary>The wire-level response format requested at submission time.</summary>
+	public EsqlFormat Format { get; }
+
+	/// <summary>Returns the response body of the most recent (completed) poll as a <see cref="Stream"/>.</summary>
+	/// <exception cref="InvalidOperationException">Thrown if the query is not yet completed.</exception>
+	public Stream GetResponseStream()
+	{
+		ThrowIfNotCompleted();
+
+		if (_ownedSyncResponse is { } sync)
+			return sync.Body;
+
+#if NET10_0_OR_GREATER
+		if (_ownedAsyncResponse is { } asyncResp)
+			return asyncResp.Body.AsStream();
+#else
+		if (_ownedAsyncResponse is { } asyncResp)
+			return asyncResp.Body;
+#endif
+
+		throw new InvalidOperationException("No response body is available.");
+	}
+
+#if NET10_0_OR_GREATER
+	/// <summary>Returns the response body of the most recent (completed) poll as a <see cref="PipeReader"/>.</summary>
+	/// <exception cref="InvalidOperationException">Thrown if the query is not yet completed.</exception>
+	public PipeReader GetResponsePipeReader()
+	{
+		ThrowIfNotCompleted();
+
+		if (_ownedAsyncResponse is { } asyncResp)
+			return asyncResp.Body;
+
+		if (_ownedSyncResponse is { } sync)
+			return PipeReader.Create(sync.Body);
+
+		throw new InvalidOperationException("No response body is available.");
+	}
+#endif
+
+	/// <summary>Performs a single poll to refresh the query state.</summary>
+	public async Task RefreshAsync(CancellationToken cancellationToken = default)
+	{
+		if (IsCompleted)
+			return;
+
+		if (QueryId is null)
+			throw new InvalidOperationException("Cannot refresh an async query without a query ID.");
+
+		var response = await _executor
+			.PollAsyncQueryAsync(QueryId, _queryOptions, Format, cancellationToken)
+			.ConfigureAwait(false);
+
+		await DisposeOwnedResponseAsync().ConfigureAwait(false);
+		_ownedAsyncResponse = response;
+		ApplyHeaderMetadata(response);
+	}
+
+	/// <summary>Polls until the query completes.</summary>
+	public async Task WaitForCompletionAsync(TimeSpan? pollInterval = null, CancellationToken cancellationToken = default)
+	{
+		if (IsCompleted)
+			return;
+
+		if (QueryId is null)
+			throw new InvalidOperationException("Cannot wait for completion of an async query without a query ID.");
+
+		var interval = ResolvePollInterval(pollInterval);
+
+		while (!IsCompleted)
+		{
+			await RefreshAsync(cancellationToken).ConfigureAwait(false);
+
+			if (IsCompleted)
+				return;
+
+			await Task.Delay(interval, cancellationToken).ConfigureAwait(false);
+		}
+	}
+
+	/// <summary>Performs a single synchronous poll to refresh the query state.</summary>
+	public void Refresh()
+	{
+		if (IsCompleted)
+			return;
+
+		if (QueryId is null)
+			throw new InvalidOperationException("Cannot refresh an async query without a query ID.");
+
+		var response = _executor.PollAsyncQuery(QueryId, _queryOptions, Format);
+
+		DisposeOwnedResponse();
+		_ownedSyncResponse = response;
+		ApplyHeaderMetadata(response);
+	}
+
+	/// <summary>Polls synchronously until the query completes.</summary>
+	public void WaitForCompletion(TimeSpan? pollInterval = null)
+	{
+		if (IsCompleted)
+			return;
+
+		if (QueryId is null)
+			throw new InvalidOperationException("Cannot wait for completion of an async query without a query ID.");
+
+		var interval = ResolvePollInterval(pollInterval);
+
+		while (!IsCompleted)
+		{
+			Refresh();
+
+			if (IsCompleted)
+				return;
+
+			Thread.Sleep(interval);
+		}
+	}
+
+	/// <summary>Disposes the owned response and DELETEs the async query from the cluster (best-effort).</summary>
+	public async ValueTask DisposeAsync()
+	{
+		if (Interlocked.Exchange(ref _disposed, 1) != 0)
+			return;
+
+		await DisposeOwnedResponseAsync().ConfigureAwait(false);
+
+		if (QueryId is null)
+			return;
+
+		try
+		{
+			await _executor.DeleteAsyncQueryAsync(QueryId, _queryOptions, default).ConfigureAwait(false);
+		}
+		catch (Exception)
+		{
+			// Best-effort cleanup; executor may throw transport-specific exceptions
+		}
+	}
+
+	/// <summary>Disposes the owned response and DELETEs the async query from the cluster (best-effort).</summary>
+	public void Dispose()
+	{
+		if (Interlocked.Exchange(ref _disposed, 1) != 0)
+			return;
+
+		DisposeOwnedResponse();
+
+		if (QueryId is null)
+			return;
+
+		try
+		{
+			_executor.DeleteAsyncQuery(QueryId, _queryOptions);
+		}
+		catch (Exception)
+		{
+			// Best-effort cleanup; executor may throw transport-specific exceptions
+		}
+	}
+
+	private void ApplyHeaderMetadata(IEsqlResponse response)
+	{
+		if (response.TryGetHeader("X-Elasticsearch-Async-Id", out var idValues))
+			QueryId = idValues.FirstOrDefault() ?? QueryId;
+
+		IsRunning = response.TryGetHeader("X-Elasticsearch-Async-Is-Running", out var runningValues)
+			&& ParseIsRunning(runningValues);
+	}
+
+	private void ApplyHeaderMetadata(IEsqlAsyncResponse response)
+	{
+		if (response.TryGetHeader("X-Elasticsearch-Async-Id", out var idValues))
+			QueryId = idValues.FirstOrDefault() ?? QueryId;
+
+		IsRunning = response.TryGetHeader("X-Elasticsearch-Async-Is-Running", out var runningValues)
+			&& ParseIsRunning(runningValues);
+	}
+
+	private static bool ParseIsRunning(IEnumerable<string> values)
+	{
+		var raw = values.FirstOrDefault();
+		if (raw is null)
+			return false;
+
+		// Elasticsearch emits this header as an RFC 8941 structured-field boolean: "?1" = true, "?0" = false.
+		// Some intermediaries (or earlier server versions) may send the textual "true"/"false" instead.
+		return raw switch
+		{
+			"?1" => true,
+			"?0" => false,
+			_ => bool.TryParse(raw, out var parsed) && parsed
+		};
+	}
+
+	private void ThrowIfNotCompleted()
+	{
+		if (!IsCompleted)
+			throw new InvalidOperationException("The async query has not completed yet. Call WaitForCompletion(Async) or Refresh(Async) until IsCompleted is true.");
+	}
+
+	private static TimeSpan ResolvePollInterval(TimeSpan? pollInterval)
+	{
+		if (pollInterval is null)
+			return DefaultPollInterval;
+
+		if (pollInterval.Value <= TimeSpan.Zero)
+			throw new ArgumentOutOfRangeException(nameof(pollInterval), "The poll interval must be greater than zero.");
+
+		return pollInterval.Value;
+	}
+
+	private void DisposeOwnedResponse()
+	{
+		_ownedAsyncResponse?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+		_ownedAsyncResponse = null;
+		_ownedSyncResponse?.Dispose();
+		_ownedSyncResponse = null;
+	}
+
+	private async ValueTask DisposeOwnedResponseAsync()
+	{
+		if (_ownedAsyncResponse is not null)
+		{
+			await _ownedAsyncResponse.DisposeAsync().ConfigureAwait(false);
+			_ownedAsyncResponse = null;
+		}
+
+		_ownedSyncResponse?.Dispose();
+		_ownedSyncResponse = null;
 	}
 }

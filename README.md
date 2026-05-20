@@ -184,6 +184,37 @@ await using var asyncQuery = await client.CreateQuery<LogEntry>()
 var results = await asyncQuery.ToListAsync();
 ```
 
+### Raw Response Formats
+
+Get the raw, server-formatted bytes (`Csv`, `Tsv`, `Txt`, `Json`, `Arrow`, `Smile`, `Cbor`, `Yaml`) instead of materialised POCO rows. Useful when piping to a file, feeding columnar consumers, or doing zero-copy decoding:
+
+```csharp
+using var stream = await client.CreateQuery<LogEntry>()
+    .From("logs-*")
+    .Where(l => l.Level == "ERROR")
+    .ToStreamAsync(EsqlFormat.Csv);
+
+await stream.CopyToAsync(File.Create("errors.csv"));
+```
+
+Server-side async with a non-JSON format. The query is best-effort `DELETE`d on disposal:
+
+```csharp
+await using var q = await client.CreateQuery<LogEntry>()
+    .From("logs-*")
+    .Where(l => l.Level == "ERROR")
+    .ToAsyncQueryAsync(EsqlFormat.Arrow);
+
+await q.WaitForCompletionAsync();
+
+using var stream = q.GetResponseStream();
+using var reader = new ArrowStreamReader(stream); // Apache.Arrow.Ipc — separate NuGet
+while (await reader.ReadNextRecordBatchAsync() is { } batch)
+    Console.WriteLine($"Batch: {batch.Length} rows, {batch.ColumnCount} cols");
+```
+
+A `ToPipeReaderAsync(format)` overload is available on .NET 10+ for zero-copy consumers.
+
 ### COMPLETION (LLM Inference)
 
 Run LLM inference directly in ES|QL pipelines or as standalone prompts using preconfigured inference endpoints:

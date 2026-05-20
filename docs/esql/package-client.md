@@ -305,6 +305,60 @@ await foreach (var entry in query.AsAsyncEnumerable())
 }
 ```
 
+## Raw response formats
+
+By default, every query path materialises rows into POCOs by streaming the JSON response through the typed reader. For scenarios where you want the unparsed, server-formatted bytes — piping to a file, feeding columnar consumers like Apache Arrow / DataFusion / DuckDB, or doing your own zero-copy decoding — every queryable also exposes raw-stream terminal methods.
+
+Pick the wire format with the `EsqlFormat` enum:
+
+| Value | Media type | Notes |
+|---|---|---|
+| `Json` | `application/json` | Same envelope the typed reader consumes, but returned unparsed |
+| `Csv` | `text/csv` | One header row plus data |
+| `Tsv` | `text/tab-separated-values` | Tab-delimited variant |
+| `Txt` | `text/plain` | Human-readable ASCII table |
+| `Arrow` | `application/vnd.apache.arrow.stream` | Apache Arrow IPC stream |
+| `Smile` | `application/smile` | Binary JSON variant |
+| `Cbor` | `application/cbor` | CBOR |
+| `Yaml` | `application/yaml` | YAML |
+
+### Sync raw queries
+
+```csharp
+using var stream = await client.CreateQuery<LogEntry>()
+    .From("logs-*")
+    .Where(l => l.Level == "ERROR")
+    .ToStreamAsync(EsqlFormat.Csv);
+
+await stream.CopyToAsync(File.Create("errors.csv"));
+```
+
+`ToStreamAsync(format)` returns a `Stream`. Disposing the stream releases the underlying HTTP connection — the response wrapper is owned by the returned stream.
+
+A synchronous overload `ToStream(format)` is available for non-async call sites. On .NET 10+, `ToPipeReaderAsync(format)` returns a `PipeReader` for zero-copy consumers.
+
+### Raw async queries
+
+For long-running queries with a non-JSON format, use `ToAsyncQueryAsync(format)`. This mirrors `ToAsyncQueryAsync()` but returns a non-generic `EsqlAsyncQuery` because there is no `T` to materialise into:
+
+```csharp
+await using var q = await client.CreateQuery<LogEntry>()
+    .From("logs-*")
+    .Where(l => l.Level == "ERROR")
+    .ToAsyncQueryAsync(EsqlFormat.Arrow);
+
+await q.WaitForCompletionAsync();
+
+using var stream = q.GetResponseStream();
+using var reader = new ArrowStreamReader(stream); // Apache.Arrow.Ipc — separate NuGet
+while (await reader.ReadNextRecordBatchAsync() is { } batch)
+    Console.WriteLine($"Batch: {batch.Length} rows, {batch.ColumnCount} cols");
+```
+
+Disposing the `EsqlAsyncQuery` issues a best-effort `DELETE /_query/async/{id}` and releases the held response.
+
+Calling `GetResponseStream()` before completion throws `InvalidOperationException`. Use `RefreshAsync()` for a single poll or `WaitForCompletionAsync()` to poll until done (default 100 ms interval).
+
 ## Async queries
 
 Long-running queries can be submitted asynchronously. The cluster returns a query ID that you can poll for completion. The `EsqlAsyncQuery<T>` type manages the lifecycle and auto-deletes the query from the cluster on dispose.

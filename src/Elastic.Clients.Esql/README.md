@@ -135,6 +135,37 @@ var results = await asyncQuery.ToListAsync();  // Polls until complete
 // Query automatically deleted from cluster when disposed
 ```
 
+## Raw response formats
+
+Get the server-formatted bytes (`Csv`, `Tsv`, `Txt`, `Json`, `Arrow`, `Smile`, `Cbor`, `Yaml`) instead of materialised rows:
+
+```csharp
+using var stream = await client.CreateQuery<LogEntry>()
+    .From("logs-*")
+    .Where(l => l.Level == "ERROR")
+    .ToStreamAsync(EsqlFormat.Csv);
+
+await stream.CopyToAsync(File.Create("errors.csv"));
+```
+
+Server-side async with Apache Arrow. The query is best-effort `DELETE`d on disposal:
+
+```csharp
+await using var q = await client.CreateQuery<LogEntry>()
+    .From("logs-*")
+    .Where(l => l.Level == "ERROR")
+    .ToAsyncQueryAsync(EsqlFormat.Arrow);
+
+await q.WaitForCompletionAsync();
+
+using var stream = q.GetResponseStream();
+using var reader = new ArrowStreamReader(stream); // Apache.Arrow.Ipc — separate NuGet
+while (await reader.ReadNextRecordBatchAsync() is { } batch)
+    Console.WriteLine($"Batch: {batch.Length} rows, {batch.ColumnCount} cols");
+```
+
+A `ToPipeReaderAsync(format)` overload is available on .NET 10+ for zero-copy consumers.
+
 ## Per-query options
 
 Configure defaults globally through `EsqlClientSettings.Defaults`. Override them on individual queries with `.WithOptions()`:

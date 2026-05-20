@@ -110,6 +110,13 @@ public sealed class EsqlQueryProvider : IQueryProvider
 		return ExecuteCore<TResult>(expression);
 	}
 
+	/// <summary>Executes a query synchronously and returns the raw response body in the requested format. Used by extension methods.</summary>
+	internal IEsqlResponse Execute(Expression expression, EsqlFormat format)
+	{
+		var (esql, query) = TranslateAndFormat(expression);
+		return _executor.ExecuteQuery(esql, query.Parameters, query.QueryOptions, format);
+	}
+
 	/// <summary>Asynchronously executes a scalar query represented by a specified expression tree.</summary>
 	internal async Task<TResult> ExecuteAsync<TResult>(Expression expression, CancellationToken cancellationToken)
 	{
@@ -118,7 +125,7 @@ public sealed class EsqlQueryProvider : IQueryProvider
 		var (esql, query) = TranslateAndFormat(expression);
 
 		await using var response = await _executor
-			.ExecuteQueryAsync(esql, query.Parameters, query.QueryOptions, cancellationToken)
+			.ExecuteQueryAsync(esql, query.Parameters, query.QueryOptions, query.Format, cancellationToken)
 			.ConfigureAwait(false);
 
 		var result = await _reader.ReadScalarAsync<TResult>(response.Body, cancellationToken)
@@ -126,6 +133,13 @@ public sealed class EsqlQueryProvider : IQueryProvider
 
 		ValidateScalarCardinality(expression, result.RowCount);
 		return result.Value!;
+	}
+
+	/// <summary>Executes a query asynchronously and returns the raw response body in the requested format. Used by extension methods.</summary>
+	internal Task<IEsqlAsyncResponse> ExecuteAsync(Expression expression, EsqlFormat format, CancellationToken cancellationToken)
+	{
+		var (esql, query) = TranslateAndFormat(expression);
+		return _executor.ExecuteQueryAsync(esql, query.Parameters, query.QueryOptions, format, cancellationToken);
 	}
 
 	/// <summary>Executes the specified query expression asynchronously and returns the results as a stream of elements.</summary>
@@ -142,7 +156,7 @@ public sealed class EsqlQueryProvider : IQueryProvider
 		var (esql, query) = TranslateAndFormat(expression);
 
 		await using var response = await _executor
-			.ExecuteQueryAsync(esql, query.Parameters, query.QueryOptions, cancellationToken)
+			.ExecuteQueryAsync(esql, query.Parameters, query.QueryOptions, query.Format, cancellationToken)
 			.ConfigureAwait(false);
 
 		await using var results = await _reader.ReadRowsAsync<TElement>(response.Body, cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -172,9 +186,17 @@ public sealed class EsqlQueryProvider : IQueryProvider
 	{
 		var (esql, query) = TranslateAndFormat(expression);
 		var requireId = asyncOptions?.KeepOnCompletion == true;
-		var response = _executor.SubmitAsyncQuery(esql, query.Parameters, query.QueryOptions, asyncOptions);
+		var response = _executor.SubmitAsyncQuery(esql, query.Parameters, query.QueryOptions, asyncOptions, format: null);
 		var result = _reader.ReadRows<T>(response.Body, requireId: requireId);
 		return new EsqlAsyncQuery<T>(_executor, result, response, _reader, query.QueryOptions);
+	}
+
+	/// <summary>Submits an async ES|QL query from a LINQ expression with a raw response format. Used by extension methods.</summary>
+	internal EsqlAsyncQuery SubmitAsyncQuery(Expression expression, EsqlFormat format, EsqlAsyncQueryOptions? asyncOptions)
+	{
+		var (esql, query) = TranslateAndFormat(expression);
+		var response = _executor.SubmitAsyncQuery(esql, query.Parameters, query.QueryOptions, asyncOptions, format);
+		return new EsqlAsyncQuery(_executor, response, format, query.QueryOptions);
 	}
 
 	/// <summary>Submits an async ES|QL query from a LINQ expression asynchronously. Used by extension methods.</summary>
@@ -186,10 +208,24 @@ public sealed class EsqlQueryProvider : IQueryProvider
 		var requireId = asyncOptions?.KeepOnCompletion == true;
 		var (esql, query) = TranslateAndFormat(expression);
 		var response = await _executor
-			.SubmitAsyncQueryAsync(esql, query.Parameters, query.QueryOptions, asyncOptions, cancellationToken)
+			.SubmitAsyncQueryAsync(esql, query.Parameters, query.QueryOptions, asyncOptions, format: null, cancellationToken)
 			.ConfigureAwait(false);
 		var result = await _reader.ReadRowsAsync<T>(response.Body, requireId, cancellationToken).ConfigureAwait(false);
 		return new EsqlAsyncQuery<T>(_executor, result, response, _reader, query.QueryOptions);
+	}
+
+	/// <summary>Submits an async ES|QL query from a LINQ expression with a raw response format asynchronously. Used by extension methods.</summary>
+	internal async Task<EsqlAsyncQuery> SubmitAsyncQueryAsync(
+		Expression expression,
+		EsqlFormat format,
+		EsqlAsyncQueryOptions? asyncOptions,
+		CancellationToken cancellationToken)
+	{
+		var (esql, query) = TranslateAndFormat(expression);
+		var response = await _executor
+			.SubmitAsyncQueryAsync(esql, query.Parameters, query.QueryOptions, asyncOptions, format, cancellationToken)
+			.ConfigureAwait(false);
+		return new EsqlAsyncQuery(_executor, response, format, query.QueryOptions);
 	}
 
 	private TResult ExecuteCore<TResult>(Expression expression)
@@ -208,7 +244,7 @@ public sealed class EsqlQueryProvider : IQueryProvider
 
 	private TResult ExecuteScalar<TResult>(string esql, EsqlQuery query, Expression expression)
 	{
-		using var response = _executor.ExecuteQuery(esql, query.Parameters, query.QueryOptions);
+		using var response = _executor.ExecuteQuery(esql, query.Parameters, query.QueryOptions, query.Format);
 		var result = _reader.ReadScalar<TResult>(response.Body);
 
 		ValidateScalarCardinality(expression, result.RowCount);
@@ -219,7 +255,7 @@ public sealed class EsqlQueryProvider : IQueryProvider
 	internal IEnumerable<TElement> ExecuteEnumerable<TElement>(Expression expression)
 	{
 		var (esql, query) = TranslateAndFormat(expression);
-		using var response = _executor.ExecuteQuery(esql, query.Parameters, query.QueryOptions);
+		using var response = _executor.ExecuteQuery(esql, query.Parameters, query.QueryOptions, query.Format);
 		using var results = _reader.ReadRows<TElement>(response.Body);
 
 		foreach (var item in results.Rows)
