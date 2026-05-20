@@ -1177,7 +1177,9 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 			if (collisionKey is null)
 				continue;
 
+#pragma warning disable IDE0028 // collection-expression suggestion would silently drop the explicit comparer
 			remappings ??= new Dictionary<string, string>(StringComparer.Ordinal);
+#pragma warning restore IDE0028
 			if (remappings.ContainsKey(collisionKey))
 				continue;
 
@@ -1268,7 +1270,9 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 		ParameterExpression outerParam
 	) : ExpressionVisitor
 	{
+#pragma warning disable IDE0028 // collection-expression suggestion would silently drop the explicit comparer
 		public Dictionary<string, bool> OuterFields { get; } = new(StringComparer.Ordinal);
+#pragma warning restore IDE0028
 
 		protected override Expression VisitMember(MemberExpression node)
 		{

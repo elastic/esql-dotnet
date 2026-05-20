@@ -4,12 +4,19 @@
 
 using System.IO.Pipelines;
 using System.Text;
+using Elastic.Esql;
 using Elastic.Esql.Execution;
 using Elastic.Esql.QueryModel;
 
 namespace Elastic.Esql.Tests.Execution;
 
-internal sealed record CapturedCall(string Method, string? Esql, EsqlParameters? Parameters, object? Options, EsqlAsyncQueryOptions? AsyncOptions = null);
+internal sealed record CapturedCall(
+	string Method,
+	string? Esql,
+	EsqlParameters? Parameters,
+	object? Options,
+	EsqlAsyncQueryOptions? AsyncOptions = null,
+	EsqlFormat? Format = null);
 
 internal sealed class CapturingQueryExecutor : IEsqlQueryExecutor
 {
@@ -17,39 +24,39 @@ internal sealed class CapturingQueryExecutor : IEsqlQueryExecutor
 
 	public List<CapturedCall> Calls { get; } = [];
 
-	public IEsqlResponse ExecuteQuery(string esql, EsqlParameters? parameters, object? options)
+	public IEsqlResponse ExecuteQuery(string esql, EsqlParameters? parameters, object? options, EsqlFormat? format)
 	{
-		Calls.Add(new CapturedCall(nameof(ExecuteQuery), esql, parameters, options));
+		Calls.Add(new CapturedCall(nameof(ExecuteQuery), esql, parameters, options, Format: format));
 		return new StreamResponse(new MemoryStream(EmptyResponse));
 	}
 
-	public Task<IEsqlAsyncResponse> ExecuteQueryAsync(string esql, EsqlParameters? parameters, object? options, CancellationToken cancellationToken)
+	public Task<IEsqlAsyncResponse> ExecuteQueryAsync(string esql, EsqlParameters? parameters, object? options, EsqlFormat? format, CancellationToken cancellationToken)
 	{
-		Calls.Add(new CapturedCall(nameof(ExecuteQueryAsync), esql, parameters, options));
+		Calls.Add(new CapturedCall(nameof(ExecuteQueryAsync), esql, parameters, options, Format: format));
 		return Task.FromResult<IEsqlAsyncResponse>(new PipeResponse(EmptyResponse));
 	}
 
-	public IEsqlResponse SubmitAsyncQuery(string esql, EsqlParameters? parameters, object? options, EsqlAsyncQueryOptions? asyncOptions)
+	public IEsqlResponse SubmitAsyncQuery(string esql, EsqlParameters? parameters, object? options, EsqlAsyncQueryOptions? asyncOptions, EsqlFormat? format)
 	{
-		Calls.Add(new CapturedCall(nameof(SubmitAsyncQuery), esql, parameters, options, asyncOptions));
+		Calls.Add(new CapturedCall(nameof(SubmitAsyncQuery), esql, parameters, options, asyncOptions, format));
 		return new StreamResponse(new MemoryStream(EmptyResponse));
 	}
 
-	public Task<IEsqlAsyncResponse> SubmitAsyncQueryAsync(string esql, EsqlParameters? parameters, object? options, EsqlAsyncQueryOptions? asyncOptions, CancellationToken cancellationToken)
+	public Task<IEsqlAsyncResponse> SubmitAsyncQueryAsync(string esql, EsqlParameters? parameters, object? options, EsqlAsyncQueryOptions? asyncOptions, EsqlFormat? format, CancellationToken cancellationToken)
 	{
-		Calls.Add(new CapturedCall(nameof(SubmitAsyncQueryAsync), esql, parameters, options, asyncOptions));
+		Calls.Add(new CapturedCall(nameof(SubmitAsyncQueryAsync), esql, parameters, options, asyncOptions, format));
 		return Task.FromResult<IEsqlAsyncResponse>(new PipeResponse(EmptyResponse));
 	}
 
-	public IEsqlResponse PollAsyncQuery(string queryId, object? options)
+	public IEsqlResponse PollAsyncQuery(string queryId, object? options, EsqlFormat? format)
 	{
-		Calls.Add(new CapturedCall(nameof(PollAsyncQuery), null, null, options));
+		Calls.Add(new CapturedCall(nameof(PollAsyncQuery), null, null, options, Format: format));
 		return new StreamResponse(new MemoryStream(EmptyResponse));
 	}
 
-	public Task<IEsqlAsyncResponse> PollAsyncQueryAsync(string queryId, object? options, CancellationToken cancellationToken)
+	public Task<IEsqlAsyncResponse> PollAsyncQueryAsync(string queryId, object? options, EsqlFormat? format, CancellationToken cancellationToken)
 	{
-		Calls.Add(new CapturedCall(nameof(PollAsyncQueryAsync), null, null, options));
+		Calls.Add(new CapturedCall(nameof(PollAsyncQueryAsync), null, null, options, Format: format));
 		return Task.FromResult<IEsqlAsyncResponse>(new PipeResponse(EmptyResponse));
 	}
 
@@ -65,6 +72,11 @@ internal sealed class CapturingQueryExecutor : IEsqlQueryExecutor
 	private sealed class StreamResponse(MemoryStream stream) : IEsqlResponse
 	{
 		public Stream Body => stream;
+		public bool TryGetHeader(string name, out IEnumerable<string> values)
+		{
+			values = [];
+			return false;
+		}
 		public void Dispose() => stream.Dispose();
 	}
 
@@ -80,6 +92,12 @@ internal sealed class CapturingQueryExecutor : IEsqlQueryExecutor
 				_pipe.Writer.Complete();
 				return _pipe.Reader;
 			}
+		}
+
+		public bool TryGetHeader(string name, out IEnumerable<string> values)
+		{
+			values = [];
+			return false;
 		}
 
 		public ValueTask DisposeAsync()

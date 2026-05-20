@@ -24,6 +24,8 @@ FROM logs-*
 | LIMIT 50
 ```
 
+Need the raw response bytes (CSV, JSON, Arrow, ...) instead of typed rows? Call `.ToStreamAsync(EsqlFormat.Csv)` (or any other format) on any queryable. See [Raw response formats](package-client.md#raw-response-formats).
+
 ## Two packages, one goal
 
 The ES|QL LINQ support is split into two NuGet packages so you can choose the right level of dependency for your project.

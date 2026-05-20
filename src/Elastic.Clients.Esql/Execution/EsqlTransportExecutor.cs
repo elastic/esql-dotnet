@@ -26,12 +26,13 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 	private static readonly HeadersList AsyncHeaders = new(["X-Elasticsearch-Async-Id", "X-Elasticsearch-Async-Is-Running"]);
 	private static readonly RequestConfiguration DefaultAsyncRequestConfig = new() { ResponseHeadersToParse = AsyncHeaders };
 
-	public IEsqlResponse ExecuteQuery(string esql, EsqlParameters? parameters, object? options)
+	public IEsqlResponse ExecuteQuery(string esql, EsqlParameters? parameters, object? options, EsqlFormat? format)
 	{
 		var typedOptions = ResolveOptions(options);
 		var postData = BuildPostData(esql, parameters, typedOptions);
-		var endpoint = BuildEndpoint(QueryEndpoint, typedOptions);
-		var response = _settings.Transport.Request<ElasticsearchStreamResponse>(in endpoint, postData, null, typedOptions?.RequestConfiguration);
+		var endpoint = BuildEndpoint(QueryEndpoint, typedOptions, format);
+		var requestConfig = ApplyAcceptForFormat(typedOptions?.RequestConfiguration, format);
+		var response = _settings.Transport.Request<ElasticsearchStreamResponse>(in endpoint, postData, null, requestConfig);
 		ThrowIfError(response, "ES|QL query failed");
 		return new TransportEsqlResponse(response);
 	}
@@ -40,12 +41,13 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 		string esql,
 		EsqlParameters? parameters,
 		object? options,
+		EsqlFormat? format,
 		CancellationToken cancellationToken)
 	{
 		var typedOptions = ResolveOptions(options);
 		var postData = BuildPostData(esql, parameters, typedOptions);
-		var endpoint = BuildEndpoint(QueryEndpoint, typedOptions);
-		var requestConfig = typedOptions?.RequestConfiguration;
+		var endpoint = BuildEndpoint(QueryEndpoint, typedOptions, format);
+		var requestConfig = ApplyAcceptForFormat(typedOptions?.RequestConfiguration, format);
 
 #if NET10_0_OR_GREATER
 		var response = await _settings.Transport
@@ -62,11 +64,16 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 #endif
 	}
 
-	public IEsqlResponse SubmitAsyncQuery(string esql, EsqlParameters? parameters, object? options, EsqlAsyncQueryOptions? asyncOptions)
+	public IEsqlResponse SubmitAsyncQuery(
+		string esql,
+		EsqlParameters? parameters,
+		object? options,
+		EsqlAsyncQueryOptions? asyncOptions,
+		EsqlFormat? format)
 	{
 		var typedOptions = ResolveOptions(options);
-		var (postData, endpoint) = BuildAsyncPostData(esql, parameters, typedOptions, asyncOptions);
-		var requestConfig = EnsureAsyncHeaders(typedOptions?.RequestConfiguration);
+		var (postData, endpoint) = BuildAsyncPostData(esql, parameters, typedOptions, asyncOptions, format);
+		var requestConfig = EnsureAsyncHeaders(ApplyAcceptForFormat(typedOptions?.RequestConfiguration, format));
 		var response = _settings.Transport.Request<ElasticsearchStreamResponse>(in endpoint, postData, null, requestConfig);
 		ThrowIfError(response, "ES|QL async query failed");
 		return new TransportEsqlResponse(response);
@@ -77,11 +84,12 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 		EsqlParameters? parameters,
 		object? options,
 		EsqlAsyncQueryOptions? asyncOptions,
+		EsqlFormat? format,
 		CancellationToken cancellationToken)
 	{
 		var typedOptions = ResolveOptions(options);
-		var (postData, endpoint) = BuildAsyncPostData(esql, parameters, typedOptions, asyncOptions);
-		var requestConfig = EnsureAsyncHeaders(typedOptions?.RequestConfiguration);
+		var (postData, endpoint) = BuildAsyncPostData(esql, parameters, typedOptions, asyncOptions, format);
+		var requestConfig = EnsureAsyncHeaders(ApplyAcceptForFormat(typedOptions?.RequestConfiguration, format));
 
 #if NET10_0_OR_GREATER
 		var response = await _settings.Transport
@@ -98,21 +106,21 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 #endif
 	}
 
-	public IEsqlResponse PollAsyncQuery(string queryId, object? options)
+	public IEsqlResponse PollAsyncQuery(string queryId, object? options, EsqlFormat? format)
 	{
 		var typedOptions = ResolveOptions(options);
-		var endpointPath = BuildAsyncQueryEndpoint(HttpMethod.GET, queryId);
-		var requestConfig = EnsureAsyncHeaders(typedOptions?.RequestConfiguration);
+		var endpointPath = BuildAsyncQueryEndpoint(HttpMethod.GET, queryId, format);
+		var requestConfig = EnsureAsyncHeaders(ApplyAcceptForFormat(typedOptions?.RequestConfiguration, format));
 		var response = _settings.Transport.Request<ElasticsearchStreamResponse>(in endpointPath, null, null, requestConfig);
 		ThrowIfError(response, "Failed to get async query status");
 		return new TransportEsqlResponse(response);
 	}
 
-	public async Task<IEsqlAsyncResponse> PollAsyncQueryAsync(string queryId, object? options, CancellationToken cancellationToken)
+	public async Task<IEsqlAsyncResponse> PollAsyncQueryAsync(string queryId, object? options, EsqlFormat? format, CancellationToken cancellationToken)
 	{
 		var typedOptions = ResolveOptions(options);
-		var endpointPath = BuildAsyncQueryEndpoint(HttpMethod.GET, queryId);
-		var requestConfig = EnsureAsyncHeaders(typedOptions?.RequestConfiguration);
+		var endpointPath = BuildAsyncQueryEndpoint(HttpMethod.GET, queryId, format);
+		var requestConfig = EnsureAsyncHeaders(ApplyAcceptForFormat(typedOptions?.RequestConfiguration, format));
 
 #if NET10_0_OR_GREATER
 		var response = await _settings.Transport
@@ -132,7 +140,7 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 	public void DeleteAsyncQuery(string queryId, object? options)
 	{
 		var typedOptions = ResolveOptions(options);
-		var endpointPath = BuildAsyncQueryEndpoint(HttpMethod.DELETE, queryId);
+		var endpointPath = BuildAsyncQueryEndpoint(HttpMethod.DELETE, queryId, format: null);
 		using var response = _settings.Transport.Request<ElasticsearchStreamResponse>(in endpointPath, null, null, typedOptions?.RequestConfiguration);
 		ThrowIfError(response, "Failed to delete async query");
 	}
@@ -140,7 +148,7 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 	public async Task DeleteAsyncQueryAsync(string queryId, object? options, CancellationToken cancellationToken)
 	{
 		var typedOptions = ResolveOptions(options);
-		var endpointPath = BuildAsyncQueryEndpoint(HttpMethod.DELETE, queryId);
+		var endpointPath = BuildAsyncQueryEndpoint(HttpMethod.DELETE, queryId, format: null);
 		using var response = await _settings.Transport
 			.RequestAsync<ElasticsearchStreamResponse>(in endpointPath, null, null, typedOptions?.RequestConfiguration, cancellationToken)
 			.ConfigureAwait(false);
@@ -159,12 +167,20 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 			$"Expected options of type '{nameof(EsqlQueryOptions)}' but received '{options.GetType().FullName}'.");
 	}
 
-	private static EndpointPath BuildAsyncQueryEndpoint(HttpMethod method, string queryId)
+	private EndpointPath BuildAsyncQueryEndpoint(HttpMethod method, string queryId, EsqlFormat? format)
 	{
 		if (string.IsNullOrWhiteSpace(queryId))
 			throw new ArgumentException("Async query ID cannot be null or empty.", nameof(queryId));
 
-		return new EndpointPath(method, $"/_query/async/{Uri.EscapeDataString(queryId)}");
+		var basePath = $"/_query/async/{Uri.EscapeDataString(queryId)}";
+
+		if (format is null)
+			return new EndpointPath(method, basePath);
+
+		var parameters = new DefaultRequestParameters();
+		parameters.SetQueryString("format", format.Value.GetFormatName());
+		var pathWithQuery = parameters.CreatePathWithQueryStrings(basePath, _settings.Transport.Configuration);
+		return new EndpointPath(method, pathWithQuery);
 	}
 
 	private static void ThrowIfError(ElasticsearchStreamResponse response, string operation)
@@ -214,10 +230,11 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 		string esql,
 		EsqlParameters? parameters,
 		EsqlQueryOptions? options,
-		EsqlAsyncQueryOptions? asyncOptions)
+		EsqlAsyncQueryOptions? asyncOptions,
+		EsqlFormat? format)
 	{
 		var request = BuildAsyncRequest(esql, parameters, options, asyncOptions);
-		var endpoint = BuildEndpoint(AsyncQueryEndpoint, options);
+		var endpoint = BuildEndpoint(AsyncQueryEndpoint, options, format);
 		var postData = PostData.StreamHandler(
 			request,
 			static (req, stream) => JsonSerializer.Serialize(stream, req, EsqlRequestJsonContext.Default.EsqlAsyncRequest),
@@ -258,9 +275,10 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 		};
 	}
 
-	private EndpointPath BuildEndpoint(EndpointPath basePath, EsqlQueryOptions? options)
+	private EndpointPath BuildEndpoint(EndpointPath basePath, EsqlQueryOptions? options, EsqlFormat? format)
 	{
-		if (options?.AllowPartialResults is null && options?.DropNullColumns is null)
+		var hasOptions = options?.AllowPartialResults is not null || options?.DropNullColumns is not null;
+		if (!hasOptions && format is null)
 			return basePath;
 
 		var parameters = new DefaultRequestParameters();
@@ -270,6 +288,9 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 
 		if (options?.DropNullColumns is { } dropNull)
 			parameters.SetQueryString("drop_null_columns", dropNull);
+
+		if (format is { } fmt)
+			parameters.SetQueryString("format", fmt.GetFormatName());
 
 		var pathWithQuery = parameters.CreatePathWithQueryStrings(basePath.PathAndQuery, _settings.Transport.Configuration);
 		return new EndpointPath(basePath.Method, pathWithQuery);
@@ -297,6 +318,22 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 			return $"{ts.Ticks / TimeSpan.TicksPerMillisecond}ms";
 
 		return $"{ts.TotalMilliseconds.ToString("0.###", CultureInfo.InvariantCulture)}ms";
+	}
+
+	private static IRequestConfiguration? ApplyAcceptForFormat(IRequestConfiguration? userConfig, EsqlFormat? format)
+	{
+		if (format is null)
+			return userConfig;
+
+		var mediaType = format.Value.GetMediaType();
+
+		if (userConfig is null)
+			return new RequestConfiguration { Accept = mediaType };
+
+		if (!string.IsNullOrEmpty(userConfig.Accept))
+			return userConfig;
+
+		return new RequestConfiguration(userConfig) { Accept = mediaType };
 	}
 
 	private static IRequestConfiguration EnsureAsyncHeaders(IRequestConfiguration? userConfig)
@@ -332,6 +369,18 @@ internal sealed class TransportEsqlResponse(ElasticsearchStreamResponse response
 {
 	public Stream Body => response.Body;
 
+	public bool TryGetHeader(string name, out IEnumerable<string> values)
+	{
+		if (response.ApiCallDetails.TryGetHeader(name, out var found))
+		{
+			values = found;
+			return true;
+		}
+
+		values = [];
+		return false;
+	}
+
 	public void Dispose() => response.Dispose();
 }
 
@@ -341,6 +390,18 @@ internal sealed class TransportEsqlAsyncResponse(ElasticsearchPipeResponse respo
 {
 	public PipeReader Body => response.Body;
 
+	public bool TryGetHeader(string name, out IEnumerable<string> values)
+	{
+		if (response.ApiCallDetails.TryGetHeader(name, out var found))
+		{
+			values = found;
+			return true;
+		}
+
+		values = [];
+		return false;
+	}
+
 	public async ValueTask DisposeAsync() =>
 		await response.DisposeAsync().ConfigureAwait(false);
 }
@@ -349,6 +410,18 @@ internal sealed class TransportEsqlAsyncResponse(ElasticsearchPipeResponse respo
 internal sealed class TransportEsqlAsyncResponse(ElasticsearchStreamResponse response) : IEsqlAsyncResponse
 {
 	public Stream Body => response.Body;
+
+	public bool TryGetHeader(string name, out IEnumerable<string> values)
+	{
+		if (response.ApiCallDetails.TryGetHeader(name, out var found))
+		{
+			values = found;
+			return true;
+		}
+
+		values = [];
+		return false;
+	}
 
 	public ValueTask DisposeAsync()
 	{

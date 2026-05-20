@@ -13,7 +13,13 @@ namespace Elastic.Esql.QueryModel;
 /// <param name="commands">The ESQL query commands.</param>
 /// <param name="parameters">The ESQL query parameters.</param>
 /// <param name="queryOptions">Opaque query options extracted from the expression tree.</param>
-public sealed class EsqlQuery(Type elementType, IReadOnlyList<QueryCommand> commands, EsqlParameters? parameters, object? queryOptions = null)
+/// <param name="format">Optional response format for raw queries. <c>null</c> means typed-POCO materialization.</param>
+public sealed class EsqlQuery(
+	Type elementType,
+	IReadOnlyList<QueryCommand> commands,
+	EsqlParameters? parameters,
+	object? queryOptions = null,
+	EsqlFormat? format = null)
 {
 	/// <summary>
 	/// The element type of the query.
@@ -35,6 +41,11 @@ public sealed class EsqlQuery(Type elementType, IReadOnlyList<QueryCommand> comm
 	/// The concrete type is defined by the downstream executor implementation.
 	/// </summary>
 	public object? QueryOptions { get; } = queryOptions;
+
+	/// <summary>
+	/// Gets the requested wire-level response format. <c>null</c> means the default JSON path with typed materialization.
+	/// </summary>
+	public EsqlFormat? Format { get; } = format;
 
 	/// <summary>
 	/// Get the source command (e.g. FROM, ROW, etc.) if present.
@@ -78,11 +89,15 @@ public sealed class EsqlQuery(Type elementType, IReadOnlyList<QueryCommand> comm
 
 	/// <summary>Creates a copy with a different command list.</summary>
 	public EsqlQuery WithCommands(IReadOnlyList<QueryCommand> commands) =>
-		new(ElementType, commands, Parameters, QueryOptions);
+		new(ElementType, commands, Parameters, QueryOptions, Format);
 
 	/// <summary>Creates a copy with different parameters.</summary>
 	public EsqlQuery WithParameters(EsqlParameters? parameters) =>
-		new(ElementType, Commands, parameters, QueryOptions);
+		new(ElementType, Commands, parameters, QueryOptions, Format);
+
+	/// <summary>Creates a copy with the specified response format.</summary>
+	public EsqlQuery WithFormat(EsqlFormat? format) =>
+		new(ElementType, Commands, Parameters, QueryOptions, format);
 
 	/// <summary>Creates a copy with the source command set to FROM with the specified index pattern. Replaces an existing source command or prepends one.</summary>
 	public EsqlQuery WithSource(string indexPattern)
@@ -93,7 +108,7 @@ public sealed class EsqlQuery(Type elementType, IReadOnlyList<QueryCommand> comm
 			list[existing] = new FromCommand(indexPattern);
 		else
 			list.Insert(0, new FromCommand(indexPattern));
-		return new(ElementType, list, Parameters, QueryOptions);
+		return new(ElementType, list, Parameters, QueryOptions, Format);
 	}
 
 	/// <summary>Creates a copy with the LIMIT set to the specified count. Replaces an existing LIMIT or appends one.</summary>
@@ -105,6 +120,6 @@ public sealed class EsqlQuery(Type elementType, IReadOnlyList<QueryCommand> comm
 			list[existing] = new LimitCommand(count);
 		else
 			list.Add(new LimitCommand(count));
-		return new(ElementType, list, Parameters, QueryOptions);
+		return new(ElementType, list, Parameters, QueryOptions, Format);
 	}
 }

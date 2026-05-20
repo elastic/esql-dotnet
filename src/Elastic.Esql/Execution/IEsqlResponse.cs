@@ -13,6 +13,12 @@ public interface IEsqlResponse : IDisposable
 {
 	/// <summary>The response body as a <see cref="Stream"/>.</summary>
 	Stream Body { get; }
+
+	/// <summary>
+	/// Tries to read a response header captured by the transport.
+	/// When the header is absent <paramref name="values"/> is set to an empty enumerable.
+	/// </summary>
+	bool TryGetHeader(string name, out IEnumerable<string> values);
 }
 
 /// <summary>Owns an asynchronous ES|QL response pipe. Disposing releases the underlying transport resource.</summary>
@@ -25,4 +31,10 @@ public interface IEsqlAsyncResponse : IAsyncDisposable
 	/// <summary>The response body as a <see cref="Stream"/>.</summary>
 	Stream Body { get; }
 #endif
+
+	/// <summary>
+	/// Tries to read a response header captured by the transport.
+	/// When the header is absent <paramref name="values"/> is set to an empty enumerable.
+	/// </summary>
+	bool TryGetHeader(string name, out IEnumerable<string> values);
 }

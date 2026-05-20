@@ -19,20 +19,22 @@ internal sealed class ThrowingQueryExecutor : IEsqlQueryExecutor
 	private static InvalidOperationException NotSupported() =>
 		new("This provider does not support query execution. Supply an IEsqlQueryExecutor to enable execution.");
 
-	public IEsqlResponse ExecuteQuery(string esql, EsqlParameters? parameters, object? options) => throw NotSupported();
-
-	public Task<IEsqlAsyncResponse> ExecuteQueryAsync(string esql, EsqlParameters? parameters, object? options, CancellationToken cancellationToken) =>
+	public IEsqlResponse ExecuteQuery(string esql, EsqlParameters? parameters, object? options, EsqlFormat? format) =>
 		throw NotSupported();
 
-	public IEsqlResponse SubmitAsyncQuery(string esql, EsqlParameters? parameters, object? options, EsqlAsyncQueryOptions? asyncOptions) =>
+	public Task<IEsqlAsyncResponse> ExecuteQueryAsync(string esql, EsqlParameters? parameters, object? options, EsqlFormat? format, CancellationToken cancellationToken) =>
 		throw NotSupported();
 
-	public Task<IEsqlAsyncResponse> SubmitAsyncQueryAsync(string esql, EsqlParameters? parameters, object? options, EsqlAsyncQueryOptions? asyncOptions, CancellationToken cancellationToken) =>
+	public IEsqlResponse SubmitAsyncQuery(string esql, EsqlParameters? parameters, object? options, EsqlAsyncQueryOptions? asyncOptions, EsqlFormat? format) =>
 		throw NotSupported();
 
-	public IEsqlResponse PollAsyncQuery(string queryId, object? options) => throw NotSupported();
+	public Task<IEsqlAsyncResponse> SubmitAsyncQueryAsync(string esql, EsqlParameters? parameters, object? options, EsqlAsyncQueryOptions? asyncOptions, EsqlFormat? format, CancellationToken cancellationToken) =>
+		throw NotSupported();
 
-	public Task<IEsqlAsyncResponse> PollAsyncQueryAsync(string queryId, object? options, CancellationToken cancellationToken) =>
+	public IEsqlResponse PollAsyncQuery(string queryId, object? options, EsqlFormat? format) =>
+		throw NotSupported();
+
+	public Task<IEsqlAsyncResponse> PollAsyncQueryAsync(string queryId, object? options, EsqlFormat? format, CancellationToken cancellationToken) =>
 		throw NotSupported();
 
 	public void DeleteAsyncQuery(string queryId, object? options) => throw NotSupported();

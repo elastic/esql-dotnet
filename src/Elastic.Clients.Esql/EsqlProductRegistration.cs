@@ -22,6 +22,9 @@ public sealed class EsqlProductRegistration : ElasticsearchProductRegistration
 {
 	public EsqlProductRegistration() : base(typeof(EsqlClient)) { }
 
+	// ES|QL uses bare MIMEs (text/csv, application/vnd.apache.arrow.stream, etc.) — never rewrite to Elasticsearch vendor form.
+	public override string? TransformContentType(string? contentType) => contentType;
+
 	public override MetaHeaderProvider MetaHeaderProvider { get; } =
 		new DefaultMetaHeaderProvider(typeof(EsqlClient), "esql");
 

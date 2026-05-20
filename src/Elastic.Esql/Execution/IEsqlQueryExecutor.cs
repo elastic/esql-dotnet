@@ -15,22 +15,22 @@ namespace Elastic.Esql.Execution;
 public interface IEsqlQueryExecutor
 {
 	/// <summary>Executes an ES|QL query synchronously.</summary>
-	IEsqlResponse ExecuteQuery(string esql, EsqlParameters? parameters, object? options);
+	IEsqlResponse ExecuteQuery(string esql, EsqlParameters? parameters, object? options, EsqlFormat? format);
 
 	/// <summary>Executes an ES|QL query asynchronously.</summary>
-	Task<IEsqlAsyncResponse> ExecuteQueryAsync(string esql, EsqlParameters? parameters, object? options, CancellationToken cancellationToken);
+	Task<IEsqlAsyncResponse> ExecuteQueryAsync(string esql, EsqlParameters? parameters, object? options, EsqlFormat? format, CancellationToken cancellationToken);
 
 	/// <summary>Submits an async ES|QL query synchronously.</summary>
-	IEsqlResponse SubmitAsyncQuery(string esql, EsqlParameters? parameters, object? options, EsqlAsyncQueryOptions? asyncOptions);
+	IEsqlResponse SubmitAsyncQuery(string esql, EsqlParameters? parameters, object? options, EsqlAsyncQueryOptions? asyncOptions, EsqlFormat? format);
 
 	/// <summary>Submits an async ES|QL query asynchronously.</summary>
-	Task<IEsqlAsyncResponse> SubmitAsyncQueryAsync(string esql, EsqlParameters? parameters, object? options, EsqlAsyncQueryOptions? asyncOptions, CancellationToken cancellationToken);
+	Task<IEsqlAsyncResponse> SubmitAsyncQueryAsync(string esql, EsqlParameters? parameters, object? options, EsqlAsyncQueryOptions? asyncOptions, EsqlFormat? format, CancellationToken cancellationToken);
 
 	/// <summary>Polls the state of an async query synchronously.</summary>
-	IEsqlResponse PollAsyncQuery(string queryId, object? options);
+	IEsqlResponse PollAsyncQuery(string queryId, object? options, EsqlFormat? format);
 
 	/// <summary>Polls the state of an async query asynchronously.</summary>
-	Task<IEsqlAsyncResponse> PollAsyncQueryAsync(string queryId, object? options, CancellationToken cancellationToken);
+	Task<IEsqlAsyncResponse> PollAsyncQueryAsync(string queryId, object? options, EsqlFormat? format, CancellationToken cancellationToken);
 
 	/// <summary>Deletes an async query synchronously.</summary>
 	void DeleteAsyncQuery(string queryId, object? options);
