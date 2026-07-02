@@ -209,13 +209,16 @@ internal sealed partial class EsqlResponseReader
 		IAsyncBufferCursor cursor,
 		CancellationToken ct)
 	{
-		var state = new JsonReaderState();
 		string? id = null;
 		bool? isRunning = null;
 
 		while (await cursor.ReadAsync(ct).ConfigureAwait(false))
 		{
 			var buffer = cursor.Buffer;
+
+			// The cursor retains the whole buffer between attempts, so every retry must re-parse
+			// from a fresh state; a state mutated by a failed attempt no longer matches the bytes.
+			var state = new JsonReaderState();
 
 			if (TryParseColumns(buffer, cursor.IsCompleted, ref state, out var columns, out var consumed, ref id, ref isRunning, out var valuesFirst))
 			{
@@ -226,7 +229,7 @@ internal sealed partial class EsqlResponseReader
 			}
 
 			if (valuesFirst)
-				return ([], state, cursor.Buffer.Start, id, isRunning, true);
+				return ([], new JsonReaderState(), cursor.Buffer.Start, id, isRunning, true);
 
 			cursor.AdvanceTo(buffer.Start, buffer.End);
 
@@ -240,13 +243,16 @@ internal sealed partial class EsqlResponseReader
 	private static (ColumnInfo[] Columns, JsonReaderState State, SequencePosition Consumed, string? Id, bool? IsRunning, bool ValuesFirst) ReadColumnsFromSyncCursor(
 		ISyncBufferCursor cursor)
 	{
-		var state = new JsonReaderState();
 		string? id = null;
 		bool? isRunning = null;
 
 		while (cursor.Read())
 		{
 			var buffer = cursor.Buffer;
+
+			// The cursor retains the whole buffer between attempts, so every retry must re-parse
+			// from a fresh state; a state mutated by a failed attempt no longer matches the bytes.
+			var state = new JsonReaderState();
 
 			if (TryParseColumns(buffer, cursor.IsCompleted, ref state, out var columns, out var consumed, ref id, ref isRunning, out var valuesFirst))
 			{
@@ -257,7 +263,7 @@ internal sealed partial class EsqlResponseReader
 			}
 
 			if (valuesFirst)
-				return ([], state, cursor.Buffer.Start, id, isRunning, true);
+				return ([], new JsonReaderState(), cursor.Buffer.Start, id, isRunning, true);
 
 			cursor.AdvanceTo(buffer.Start, buffer.End);
 		}
@@ -482,10 +488,20 @@ internal sealed partial class EsqlResponseReader
 	{
 		var reader = new Utf8JsonReader(buffer, isFinalBlock, state);
 
+		// Resume points are only recorded after a property (name plus value) has been fully
+		// processed; failing mid-property would otherwise consume the property name and make
+		// the retry miss it, e.g. when a chunk ends between "values": and its opening bracket.
+		var safeState = state;
+		var safePosition = buffer.Start;
+
 		while (reader.Read())
 		{
 			if (reader.TokenType != JsonTokenType.PropertyName)
+			{
+				safeState = reader.CurrentState;
+				safePosition = reader.Position;
 				continue;
+			}
 
 			if (reader.ValueTextEquals("values"u8))
 			{
@@ -502,23 +518,24 @@ internal sealed partial class EsqlResponseReader
 				if (!reader.Read())
 					break;
 				id = reader.GetString();
-				continue;
 			}
-
-			if (reader.ValueTextEquals("is_running"u8))
+			else if (reader.ValueTextEquals("is_running"u8))
 			{
 				if (!reader.Read())
 					break;
 				isRunning = reader.GetBoolean();
-				continue;
+			}
+			else if (!reader.TrySkip())
+			{
+				break;
 			}
 
-			if (!reader.TrySkip())
-				break;
+			safeState = reader.CurrentState;
+			safePosition = reader.Position;
 		}
 
-		state = reader.CurrentState;
-		consumed = reader.Position;
+		state = safeState;
+		consumed = safePosition;
 		return false;
 	}
 
@@ -562,7 +579,8 @@ internal sealed partial class EsqlResponseReader
 			}
 		}
 
-		state = reader.CurrentState;
+		// Callers retain the whole buffer on failure, so the state must keep matching the buffer
+		// start; persisting the failed attempt's state would desync state and bytes.
 		consumed = buffer.Start;
 		return false;
 	}
