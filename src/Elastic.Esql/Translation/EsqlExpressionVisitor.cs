@@ -46,6 +46,11 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 		if (_pendingGroupJoin is not null)
 			throw new NotSupportedException("GroupJoin must be followed by SelectMany with DefaultIfEmpty() to form a left outer join pattern.");
 
+		if (_pendingGroupByKeySelector is not null)
+			throw new NotSupportedException(
+				"GroupBy must be followed by a Select that projects the group key and aggregations, " +
+				"e.g. '.GroupBy(x => x.Field).Select(g => new { g.Key, Count = g.Count() })'.");
+
 		if (Context.ElementType is null)
 			throw new InvalidOperationException("Failed to determine result type for the given expression.");
 
