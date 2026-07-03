@@ -9,6 +9,10 @@ namespace Elastic.Esql.QueryModel.Commands;
 /// </summary>
 public sealed class WhereCommand(string condition) : QueryCommand
 {
+	/// <summary>
+	/// The WHERE condition as final ES|QL text: already escaped, may contain <c>?name</c>
+	/// placeholders whose values live in <see cref="EsqlQuery.Parameters"/>.
+	/// </summary>
 	public string Condition { get; } = condition ?? throw new ArgumentNullException(nameof(condition));
 
 	internal override void Accept(ICommandVisitor visitor) => visitor.Visit(this);

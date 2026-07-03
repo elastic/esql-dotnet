@@ -9,11 +9,14 @@ namespace Elastic.Esql.QueryModel.Commands;
 /// </summary>
 public sealed class SortCommand : QueryCommand
 {
+	/// <summary>The sort fields. Each <see cref="SortField.FieldName"/> is final ES|QL text (an identifier or expression, already escaped).</summary>
 	public IReadOnlyList<SortField> Fields { get; }
 
-	public SortCommand(params SortField[] fields) => Fields = fields ?? throw new ArgumentNullException(nameof(fields));
+	public SortCommand(params SortField[] fields) =>
+		Fields = [.. fields ?? throw new ArgumentNullException(nameof(fields))];
 
-	public SortCommand(IEnumerable<SortField> fields) => Fields = fields?.ToList() ?? throw new ArgumentNullException(nameof(fields));
+	public SortCommand(IEnumerable<SortField> fields) =>
+		Fields = fields?.ToList() ?? throw new ArgumentNullException(nameof(fields));
 
 	internal override void Accept(ICommandVisitor visitor) => visitor.Visit(this);
 }

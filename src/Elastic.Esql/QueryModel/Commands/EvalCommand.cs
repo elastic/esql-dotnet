@@ -9,11 +9,17 @@ namespace Elastic.Esql.QueryModel.Commands;
 /// </summary>
 public sealed class EvalCommand : QueryCommand
 {
+	/// <summary>
+	/// The EVAL expressions as final ES|QL text (e.g. <c>alias = expression</c>): already escaped,
+	/// may contain <c>?name</c> placeholders whose values live in <see cref="EsqlQuery.Parameters"/>.
+	/// </summary>
 	public IReadOnlyList<string> Expressions { get; }
 
-	public EvalCommand(params string[] expressions) => Expressions = expressions ?? throw new ArgumentNullException(nameof(expressions));
+	public EvalCommand(params string[] expressions) =>
+		Expressions = [.. expressions ?? throw new ArgumentNullException(nameof(expressions))];
 
-	public EvalCommand(IEnumerable<string> expressions) => Expressions = expressions?.ToList() ?? throw new ArgumentNullException(nameof(expressions));
+	public EvalCommand(IEnumerable<string> expressions) =>
+		Expressions = expressions?.ToList() ?? throw new ArgumentNullException(nameof(expressions));
 
 	internal override void Accept(ICommandVisitor visitor) => visitor.Visit(this);
 }
