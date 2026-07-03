@@ -25,18 +25,28 @@ internal sealed partial class EsqlResponseReader
 		Stream stream, bool requireId = false, CancellationToken cancellationToken = default)
 	{
 		var asyncBuffer = new AsyncStreamBuffer(stream);
-		var cursor = new AsyncStreamBufferCursor(asyncBuffer);
-		var prepared = await PrepareRowsAsync<T>(cursor, cancellationToken).ConfigureAwait(false);
 
-		var result = new EsqlAsyncResults<T>();
-		result.SetOwnedResource(asyncBuffer);
-		await ApplyPreparedMetadataAsync(result, prepared, cursor, cancellationToken).ConfigureAwait(false);
+		try
+		{
+			var cursor = new AsyncStreamBufferCursor(asyncBuffer);
+			var prepared = await PrepareRowsAsync<T>(cursor, cancellationToken).ConfigureAwait(false);
 
-		var forceBuffer = requireId && result.Id is null && !prepared.ValuesFirst && prepared.IsRunning != true;
-		result.Rows = forceBuffer
-			? StreamRowsThenScanForIdAsync(cursor, prepared, result, cancellationToken)
-			: BuildAsyncRows(cursor, prepared, result, cancellationToken);
-		return result;
+			var result = new EsqlAsyncResults<T>();
+			result.SetOwnedResource(asyncBuffer);
+			await ApplyPreparedMetadataAsync(result, prepared, cursor, cancellationToken).ConfigureAwait(false);
+
+			var forceBuffer = requireId && result.Id is null && !prepared.ValuesFirst && prepared.IsRunning != true;
+			result.Rows = forceBuffer
+				? StreamRowsThenScanForIdAsync(cursor, prepared, result, cancellationToken)
+				: BuildAsyncRows(cursor, prepared, result, cancellationToken);
+			return result;
+		}
+		catch
+		{
+			// Ownership only transfers to the caller on successful return; reclaim the rented buffer on failure.
+			asyncBuffer.Dispose();
+			throw;
+		}
 	}
 
 #if NET10_0_OR_GREATER
@@ -62,18 +72,28 @@ internal sealed partial class EsqlResponseReader
 	public EsqlResults<T> ReadRows<T>(Stream stream, bool requireId = false)
 	{
 		var syncBuffer = new SyncStreamBuffer(stream);
-		var cursor = new SyncStreamBufferCursor(syncBuffer);
-		var prepared = PrepareRows<T>(cursor);
 
-		var result = new EsqlResults<T>();
-		result.SetOwnedResource(syncBuffer);
-		ApplyPreparedMetadata(result, prepared, cursor);
+		try
+		{
+			var cursor = new SyncStreamBufferCursor(syncBuffer);
+			var prepared = PrepareRows<T>(cursor);
 
-		var forceBuffer = requireId && result.Id is null && !prepared.ValuesFirst && prepared.IsRunning != true;
-		result.Rows = forceBuffer
-			? StreamRowsThenScanForId(cursor, prepared, result)
-			: BuildSyncRows(cursor, prepared, result);
-		return result;
+			var result = new EsqlResults<T>();
+			result.SetOwnedResource(syncBuffer);
+			ApplyPreparedMetadata(result, prepared, cursor);
+
+			var forceBuffer = requireId && result.Id is null && !prepared.ValuesFirst && prepared.IsRunning != true;
+			result.Rows = forceBuffer
+				? StreamRowsThenScanForId(cursor, prepared, result)
+				: BuildSyncRows(cursor, prepared, result);
+			return result;
+		}
+		catch
+		{
+			// Ownership only transfers to the caller on successful return; reclaim the rented buffer on failure.
+			syncBuffer.Dispose();
+			throw;
+		}
 	}
 
 	private static async Task ApplyPreparedMetadataAsync<T>(
