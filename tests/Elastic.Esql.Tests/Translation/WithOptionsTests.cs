@@ -39,20 +39,6 @@ public class WithOptionsTests : EsqlTestBase
 	}
 
 	[Test]
-	public void WithOptions_LastCallWins()
-	{
-		var result = (TestQueryOptions)CreateQuery<LogEntry>()
-			.WithOptions(new TestQueryOptions(TimeZone: "UTC"))
-			.WithOptions(new TestQueryOptions(TimeZone: "America/New_York", Locale: "en-US"))
-			.From("logs-*")
-			.AsEsqlQueryable()
-			.GetExecutorOptions()!;
-
-		_ = result.TimeZone.Should().Be("America/New_York");
-		_ = result.Locale.Should().Be("en-US");
-	}
-
-	[Test]
 	public void WithOptions_SurvivesLinqChain()
 	{
 		var result = CreateQuery<LogEntry>()
@@ -105,5 +91,31 @@ public class WithOptionsTests : EsqlTestBase
 
 		_ = query.GetQueryOptions()!.TimeZone.Should().Be("UTC");
 		_ = query.GetExecutorOptions().Should().BeOfType<TestQueryOptions>();
+	}
+
+	[Test]
+	public void WithOptions_WithoutAttribute_ThrowsNotSupported()
+	{
+		var act = () => CreateQuery<LogEntry>()
+			.WithOptions(new UnattributedQueryOptions(Name: "x"))
+			.From("logs-*")
+			.ToString();
+
+		_ = act.Should().Throw<NotSupportedException>()
+			.WithMessage("Method 'UnattributedQueryableExtensions.WithOptions' is not supported in ES|QL translation.");
+	}
+
+	[Test]
+	public void WithOptions_SameSlotCalledTwice_ThrowsInvalidOperation()
+	{
+		var act = () => CreateQuery<LogEntry>()
+			.WithOptions(new TestQueryOptions(TimeZone: "UTC"))
+			.WithOptions(new TestQueryOptions(TimeZone: "America/New_York", Locale: "en-US"))
+			.From("logs-*")
+			.AsEsqlQueryable()
+			.GetExecutorOptions();
+
+		_ = act.Should().Throw<InvalidOperationException>()
+			.WithMessage("Query options were already set earlier in this query chain*");
 	}
 }

@@ -241,7 +241,7 @@ Transport-level options live on `EsqlTransportOptions` (specific to `Elastic.Cli
 |---|---|---|
 | `RequestConfiguration` | `IRequestConfiguration?` | Per-request transport overrides |
 
-`EsqlTransportOptions` is specific to `Elastic.Clients.Esql`. Other downstream implementations may define their own `WithOptions` extensions with different option types.
+`EsqlTransportOptions` is specific to `Elastic.Clients.Esql`. Other downstream implementations may define their own `WithOptions` extensions with different option types; such methods must be marked with `[EsqlQueryOptionsMethod]` (from `Elastic.Esql.Extensions`) so the translator recognizes them. Setting the same options slot more than once in a query chain throws `InvalidOperationException`.
 
 ### Transport-level overrides
 

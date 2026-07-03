@@ -10,7 +10,8 @@ namespace Elastic.Esql.Extensions;
 
 public static partial class EsqlQueryableExtensions
 {
-	/// <summary>Attaches protocol-level query options to the query pipeline.</summary>
+	/// <summary>Attaches protocol-level query options to the query pipeline. Only one call is allowed per query chain.</summary>
+	[EsqlQueryOptionsMethod]
 	public static IEsqlQueryable<T> WithOptions<T>(this IEsqlQueryable<T> source, EsqlQueryOptions options)
 	{
 		Verify.NotNull(source);
