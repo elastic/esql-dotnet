@@ -110,11 +110,14 @@ public sealed class EsqlQueryProvider : IQueryProvider
 		return ExecuteCore<TResult>(expression);
 	}
 
-	/// <summary>Executes a query synchronously and returns the raw response body in the requested format. Used by extension methods.</summary>
-	internal IEsqlResponse Execute(Expression expression, EsqlFormat format)
+	/// <summary>
+	/// Executes a query synchronously and returns the raw response body. The explicit <paramref name="format"/> overrides the
+	/// query model's format; when both are unset, JSON is requested. Used by extension methods.
+	/// </summary>
+	internal IEsqlResponse Execute(Expression expression, EsqlFormat? format)
 	{
 		var (esql, query) = TranslateAndFormat(expression);
-		return _executor.ExecuteQuery(BuildRequest(esql, query, format));
+		return _executor.ExecuteQuery(BuildRequest(esql, query, format ?? query.Format ?? EsqlFormat.Json));
 	}
 
 	/// <summary>Asynchronously executes a scalar query represented by a specified expression tree.</summary>
@@ -123,6 +126,7 @@ public sealed class EsqlQueryProvider : IQueryProvider
 		Verify.NotNull(expression);
 
 		var (esql, query) = TranslateAndFormat(expression);
+		EnsureTypedMaterializationFormat(query);
 
 		var response = await _executor
 			.ExecuteQueryAsync(BuildRequest(esql, query, query.Format), cancellationToken)
@@ -136,11 +140,14 @@ public sealed class EsqlQueryProvider : IQueryProvider
 		return result.Value!;
 	}
 
-	/// <summary>Executes a query asynchronously and returns the raw response body in the requested format. Used by extension methods.</summary>
-	internal Task<IEsqlAsyncResponse> ExecuteAsync(Expression expression, EsqlFormat format, CancellationToken cancellationToken)
+	/// <summary>
+	/// Executes a query asynchronously and returns the raw response body. The explicit <paramref name="format"/> overrides the
+	/// query model's format; when both are unset, JSON is requested. Used by extension methods.
+	/// </summary>
+	internal Task<IEsqlAsyncResponse> ExecuteAsync(Expression expression, EsqlFormat? format, CancellationToken cancellationToken)
 	{
 		var (esql, query) = TranslateAndFormat(expression);
-		return _executor.ExecuteQueryAsync(BuildRequest(esql, query, format), cancellationToken);
+		return _executor.ExecuteQueryAsync(BuildRequest(esql, query, format ?? query.Format ?? EsqlFormat.Json), cancellationToken);
 	}
 
 	/// <summary>Executes the specified query expression asynchronously and returns the results as a stream of elements.</summary>
@@ -155,6 +162,7 @@ public sealed class EsqlQueryProvider : IQueryProvider
 			throw new ArgumentException($"Expression must return a queryable of '{typeof(TElement).Name}' elements.", nameof(expression));
 
 		var (esql, query) = TranslateAndFormat(expression);
+		EnsureTypedMaterializationFormat(query);
 
 		var response = await _executor
 			.ExecuteQueryAsync(BuildRequest(esql, query, query.Format), cancellationToken)
@@ -187,8 +195,9 @@ public sealed class EsqlQueryProvider : IQueryProvider
 	internal EsqlAsyncQuery<T> SubmitAsyncQuery<T>(Expression expression, EsqlAsyncQueryOptions? asyncOptions)
 	{
 		var (esql, query) = TranslateAndFormat(expression);
+		EnsureTypedMaterializationFormat(query);
 		var requireId = asyncOptions?.KeepOnCompletion == true;
-		var request = BuildRequest(esql, query, format: null, asyncOptions);
+		var request = BuildRequest(esql, query, query.Format, asyncOptions);
 		var response = _executor.SubmitAsyncQuery(request);
 
 		try
@@ -221,7 +230,8 @@ public sealed class EsqlQueryProvider : IQueryProvider
 	{
 		var requireId = asyncOptions?.KeepOnCompletion == true;
 		var (esql, query) = TranslateAndFormat(expression);
-		var request = BuildRequest(esql, query, format: null, asyncOptions);
+		EnsureTypedMaterializationFormat(query);
+		var request = BuildRequest(esql, query, query.Format, asyncOptions);
 		var response = await _executor
 			.SubmitAsyncQueryAsync(request, cancellationToken)
 			.ConfigureAwait(false);
@@ -270,6 +280,7 @@ public sealed class EsqlQueryProvider : IQueryProvider
 
 	private TResult ExecuteScalar<TResult>(string esql, EsqlQuery query, Expression expression)
 	{
+		EnsureTypedMaterializationFormat(query);
 		using var response = _executor.ExecuteQuery(BuildRequest(esql, query, query.Format));
 		var result = _reader.ReadScalar<TResult>(response.Body);
 
@@ -281,6 +292,7 @@ public sealed class EsqlQueryProvider : IQueryProvider
 	internal IEnumerable<TElement> ExecuteEnumerable<TElement>(Expression expression)
 	{
 		var (esql, query) = TranslateAndFormat(expression);
+		EnsureTypedMaterializationFormat(query);
 		using var response = _executor.ExecuteQuery(BuildRequest(esql, query, query.Format));
 		using var results = _reader.ReadRows<TElement>(response.Body);
 
@@ -337,6 +349,17 @@ public sealed class EsqlQueryProvider : IQueryProvider
 
 			default:
 				throw new NotSupportedException($"Operation '{methodName}' is not supported.");
+		}
+	}
+
+	private static void EnsureTypedMaterializationFormat(EsqlQuery query)
+	{
+		if (query.Format is not (null or EsqlFormat.Json))
+		{
+			throw new InvalidOperationException(
+				$"The query model requests the '{query.Format}' response format, but this execution path materializes typed results from JSON. " +
+				"Only the default (null) or EsqlFormat.Json can be used here. " +
+				"Use ToStream, ToStreamAsync, ToPipeReaderAsync, or a format-taking ToAsyncQuery overload to consume other formats.");
 		}
 	}
 
