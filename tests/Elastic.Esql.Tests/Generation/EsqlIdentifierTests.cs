@@ -55,4 +55,36 @@ public class EsqlIdentifierTests
 	[Test]
 	public void EscapeColumnName_ReservedKeyword_QuotesSegment() =>
 		_ = EsqlIdentifier.EscapeColumnName("like").Should().Be("`like`");
+
+	[Test]
+	public void FormatIndexPattern_WildcardPattern_ReturnsUnchanged() =>
+		_ = EsqlIdentifier.FormatIndexPattern("logs-*").Should().Be("logs-*");
+
+	[Test]
+	public void FormatIndexPattern_DateStylePattern_ReturnsUnchanged() =>
+		_ = EsqlIdentifier.FormatIndexPattern("metrics-2024.01").Should().Be("metrics-2024.01");
+
+	[Test]
+	public void FormatIndexPattern_CrossClusterPattern_ReturnsUnchanged() =>
+		_ = EsqlIdentifier.FormatIndexPattern("cluster:logs-*").Should().Be("cluster:logs-*");
+
+	[Test]
+	public void FormatIndexPattern_CommaSeparatedPatterns_ReturnsUnchanged() =>
+		_ = EsqlIdentifier.FormatIndexPattern("logs-*,metrics-*").Should().Be("logs-*,metrics-*");
+
+	[Test]
+	public void FormatIndexPattern_NameWithSpace_ReturnsDoubleQuoted() =>
+		_ = EsqlIdentifier.FormatIndexPattern("my index").Should().Be("\"my index\"");
+
+	[Test]
+	public void FormatIndexPattern_DateMathExpression_ReturnsDoubleQuoted() =>
+		_ = EsqlIdentifier.FormatIndexPattern("<logs-{now/d}>").Should().Be("\"<logs-{now/d}>\"");
+
+	[Test]
+	public void FormatIndexPattern_EmbeddedQuote_EscapesQuote() =>
+		_ = EsqlIdentifier.FormatIndexPattern("my\"index").Should().Be("\"my\\\"index\"");
+
+	[Test]
+	public void FormatIndexPattern_MetadataKeyword_ReturnsDoubleQuoted() =>
+		_ = EsqlIdentifier.FormatIndexPattern("metadata").Should().Be("\"metadata\"");
 }

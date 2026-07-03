@@ -68,6 +68,35 @@ internal static class EsqlIdentifier
 		return !ReservedKeywords.Contains(segment);
 	}
 
+	/// <summary>
+	/// Formats an index name or pattern for a FROM / LOOKUP JOIN target. Valid patterns
+	/// (letters, digits, '-', '.', '*', '_', ':' for cross-cluster references and ',' for
+	/// pattern lists) are emitted verbatim; anything else is double-quoted.
+	/// </summary>
+	public static string FormatIndexPattern(string pattern) =>
+		IsValidUnquotedIndexPattern(pattern)
+			? pattern
+			: $"\"{pattern.Replace("\\", "\\\\").Replace("\"", "\\\"")}\"";
+
+	private static bool IsValidUnquotedIndexPattern(string pattern)
+	{
+		if (string.IsNullOrEmpty(pattern))
+			return false;
+
+		// An index literally named "metadata" collides with the METADATA directive that may
+		// follow the FROM target, so it must be quoted.
+		if (string.Equals(pattern, "metadata", StringComparison.OrdinalIgnoreCase))
+			return false;
+
+		foreach (var c in pattern)
+		{
+			if (!IsAsciiLetter(c) && !IsAsciiDigit(c) && c is not ('-' or '.' or '*' or '_' or ':' or ','))
+				return false;
+		}
+
+		return true;
+	}
+
 	private static bool IsAsciiLetter(char c) => c is (>= 'a' and <= 'z') or (>= 'A' and <= 'Z');
 
 	private static bool IsAsciiDigit(char c) => c is >= '0' and <= '9';
