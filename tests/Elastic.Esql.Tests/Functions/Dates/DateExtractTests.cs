@@ -264,4 +264,17 @@ public class DateExtractTests : EsqlTestBase
             | KEEP isSunday
             """.NativeLineEndings());
 	}
+
+	[Test]
+	public void DateTime_DayOfWeekComparedToNonConstantExpression_InWhere_ThrowsNotSupported()
+	{
+		var query = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Timestamp.DayOfWeek == (DayOfWeek)l.StatusCode);
+
+		var act = () => query.ToString();
+
+		_ = act.Should().Throw<NotSupportedException>()
+			.WithMessage("*non-constant*");
+	}
 }

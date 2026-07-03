@@ -55,6 +55,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 			}
 		}
 
+		// Must run after null handling (IS NULL wins) and before generic enum comparison (which would emit C# ordinals).
 		var dayOfWeekComparison = EsqlFunctionTranslator.TryGetDayOfWeekComparison(node);
 		if (dayOfWeekComparison.HasValue)
 		{

@@ -112,15 +112,15 @@ internal static class EsqlFormatting
 	internal static string FormatTimeSpanRaw(TimeSpan ts)
 	{
 		if (ts.Ticks % TimeSpan.TicksPerDay == 0)
-			return $"{ts.Ticks / TimeSpan.TicksPerDay} days";
+			return $"{(ts.Ticks / TimeSpan.TicksPerDay).ToString(InvariantCulture)} days";
 		if (ts.Ticks % TimeSpan.TicksPerHour == 0)
-			return $"{ts.Ticks / TimeSpan.TicksPerHour} hours";
+			return $"{(ts.Ticks / TimeSpan.TicksPerHour).ToString(InvariantCulture)} hours";
 		if (ts.Ticks % TimeSpan.TicksPerMinute == 0)
-			return $"{ts.Ticks / TimeSpan.TicksPerMinute} minutes";
+			return $"{(ts.Ticks / TimeSpan.TicksPerMinute).ToString(InvariantCulture)} minutes";
 		if (ts.Ticks % TimeSpan.TicksPerSecond == 0)
-			return $"{ts.Ticks / TimeSpan.TicksPerSecond} seconds";
+			return $"{(ts.Ticks / TimeSpan.TicksPerSecond).ToString(InvariantCulture)} seconds";
 		if (ts.Ticks % TimeSpan.TicksPerMillisecond == 0)
-			return $"{ts.Ticks / TimeSpan.TicksPerMillisecond} milliseconds";
+			return $"{(ts.Ticks / TimeSpan.TicksPerMillisecond).ToString(InvariantCulture)} milliseconds";
 
 		return $"{ts.TotalMilliseconds.ToString("0.###", InvariantCulture)} milliseconds";
 	}
