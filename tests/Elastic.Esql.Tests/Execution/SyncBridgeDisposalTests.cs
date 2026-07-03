@@ -102,14 +102,26 @@ public class SyncBridgeDisposalTests
 	{
 		public DelayedDisposeResponse? LastResponse { get; private set; }
 
-		public Task<IEsqlAsyncResponse> ExecuteQueryAsync(string esql, EsqlParameters? parameters, object? options, EsqlFormat? format, CancellationToken cancellationToken)
+		public Task<IEsqlAsyncResponse> ExecuteQueryAsync(
+			string esql,
+			EsqlParameters? parameters,
+			object? options,
+			EsqlFormat? format,
+			CancellationToken cancellationToken
+		)
 		{
 			LastResponse = new DelayedDisposeResponse(body);
 			return Task.FromResult<IEsqlAsyncResponse>(LastResponse);
 		}
 
 		public Task<IEsqlAsyncResponse> SubmitAsyncQueryAsync(
-			string esql, EsqlParameters? parameters, object? options, EsqlAsyncQueryOptions? asyncOptions, EsqlFormat? format, CancellationToken cancellationToken)
+			string esql,
+			EsqlParameters? parameters,
+			object? options,
+			EsqlAsyncQueryOptions? asyncOptions,
+			EsqlFormat? format,
+			CancellationToken cancellationToken
+		)
 		{
 			LastResponse = new DelayedDisposeResponse(body);
 			return Task.FromResult<IEsqlAsyncResponse>(LastResponse);
@@ -118,7 +130,13 @@ public class SyncBridgeDisposalTests
 		public IEsqlResponse ExecuteQuery(string esql, EsqlParameters? parameters, object? options, EsqlFormat? format) =>
 			throw new NotSupportedException();
 
-		public IEsqlResponse SubmitAsyncQuery(string esql, EsqlParameters? parameters, object? options, EsqlAsyncQueryOptions? asyncOptions, EsqlFormat? format) =>
+		public IEsqlResponse SubmitAsyncQuery(
+			string esql,
+			EsqlParameters? parameters,
+			object? options,
+			EsqlAsyncQueryOptions? asyncOptions,
+			EsqlFormat? format
+		) =>
 			throw new NotSupportedException();
 
 		public IEsqlResponse PollAsyncQuery(string queryId, object? options, EsqlFormat? format) =>

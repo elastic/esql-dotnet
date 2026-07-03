@@ -72,14 +72,26 @@ public class SubmitAsyncQueryDisposalTests
 		public TrackingSyncResponse? LastSyncResponse { get; private set; }
 		public TrackingAsyncResponse? LastAsyncResponse { get; private set; }
 
-		public IEsqlResponse SubmitAsyncQuery(string esql, EsqlParameters? parameters, object? options, EsqlAsyncQueryOptions? asyncOptions, EsqlFormat? format)
+		public IEsqlResponse SubmitAsyncQuery(
+			string esql,
+			EsqlParameters? parameters,
+			object? options,
+			EsqlAsyncQueryOptions? asyncOptions,
+			EsqlFormat? format
+		)
 		{
 			LastSyncResponse = new TrackingSyncResponse(submitBody);
 			return LastSyncResponse;
 		}
 
 		public Task<IEsqlAsyncResponse> SubmitAsyncQueryAsync(
-			string esql, EsqlParameters? parameters, object? options, EsqlAsyncQueryOptions? asyncOptions, EsqlFormat? format, CancellationToken cancellationToken)
+			string esql,
+			EsqlParameters? parameters,
+			object? options,
+			EsqlAsyncQueryOptions? asyncOptions,
+			EsqlFormat? format,
+			CancellationToken cancellationToken
+		)
 		{
 			LastAsyncResponse = new TrackingAsyncResponse(submitBody);
 			return Task.FromResult<IEsqlAsyncResponse>(LastAsyncResponse);
@@ -88,7 +100,13 @@ public class SubmitAsyncQueryDisposalTests
 		public IEsqlResponse ExecuteQuery(string esql, EsqlParameters? parameters, object? options, EsqlFormat? format) =>
 			throw new NotSupportedException();
 
-		public Task<IEsqlAsyncResponse> ExecuteQueryAsync(string esql, EsqlParameters? parameters, object? options, EsqlFormat? format, CancellationToken cancellationToken) =>
+		public Task<IEsqlAsyncResponse> ExecuteQueryAsync(
+			string esql,
+			EsqlParameters? parameters,
+			object? options,
+			EsqlFormat? format,
+			CancellationToken cancellationToken
+		) =>
 			throw new NotSupportedException();
 
 		public IEsqlResponse PollAsyncQuery(string queryId, object? options, EsqlFormat? format) =>
