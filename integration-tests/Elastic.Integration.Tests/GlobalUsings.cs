@@ -4,6 +4,7 @@
 
 global using AwesomeAssertions;
 global using Elastic.Clients.Esql;
+global using Elastic.Esql;
 global using Elastic.Esql.Core;
 global using Elastic.Esql.Extensions;
 global using Elastic.Esql.Functions;

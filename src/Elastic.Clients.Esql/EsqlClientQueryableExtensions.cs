@@ -10,8 +10,8 @@ namespace Elastic.Clients.Esql;
 /// <summary>Extension methods for <see cref="IEsqlQueryable{T}"/> specific to the Elasticsearch transport executor.</summary>
 public static class EsqlClientQueryableExtensions
 {
-	/// <summary>Attaches Elasticsearch-specific query options to the query pipeline.</summary>
-	public static IEsqlQueryable<T> WithOptions<T>(this IEsqlQueryable<T> source, EsqlQueryOptions options)
+	/// <summary>Attaches transport-specific options to the query pipeline.</summary>
+	public static IEsqlQueryable<T> WithOptions<T>(this IEsqlQueryable<T> source, EsqlTransportOptions options)
 	{
 #if NETSTANDARD2_0
 		if (source is null)
@@ -23,7 +23,7 @@ public static class EsqlClientQueryableExtensions
 		ArgumentNullException.ThrowIfNull(options);
 #endif
 
-		var method = new Func<IEsqlQueryable<T>, EsqlQueryOptions, IEsqlQueryable<T>>(WithOptions).Method;
+		var method = new Func<IEsqlQueryable<T>, EsqlTransportOptions, IEsqlQueryable<T>>(WithOptions).Method;
 		return (IEsqlQueryable<T>)source.Provider.CreateQuery<T>(
 			Expression.Call(null, method, source.Expression, Expression.Constant(options))
 		);

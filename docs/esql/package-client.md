@@ -226,15 +226,22 @@ await using var asyncQuery = await client.SubmitAsyncQueryAsync<LogEntry>(
 
 ### Available options
 
+Protocol-level options live on `EsqlQueryOptions` (from `Elastic.Esql`) and work with any executor:
+
 | Option | Type | Description |
 |---|---|---|
-| `RequestConfiguration` | `IRequestConfiguration?` | Per-request transport overrides |
 | `AllowPartialResults` | `bool?` | Allow partial results when shards are unavailable |
 | `DropNullColumns` | `bool?` | Omit columns where every value is null from the response |
 | `TimeZone` | `string?` | Timezone for date operations (e.g., `"UTC"`, `"America/New_York"`) |
 | `Locale` | `string?` | Locale for formatting (e.g., `"en-US"`) |
 
-These options are specific to `Elastic.Clients.Esql`. Other downstream implementations may define their own `WithOptions` extensions with different option types.
+Transport-level options live on `EsqlTransportOptions` (specific to `Elastic.Clients.Esql`):
+
+| Option | Type | Description |
+|---|---|---|
+| `RequestConfiguration` | `IRequestConfiguration?` | Per-request transport overrides |
+
+`EsqlTransportOptions` is specific to `Elastic.Clients.Esql`. Other downstream implementations may define their own `WithOptions` extensions with different option types.
 
 ### Transport-level overrides
 
@@ -242,7 +249,7 @@ Use `RequestConfiguration` to control transport behavior per query -- for exampl
 
 ```csharp
 var results = await client.CreateQuery<LogEntry>()
-    .WithOptions(new EsqlQueryOptions
+    .WithOptions(new EsqlTransportOptions
     {
         RequestConfiguration = new RequestConfiguration
         {
