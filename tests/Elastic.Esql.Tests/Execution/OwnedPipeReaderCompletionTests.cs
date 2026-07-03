@@ -45,6 +45,18 @@ public class OwnedPipeReaderCompletionTests
 	}
 
 	[Test]
+	public async Task CompleteAsync_AfterComplete_DoesNotDisposeAgain()
+	{
+		var response = new TrackingResponse("data"u8.ToArray());
+		var reader = new OwnedAsyncResponsePipeReader(response);
+
+		reader.Complete();
+		await reader.CompleteAsync();
+
+		response.DisposeCount.Should().Be(1);
+	}
+
+	[Test]
 	public async Task CompleteAsync_ResponseDisposesAsynchronously_Completes()
 	{
 		var response = new TrackingResponse("data"u8.ToArray()) { DisposeDelay = TimeSpan.FromMilliseconds(10) };
