@@ -17,6 +17,7 @@ internal sealed class SyncStreamBuffer(Stream stream, int initialBufferSize = 16
 	private byte[] _buffer = ArrayPool<byte>.Shared.Rent(initialBufferSize);
 	private int _offset;
 	private int _filled;
+	private int _examined;
 #pragma warning disable IDE0032
 	private bool _streamCompleted;
 #pragma warning restore IDE0032
@@ -36,10 +37,19 @@ internal sealed class SyncStreamBuffer(Stream stream, int initialBufferSize = 16
 	/// </summary>
 	public bool Read()
 	{
+		// Unexamined buffered data satisfies the caller without touching the stream, mirroring
+		// PipeReader semantics, so rows that already arrived are not held back by a blocking read.
+		if (_examined < _filled)
+			return true;
+
 		if (_streamCompleted)
 			return _offset < _filled;
 
 		EnsureWritableSpace(MinimumReadSize);
+
+		// Compaction in EnsureWritableSpace shifts absolute indexes; everything buffered has been
+		// examined when this point is reached, so realign before appending new data.
+		_examined = _filled;
 
 		var bytesRead = stream.Read(_buffer, _filled, _buffer.Length - _filled);
 		if (bytesRead == 0)
@@ -53,18 +63,21 @@ internal sealed class SyncStreamBuffer(Stream stream, int initialBufferSize = 16
 	}
 
 	/// <summary>
-	/// Advances past consumed data. The <paramref name="examined"/> position is accepted for API
-	/// compatibility with the PipeReader calling pattern but is not used — the sync buffer retains
-	/// all unconsumed data regardless.
+	/// Advances past consumed data and records how far the caller examined, following the
+	/// PipeReader calling pattern; the buffer retains all unconsumed data regardless.
 	/// </summary>
 	public void AdvanceTo(SequencePosition consumed, SequencePosition examined)
 	{
-		_ = examined;
 		_offset = consumed.GetInteger();
+		_examined = examined.GetInteger();
 	}
 
 	/// <summary>Advances past consumed data (examined = end of buffer).</summary>
-	public void AdvanceTo(SequencePosition consumed) => _offset = consumed.GetInteger();
+	public void AdvanceTo(SequencePosition consumed)
+	{
+		_offset = consumed.GetInteger();
+		_examined = _filled;
+	}
 
 	public void Dispose()
 	{

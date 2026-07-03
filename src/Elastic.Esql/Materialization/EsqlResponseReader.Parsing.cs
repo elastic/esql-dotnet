@@ -21,7 +21,9 @@ internal sealed partial class EsqlResponseReader
 		if (valuesFirst)
 			return new PrepareRowsResult(columns, readerState, default!, id, isRunning, true);
 
-		cursor.AdvanceTo(consumed, cursor.Buffer.End);
+		// Examined stops at consumed so the next read call returns the already buffered remainder
+		// of this chunk immediately instead of waiting for more data to arrive.
+		cursor.AdvanceTo(consumed, consumed);
 
 		(readerState, var id2, var isRunning2) = await AdvanceToValuesArrayFromAsyncCursorAsync(cursor, readerState, cancellationToken).ConfigureAwait(false);
 		return new PrepareRowsResult(columns, readerState, GetColumnLayout<T>(columns), id ?? id2, isRunning ?? isRunning2, false);
@@ -34,7 +36,9 @@ internal sealed partial class EsqlResponseReader
 		if (valuesFirst)
 			return new PrepareRowsResult(columns, readerState, default!, id, isRunning, true);
 
-		cursor.AdvanceTo(consumed, cursor.Buffer.End);
+		// Examined stops at consumed so the next read call returns the already buffered remainder
+		// of this chunk immediately instead of waiting for more data to arrive.
+		cursor.AdvanceTo(consumed, consumed);
 
 		(readerState, var id2, var isRunning2) = AdvanceToValuesArrayFromSyncCursor(cursor, readerState);
 		return new PrepareRowsResult(columns, readerState, GetColumnLayout<T>(columns), id ?? id2, isRunning ?? isRunning2, false);
@@ -451,7 +455,9 @@ internal sealed partial class EsqlResponseReader
 
 			if (TryAdvanceToValuesArray(buffer, cursor.IsEofReached, ref state, out var consumed, ref id, ref isRunning))
 			{
-				cursor.AdvanceTo(consumed, buffer.End);
+				// Examined stops at consumed so the row loop's first read returns the already
+				// buffered rows of this chunk immediately instead of waiting for more data.
+				cursor.AdvanceTo(consumed, consumed);
 				return (state, id, isRunning);
 			}
 
@@ -477,7 +483,9 @@ internal sealed partial class EsqlResponseReader
 
 			if (TryAdvanceToValuesArray(buffer, cursor.IsEofReached, ref state, out var consumed, ref id, ref isRunning))
 			{
-				cursor.AdvanceTo(consumed, buffer.End);
+				// Examined stops at consumed so the row loop's first read returns the already
+				// buffered rows of this chunk immediately instead of waiting for more data.
+				cursor.AdvanceTo(consumed, consumed);
 				return (state, id, isRunning);
 			}
 
