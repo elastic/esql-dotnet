@@ -43,7 +43,7 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 		_reader = reader;
 		_queryOptions = queryOptions;
 
-		QueryId = result.Id;
+		QueryId = result.Id ?? ReadAsyncIdHeader(response);
 		IsCompleted = result.IsRunning != true;
 	}
 
@@ -61,7 +61,7 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 		_reader = reader;
 		_queryOptions = queryOptions;
 
-		QueryId = result.Id;
+		QueryId = result.Id ?? ReadAsyncIdHeader(response);
 		IsCompleted = result.IsRunning != true;
 	}
 
@@ -92,6 +92,8 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 
 		await foreach (var item in source.WithCancellation(cancellationToken).ConfigureAwait(false))
 			yield return item;
+
+		SyncQueryIdFromResults();
 	}
 
 	/// <summary>
@@ -105,12 +107,20 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 			WaitForCompletion();
 
 		if (_syncResult is not null)
-			return _syncResult.Rows;
+			return EnumerateThenSyncQueryId(_syncResult.Rows);
 
 		if (_asyncResult is not null)
-			return new AsyncToSyncEnumerable(_asyncResult.Rows);
+			return EnumerateThenSyncQueryId(new AsyncToSyncEnumerable(_asyncResult.Rows));
 
 		return [];
+	}
+
+	private IEnumerable<T> EnumerateThenSyncQueryId(IEnumerable<T> rows)
+	{
+		foreach (var item in rows)
+			yield return item;
+
+		SyncQueryIdFromResults();
 	}
 
 	/// <summary>
@@ -301,6 +311,16 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 		if (result.IsRunning == false)
 			IsCompleted = true;
 	}
+
+	private static string? ReadAsyncIdHeader(IEsqlAsyncResponse response) =>
+		response.TryGetHeader("X-Elasticsearch-Async-Id", out var values) ? values.FirstOrDefault() : null;
+
+	private static string? ReadAsyncIdHeader(IEsqlResponse response) =>
+		response.TryGetHeader("X-Elasticsearch-Async-Id", out var values) ? values.FirstOrDefault() : null;
+
+	/// <summary>The reader captures a trailing "id" property only once row enumeration has completed.</summary>
+	private void SyncQueryIdFromResults() =>
+		QueryId ??= _asyncResult?.Id ?? _syncResult?.Id;
 
 	private void DisposeResults()
 	{
