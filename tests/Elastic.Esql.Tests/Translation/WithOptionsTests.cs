@@ -7,7 +7,7 @@ namespace Elastic.Esql.Tests.Translation;
 public class WithOptionsTests : EsqlTestBase
 {
 	[Test]
-	public void WithOptions_SetsQueryOptions()
+	public void WithOptions_ExecutorOptions_SetsExecutorOptions()
 	{
 		var options = new TestQueryOptions(TimeZone: "UTC");
 
@@ -15,7 +15,7 @@ public class WithOptionsTests : EsqlTestBase
 			.WithOptions(options)
 			.From("logs-*")
 			.AsEsqlQueryable()
-			.GetQueryOptions();
+			.GetExecutorOptions();
 
 		_ = result.Should().BeOfType<TestQueryOptions>();
 		_ = ((TestQueryOptions)result!).TimeZone.Should().Be("UTC");
@@ -46,7 +46,7 @@ public class WithOptionsTests : EsqlTestBase
 			.WithOptions(new TestQueryOptions(TimeZone: "America/New_York", Locale: "en-US"))
 			.From("logs-*")
 			.AsEsqlQueryable()
-			.GetQueryOptions()!;
+			.GetExecutorOptions()!;
 
 		_ = result.TimeZone.Should().Be("America/New_York");
 		_ = result.Locale.Should().Be("en-US");
@@ -62,21 +62,48 @@ public class WithOptionsTests : EsqlTestBase
 			.OrderByDescending(l => l.Timestamp)
 			.Take(50)
 			.AsEsqlQueryable()
-			.GetQueryOptions();
+			.GetExecutorOptions();
 
 		_ = result.Should().BeOfType<TestQueryOptions>();
 		_ = ((TestQueryOptions)result!).TimeZone.Should().Be("UTC");
 	}
 
 	[Test]
-	public void WithoutOptions_GetQueryOptionsReturnsNull()
+	public void WithoutOptions_BothOptionSlotsReturnNull()
 	{
-		var result = CreateQuery<LogEntry>()
+		var query = CreateQuery<LogEntry>()
 			.From("logs-*")
 			.Where(l => l.Level == "ERROR")
+			.AsEsqlQueryable();
+
+		_ = query.GetQueryOptions().Should().BeNull();
+		_ = query.GetExecutorOptions().Should().BeNull();
+	}
+
+	[Test]
+	public void WithOptions_CoreOptions_SetsQueryOptions()
+	{
+		var result = CreateQuery<LogEntry>()
+			.WithOptions(new EsqlQueryOptions { TimeZone = "UTC", Locale = "en-US" })
+			.From("logs-*")
 			.AsEsqlQueryable()
 			.GetQueryOptions();
 
-		_ = result.Should().BeNull();
+		_ = result.Should().NotBeNull();
+		_ = result!.TimeZone.Should().Be("UTC");
+		_ = result.Locale.Should().Be("en-US");
+	}
+
+	[Test]
+	public void WithOptions_CoreAndExecutorOptions_PopulateSeparateSlots()
+	{
+		var query = CreateQuery<LogEntry>()
+			.WithOptions(new EsqlQueryOptions { TimeZone = "UTC" })
+			.WithOptions(new TestQueryOptions(Locale: "de-DE"))
+			.From("logs-*")
+			.AsEsqlQueryable();
+
+		_ = query.GetQueryOptions()!.TimeZone.Should().Be("UTC");
+		_ = query.GetExecutorOptions().Should().BeOfType<TestQueryOptions>();
 	}
 }

@@ -54,7 +54,13 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 		if (Context.ElementType is null)
 			throw new InvalidOperationException("Failed to determine result type for the given expression.");
 
-		return new EsqlQuery(Context.ElementType, [.. Context.Commands], !Context.Parameters.HasParameters ? null : Context.Parameters, Context.QueryOptions);
+		return new EsqlQuery(
+			Context.ElementType,
+			[.. Context.Commands],
+			!Context.Parameters.HasParameters ? null : Context.Parameters,
+			Context.QueryOptions,
+			Context.ExecutorOptions
+		);
 	}
 
 	protected override Expression VisitConstant(ConstantExpression node)
@@ -219,10 +225,8 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 				// Transparent query shape conversion; no ES|QL command impact.
 				break;
 
-			// WithOptions extension methods are defined by downstream executor implementations
-			// (e.g., Elastic.Clients.Esql) with their own concrete options types. The core
-			// translator matches by method name only to remain agnostic to specific option
-			// types and their declaring classes.
+			// Matching by method name keeps the translator agnostic to the declaring class;
+			// VisitWithOptions dispatches the argument by its runtime type.
 			case "WithOptions":
 				VisitWithOptions(node);
 				break;
@@ -609,7 +613,14 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 		if (node.Arguments.Count < 2)
 			return;
 
-		Context.QueryOptions = ExpressionConstantResolver.Resolve(node.Arguments[1]);
+		// The core WithOptions overload carries the typed protocol options; downstream executors
+		// define their own overloads with executor-specific types, so dispatch on the constant's type.
+		var value = ExpressionConstantResolver.Resolve(node.Arguments[1]);
+
+		if (value is EsqlQueryOptions queryOptions)
+			Context.QueryOptions = queryOptions;
+		else
+			Context.ExecutorOptions = value;
 	}
 
 	private void VisitFork(MethodCallExpression node)
