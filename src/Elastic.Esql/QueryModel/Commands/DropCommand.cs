@@ -9,10 +9,11 @@ namespace Elastic.Esql.QueryModel.Commands;
 /// </summary>
 public sealed class DropCommand : QueryCommand
 {
+	/// <summary>The field names to drop, as final ES|QL identifiers (already escaped and qualified).</summary>
 	public IReadOnlyList<string> Fields { get; }
 
 	public DropCommand(params string[] fields) =>
-		Fields = fields ?? throw new ArgumentNullException(nameof(fields));
+		Fields = [.. fields ?? throw new ArgumentNullException(nameof(fields))];
 
 	public DropCommand(IEnumerable<string> fields) =>
 		Fields = fields?.ToList() ?? throw new ArgumentNullException(nameof(fields));

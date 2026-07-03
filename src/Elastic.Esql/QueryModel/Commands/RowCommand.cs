@@ -9,10 +9,14 @@ namespace Elastic.Esql.QueryModel.Commands;
 /// </summary>
 public sealed class RowCommand : SourceCommand
 {
+	/// <summary>
+	/// The ROW expressions as final ES|QL text (e.g. <c>name = value</c>): already escaped,
+	/// may contain <c>?name</c> placeholders whose values live in <see cref="EsqlQuery.Parameters"/>.
+	/// </summary>
 	public IReadOnlyList<string> Expressions { get; }
 
 	public RowCommand(params string[] expressions) =>
-		Expressions = expressions ?? throw new ArgumentNullException(nameof(expressions));
+		Expressions = [.. expressions ?? throw new ArgumentNullException(nameof(expressions))];
 
 	public RowCommand(IEnumerable<string> expressions) =>
 		Expressions = expressions?.ToList() ?? throw new ArgumentNullException(nameof(expressions));

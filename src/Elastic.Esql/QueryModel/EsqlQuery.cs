@@ -9,6 +9,12 @@ namespace Elastic.Esql.QueryModel;
 /// <summary>
 /// Represents an intermediate ES|QL query model.
 /// </summary>
+/// <remarks>
+/// Command properties that carry query text (for example <see cref="WhereCommand.Condition"/>,
+/// <see cref="StatsCommand.Aggregations"/> and <see cref="ForkCommand.Branches"/>) contain final
+/// ES|QL fragments: identifiers and literals are already escaped, and the text may contain
+/// <c>?name</c> placeholders whose values are registered in <see cref="Parameters"/>.
+/// </remarks>
 /// <param name="elementType">The element type.</param>
 /// <param name="commands">The ESQL query commands.</param>
 /// <param name="parameters">The ESQL query parameters.</param>

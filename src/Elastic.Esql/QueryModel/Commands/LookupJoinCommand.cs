@@ -12,7 +12,10 @@ public sealed class LookupJoinCommand(string lookupIndex, string onCondition) : 
 	/// <summary>The lookup index name.</summary>
 	public string LookupIndex { get; } = lookupIndex ?? throw new ArgumentNullException(nameof(lookupIndex));
 
-	/// <summary>The translated ON condition (simple field names or expression-based conditions).</summary>
+	/// <summary>
+	/// The ON condition as final ES|QL text (simple field names or expression-based conditions):
+	/// already escaped, may contain <c>?name</c> placeholders whose values live in <see cref="EsqlQuery.Parameters"/>.
+	/// </summary>
 	public string OnCondition { get; } = onCondition ?? throw new ArgumentNullException(nameof(onCondition));
 
 	internal override void Accept(ICommandVisitor visitor) => visitor.Visit(this);
