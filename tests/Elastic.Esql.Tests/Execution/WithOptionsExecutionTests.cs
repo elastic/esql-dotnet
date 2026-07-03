@@ -4,13 +4,14 @@
 
 using System.Text.Json;
 using Elastic.Esql.Execution;
+using Elastic.Esql.QueryModel;
 using Elastic.Esql.Tests.Translation;
 
 namespace Elastic.Esql.Tests.Execution;
 
 public class WithOptionsExecutionTests : EsqlTestBase
 {
-	private static EsqlQueryable<T> CreateExecutableQuery<T>(CapturingQueryExecutor executor) =>
+	private static EsqlQueryable<T> CreateExecutableQuery<T>(CapturingQueryExecutor executor, IEsqlQueryInterceptor? interceptor = null) =>
 		new(new EsqlQueryProvider(
 			new JsonSerializerOptions
 			{
@@ -18,10 +19,11 @@ public class WithOptionsExecutionTests : EsqlTestBase
 				PropertyNamingPolicy = JsonNamingPolicy.CamelCase
 			},
 			executor
-		));
+		)
+		{ Interceptor = interceptor });
 
 	[Test]
-	public void WithOptions_OptionsReachExecutor_Sync()
+	public void WithOptions_ExecutorOptionsReachExecutor_Sync()
 	{
 		var executor = new CapturingQueryExecutor();
 		var options = new TestQueryOptions(TimeZone: "UTC");
@@ -34,12 +36,12 @@ public class WithOptionsExecutionTests : EsqlTestBase
 
 		_ = executor.Calls.Should().HaveCount(1);
 		_ = executor.Calls[0].Method.Should().Be(nameof(IEsqlQueryExecutor.ExecuteQuery));
-		_ = executor.Calls[0].Options.Should().BeOfType<TestQueryOptions>();
-		_ = ((TestQueryOptions)executor.Calls[0].Options!).TimeZone.Should().Be("UTC");
+		_ = executor.Calls[0].ExecutorOptions.Should().BeOfType<TestQueryOptions>();
+		_ = ((TestQueryOptions)executor.Calls[0].ExecutorOptions!).TimeZone.Should().Be("UTC");
 	}
 
 	[Test]
-	public async Task WithOptions_OptionsReachExecutor_Async()
+	public async Task WithOptions_ExecutorOptionsReachExecutor_Async()
 	{
 		var executor = new CapturingQueryExecutor();
 		var options = new TestQueryOptions(TimeZone: "America/New_York", Locale: "en-US");
@@ -55,11 +57,42 @@ public class WithOptionsExecutionTests : EsqlTestBase
 
 		_ = executor.Calls.Should().HaveCount(1);
 		_ = executor.Calls[0].Method.Should().Be(nameof(IEsqlQueryExecutor.ExecuteQueryAsync));
-		_ = executor.Calls[0].Options.Should().BeOfType<TestQueryOptions>();
+		_ = executor.Calls[0].ExecutorOptions.Should().BeOfType<TestQueryOptions>();
 
-		var captured = (TestQueryOptions)executor.Calls[0].Options!;
+		var captured = (TestQueryOptions)executor.Calls[0].ExecutorOptions!;
 		_ = captured.TimeZone.Should().Be("America/New_York");
 		_ = captured.Locale.Should().Be("en-US");
+	}
+
+	[Test]
+	public void WithOptions_CoreOptionsReachExecutor_Sync()
+	{
+		var executor = new CapturingQueryExecutor();
+
+		_ = CreateExecutableQuery<LogEntry>(executor)
+			.WithOptions(new EsqlQueryOptions { TimeZone = "UTC", AllowPartialResults = true })
+			.From("logs-*")
+			.ToList();
+
+		_ = executor.Calls.Should().HaveCount(1);
+		_ = executor.Calls[0].QueryOptions.Should().NotBeNull();
+		_ = executor.Calls[0].QueryOptions!.TimeZone.Should().Be("UTC");
+		_ = executor.Calls[0].QueryOptions!.AllowPartialResults.Should().BeTrue();
+		_ = executor.Calls[0].ExecutorOptions.Should().BeNull();
+	}
+
+	[Test]
+	public void Interceptor_SetsQueryOptions_ReachesExecutor()
+	{
+		var executor = new CapturingQueryExecutor();
+		var interceptor = new QueryOptionsInterceptor(new EsqlQueryOptions { DropNullColumns = true });
+
+		_ = CreateExecutableQuery<LogEntry>(executor, interceptor)
+			.From("logs-*")
+			.ToList();
+
+		_ = executor.Calls.Should().HaveCount(1);
+		_ = executor.Calls[0].QueryOptions!.DropNullColumns.Should().BeTrue();
 	}
 
 	[Test]
@@ -73,7 +106,8 @@ public class WithOptionsExecutionTests : EsqlTestBase
 			.ToList();
 
 		_ = executor.Calls.Should().HaveCount(1);
-		_ = executor.Calls[0].Options.Should().BeNull();
+		_ = executor.Calls[0].QueryOptions.Should().BeNull();
+		_ = executor.Calls[0].ExecutorOptions.Should().BeNull();
 	}
 
 	[Test]
@@ -94,5 +128,10 @@ public class WithOptionsExecutionTests : EsqlTestBase
 			| WHERE log.level == "ERROR"
 			| LIMIT 10
 			""".NativeLineEndings());
+	}
+
+	private sealed class QueryOptionsInterceptor(EsqlQueryOptions options) : IEsqlQueryInterceptor
+	{
+		public EsqlQuery Intercept(EsqlQuery query) => query.WithQueryOptions(options);
 	}
 }

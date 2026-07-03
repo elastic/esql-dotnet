@@ -72,54 +72,35 @@ public class SubmitAsyncQueryDisposalTests
 		public TrackingSyncResponse? LastSyncResponse { get; private set; }
 		public TrackingAsyncResponse? LastAsyncResponse { get; private set; }
 
-		public IEsqlResponse SubmitAsyncQuery(
-			string esql,
-			EsqlParameters? parameters,
-			object? options,
-			EsqlAsyncQueryOptions? asyncOptions,
-			EsqlFormat? format
-		)
+		public IEsqlResponse SubmitAsyncQuery(EsqlExecutionRequest request)
 		{
 			LastSyncResponse = new TrackingSyncResponse(submitBody);
 			return LastSyncResponse;
 		}
 
-		public Task<IEsqlAsyncResponse> SubmitAsyncQueryAsync(
-			string esql,
-			EsqlParameters? parameters,
-			object? options,
-			EsqlAsyncQueryOptions? asyncOptions,
-			EsqlFormat? format,
-			CancellationToken cancellationToken
-		)
+		public Task<IEsqlAsyncResponse> SubmitAsyncQueryAsync(EsqlExecutionRequest request, CancellationToken cancellationToken)
 		{
 			LastAsyncResponse = new TrackingAsyncResponse(submitBody);
 			return Task.FromResult<IEsqlAsyncResponse>(LastAsyncResponse);
 		}
 
-		public IEsqlResponse ExecuteQuery(string esql, EsqlParameters? parameters, object? options, EsqlFormat? format) =>
+		public IEsqlResponse ExecuteQuery(EsqlExecutionRequest request) =>
 			throw new NotSupportedException();
 
-		public Task<IEsqlAsyncResponse> ExecuteQueryAsync(
-			string esql,
-			EsqlParameters? parameters,
-			object? options,
-			EsqlFormat? format,
-			CancellationToken cancellationToken
-		) =>
+		public Task<IEsqlAsyncResponse> ExecuteQueryAsync(EsqlExecutionRequest request, CancellationToken cancellationToken) =>
 			throw new NotSupportedException();
 
-		public IEsqlResponse PollAsyncQuery(string queryId, object? options, EsqlFormat? format) =>
+		public IEsqlResponse PollAsyncQuery(string queryId, EsqlExecutionRequest request) =>
 			throw new NotSupportedException();
 
-		public Task<IEsqlAsyncResponse> PollAsyncQueryAsync(string queryId, object? options, EsqlFormat? format, CancellationToken cancellationToken) =>
+		public Task<IEsqlAsyncResponse> PollAsyncQueryAsync(string queryId, EsqlExecutionRequest request, CancellationToken cancellationToken) =>
 			throw new NotSupportedException();
 
-		public void DeleteAsyncQuery(string queryId, object? options)
+		public void DeleteAsyncQuery(string queryId, EsqlExecutionRequest request)
 		{
 		}
 
-		public Task DeleteAsyncQueryAsync(string queryId, object? options, CancellationToken cancellationToken) =>
+		public Task DeleteAsyncQueryAsync(string queryId, EsqlExecutionRequest request, CancellationToken cancellationToken) =>
 			Task.CompletedTask;
 	}
 

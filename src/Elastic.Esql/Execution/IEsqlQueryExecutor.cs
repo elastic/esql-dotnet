@@ -2,8 +2,6 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-using Elastic.Esql.QueryModel;
-
 namespace Elastic.Esql.Execution;
 
 /// <summary>
@@ -15,26 +13,38 @@ namespace Elastic.Esql.Execution;
 public interface IEsqlQueryExecutor
 {
 	/// <summary>Executes an ES|QL query synchronously.</summary>
-	IEsqlResponse ExecuteQuery(string esql, EsqlParameters? parameters, object? options, EsqlFormat? format);
+	IEsqlResponse ExecuteQuery(EsqlExecutionRequest request);
 
 	/// <summary>Executes an ES|QL query asynchronously.</summary>
-	Task<IEsqlAsyncResponse> ExecuteQueryAsync(string esql, EsqlParameters? parameters, object? options, EsqlFormat? format, CancellationToken cancellationToken);
+	Task<IEsqlAsyncResponse> ExecuteQueryAsync(EsqlExecutionRequest request, CancellationToken cancellationToken);
 
 	/// <summary>Submits an async ES|QL query synchronously.</summary>
-	IEsqlResponse SubmitAsyncQuery(string esql, EsqlParameters? parameters, object? options, EsqlAsyncQueryOptions? asyncOptions, EsqlFormat? format);
+	IEsqlResponse SubmitAsyncQuery(EsqlExecutionRequest request);
 
 	/// <summary>Submits an async ES|QL query asynchronously.</summary>
-	Task<IEsqlAsyncResponse> SubmitAsyncQueryAsync(string esql, EsqlParameters? parameters, object? options, EsqlAsyncQueryOptions? asyncOptions, EsqlFormat? format, CancellationToken cancellationToken);
+	Task<IEsqlAsyncResponse> SubmitAsyncQueryAsync(EsqlExecutionRequest request, CancellationToken cancellationToken);
 
-	/// <summary>Polls the state of an async query synchronously.</summary>
-	IEsqlResponse PollAsyncQuery(string queryId, object? options, EsqlFormat? format);
+	/// <summary>
+	/// Polls the state of an async query synchronously.
+	/// <paramref name="request"/> carries the submission-time options and format; its <see cref="EsqlExecutionRequest.Esql"/> is not sent.
+	/// </summary>
+	IEsqlResponse PollAsyncQuery(string queryId, EsqlExecutionRequest request);
 
-	/// <summary>Polls the state of an async query asynchronously.</summary>
-	Task<IEsqlAsyncResponse> PollAsyncQueryAsync(string queryId, object? options, EsqlFormat? format, CancellationToken cancellationToken);
+	/// <summary>
+	/// Polls the state of an async query asynchronously.
+	/// <paramref name="request"/> carries the submission-time options and format; its <see cref="EsqlExecutionRequest.Esql"/> is not sent.
+	/// </summary>
+	Task<IEsqlAsyncResponse> PollAsyncQueryAsync(string queryId, EsqlExecutionRequest request, CancellationToken cancellationToken);
 
-	/// <summary>Deletes an async query synchronously.</summary>
-	void DeleteAsyncQuery(string queryId, object? options);
+	/// <summary>
+	/// Deletes an async query synchronously.
+	/// <paramref name="request"/> carries the submission-time options; its <see cref="EsqlExecutionRequest.Esql"/> is not sent.
+	/// </summary>
+	void DeleteAsyncQuery(string queryId, EsqlExecutionRequest request);
 
-	/// <summary>Deletes an async query asynchronously.</summary>
-	Task DeleteAsyncQueryAsync(string queryId, object? options, CancellationToken cancellationToken);
+	/// <summary>
+	/// Deletes an async query asynchronously.
+	/// <paramref name="request"/> carries the submission-time options; its <see cref="EsqlExecutionRequest.Esql"/> is not sent.
+	/// </summary>
+	Task DeleteAsyncQueryAsync(string queryId, EsqlExecutionRequest request, CancellationToken cancellationToken);
 }
