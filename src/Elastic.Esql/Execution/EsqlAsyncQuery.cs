@@ -22,7 +22,7 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 	private static readonly TimeSpan DefaultPollInterval = TimeSpan.FromMilliseconds(100);
 	private readonly IEsqlQueryExecutor _executor;
 	private readonly EsqlResponseReader _reader;
-	private readonly object? _queryOptions;
+	private readonly EsqlExecutionRequest _request;
 	private EsqlAsyncResults<T>? _asyncResult;
 	private EsqlResults<T>? _syncResult;
 	private IAsyncDisposable? _ownedAsyncResponse;
@@ -35,13 +35,13 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 		EsqlAsyncResults<T> result,
 		IEsqlAsyncResponse response,
 		EsqlResponseReader reader,
-		object? queryOptions)
+		EsqlExecutionRequest request)
 	{
 		_executor = executor;
 		_asyncResult = result;
 		_ownedAsyncResponse = response;
 		_reader = reader;
-		_queryOptions = queryOptions;
+		_request = request;
 
 		QueryId = result.Id ?? ReadAsyncIdHeader(response);
 		IsCompleted = result.IsRunning != true;
@@ -53,13 +53,13 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 		EsqlResults<T> result,
 		IEsqlResponse response,
 		EsqlResponseReader reader,
-		object? queryOptions)
+		EsqlExecutionRequest request)
 	{
 		_executor = executor;
 		_syncResult = result;
 		_ownedSyncResponse = response;
 		_reader = reader;
-		_queryOptions = queryOptions;
+		_request = request;
 
 		QueryId = result.Id ?? ReadAsyncIdHeader(response);
 		IsCompleted = result.IsRunning != true;
@@ -138,7 +138,7 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 		if (QueryId is null)
 			throw new InvalidOperationException("Cannot refresh an async query without a query ID.");
 
-		var response = await _executor.PollAsyncQueryAsync(QueryId, _queryOptions, format: null, cancellationToken).ConfigureAwait(false);
+		var response = await _executor.PollAsyncQueryAsync(QueryId, _request, cancellationToken).ConfigureAwait(false);
 
 		await DisposeOwnedResponseAsync().ConfigureAwait(false);
 		DisposeResults();
@@ -164,7 +164,7 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 
 		while (true)
 		{
-			var response = await _executor.PollAsyncQueryAsync(QueryId, _queryOptions, format: null, cancellationToken).ConfigureAwait(false);
+			var response = await _executor.PollAsyncQueryAsync(QueryId, _request, cancellationToken).ConfigureAwait(false);
 
 			await DisposeOwnedResponseAsync().ConfigureAwait(false);
 			DisposeResults();
@@ -195,7 +195,7 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 
 		try
 		{
-			await _executor.DeleteAsyncQueryAsync(QueryId, _queryOptions, default).ConfigureAwait(false);
+			await _executor.DeleteAsyncQueryAsync(QueryId, _request, default).ConfigureAwait(false);
 		}
 		catch (Exception)
 		{
@@ -212,7 +212,7 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 		if (QueryId is null)
 			throw new InvalidOperationException("Cannot refresh an async query without a query ID.");
 
-		var response = _executor.PollAsyncQuery(QueryId, _queryOptions, format: null);
+		var response = _executor.PollAsyncQuery(QueryId, _request);
 
 		DisposeOwnedResponse();
 		DisposeResults();
@@ -239,7 +239,7 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 
 		while (true)
 		{
-			var response = _executor.PollAsyncQuery(QueryId, _queryOptions, format: null);
+			var response = _executor.PollAsyncQuery(QueryId, _request);
 
 			DisposeOwnedResponse();
 			DisposeResults();
@@ -280,7 +280,7 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 
 		try
 		{
-			_executor.DeleteAsyncQuery(QueryId, _queryOptions);
+			_executor.DeleteAsyncQuery(QueryId, _request);
 		}
 		catch (Exception)
 		{
@@ -443,26 +443,26 @@ public sealed class EsqlAsyncQuery : IAsyncDisposable, IDisposable
 	private static readonly TimeSpan DefaultPollInterval = TimeSpan.FromMilliseconds(100);
 
 	private readonly IEsqlQueryExecutor _executor;
-	private readonly object? _queryOptions;
+	private readonly EsqlExecutionRequest _request;
 	private IEsqlAsyncResponse? _ownedAsyncResponse;
 	private IEsqlResponse? _ownedSyncResponse;
 	private int _disposed;
 
-	internal EsqlAsyncQuery(IEsqlQueryExecutor executor, IEsqlAsyncResponse response, EsqlFormat format, object? queryOptions)
+	internal EsqlAsyncQuery(IEsqlQueryExecutor executor, IEsqlAsyncResponse response, EsqlExecutionRequest request)
 	{
 		_executor = executor;
 		_ownedAsyncResponse = response;
-		Format = format;
-		_queryOptions = queryOptions;
+		Format = request.Format ?? EsqlFormat.Json;
+		_request = request;
 		ApplyHeaderMetadata(response);
 	}
 
-	internal EsqlAsyncQuery(IEsqlQueryExecutor executor, IEsqlResponse response, EsqlFormat format, object? queryOptions)
+	internal EsqlAsyncQuery(IEsqlQueryExecutor executor, IEsqlResponse response, EsqlExecutionRequest request)
 	{
 		_executor = executor;
 		_ownedSyncResponse = response;
-		Format = format;
-		_queryOptions = queryOptions;
+		Format = request.Format ?? EsqlFormat.Json;
+		_request = request;
 		ApplyHeaderMetadata(response);
 	}
 
@@ -525,7 +525,7 @@ public sealed class EsqlAsyncQuery : IAsyncDisposable, IDisposable
 			throw new InvalidOperationException("Cannot refresh an async query without a query ID.");
 
 		var response = await _executor
-			.PollAsyncQueryAsync(QueryId, _queryOptions, Format, cancellationToken)
+			.PollAsyncQueryAsync(QueryId, _request, cancellationToken)
 			.ConfigureAwait(false);
 
 		await DisposeOwnedResponseAsync().ConfigureAwait(false);
@@ -564,7 +564,7 @@ public sealed class EsqlAsyncQuery : IAsyncDisposable, IDisposable
 		if (QueryId is null)
 			throw new InvalidOperationException("Cannot refresh an async query without a query ID.");
 
-		var response = _executor.PollAsyncQuery(QueryId, _queryOptions, Format);
+		var response = _executor.PollAsyncQuery(QueryId, _request);
 
 		DisposeOwnedResponse();
 		_ownedSyncResponse = response;
@@ -606,7 +606,7 @@ public sealed class EsqlAsyncQuery : IAsyncDisposable, IDisposable
 
 		try
 		{
-			await _executor.DeleteAsyncQueryAsync(QueryId, _queryOptions, default).ConfigureAwait(false);
+			await _executor.DeleteAsyncQueryAsync(QueryId, _request, default).ConfigureAwait(false);
 		}
 		catch (Exception)
 		{
@@ -628,7 +628,7 @@ public sealed class EsqlAsyncQuery : IAsyncDisposable, IDisposable
 
 		try
 		{
-			_executor.DeleteAsyncQuery(QueryId, _queryOptions);
+			_executor.DeleteAsyncQuery(QueryId, _request);
 		}
 		catch (Exception)
 		{

@@ -114,7 +114,7 @@ public sealed class EsqlQueryProvider : IQueryProvider
 	internal IEsqlResponse Execute(Expression expression, EsqlFormat format)
 	{
 		var (esql, query) = TranslateAndFormat(expression);
-		return _executor.ExecuteQuery(esql, query.Parameters, query.ExecutorOptions, format);
+		return _executor.ExecuteQuery(BuildRequest(esql, query, format));
 	}
 
 	/// <summary>Asynchronously executes a scalar query represented by a specified expression tree.</summary>
@@ -125,7 +125,7 @@ public sealed class EsqlQueryProvider : IQueryProvider
 		var (esql, query) = TranslateAndFormat(expression);
 
 		var response = await _executor
-			.ExecuteQueryAsync(esql, query.Parameters, query.ExecutorOptions, query.Format, cancellationToken)
+			.ExecuteQueryAsync(BuildRequest(esql, query, query.Format), cancellationToken)
 			.ConfigureAwait(false);
 		await using var responseDisposal = response.ConfigureAwait(false);
 
@@ -140,7 +140,7 @@ public sealed class EsqlQueryProvider : IQueryProvider
 	internal Task<IEsqlAsyncResponse> ExecuteAsync(Expression expression, EsqlFormat format, CancellationToken cancellationToken)
 	{
 		var (esql, query) = TranslateAndFormat(expression);
-		return _executor.ExecuteQueryAsync(esql, query.Parameters, query.ExecutorOptions, format, cancellationToken);
+		return _executor.ExecuteQueryAsync(BuildRequest(esql, query, format), cancellationToken);
 	}
 
 	/// <summary>Executes the specified query expression asynchronously and returns the results as a stream of elements.</summary>
@@ -157,7 +157,7 @@ public sealed class EsqlQueryProvider : IQueryProvider
 		var (esql, query) = TranslateAndFormat(expression);
 
 		var response = await _executor
-			.ExecuteQueryAsync(esql, query.Parameters, query.ExecutorOptions, query.Format, cancellationToken)
+			.ExecuteQueryAsync(BuildRequest(esql, query, query.Format), cancellationToken)
 			.ConfigureAwait(false);
 		await using var responseDisposal = response.ConfigureAwait(false);
 
@@ -188,12 +188,13 @@ public sealed class EsqlQueryProvider : IQueryProvider
 	{
 		var (esql, query) = TranslateAndFormat(expression);
 		var requireId = asyncOptions?.KeepOnCompletion == true;
-		var response = _executor.SubmitAsyncQuery(esql, query.Parameters, query.ExecutorOptions, asyncOptions, format: null);
+		var request = BuildRequest(esql, query, format: null, asyncOptions);
+		var response = _executor.SubmitAsyncQuery(request);
 
 		try
 		{
 			var result = _reader.ReadRows<T>(response.Body, requireId: requireId);
-			return new EsqlAsyncQuery<T>(_executor, result, response, _reader, query.ExecutorOptions);
+			return new EsqlAsyncQuery<T>(_executor, result, response, _reader, request);
 		}
 		catch
 		{
@@ -207,8 +208,9 @@ public sealed class EsqlQueryProvider : IQueryProvider
 	internal EsqlAsyncQuery SubmitAsyncQuery(Expression expression, EsqlFormat format, EsqlAsyncQueryOptions? asyncOptions)
 	{
 		var (esql, query) = TranslateAndFormat(expression);
-		var response = _executor.SubmitAsyncQuery(esql, query.Parameters, query.ExecutorOptions, asyncOptions, format);
-		return new EsqlAsyncQuery(_executor, response, format, query.ExecutorOptions);
+		var request = BuildRequest(esql, query, format, asyncOptions);
+		var response = _executor.SubmitAsyncQuery(request);
+		return new EsqlAsyncQuery(_executor, response, request);
 	}
 
 	/// <summary>Submits an async ES|QL query from a LINQ expression asynchronously. Used by extension methods.</summary>
@@ -219,14 +221,15 @@ public sealed class EsqlQueryProvider : IQueryProvider
 	{
 		var requireId = asyncOptions?.KeepOnCompletion == true;
 		var (esql, query) = TranslateAndFormat(expression);
+		var request = BuildRequest(esql, query, format: null, asyncOptions);
 		var response = await _executor
-			.SubmitAsyncQueryAsync(esql, query.Parameters, query.ExecutorOptions, asyncOptions, format: null, cancellationToken)
+			.SubmitAsyncQueryAsync(request, cancellationToken)
 			.ConfigureAwait(false);
 
 		try
 		{
 			var result = await _reader.ReadRowsAsync<T>(response.Body, requireId, cancellationToken).ConfigureAwait(false);
-			return new EsqlAsyncQuery<T>(_executor, result, response, _reader, query.ExecutorOptions);
+			return new EsqlAsyncQuery<T>(_executor, result, response, _reader, request);
 		}
 		catch
 		{
@@ -244,10 +247,11 @@ public sealed class EsqlQueryProvider : IQueryProvider
 		CancellationToken cancellationToken)
 	{
 		var (esql, query) = TranslateAndFormat(expression);
+		var request = BuildRequest(esql, query, format, asyncOptions);
 		var response = await _executor
-			.SubmitAsyncQueryAsync(esql, query.Parameters, query.ExecutorOptions, asyncOptions, format, cancellationToken)
+			.SubmitAsyncQueryAsync(request, cancellationToken)
 			.ConfigureAwait(false);
-		return new EsqlAsyncQuery(_executor, response, format, query.ExecutorOptions);
+		return new EsqlAsyncQuery(_executor, response, request);
 	}
 
 	private TResult ExecuteCore<TResult>(Expression expression)
@@ -266,7 +270,7 @@ public sealed class EsqlQueryProvider : IQueryProvider
 
 	private TResult ExecuteScalar<TResult>(string esql, EsqlQuery query, Expression expression)
 	{
-		using var response = _executor.ExecuteQuery(esql, query.Parameters, query.ExecutorOptions, query.Format);
+		using var response = _executor.ExecuteQuery(BuildRequest(esql, query, query.Format));
 		var result = _reader.ReadScalar<TResult>(response.Body);
 
 		ValidateScalarCardinality(expression, result.RowCount);
@@ -277,7 +281,7 @@ public sealed class EsqlQueryProvider : IQueryProvider
 	internal IEnumerable<TElement> ExecuteEnumerable<TElement>(Expression expression)
 	{
 		var (esql, query) = TranslateAndFormat(expression);
-		using var response = _executor.ExecuteQuery(esql, query.Parameters, query.ExecutorOptions, query.Format);
+		using var response = _executor.ExecuteQuery(BuildRequest(esql, query, query.Format));
 		using var results = _reader.ReadRows<TElement>(response.Body);
 
 		foreach (var item in results.Rows)
@@ -335,6 +339,17 @@ public sealed class EsqlQueryProvider : IQueryProvider
 				throw new NotSupportedException($"Operation '{methodName}' is not supported.");
 		}
 	}
+
+	private static EsqlExecutionRequest BuildRequest(string esql, EsqlQuery query, EsqlFormat? format, EsqlAsyncQueryOptions? asyncOptions = null) =>
+		new()
+		{
+			Esql = esql,
+			Parameters = query.Parameters,
+			QueryOptions = query.QueryOptions,
+			ExecutorOptions = query.ExecutorOptions,
+			AsyncOptions = asyncOptions,
+			Format = format
+		};
 
 	private (string Esql, EsqlQuery Query) TranslateAndFormat(Expression expression)
 	{

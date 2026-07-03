@@ -87,28 +87,27 @@ public class TypedAsyncQueryIdTests
 	{
 		public List<string> DeletedIds { get; } = [];
 
-		public IEsqlResponse SubmitAsyncQuery(string esql, EsqlParameters? parameters, object? options, EsqlAsyncQueryOptions? asyncOptions, EsqlFormat? format) =>
+		public IEsqlResponse SubmitAsyncQuery(EsqlExecutionRequest request) =>
 			new SyncStub(body, headerId);
 
-		public Task<IEsqlAsyncResponse> SubmitAsyncQueryAsync(
-			string esql, EsqlParameters? parameters, object? options, EsqlAsyncQueryOptions? asyncOptions, EsqlFormat? format, CancellationToken cancellationToken) =>
+		public Task<IEsqlAsyncResponse> SubmitAsyncQueryAsync(EsqlExecutionRequest request, CancellationToken cancellationToken) =>
 			Task.FromResult<IEsqlAsyncResponse>(new AsyncStub(body, headerId));
 
-		public IEsqlResponse ExecuteQuery(string esql, EsqlParameters? parameters, object? options, EsqlFormat? format) =>
+		public IEsqlResponse ExecuteQuery(EsqlExecutionRequest request) =>
 			throw new NotSupportedException();
 
-		public Task<IEsqlAsyncResponse> ExecuteQueryAsync(string esql, EsqlParameters? parameters, object? options, EsqlFormat? format, CancellationToken cancellationToken) =>
+		public Task<IEsqlAsyncResponse> ExecuteQueryAsync(EsqlExecutionRequest request, CancellationToken cancellationToken) =>
 			throw new NotSupportedException();
 
-		public IEsqlResponse PollAsyncQuery(string queryId, object? options, EsqlFormat? format) =>
+		public IEsqlResponse PollAsyncQuery(string queryId, EsqlExecutionRequest request) =>
 			throw new NotSupportedException();
 
-		public Task<IEsqlAsyncResponse> PollAsyncQueryAsync(string queryId, object? options, EsqlFormat? format, CancellationToken cancellationToken) =>
+		public Task<IEsqlAsyncResponse> PollAsyncQueryAsync(string queryId, EsqlExecutionRequest request, CancellationToken cancellationToken) =>
 			throw new NotSupportedException();
 
-		public void DeleteAsyncQuery(string queryId, object? options) => DeletedIds.Add(queryId);
+		public void DeleteAsyncQuery(string queryId, EsqlExecutionRequest request) => DeletedIds.Add(queryId);
 
-		public Task DeleteAsyncQueryAsync(string queryId, object? options, CancellationToken cancellationToken)
+		public Task DeleteAsyncQueryAsync(string queryId, EsqlExecutionRequest request, CancellationToken cancellationToken)
 		{
 			DeletedIds.Add(queryId);
 			return Task.CompletedTask;
