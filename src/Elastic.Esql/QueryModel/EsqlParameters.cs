@@ -22,17 +22,25 @@ public sealed class EsqlParameters
 	/// </summary>
 	internal string Add(string preferredName, JsonElement value)
 	{
-		if (!_nameCounts.TryGetValue(preferredName, out var count))
+		if (!_nameCounts.TryGetValue(preferredName, out var count) && !_parameters.ContainsKey(preferredName))
 		{
 			_nameCounts[preferredName] = 1;
-			_parameters[preferredName] = value;
+			_parameters.Add(preferredName, value);
 			return preferredName;
 		}
 
-		var next = count + 1;
-		_nameCounts[preferredName] = next;
+		// Suffixes start at _2. Skip names already taken by other parameters, e.g. a captured
+		// variable literally named "id_2" that would otherwise be overwritten by a duplicated "id".
+		var next = count > 0 ? count + 1 : 2;
 		var uniqueName = $"{preferredName}_{next}";
-		_parameters[uniqueName] = value;
+		while (_parameters.ContainsKey(uniqueName))
+		{
+			next++;
+			uniqueName = $"{preferredName}_{next}";
+		}
+
+		_nameCounts[preferredName] = next;
+		_parameters.Add(uniqueName, value);
 		return uniqueName;
 	}
 
