@@ -98,4 +98,40 @@ public class StringMethodTests : EsqlTestBase
             | WHERE TRIM(message.keyword) == "test"
             """.NativeLineEndings());
 	}
+
+	[Test]
+	public void Where_StringContains_WithStringComparison_ThrowsNotSupported()
+	{
+		var act = () => CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message.MultiField("keyword").Contains("error", StringComparison.OrdinalIgnoreCase))
+			.ToString();
+
+		_ = act.Should().Throw<NotSupportedException>()
+			.WithMessage("*StringComparison*");
+	}
+
+	[Test]
+	public void Where_StringStartsWith_WithStringComparison_ThrowsNotSupported()
+	{
+		var act = () => CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message.MultiField("keyword").StartsWith("Error:", StringComparison.OrdinalIgnoreCase))
+			.ToString();
+
+		_ = act.Should().Throw<NotSupportedException>()
+			.WithMessage("*StringComparison*");
+	}
+
+	[Test]
+	public void Where_StringEndsWith_WithStringComparison_ThrowsNotSupported()
+	{
+		var act = () => CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message.MultiField("keyword").EndsWith("failed", StringComparison.OrdinalIgnoreCase))
+			.ToString();
+
+		_ = act.Should().Throw<NotSupportedException>()
+			.WithMessage("*StringComparison*");
+	}
 }

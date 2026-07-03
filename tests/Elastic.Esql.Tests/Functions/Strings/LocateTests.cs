@@ -84,4 +84,28 @@ public class LocateTests : EsqlTestBase
             | KEEP pos
             """.NativeLineEndings());
 	}
+
+	[Test]
+	public void IndexOf_WithStringComparison_InWhere_ThrowsNotSupported()
+	{
+		var act = () => CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message.MultiField("keyword").IndexOf("error", StringComparison.OrdinalIgnoreCase) == 0)
+			.ToString();
+
+		_ = act.Should().Throw<NotSupportedException>()
+			.WithMessage("*StringComparison*");
+	}
+
+	[Test]
+	public void IndexOf_WithStringComparison_InSelect_ThrowsNotSupported()
+	{
+		var act = () => CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Select(l => new { Pos = l.Message.IndexOf("error", StringComparison.OrdinalIgnoreCase) })
+			.ToString();
+
+		_ = act.Should().Throw<NotSupportedException>()
+			.WithMessage("*StringComparison*");
+	}
 }

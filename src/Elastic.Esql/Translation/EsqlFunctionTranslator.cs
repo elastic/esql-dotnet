@@ -261,6 +261,10 @@ internal static class EsqlFunctionTranslator
 			nameof(string.Substring) when args.Count == 1 => $"SUBSTRING({target}, {TranslateOneBasedStart(translate, args[0])})",
 			nameof(string.Substring) when args.Count == 2 => $"SUBSTRING({target}, {TranslateOneBasedStart(translate, args[0])}, {translate(args[1])})",
 			nameof(string.Replace) => $"REPLACE({target}, {translate(args[0])}, {translate(args[1])})",
+			nameof(string.IndexOf) when HasStringComparisonArgument(args) =>
+				throw new NotSupportedException(
+					"string.IndexOf with a StringComparison argument is not supported. " +
+					"ES|QL string matching is case-sensitive; apply ToLower()/ToUpper() to both operands instead."),
 			nameof(string.IndexOf) when args.Count == 1 => $"(LOCATE({target}, {translate(args[0])}) - 1)",
 			nameof(string.IndexOf) when args.Count == 2 && args[1].Type == typeof(int) =>
 				$"(LOCATE({target}, {translate(args[0])}, {TranslateOneBasedStart(translate, args[1])}) - 1)",
@@ -276,6 +280,9 @@ internal static class EsqlFunctionTranslator
 		expression is ConstantExpression { Value: int index }
 			? (index + 1).ToString(CultureInfo.InvariantCulture)
 			: $"({translate(expression)}) + 1";
+
+	private static bool HasStringComparisonArgument(IReadOnlyList<Expression> args) =>
+		args.Any(arg => arg.Type == typeof(StringComparison));
 
 	/// <summary>
 	/// Translates a DateTime/DateTimeOffset instance property access to DATE_EXTRACT.
