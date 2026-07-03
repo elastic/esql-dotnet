@@ -49,7 +49,7 @@ public class LocateTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | EVAL pos = LOCATE(message, "error")
+            | EVAL pos = (LOCATE(message, "error") - 1)
             | KEEP pos
             """.NativeLineEndings());
 	}
@@ -65,7 +65,23 @@ public class LocateTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE LOCATE(message.keyword, "error") > 0
+            | WHERE (LOCATE(message.keyword, "error") - 1) > 0
+            """.NativeLineEndings());
+	}
+
+	[Test]
+	public void IndexOf_Native_WithStartIndex_InSelect_GeneratesCorrectEsql()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Select(l => new { Pos = l.Message.IndexOf("error", 5) })
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+            FROM logs-*
+            | EVAL pos = (LOCATE(message, "error", 6) - 1)
+            | KEEP pos
             """.NativeLineEndings());
 	}
 }

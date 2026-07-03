@@ -258,14 +258,24 @@ internal static class EsqlFunctionTranslator
 			nameof(string.Trim) => $"TRIM({target})",
 			nameof(string.TrimStart) => $"LTRIM({target})",
 			nameof(string.TrimEnd) => $"RTRIM({target})",
-			nameof(string.Substring) when args.Count == 1 => $"SUBSTRING({target}, {translate(args[0])})",
-			nameof(string.Substring) when args.Count == 2 => $"SUBSTRING({target}, {translate(args[0])}, {translate(args[1])})",
+			nameof(string.Substring) when args.Count == 1 => $"SUBSTRING({target}, {TranslateOneBasedStart(translate, args[0])})",
+			nameof(string.Substring) when args.Count == 2 => $"SUBSTRING({target}, {TranslateOneBasedStart(translate, args[0])}, {translate(args[1])})",
 			nameof(string.Replace) => $"REPLACE({target}, {translate(args[0])}, {translate(args[1])})",
-			nameof(string.IndexOf) when args.Count == 1 => $"LOCATE({target}, {translate(args[0])})",
-			nameof(string.IndexOf) when args.Count == 2 => $"LOCATE({target}, {translate(args[0])}, {translate(args[1])})",
+			nameof(string.IndexOf) when args.Count == 1 => $"(LOCATE({target}, {translate(args[0])}) - 1)",
+			nameof(string.IndexOf) when args.Count == 2 && args[1].Type == typeof(int) =>
+				$"(LOCATE({target}, {translate(args[0])}, {TranslateOneBasedStart(translate, args[1])}) - 1)",
 			nameof(string.Split) when args.Count >= 1 => $"SPLIT({target}, {translate(args[0])})",
 			_ => null
 		};
+
+	/// <summary>
+	/// Translates a 0-based C# start index to the 1-based position ES|QL SUBSTRING/LOCATE expect,
+	/// folding the +1 into the literal when the index is a constant.
+	/// </summary>
+	private static string TranslateOneBasedStart(Func<Expression, string> translate, Expression expression) =>
+		expression is ConstantExpression { Value: int index }
+			? (index + 1).ToString(CultureInfo.InvariantCulture)
+			: $"({translate(expression)}) + 1";
 
 	/// <summary>
 	/// Translates a DateTime/DateTimeOffset instance property access to DATE_EXTRACT.
