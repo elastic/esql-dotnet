@@ -477,11 +477,12 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 	private string TranslateSubExpression(Expression expression)
 	{
-		var saved = _builder.ToString();
-		_ = _builder.Clear();
+		// Translate into the builder tail and truncate afterwards, so nested
+		// arguments never re-copy the already accumulated condition prefix.
+		var start = _builder.Length;
 		_ = Visit(expression);
-		var result = _builder.ToString();
-		_ = _builder.Clear().Append(saved);
+		var result = _builder.ToString(start, _builder.Length - start);
+		_builder.Length = start;
 		return result;
 	}
 
