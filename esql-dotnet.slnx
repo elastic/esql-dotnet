@@ -4,6 +4,9 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/Elastic.Esql.Benchmarks/Elastic.Esql.Benchmarks.csproj" />
+  </Folder>
   <Folder Name="/examples/">
     <Project Path="examples/esql-aot-smoketest/esql-aot-smoketest.csproj" />
   </Folder>
