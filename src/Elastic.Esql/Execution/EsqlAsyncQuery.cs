@@ -101,6 +101,10 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 	/// Calls <see cref="WaitForCompletion"/> internally before returning rows.
 	/// Each response's rows can only be consumed once (the underlying stream is single-read).
 	/// </summary>
+	/// <remarks>
+	/// When the query was submitted asynchronously, enumeration bridges async reads onto the calling thread
+	/// via the thread pool. Prefer <see cref="AsAsyncEnumerable"/> with <c>await foreach</c>.
+	/// </remarks>
 	public IEnumerable<T> AsEnumerable()
 	{
 		if (!IsCompleted)
@@ -262,6 +266,7 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 	}
 
 	/// <summary>Disposes the owned response and DELETEs the async query from the cluster (best-effort).</summary>
+	/// <remarks>May block while releasing an asynchronously-submitted response. Prefer <see cref="DisposeAsync"/>.</remarks>
 	public void Dispose()
 	{
 		if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -332,8 +337,13 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 
 	private void DisposeOwnedResponse()
 	{
-		_ownedAsyncResponse?.DisposeAsync().AsTask().GetAwaiter().GetResult();
-		_ownedAsyncResponse = null;
+		if (_ownedAsyncResponse is { } response)
+		{
+			_ownedAsyncResponse = null;
+			// Task.Run keeps the async disposal off the caller's SynchronizationContext so this blocking wait cannot deadlock.
+			Task.Run(() => response.DisposeAsync().AsTask()).GetAwaiter().GetResult();
+		}
+
 		_ownedSyncResponse?.Dispose();
 		_ownedSyncResponse = null;
 	}
@@ -401,13 +411,13 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 			object? System.Collections.IEnumerator.Current => Current;
 
 			public bool MoveNext() =>
-				inner.MoveNextAsync().AsTask().GetAwaiter().GetResult();
+				Task.Run(() => inner.MoveNextAsync().AsTask()).GetAwaiter().GetResult();
 
 			public void Reset() =>
 				throw new NotSupportedException();
 
 			public void Dispose() =>
-				inner.DisposeAsync().AsTask().GetAwaiter().GetResult();
+				Task.Run(() => inner.DisposeAsync().AsTask()).GetAwaiter().GetResult();
 		}
 	}
 }
@@ -597,6 +607,7 @@ public sealed class EsqlAsyncQuery : IAsyncDisposable, IDisposable
 	}
 
 	/// <summary>Disposes the owned response and DELETEs the async query from the cluster (best-effort).</summary>
+	/// <remarks>May block while releasing an asynchronously-submitted response. Prefer <see cref="DisposeAsync"/>.</remarks>
 	public void Dispose()
 	{
 		if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -670,8 +681,13 @@ public sealed class EsqlAsyncQuery : IAsyncDisposable, IDisposable
 
 	private void DisposeOwnedResponse()
 	{
-		_ownedAsyncResponse?.DisposeAsync().AsTask().GetAwaiter().GetResult();
-		_ownedAsyncResponse = null;
+		if (_ownedAsyncResponse is { } response)
+		{
+			_ownedAsyncResponse = null;
+			// Task.Run keeps the async disposal off the caller's SynchronizationContext so this blocking wait cannot deadlock.
+			Task.Run(() => response.DisposeAsync().AsTask()).GetAwaiter().GetResult();
+		}
+
 		_ownedSyncResponse?.Dispose();
 		_ownedSyncResponse = null;
 	}
