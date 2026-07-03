@@ -55,6 +55,14 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 			}
 		}
 
+		var dayOfWeekComparison = EsqlFunctionTranslator.TryGetDayOfWeekComparison(node);
+		if (dayOfWeekComparison.HasValue)
+		{
+			_ = Visit(dayOfWeekComparison.Value.DateMember);
+			_ = _builder.Append(' ').Append(GetOperator(node.NodeType)).Append(' ').Append(dayOfWeekComparison.Value.IsoDayNumber);
+			return node;
+		}
+
 		// Parenthesize logical and arithmetic nodes so the C# expression tree grouping survives;
 		// a flat rendering would let ES|QL re-associate operands by its own precedence rules.
 		var needsParentheses = node.NodeType

@@ -173,4 +173,95 @@ public class DateExtractTests : EsqlTestBase
             | KEEP hour
             """.NativeLineEndings());
 	}
+
+	[Test]
+	public void DateTime_DayOfWeekSundayEqual_InWhere_GeneratesIsoDayNumber()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Timestamp.DayOfWeek == DayOfWeek.Sunday)
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+            FROM logs-*
+            | WHERE DATE_EXTRACT("day_of_week", @timestamp) == 7
+            """.NativeLineEndings());
+	}
+
+	[Test]
+	public void DateTime_DayOfWeekSundayNotEqual_InWhere_GeneratesIsoDayNumber()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Timestamp.DayOfWeek != DayOfWeek.Sunday)
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+            FROM logs-*
+            | WHERE DATE_EXTRACT("day_of_week", @timestamp) != 7
+            """.NativeLineEndings());
+	}
+
+	[Test]
+	public void DateTime_DayOfWeekCapturedSunday_InWhere_GeneratesIsoDayNumber()
+	{
+		var day = DayOfWeek.Sunday;
+
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Timestamp.DayOfWeek == day)
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+            FROM logs-*
+            | WHERE DATE_EXTRACT("day_of_week", @timestamp) == 7
+            """.NativeLineEndings());
+	}
+
+	[Test]
+	public void DateTime_DayOfWeekReversedOperands_InWhere_GeneratesIsoDayNumber()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => DayOfWeek.Sunday == l.Timestamp.DayOfWeek)
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+            FROM logs-*
+            | WHERE DATE_EXTRACT("day_of_week", @timestamp) == 7
+            """.NativeLineEndings());
+	}
+
+	[Test]
+	public void DateTime_DayOfWeekRelational_InWhere_ThrowsNotSupported()
+	{
+		var query = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Timestamp.DayOfWeek < DayOfWeek.Wednesday);
+
+		var act = () => query.ToString();
+
+		_ = act.Should().Throw<NotSupportedException>()
+			.WithMessage("*day_of_week*");
+	}
+
+	[Test]
+	public void DateTime_DayOfWeekComparison_InSelect_GeneratesIsoDayNumber()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Select(l => new { IsSunday = l.Timestamp.DayOfWeek == DayOfWeek.Sunday })
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+            FROM logs-*
+            | EVAL isSunday = (DATE_EXTRACT("day_of_week", @timestamp) == 7)
+            | KEEP isSunday
+            """.NativeLineEndings());
+	}
 }
