@@ -494,18 +494,8 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		if (declaringType == typeof(DateTime) || declaringType == typeof(DateTimeOffset))
 		{
 			var dateExpr = TranslateExpression(member.Expression!);
-			return memberName switch
-			{
-				"Year" => $"DATE_EXTRACT(\"year\", {dateExpr})",
-				"Month" => $"DATE_EXTRACT(\"month\", {dateExpr})",
-				"Day" => $"DATE_EXTRACT(\"day_of_month\", {dateExpr})",
-				"Hour" => $"DATE_EXTRACT(\"hour\", {dateExpr})",
-				"Minute" => $"DATE_EXTRACT(\"minute\", {dateExpr})",
-				"Second" => $"DATE_EXTRACT(\"second\", {dateExpr})",
-				"DayOfWeek" => $"DATE_EXTRACT(\"day_of_week\", {dateExpr})",
-				"DayOfYear" => $"DATE_EXTRACT(\"day_of_year\", {dateExpr})",
-				_ => throw new NotSupportedException($"DateTime property {memberName} is not supported in projections.")
-			};
+			return EsqlFunctionTranslator.TryTranslateDateMember(memberName, dateExpr)
+				?? throw new NotSupportedException($"DateTime property {memberName} is not supported in projections.");
 		}
 
 		if (declaringType == typeof(string) && memberName == "Length")

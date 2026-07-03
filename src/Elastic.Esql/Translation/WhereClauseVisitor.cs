@@ -291,34 +291,11 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		if (node.Member.DeclaringType == typeof(DateTime) || node.Member.DeclaringType == typeof(DateTimeOffset))
 		{
 			var dateExpr = TranslateDateTimeExpression(node.Expression);
-			var memberName = node.Member.Name;
-
-			switch (memberName)
+			var translated = EsqlFunctionTranslator.TryTranslateDateMember(node.Member.Name, dateExpr);
+			if (translated != null)
 			{
-				case "Year":
-					_ = _builder.Append("DATE_EXTRACT(\"year\", ").Append(dateExpr).Append(')');
-					return node;
-				case "Month":
-					_ = _builder.Append("DATE_EXTRACT(\"month\", ").Append(dateExpr).Append(')');
-					return node;
-				case "Day":
-					_ = _builder.Append("DATE_EXTRACT(\"day_of_month\", ").Append(dateExpr).Append(')');
-					return node;
-				case "Hour":
-					_ = _builder.Append("DATE_EXTRACT(\"hour\", ").Append(dateExpr).Append(')');
-					return node;
-				case "Minute":
-					_ = _builder.Append("DATE_EXTRACT(\"minute\", ").Append(dateExpr).Append(')');
-					return node;
-				case "Second":
-					_ = _builder.Append("DATE_EXTRACT(\"second\", ").Append(dateExpr).Append(')');
-					return node;
-				case "DayOfWeek":
-					_ = _builder.Append("DATE_EXTRACT(\"day_of_week\", ").Append(dateExpr).Append(')');
-					return node;
-				case "DayOfYear":
-					_ = _builder.Append("DATE_EXTRACT(\"day_of_year\", ").Append(dateExpr).Append(')');
-					return node;
+				_ = _builder.Append(translated);
+				return node;
 			}
 		}
 

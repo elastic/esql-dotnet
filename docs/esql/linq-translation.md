@@ -282,7 +282,7 @@ query.Select(l => new { l.Message, Secs = l.Duration / 1000 })
 
 // Function calls → EVAL
 query.Select(l => new { Upper = l.Message.ToUpper(), Hour = l.Timestamp.Hour })
-// | EVAL upper = TO_UPPER(message), hour = DATE_EXTRACT("hour", @timestamp)
+// | EVAL upper = TO_UPPER(message), hour = DATE_EXTRACT("hour_of_day", @timestamp)
 ```
 
 ### Conditional projections

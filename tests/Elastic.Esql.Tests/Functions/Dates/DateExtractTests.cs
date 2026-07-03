@@ -32,7 +32,7 @@ public class DateExtractTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE DATE_EXTRACT("month", @timestamp) == 12
+            | WHERE DATE_EXTRACT("month_of_year", @timestamp) == 12
             """.NativeLineEndings());
 	}
 
@@ -62,7 +62,7 @@ public class DateExtractTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE (DATE_EXTRACT("hour", @timestamp) >= 9 AND DATE_EXTRACT("hour", @timestamp) <= 17)
+            | WHERE (DATE_EXTRACT("hour_of_day", @timestamp) >= 9 AND DATE_EXTRACT("hour_of_day", @timestamp) <= 17)
             """.NativeLineEndings());
 	}
 
@@ -77,7 +77,7 @@ public class DateExtractTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE DATE_EXTRACT("minute", @timestamp) == 0
+            | WHERE DATE_EXTRACT("minute_of_hour", @timestamp) == 0
             """.NativeLineEndings());
 	}
 
@@ -92,7 +92,7 @@ public class DateExtractTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE DATE_EXTRACT("second", @timestamp) < 30
+            | WHERE DATE_EXTRACT("second_of_minute", @timestamp) < 30
             """.NativeLineEndings());
 	}
 
@@ -153,7 +153,7 @@ public class DateExtractTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | EVAL year = DATE_EXTRACT("year", @timestamp), month = DATE_EXTRACT("month", @timestamp), day = DATE_EXTRACT("day_of_month", @timestamp)
+            | EVAL year = DATE_EXTRACT("year", @timestamp), month = DATE_EXTRACT("month_of_year", @timestamp), day = DATE_EXTRACT("day_of_month", @timestamp)
             | KEEP year, month, day
             """.NativeLineEndings());
 	}
@@ -169,7 +169,7 @@ public class DateExtractTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | EVAL hour = DATE_EXTRACT("hour", @timestamp)
+            | EVAL hour = DATE_EXTRACT("hour_of_day", @timestamp)
             | KEEP hour
             """.NativeLineEndings());
 	}
