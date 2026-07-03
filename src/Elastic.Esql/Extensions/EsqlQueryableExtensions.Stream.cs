@@ -208,7 +208,11 @@ internal sealed class OwnedAsyncResponseStream : Stream
 	protected override void Dispose(bool disposing)
 	{
 		if (disposing)
-			_response.DisposeAsync().AsTask().GetAwaiter().GetResult();
+		{
+			// Task.Run keeps the async disposal off the caller's SynchronizationContext so this blocking wait cannot deadlock.
+			Task.Run(() => _response.DisposeAsync().AsTask()).GetAwaiter().GetResult();
+		}
+
 		base.Dispose(disposing);
 	}
 
@@ -265,7 +269,8 @@ internal sealed class OwnedAsyncResponsePipeReader(IEsqlAsyncResponse response) 
 		if (Interlocked.Exchange(ref _disposed, 1) != 0)
 			return;
 
-		_response.DisposeAsync().AsTask().GetAwaiter().GetResult();
+		// Task.Run keeps the async disposal off the caller's SynchronizationContext so this blocking wait cannot deadlock.
+		Task.Run(() => _response.DisposeAsync().AsTask()).GetAwaiter().GetResult();
 	}
 }
 #endif
