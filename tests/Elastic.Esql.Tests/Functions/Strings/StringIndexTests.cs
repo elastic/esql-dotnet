@@ -17,7 +17,7 @@ public class StringIndexTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | EVAL sub = SUBSTRING(message, 5)
+            | EVAL sub = SUBSTRING(message, 6)
             | KEEP sub
             """.NativeLineEndings());
 	}
@@ -33,7 +33,7 @@ public class StringIndexTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | EVAL sub = SUBSTRING(message, 0, 10)
+            | EVAL sub = SUBSTRING(message, 1, 10)
             | KEEP sub
             """.NativeLineEndings());
 	}
@@ -82,7 +82,7 @@ public class StringIndexTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE SUBSTRING(message.keyword, 0, 1) == "E"
+            | WHERE SUBSTRING(message.keyword, 1, 1) == "E"
             """.NativeLineEndings());
 	}
 
@@ -98,7 +98,7 @@ public class StringIndexTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE SUBSTRING(message.keyword, 3, 1) == "O"
+            | WHERE SUBSTRING(message.keyword, 4, 1) == "O"
             """.NativeLineEndings());
 	}
 
@@ -113,7 +113,7 @@ public class StringIndexTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE SUBSTRING(message.keyword, 0, 5) == "ERROR"
+            | WHERE SUBSTRING(message.keyword, 1, 5) == "ERROR"
             """.NativeLineEndings());
 	}
 
@@ -128,7 +128,24 @@ public class StringIndexTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE SUBSTRING(message.keyword, 0, 4) == "INFO"
+            | WHERE SUBSTRING(message.keyword, 1, 4) == "INFO"
+            """.NativeLineEndings());
+	}
+
+	[Test]
+	public void String_Substring_CapturedStartIndex_InWhere_GeneratesAdjustedExpression()
+	{
+		var start = 3;
+
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message.MultiField("keyword").Substring(start, 1) == "O")
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+            FROM logs-*
+            | WHERE SUBSTRING(message.keyword, (3) + 1, 1) == "O"
             """.NativeLineEndings());
 	}
 }
