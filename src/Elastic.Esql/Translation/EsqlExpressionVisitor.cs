@@ -339,6 +339,9 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 			Context.Commands.Add(new LimitCommand(count));
 		else if (ExpressionConstantResolver.Resolve(countArg) is int resolved)
 			Context.Commands.Add(new LimitCommand(resolved));
+		else
+			throw new NotSupportedException(
+				"'Take' with a non-int count (e.g. the 'Take(Range)' overload) is not supported in ES|QL. Use 'Take(int)' instead.");
 	}
 
 	private void VisitFirst(MethodCallExpression node)
