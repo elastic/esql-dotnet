@@ -51,4 +51,22 @@ public class DateTimeFormattingTests : EsqlTestBase
 
 		_ = result.Should().Be("3");
 	}
+
+	[Test]
+	public void FormatValue_DateTimeUnspecified_TreatedAsUtc()
+	{
+		var dt = new DateTime(2024, 1, 15, 10, 30, 45, 123, DateTimeKind.Unspecified);
+		var result = EsqlFormatting.FormatValue(dt, ReaderOptions);
+
+		_ = result.Should().Be("\"2024-01-15T10:30:45.123Z\"");
+	}
+
+	[Test]
+	public void FormatValue_DateTimeLocal_ConvertsToUtc()
+	{
+		var utc = new DateTime(2024, 1, 15, 10, 30, 45, 123, DateTimeKind.Utc);
+		var result = EsqlFormatting.FormatValue(utc.ToLocalTime(), ReaderOptions);
+
+		_ = result.Should().Be("\"2024-01-15T10:30:45.123Z\"");
+	}
 }

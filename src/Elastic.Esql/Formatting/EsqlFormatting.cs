@@ -31,8 +31,8 @@ internal static class EsqlFormatting
 			DateTime dt => FormatDateTime(dt),
 			DateTimeOffset dto => FormatDateTime(dto.UtcDateTime),
 #if NET6_0_OR_GREATER
-			DateOnly d => $"\"{d:yyyy-MM-dd}\"",
-			TimeOnly t => $"\"{t:HH:mm:ss}\"",
+			DateOnly d => $"\"{d.ToString("yyyy-MM-dd", InvariantCulture)}\"",
+			TimeOnly t => $"\"{t.ToString("HH:mm:ss", InvariantCulture)}\"",
 #endif
 			TimeSpan ts => FormatTimeSpan(ts),
 			float f => FormatFloat(f),
@@ -125,8 +125,16 @@ internal static class EsqlFormatting
 		return $"{ts.TotalMilliseconds.ToString("0.###", InvariantCulture)} milliseconds";
 	}
 
-	private static string FormatDateTime(DateTime dt) =>
-		$"\"{dt.ToUniversalTime():yyyy-MM-ddTHH:mm:ss.fffZ}\"";
+	/// <summary>
+	/// Formats a <see cref="DateTime"/> as an invariant UTC ISO-8601 literal.
+	/// Kind policy: Utc is emitted as-is, Local is converted to UTC, and Unspecified is treated
+	/// as UTC without conversion so the query text does not depend on the machine time zone.
+	/// </summary>
+	private static string FormatDateTime(DateTime dt)
+	{
+		var utc = dt.Kind == DateTimeKind.Local ? dt.ToUniversalTime() : dt;
+		return $"\"{utc.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", InvariantCulture)}\"";
+	}
 
 	private static string FormatTimeSpan(TimeSpan ts) =>
 		FormatTimeSpanRaw(ts);
