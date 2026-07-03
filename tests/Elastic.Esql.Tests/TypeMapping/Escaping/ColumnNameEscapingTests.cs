@@ -159,4 +159,20 @@ public class ColumnNameEscapingTests : EsqlTestBase
 			| STATS total = SUM(`response size`) BY msg = message
 			""".NativeLineEndings());
 	}
+
+	[Test]
+	public void Select_AliasedSpecialCharacterField_GeneratesEscapedRenameSource()
+	{
+		var esql = CreateQuery<SpecialCharacterDocument>()
+			.From("logs-*")
+			.Select(d => new { Ua = d.UserAgent.Version })
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| RENAME `user-agent`.version AS ua
+			| KEEP ua
+			""".NativeLineEndings());
+	}
 }
