@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 
 using Elastic.Esql.Core;
 using Elastic.Esql.Extensions;
+using Elastic.Esql.Formatting;
 
 namespace Elastic.Esql.Translation;
 
@@ -49,6 +50,7 @@ internal static class TranslationExtensions
 
 	/// <summary>
 	/// Resolves a field name from an expression, handling plain member access and <c>MultiField()</c> calls.
+	/// Returned paths are ES|QL-escaped per segment via <see cref="EsqlIdentifier.EscapeColumnName"/>.
 	/// </summary>
 	public static string ResolveFieldName(this Expression expression, JsonMetadataManager metadata)
 	{
@@ -62,7 +64,7 @@ internal static class TranslationExtensions
 				Arguments: [var sourceExpression, ConstantExpression { Value: string multiField }]
 			} mc
 				when mc.Method.DeclaringType == typeof(GeneralPurposeExtensions) =>
-				$"{sourceExpression.ResolveFieldName(metadata)}.{multiField}",
+				$"{sourceExpression.ResolveFieldName(metadata)}.{EsqlIdentifier.EscapeColumnName(multiField)}",
 			MemberExpression member => ResolveMemberFieldPath(member, metadata),
 			_ => throw new NotSupportedException($"Cannot extract field name from expression: {expression}")
 		};
@@ -70,7 +72,7 @@ internal static class TranslationExtensions
 
 	private static string ResolveMemberFieldPath(MemberExpression member, JsonMetadataManager metadata)
 	{
-		var segment = ResolveMemberSegmentName(member, metadata);
+		var segment = EsqlIdentifier.EscapeColumnName(ResolveMemberSegmentName(member, metadata));
 		var parent = member.Expression?.UnwrapConvertExpressions();
 
 		return parent switch
