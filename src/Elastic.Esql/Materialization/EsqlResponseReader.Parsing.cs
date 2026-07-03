@@ -220,7 +220,7 @@ internal sealed partial class EsqlResponseReader
 			// from a fresh state; a state mutated by a failed attempt no longer matches the bytes.
 			var state = new JsonReaderState();
 
-			if (TryParseColumns(buffer, cursor.IsCompleted, ref state, out var columns, out var consumed, ref id, ref isRunning, out var valuesFirst))
+			if (TryParseColumns(buffer, cursor.IsEofReached, ref state, out var columns, out var consumed, ref id, ref isRunning, out var valuesFirst))
 			{
 				if (valuesFirst)
 					return ([], state, consumed, id, isRunning, true);
@@ -233,7 +233,7 @@ internal sealed partial class EsqlResponseReader
 
 			cursor.AdvanceTo(buffer.Start, buffer.End);
 
-			if (cursor.IsCompleted)
+			if (cursor.IsEofReached)
 				break;
 		}
 
@@ -254,7 +254,7 @@ internal sealed partial class EsqlResponseReader
 			// from a fresh state; a state mutated by a failed attempt no longer matches the bytes.
 			var state = new JsonReaderState();
 
-			if (TryParseColumns(buffer, cursor.IsCompleted, ref state, out var columns, out var consumed, ref id, ref isRunning, out var valuesFirst))
+			if (TryParseColumns(buffer, cursor.IsEofReached, ref state, out var columns, out var consumed, ref id, ref isRunning, out var valuesFirst))
 			{
 				if (valuesFirst)
 					return ([], state, consumed, id, isRunning, true);
@@ -266,6 +266,9 @@ internal sealed partial class EsqlResponseReader
 				return ([], new JsonReaderState(), cursor.Buffer.Start, id, isRunning, true);
 
 			cursor.AdvanceTo(buffer.Start, buffer.End);
+
+			if (cursor.IsEofReached)
+				break;
 		}
 
 		throw new JsonException("Stream ended before \"columns\" array was fully read.");
@@ -440,7 +443,7 @@ internal sealed partial class EsqlResponseReader
 		{
 			var buffer = cursor.Buffer;
 
-			if (TryAdvanceToValuesArray(buffer, cursor.IsCompleted, ref state, out var consumed, ref id, ref isRunning))
+			if (TryAdvanceToValuesArray(buffer, cursor.IsEofReached, ref state, out var consumed, ref id, ref isRunning))
 			{
 				cursor.AdvanceTo(consumed, buffer.End);
 				return (state, id, isRunning);
@@ -448,7 +451,7 @@ internal sealed partial class EsqlResponseReader
 
 			cursor.AdvanceTo(consumed, buffer.End);
 
-			if (cursor.IsCompleted)
+			if (cursor.IsEofReached)
 				break;
 		}
 
@@ -466,13 +469,16 @@ internal sealed partial class EsqlResponseReader
 		{
 			var buffer = cursor.Buffer;
 
-			if (TryAdvanceToValuesArray(buffer, cursor.IsCompleted, ref state, out var consumed, ref id, ref isRunning))
+			if (TryAdvanceToValuesArray(buffer, cursor.IsEofReached, ref state, out var consumed, ref id, ref isRunning))
 			{
 				cursor.AdvanceTo(consumed, buffer.End);
 				return (state, id, isRunning);
 			}
 
 			cursor.AdvanceTo(consumed, buffer.End);
+
+			if (cursor.IsEofReached)
+				break;
 		}
 
 		throw new JsonException("ES|QL response does not contain a \"values\" property.");
@@ -592,7 +598,7 @@ internal sealed partial class EsqlResponseReader
 	{
 		while (await cursor.ReadAsync(ct).ConfigureAwait(false))
 		{
-			if (TryScanForId(cursor.Buffer, cursor.IsCompleted, ref state, out var consumed, out var id, out var reachedEnd))
+			if (TryScanForId(cursor.Buffer, cursor.IsEofReached, ref state, out var consumed, out var id, out var reachedEnd))
 			{
 				cursor.AdvanceTo(consumed, cursor.Buffer.End);
 				return (reachedEnd ? null : id, state);
@@ -600,7 +606,7 @@ internal sealed partial class EsqlResponseReader
 
 			cursor.AdvanceTo(consumed, cursor.Buffer.End);
 
-			if (cursor.IsCompleted)
+			if (cursor.IsEofReached)
 				break;
 		}
 
@@ -613,13 +619,16 @@ internal sealed partial class EsqlResponseReader
 	{
 		while (cursor.Read())
 		{
-			if (TryScanForId(cursor.Buffer, cursor.IsCompleted, ref state, out var consumed, out var id, out var reachedEnd))
+			if (TryScanForId(cursor.Buffer, cursor.IsEofReached, ref state, out var consumed, out var id, out var reachedEnd))
 			{
 				cursor.AdvanceTo(consumed, cursor.Buffer.End);
 				return (reachedEnd ? null : id, state);
 			}
 
 			cursor.AdvanceTo(consumed, cursor.Buffer.End);
+
+			if (cursor.IsEofReached)
+				break;
 		}
 
 		return (null, state);
@@ -630,12 +639,16 @@ internal sealed partial class EsqlResponseReader
 		while (cursor.Read())
 		{
 			var buffer = cursor.Buffer;
-			var reader = new Utf8JsonReader(buffer, cursor.IsCompleted, state);
+			var reader = new Utf8JsonReader(buffer, cursor.IsEofReached, state);
 
 			if (!reader.Read())
 			{
 				state = reader.CurrentState;
 				cursor.AdvanceTo(buffer.Start, buffer.End);
+
+				if (cursor.IsEofReached)
+					return false;
+
 				continue;
 			}
 

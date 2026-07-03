@@ -81,7 +81,7 @@ internal sealed partial class EsqlResponseReader
 			var buffer = cursor.Buffer;
 			ConsumeScalarRowsChunk(
 				ref buffer,
-				cursor.IsCompleted,
+				cursor.IsEofReached,
 				ref readerState,
 				layout,
 				rowBuffer,
@@ -97,7 +97,7 @@ internal sealed partial class EsqlResponseReader
 
 			cursor.AdvanceTo(buffer.Start, buffer.End);
 
-			if (cursor.IsCompleted)
+			if (cursor.IsEofReached)
 				break;
 		}
 
@@ -127,7 +127,7 @@ internal sealed partial class EsqlResponseReader
 			var buffer = cursor.Buffer;
 			ConsumeScalarRowsChunk(
 				ref buffer,
-				cursor.IsCompleted,
+				cursor.IsEofReached,
 				ref readerState,
 				layout,
 				rowBuffer,
@@ -142,6 +142,9 @@ internal sealed partial class EsqlResponseReader
 			);
 
 			cursor.AdvanceTo(buffer.Start, buffer.End);
+
+			if (cursor.IsEofReached)
+				break;
 		}
 
 		return new ScalarResult<T>(value, rowCount);
