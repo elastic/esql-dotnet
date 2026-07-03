@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 
+using Elastic.Esql.Core;
 using Elastic.Transport;
 
 namespace Elastic.Clients.Esql;
@@ -28,6 +29,9 @@ public class EsqlClientSettings
 	/// When set, takes precedence over <see cref="JsonSerializerOptions"/>.
 	/// </summary>
 	public JsonSerializerContext? JsonSerializerContext { get; init; }
+
+	/// <summary>Optional interceptor invoked after translation but before formatting and execution of every query.</summary>
+	public IEsqlQueryInterceptor? Interceptor { get; init; }
 
 	/// <summary>Creates settings with a node URI.</summary>
 	public EsqlClientSettings(Uri nodeUri)
