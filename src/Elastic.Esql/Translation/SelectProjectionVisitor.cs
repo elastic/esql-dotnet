@@ -5,6 +5,7 @@
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using Elastic.Esql.Formatting;
 
 namespace Elastic.Esql.Translation;
 
@@ -152,7 +153,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 					"does not match any serializable property. " +
 					"Ensure each parameter name matches a property name (case-insensitive).");
 
-			ClassifyProjectionMember(jsonProp.Name, node.Arguments[i]);
+			ClassifyProjectionMember(EsqlIdentifier.EscapeColumnName(jsonProp.Name), node.Arguments[i]);
 		}
 
 		return node;

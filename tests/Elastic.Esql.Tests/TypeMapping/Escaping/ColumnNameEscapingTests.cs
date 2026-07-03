@@ -175,4 +175,43 @@ public class ColumnNameEscapingTests : EsqlTestBase
 			| KEEP ua
 			""".NativeLineEndings());
 	}
+
+	[Test]
+	public void Select_RecordWithSpecialJsonName_GeneratesEscapedRenameTarget()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Select(l => new SpecialCharacterProjection(l.Message))
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| RENAME message AS `user-agent`
+			| KEEP `user-agent`
+			""".NativeLineEndings());
+	}
+
+	[Test]
+	public void LookupJoin_CollisionOnSpecialCharacterField_RemapsWithEscapedNames()
+	{
+		var esql = CreateQuery<SpecialCharacterDocument>()
+			.From("logs-*")
+			.LookupJoin<SpecialCharacterDocument, SpecialCharacterLookup, string, object>(
+				"ua_lookup",
+				outer => outer.Message,
+				inner => inner.Message,
+				(outer, inner) => new { OuterUa = outer.UserAgent.Version, InnerUa = inner!.UserAgent }
+			)
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| EVAL _esql_outer_user_agent = `user-agent`
+			| LOOKUP JOIN ua_lookup ON message
+			| RENAME _esql_outer_user_agent.version AS outerUa, `user-agent` AS innerUa
+			| KEEP outerUa, innerUa
+			""".NativeLineEndings());
+	}
 }
