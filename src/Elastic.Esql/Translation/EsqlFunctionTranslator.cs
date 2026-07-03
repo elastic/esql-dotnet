@@ -297,6 +297,10 @@ internal static class EsqlFunctionTranslator
 	/// user-supplied value. Returns null when the expression is not such a comparison; DayOfWeek-to-DayOfWeek
 	/// member equality also returns null because both sides extract ISO numbers and need no remapping.
 	/// </summary>
+	/// <exception cref="NotSupportedException">
+	/// Thrown for relational comparisons against a DayOfWeek constant (only equality is supported due to differing number systems),
+	/// or when comparing DayOfWeek against a non-constant expression.
+	/// </exception>
 	public static (Expression DateMember, int IsoDayNumber)? TryGetDayOfWeekComparison(BinaryExpression node)
 	{
 		if (node.NodeType is not (ExpressionType.Equal or ExpressionType.NotEqual

@@ -95,4 +95,14 @@ public class CultureInvarianceTests : EsqlTestBase
 
 			_ = result.Should().Be("1500.5 milliseconds");
 		});
+
+	[Test]
+	public void FormatValue_NegativeIntegerTimeSpan_UnderFinnishCulture_EmitsAsciiMinus() =>
+		RunWithCulture("fi-FI", () =>
+		{
+			// TimeSpan.FromDays(-3) creates exactly -3 days, triggering the integer days branch.
+			var result = EsqlFormatting.FormatValue(TimeSpan.FromDays(-3), ReaderOptions);
+
+			_ = result.Should().Be("-3 days");
+		});
 }
