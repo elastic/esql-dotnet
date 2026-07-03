@@ -244,6 +244,16 @@ internal sealed class OwnedAsyncResponsePipeReader(IEsqlAsyncResponse response) 
 		DisposeResponse();
 	}
 
+	public override async ValueTask CompleteAsync(Exception? exception = null)
+	{
+		await _inner.CompleteAsync(exception).ConfigureAwait(false);
+
+		if (Interlocked.Exchange(ref _disposed, 1) != 0)
+			return;
+
+		await _response.DisposeAsync().ConfigureAwait(false);
+	}
+
 	public override ValueTask<ReadResult> ReadAsync(CancellationToken cancellationToken = default) =>
 		_inner.ReadAsync(cancellationToken);
 
