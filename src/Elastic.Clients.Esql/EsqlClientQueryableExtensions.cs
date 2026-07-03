@@ -4,13 +4,15 @@
 
 using System.Linq.Expressions;
 using Elastic.Esql.Core;
+using Elastic.Esql.Extensions;
 
 namespace Elastic.Clients.Esql;
 
 /// <summary>Extension methods for <see cref="IEsqlQueryable{T}"/> specific to the Elasticsearch transport executor.</summary>
 public static class EsqlClientQueryableExtensions
 {
-	/// <summary>Attaches transport-specific options to the query pipeline.</summary>
+	/// <summary>Attaches transport-specific options to the query pipeline. Only one call is allowed per query chain.</summary>
+	[EsqlQueryOptionsMethod]
 	public static IEsqlQueryable<T> WithOptions<T>(this IEsqlQueryable<T> source, EsqlTransportOptions options)
 	{
 #if NETSTANDARD2_0

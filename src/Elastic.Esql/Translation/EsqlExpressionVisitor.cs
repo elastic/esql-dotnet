@@ -225,13 +225,17 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 				// Transparent query shape conversion; no ES|QL command impact.
 				break;
 
-			// Matching by method name keeps the translator agnostic to the declaring class;
-			// VisitWithOptions dispatches the argument by its runtime type.
-			case "WithOptions":
-				VisitWithOptions(node);
-				break;
-
 			default:
+				// Options-carrying extension methods are defined by downstream executor
+				// implementations (e.g. Elastic.Clients.Esql) with their own concrete options
+				// types, so the core translator matches on the marker attribute rather than
+				// method names or declaring types.
+				if (node.Method.IsDefined(typeof(EsqlQueryOptionsMethodAttribute), inherit: false))
+				{
+					VisitQueryOptions(node);
+					break;
+				}
+
 				throw new NotSupportedException($"Method '{declaringType?.Name}.{methodName}' is not supported in ES|QL translation.");
 		}
 
@@ -608,19 +612,32 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 		Context.ElementType = ResolveQueryableElementType(node.Method.ReturnType) ?? Context.ElementType;
 	}
 
-	private void VisitWithOptions(MethodCallExpression node)
+	private void VisitQueryOptions(MethodCallExpression node)
 	{
 		if (node.Arguments.Count < 2)
 			return;
 
 		// The core WithOptions overload carries the typed protocol options; downstream executors
-		// define their own overloads with executor-specific types, so dispatch on the constant's type.
+		// define their own overloads with executor-specific types, so dispatch on the constant's
+		// type. Each slot may be set only once per chain, so guard the target slot independently.
 		var value = ExpressionConstantResolver.Resolve(node.Arguments[1]);
 
 		if (value is EsqlQueryOptions queryOptions)
+		{
+			if (Context.QueryOptions is not null)
+				throw new InvalidOperationException(
+					$"Query options were already set earlier in this query chain; '{node.Method.Name}' can only be called once per query.");
+
 			Context.QueryOptions = queryOptions;
+		}
 		else
+		{
+			if (Context.ExecutorOptions is not null)
+				throw new InvalidOperationException(
+					$"Query options were already set earlier in this query chain; '{node.Method.Name}' can only be called once per query.");
+
 			Context.ExecutorOptions = value;
+		}
 	}
 
 	private void VisitFork(MethodCallExpression node)

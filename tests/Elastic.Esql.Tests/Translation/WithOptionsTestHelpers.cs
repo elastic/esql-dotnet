@@ -10,12 +10,29 @@ internal sealed record TestQueryOptions(string? TimeZone = null, string? Locale 
 
 internal static class TestQueryableExtensions
 {
+	[EsqlQueryOptionsMethod]
 	public static IEsqlQueryable<T> WithOptions<T>(this IEsqlQueryable<T> source, TestQueryOptions options)
 	{
 		ArgumentNullException.ThrowIfNull(source);
 		ArgumentNullException.ThrowIfNull(options);
 
 		var method = new Func<IEsqlQueryable<T>, TestQueryOptions, IEsqlQueryable<T>>(WithOptions).Method;
+		return (IEsqlQueryable<T>)source.Provider.CreateQuery<T>(
+			Expression.Call(null, method, source.Expression, Expression.Constant(options))
+		);
+	}
+}
+
+internal sealed record UnattributedQueryOptions(string? Name = null);
+
+internal static class UnattributedQueryableExtensions
+{
+	public static IEsqlQueryable<T> WithOptions<T>(this IEsqlQueryable<T> source, UnattributedQueryOptions options)
+	{
+		ArgumentNullException.ThrowIfNull(source);
+		ArgumentNullException.ThrowIfNull(options);
+
+		var method = new Func<IEsqlQueryable<T>, UnattributedQueryOptions, IEsqlQueryable<T>>(WithOptions).Method;
 		return (IEsqlQueryable<T>)source.Provider.CreateQuery<T>(
 			Expression.Call(null, method, source.Expression, Expression.Constant(options))
 		);
