@@ -16,6 +16,7 @@ namespace Elastic.Esql.Benchmarks;
 [JsonSerializable(typeof(List<DeepDocument>))]
 [JsonSerializable(typeof(List<WideDocument>))]
 [JsonSerializable(typeof(List<MixedDocument>))]
+[JsonSerializable(typeof(int))]
 public sealed partial class BenchmarkJsonContext : JsonSerializerContext;
 
 public class FlatDocument
