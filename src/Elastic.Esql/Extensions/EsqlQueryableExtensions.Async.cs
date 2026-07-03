@@ -36,7 +36,7 @@ public static partial class EsqlQueryableExtensions
 	{
 		Verify.NotNull(source);
 
-		return (await source.ToListAsync(cancellationToken)).ToArray();
+		return (await source.ToListAsync(cancellationToken).ConfigureAwait(false)).ToArray();
 	}
 
 	/// <summary>

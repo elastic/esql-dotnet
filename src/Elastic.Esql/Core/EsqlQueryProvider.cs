@@ -124,9 +124,10 @@ public sealed class EsqlQueryProvider : IQueryProvider
 
 		var (esql, query) = TranslateAndFormat(expression);
 
-		await using var response = await _executor
+		var response = await _executor
 			.ExecuteQueryAsync(esql, query.Parameters, query.QueryOptions, query.Format, cancellationToken)
 			.ConfigureAwait(false);
+		await using var responseDisposal = response.ConfigureAwait(false);
 
 		var result = await _reader.ReadScalarAsync<TResult>(response.Body, cancellationToken)
 			.ConfigureAwait(false);
@@ -155,9 +156,10 @@ public sealed class EsqlQueryProvider : IQueryProvider
 
 		var (esql, query) = TranslateAndFormat(expression);
 
-		await using var response = await _executor
+		var response = await _executor
 			.ExecuteQueryAsync(esql, query.Parameters, query.QueryOptions, query.Format, cancellationToken)
 			.ConfigureAwait(false);
+		await using var responseDisposal = response.ConfigureAwait(false);
 
 		await using var results = await _reader.ReadRowsAsync<TElement>(response.Body, cancellationToken: cancellationToken).ConfigureAwait(false);
 		await foreach (var item in results.Rows.ConfigureAwait(false).WithCancellation(cancellationToken))
