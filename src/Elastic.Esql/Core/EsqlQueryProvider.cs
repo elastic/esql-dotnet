@@ -187,8 +187,18 @@ public sealed class EsqlQueryProvider : IQueryProvider
 		var (esql, query) = TranslateAndFormat(expression);
 		var requireId = asyncOptions?.KeepOnCompletion == true;
 		var response = _executor.SubmitAsyncQuery(esql, query.Parameters, query.QueryOptions, asyncOptions, format: null);
-		var result = _reader.ReadRows<T>(response.Body, requireId: requireId);
-		return new EsqlAsyncQuery<T>(_executor, result, response, _reader, query.QueryOptions);
+
+		try
+		{
+			var result = _reader.ReadRows<T>(response.Body, requireId: requireId);
+			return new EsqlAsyncQuery<T>(_executor, result, response, _reader, query.QueryOptions);
+		}
+		catch
+		{
+			// The response is only owned by EsqlAsyncQuery after successful construction.
+			response.Dispose();
+			throw;
+		}
 	}
 
 	/// <summary>Submits an async ES|QL query from a LINQ expression with a raw response format. Used by extension methods.</summary>
@@ -210,8 +220,18 @@ public sealed class EsqlQueryProvider : IQueryProvider
 		var response = await _executor
 			.SubmitAsyncQueryAsync(esql, query.Parameters, query.QueryOptions, asyncOptions, format: null, cancellationToken)
 			.ConfigureAwait(false);
-		var result = await _reader.ReadRowsAsync<T>(response.Body, requireId, cancellationToken).ConfigureAwait(false);
-		return new EsqlAsyncQuery<T>(_executor, result, response, _reader, query.QueryOptions);
+
+		try
+		{
+			var result = await _reader.ReadRowsAsync<T>(response.Body, requireId, cancellationToken).ConfigureAwait(false);
+			return new EsqlAsyncQuery<T>(_executor, result, response, _reader, query.QueryOptions);
+		}
+		catch
+		{
+			// The response is only owned by EsqlAsyncQuery after successful construction.
+			await response.DisposeAsync().ConfigureAwait(false);
+			throw;
+		}
 	}
 
 	/// <summary>Submits an async ES|QL query from a LINQ expression with a raw response format asynchronously. Used by extension methods.</summary>
