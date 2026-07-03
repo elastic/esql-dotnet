@@ -287,6 +287,56 @@ public class EsqlResponseReaderBufferedTests
 		response.IsRunning.Should().BeNull();
 	}
 
+	[Test]
+	public void ReadScalar_Stream_ValuesPropertyBeforeColumns_ReturnsFirstValueAndRowCount()
+	{
+		var json = """
+			{
+			  "values": [
+			    [10],
+			    [20],
+			    [30]
+			  ],
+			  "columns": [
+			    { "name": "count", "type": "integer" }
+			  ]
+			}
+			""";
+
+		using var stream = CreateStream(json);
+		var reader = CreateReader();
+
+		var scalar = reader.ReadScalar<int>(stream);
+
+		scalar.Value.Should().Be(10);
+		scalar.RowCount.Should().Be(3);
+	}
+
+	[Test]
+	public async Task ReadScalarAsync_Stream_ValuesPropertyBeforeColumns_ReturnsFirstValueAndRowCount()
+	{
+		var json = """
+			{
+			  "values": [
+			    [10],
+			    [20],
+			    [30]
+			  ],
+			  "columns": [
+			    { "name": "count", "type": "integer" }
+			  ]
+			}
+			""";
+
+		using var stream = CreateStream(json);
+		var reader = CreateReader();
+
+		var scalar = await reader.ReadScalarAsync<int>(stream);
+
+		scalar.Value.Should().Be(10);
+		scalar.RowCount.Should().Be(3);
+	}
+
 	private static EsqlResponseReader CreateReader()
 	{
 		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
