@@ -62,7 +62,7 @@ public class DateTimeNowTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE @timestamp > NOW() - 30 minutes
+            | WHERE @timestamp > (NOW() - 30 minutes)
             """.NativeLineEndings());
 	}
 

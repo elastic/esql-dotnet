@@ -17,7 +17,7 @@ public class TimeSpanTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE @timestamp > NOW() - 1 hours
+            | WHERE @timestamp > (NOW() - 1 hours)
             """.NativeLineEndings());
 	}
 
@@ -32,7 +32,7 @@ public class TimeSpanTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE @timestamp > NOW() - 7 days
+            | WHERE @timestamp > (NOW() - 7 days)
             """.NativeLineEndings());
 	}
 
@@ -47,7 +47,7 @@ public class TimeSpanTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE @timestamp > NOW() - 30 minutes
+            | WHERE @timestamp > (NOW() - 30 minutes)
             """.NativeLineEndings());
 	}
 
@@ -62,7 +62,7 @@ public class TimeSpanTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE @timestamp > NOW() - 60 seconds
+            | WHERE @timestamp > (NOW() - 60 seconds)
             """.NativeLineEndings());
 	}
 
@@ -77,7 +77,7 @@ public class TimeSpanTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE @timestamp > NOW() - 500 milliseconds
+            | WHERE @timestamp > (NOW() - 500 milliseconds)
             """.NativeLineEndings());
 	}
 
@@ -94,7 +94,7 @@ public class TimeSpanTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
 			FROM logs-*
-			| WHERE @timestamp > NOW() - 90 minutes
+			| WHERE @timestamp > (NOW() - 90 minutes)
 			""".NativeLineEndings());
 	}
 
@@ -111,7 +111,7 @@ public class TimeSpanTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
 			FROM logs-*
-			| WHERE @timestamp > NOW() - 1500 milliseconds
+			| WHERE @timestamp > (NOW() - 1500 milliseconds)
 			""".NativeLineEndings());
 	}
 
@@ -126,7 +126,7 @@ public class TimeSpanTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE @timestamp > NOW() - 30 days
+            | WHERE @timestamp > (NOW() - 30 days)
             """.NativeLineEndings());
 	}
 
@@ -141,7 +141,7 @@ public class TimeSpanTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE @timestamp < NOW() + 24 hours
+            | WHERE @timestamp < (NOW() + 24 hours)
             """.NativeLineEndings());
 	}
 }

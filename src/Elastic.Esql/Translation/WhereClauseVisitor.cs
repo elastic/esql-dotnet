@@ -54,10 +54,14 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 			}
 		}
 
-		// Only add parentheses for logical operators (AND/OR) to ensure proper grouping
-		var isLogicalOperator = node.NodeType is ExpressionType.AndAlso or ExpressionType.OrElse;
+		// Parenthesize logical and arithmetic nodes so the C# expression tree grouping survives;
+		// a flat rendering would let ES|QL re-associate operands by its own precedence rules.
+		var needsParentheses = node.NodeType
+			is ExpressionType.AndAlso or ExpressionType.OrElse
+			or ExpressionType.Add or ExpressionType.Subtract
+			or ExpressionType.Multiply or ExpressionType.Divide or ExpressionType.Modulo;
 
-		if (isLogicalOperator)
+		if (needsParentheses)
 			_ = _builder.Append('(');
 
 		var enumComparison = TryGetEnumComparison(node);
@@ -86,7 +90,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 			_comparisonPropertyContext = null;
 		}
 
-		if (isLogicalOperator)
+		if (needsParentheses)
 			_ = _builder.Append(')');
 
 		return node;
