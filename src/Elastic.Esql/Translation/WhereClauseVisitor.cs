@@ -223,21 +223,11 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 	protected override Expression VisitMember(MemberExpression node)
 	{
-		// Check if this is accessing a captured variable (closure)
-		if (node.Expression is ConstantExpression constantExpression)
+		// Closure-rooted member paths (captured variables and member chains of any depth on
+		// captured objects) resolve to a constant value and emit as a parameter or inline literal.
+		if (IsClosureRooted(node.Expression))
 		{
-			var value = GetMemberValue(node, constantExpression.Value);
-			_ = _builder.Append(_context.GetValueOrParameterName(node.Member.Name, value, _comparisonPropertyContext));
-			_comparisonPropertyContext = null;
-			return node;
-		}
-
-		// Check if this is a nested member access on a captured variable
-		if (node.Expression is MemberExpression innerMember &&
-			innerMember.Expression is ConstantExpression innerConstant)
-		{
-			var innerValue = GetMemberValue(innerMember, innerConstant.Value);
-			var value = GetMemberValue(node, innerValue);
+			var value = ExpressionConstantResolver.Resolve(node);
 			_ = _builder.Append(_context.GetValueOrParameterName(node.Member.Name, value, _comparisonPropertyContext));
 			_comparisonPropertyContext = null;
 			return node;
@@ -784,14 +774,6 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		}
 	}
 
-	private static object? GetMemberValue(MemberExpression member, object? instance) =>
-		member.Member switch
-		{
-			FieldInfo field => field.GetValue(instance),
-			PropertyInfo property => property.GetValue(instance),
-			_ => throw new NotSupportedException($"Member type {member.Member.GetType()} is not supported.")
-		};
-
 	private static object? GetStaticMemberValue(MemberExpression member) =>
 		member.Member switch
 		{
@@ -802,6 +784,35 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 	private static bool IsNullConstant(Expression expression) =>
 		expression is ConstantExpression { Value: null };
+
+	/// <summary>
+	/// Returns true when a member-access chain terminates in a <see cref="ConstantExpression"/>
+	/// (a compiler-generated closure instance), meaning the chain can be evaluated to a value.
+	/// Static chains terminate in null and keep their dedicated translations (e.g. NOW()).
+	/// </summary>
+	private static bool IsClosureRooted(Expression? expression)
+	{
+		var current = expression;
+
+		while (current is not null)
+		{
+			switch (current)
+			{
+				case ConstantExpression:
+					return true;
+				case MemberExpression member:
+					current = member.Expression;
+					break;
+				case UnaryExpression { NodeType: ExpressionType.Convert or ExpressionType.ConvertChecked } convert:
+					current = convert.Operand;
+					break;
+				default:
+					return false;
+			}
+		}
+
+		return false;
+	}
 
 	private static string EscapeLikePattern(string value) =>
 		// Pattern-level escaping only: a backslash escapes LIKE wildcards. String-literal
