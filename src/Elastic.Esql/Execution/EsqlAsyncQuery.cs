@@ -410,8 +410,16 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 
 			object? System.Collections.IEnumerator.Current => Current;
 
-			public bool MoveNext() =>
-				Task.Run(() => inner.MoveNextAsync().AsTask()).GetAwaiter().GetResult();
+			public bool MoveNext()
+			{
+				// Without an ambient SynchronizationContext, blocking inline is deadlock-free and
+				// avoids a per-row thread-pool hop; the Task.Run detour is only needed when a
+				// context could capture the continuation.
+				if (SynchronizationContext.Current is null)
+					return inner.MoveNextAsync().AsTask().GetAwaiter().GetResult();
+
+				return Task.Run(() => inner.MoveNextAsync().AsTask()).GetAwaiter().GetResult();
+			}
 
 			public void Reset() =>
 				throw new NotSupportedException();
