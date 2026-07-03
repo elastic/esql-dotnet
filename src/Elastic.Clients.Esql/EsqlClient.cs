@@ -249,7 +249,7 @@ public class EsqlClient : IDisposable
 
 		_disposed = true;
 
-		if (Settings.Transport is IDisposable disposableTransport)
+		if (Settings.OwnsTransport && Settings.Transport is IDisposable disposableTransport)
 			disposableTransport.Dispose();
 	}
 }
