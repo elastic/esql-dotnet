@@ -180,6 +180,28 @@ public class QueryInterceptorTests
 		_ = called.Should().BeFalse();
 	}
 
+	[Test]
+	public void Interceptor_InjectsParameterizedWhere_ValueRoundTrips()
+	{
+		var interceptor = new ParameterizedWhereInterceptor(500);
+
+		var query = CreateQuery<LogEntry>(interceptor)
+			.From("logs-*")
+			.AsEsqlQueryable();
+
+		var esql = query.ToEsqlString(inlineParameters: false);
+		var parameters = query.GetParameters();
+
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| WHERE statusCode >= ?minStatus
+			""".NativeLineEndings());
+
+		_ = parameters.Should().NotBeNull();
+		_ = parameters!.Parameters["minStatus"].GetInt32().Should().Be(500);
+	}
+
 	private sealed class SourceInferenceInterceptor(string defaultIndex) : IEsqlQueryInterceptor
 	{
 		public EsqlQuery Intercept(EsqlQuery query)
@@ -218,6 +240,20 @@ public class QueryInterceptorTests
 		{
 			capture(query.ElementType);
 			return query;
+		}
+	}
+
+	private sealed class ParameterizedWhereInterceptor(int minStatus) : IEsqlQueryInterceptor
+	{
+		public EsqlQuery Intercept(EsqlQuery query)
+		{
+			var parameters = query.Parameters ?? new();
+			var name = parameters.Add("minStatus", JsonSerializer.SerializeToElement(minStatus));
+
+			var commands = query.Commands.ToList();
+			commands.Add(new WhereCommand($"statusCode >= ?{name}"));
+
+			return query.WithCommands(commands).WithParameters(parameters);
 		}
 	}
 }

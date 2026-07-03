@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information
 
 using System.Text.Json;
+using Elastic.Esql.Validation;
 
 namespace Elastic.Esql.QueryModel;
 
@@ -19,9 +20,15 @@ public sealed class EsqlParameters
 	/// <summary>
 	/// Adds a parameter and returns its unique name.
 	/// Duplicate preferred names get <c>_2</c>, <c>_3</c> suffixes.
+	/// Reference the returned name as <c>?name</c> in command text (e.g. a <see cref="Commands.WhereCommand"/> condition).
 	/// </summary>
-	internal string Add(string preferredName, JsonElement value)
+	/// <param name="preferredName">The preferred parameter name.</param>
+	/// <param name="value">The parameter value, pre-serialized as a <see cref="JsonElement"/>.</param>
+	/// <returns>The unique name under which the parameter was registered.</returns>
+	public string Add(string preferredName, JsonElement value)
 	{
+		Verify.NotNullOrEmpty(preferredName);
+
 		if (!_nameCounts.TryGetValue(preferredName, out var count) && !_parameters.ContainsKey(preferredName))
 		{
 			_nameCounts[preferredName] = 1;
