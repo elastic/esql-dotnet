@@ -69,4 +69,30 @@ public class CultureInvarianceTests : EsqlTestBase
 
 			_ = result.Should().Be("\"2024-01-15\"");
 		});
+
+	[Test]
+	public void Where_DoubleConstant_UnderGermanCulture_EmitsInvariantDecimalSeparator() =>
+		RunWithCulture("de-DE", () =>
+		{
+			var esql = CreateQuery<LogEntry>()
+				.From("logs-*")
+				.Where(l => l.Duration > 3.14)
+				.ToString();
+
+			_ = esql.Should().Be(
+				"""
+				FROM logs-*
+				| WHERE duration > 3.14
+				""".NativeLineEndings());
+		});
+
+	[Test]
+	public void FormatValue_FractionalTimeSpan_UnderGermanCulture_EmitsInvariantDecimalSeparator() =>
+		RunWithCulture("de-DE", () =>
+		{
+			// 15005000 ticks = 1500.5 ms, forcing the fractional-milliseconds branch.
+			var result = EsqlFormatting.FormatValue(TimeSpan.FromTicks(15005000), ReaderOptions);
+
+			_ = result.Should().Be("1500.5 milliseconds");
+		});
 }
