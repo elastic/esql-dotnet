@@ -16,10 +16,11 @@ public static partial class EsqlQueryableExtensions
 {
 	/// <summary>
 	/// Executes the query synchronously and returns the raw response body in the requested
-	/// <see cref="EsqlFormat"/>. The returned <see cref="Stream"/> owns the underlying HTTP
-	/// response — dispose it to release the connection.
+	/// <see cref="EsqlFormat"/>. When <paramref name="format"/> is <c>null</c>, the query model's format applies,
+	/// defaulting to JSON. The returned <see cref="Stream"/> owns the underlying HTTP
+	/// response - dispose it to release the connection.
 	/// </summary>
-	public static Stream ToStream<TSource>(this IEsqlQueryable<TSource> source, EsqlFormat format)
+	public static Stream ToStream<TSource>(this IEsqlQueryable<TSource> source, EsqlFormat? format = null)
 	{
 		Verify.NotNull(source);
 
@@ -32,12 +33,13 @@ public static partial class EsqlQueryableExtensions
 
 	/// <summary>
 	/// Executes the query asynchronously and returns the raw response body in the requested
-	/// <see cref="EsqlFormat"/>. The returned <see cref="Stream"/> owns the underlying HTTP
-	/// response — dispose it to release the connection.
+	/// <see cref="EsqlFormat"/>. When <paramref name="format"/> is <c>null</c>, the query model's format applies,
+	/// defaulting to JSON. The returned <see cref="Stream"/> owns the underlying HTTP
+	/// response - dispose it to release the connection.
 	/// </summary>
 	public static async Task<Stream> ToStreamAsync<TSource>(
 		this IEsqlQueryable<TSource> source,
-		EsqlFormat format,
+		EsqlFormat? format = null,
 		CancellationToken cancellationToken = default)
 	{
 		Verify.NotNull(source);
@@ -55,12 +57,13 @@ public static partial class EsqlQueryableExtensions
 #if NET10_0_OR_GREATER
 	/// <summary>
 	/// Executes the query asynchronously and returns the raw response body in the requested
-	/// <see cref="EsqlFormat"/> as a <see cref="PipeReader"/>. The reader owns the underlying
-	/// HTTP response — complete or dispose it to release the connection.
+	/// <see cref="EsqlFormat"/> as a <see cref="PipeReader"/>. When <paramref name="format"/> is <c>null</c>, the
+	/// query model's format applies, defaulting to JSON. The reader owns the underlying
+	/// HTTP response - complete or dispose it to release the connection.
 	/// </summary>
 	public static async Task<PipeReader> ToPipeReaderAsync<TSource>(
 		this IEsqlQueryable<TSource> source,
-		EsqlFormat format,
+		EsqlFormat? format = null,
 		CancellationToken cancellationToken = default)
 	{
 		Verify.NotNull(source);
