@@ -55,7 +55,7 @@ internal sealed class SelectMergingVisitor : ExpressionVisitor
 	}
 
 	private static bool IsSelectCall(MethodCallExpression node) =>
-		node.Method.Name == nameof(Queryable.Select) && node.Arguments.Count >= 2;
+		node.Method.DeclaringType == typeof(Queryable) && node.Method.Name == nameof(Queryable.Select) && node.Arguments.Count >= 2;
 
 	private static LambdaExpression? ExtractLambda(Expression arg) =>
 		arg is UnaryExpression { Operand: LambdaExpression lambda } ? lambda : null;
