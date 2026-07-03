@@ -267,6 +267,25 @@ internal static class EsqlFunctionTranslator
 			_ => null
 		};
 
+	/// <summary>
+	/// Translates a DateTime/DateTimeOffset instance property access to DATE_EXTRACT.
+	/// ES|QL DATE_EXTRACT accepts java.time.temporal.ChronoField names only; short aliases
+	/// like "month" or "hour" are rejected server-side. Returns null if not recognized.
+	/// </summary>
+	public static string? TryTranslateDateMember(string memberName, string target) =>
+		memberName switch
+		{
+			nameof(DateTime.Year) => $"DATE_EXTRACT(\"year\", {target})",
+			nameof(DateTime.Month) => $"DATE_EXTRACT(\"month_of_year\", {target})",
+			nameof(DateTime.Day) => $"DATE_EXTRACT(\"day_of_month\", {target})",
+			nameof(DateTime.Hour) => $"DATE_EXTRACT(\"hour_of_day\", {target})",
+			nameof(DateTime.Minute) => $"DATE_EXTRACT(\"minute_of_hour\", {target})",
+			nameof(DateTime.Second) => $"DATE_EXTRACT(\"second_of_minute\", {target})",
+			nameof(DateTime.DayOfWeek) => $"DATE_EXTRACT(\"day_of_week\", {target})",
+			nameof(DateTime.DayOfYear) => $"DATE_EXTRACT(\"day_of_year\", {target})",
+			_ => null
+		};
+
 	/// <summary>Translates a Math static field/const access to ES|QL. Returns null if not recognized.</summary>
 	public static string? TryTranslateMathConstant(string memberName) =>
 		memberName switch
