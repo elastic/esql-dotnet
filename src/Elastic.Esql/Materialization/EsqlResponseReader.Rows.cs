@@ -301,7 +301,7 @@ internal sealed partial class EsqlResponseReader
 					break;
 
 				var buffer = cursor.Buffer;
-				var isFinalBlock = cursor.IsCompleted;
+				var isFinalBlock = cursor.IsEofReached;
 				var reachedEnd = false;
 
 				while (TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, rowBuffer, valueBuffer, valueWriter, scalarWriter, plan.TypeInfo, options, out var item, out reachedEnd))
@@ -320,7 +320,7 @@ internal sealed partial class EsqlResponseReader
 
 				cursor.AdvanceTo(buffer.Start, buffer.End);
 
-				if (cursor.IsCompleted)
+				if (cursor.IsEofReached)
 					break;
 			}
 		}
@@ -354,7 +354,7 @@ internal sealed partial class EsqlResponseReader
 					break;
 
 				var buffer = cursor.Buffer;
-				var isFinalBlock = cursor.IsCompleted;
+				var isFinalBlock = cursor.IsEofReached;
 				var reachedEnd = false;
 
 				while (TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, rowBuffer, valueBuffer, valueWriter, scalarWriter, plan.TypeInfo, options, out var item, out reachedEnd))
@@ -372,6 +372,9 @@ internal sealed partial class EsqlResponseReader
 					done = true;
 
 				cursor.AdvanceTo(buffer.Start, buffer.End);
+
+				if (cursor.IsEofReached)
+					break;
 			}
 		}
 		finally

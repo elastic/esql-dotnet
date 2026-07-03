@@ -66,6 +66,7 @@ internal sealed partial class EsqlResponseReader
 	{
 		ReadOnlySequence<byte> Buffer { get; }
 		bool IsCompleted { get; }
+		bool IsEofReached { get; }
 		void AdvanceTo(SequencePosition consumed, SequencePosition examined);
 	}
 
@@ -85,6 +86,8 @@ internal sealed partial class EsqlResponseReader
 
 		public bool IsCompleted => asyncBuffer.IsCompleted;
 
+		public bool IsEofReached => asyncBuffer.IsEofReached;
+
 		public ValueTask<bool> ReadAsync(CancellationToken cancellationToken) =>
 			asyncBuffer.ReadAsync(cancellationToken);
 
@@ -97,6 +100,8 @@ internal sealed partial class EsqlResponseReader
 		public ReadOnlySequence<byte> Buffer => syncBuffer.Buffer;
 
 		public bool IsCompleted => syncBuffer.IsCompleted;
+
+		public bool IsEofReached => syncBuffer.IsEofReached;
 
 		public bool Read() => syncBuffer.Read();
 
@@ -112,6 +117,9 @@ internal sealed partial class EsqlResponseReader
 		public ReadOnlySequence<byte> Buffer => _result.Buffer;
 
 		public bool IsCompleted => _result.IsCompleted;
+
+		// For a pipe, a completed read result already means no more data will arrive.
+		public bool IsEofReached => _result.IsCompleted;
 
 		public async ValueTask<bool> ReadAsync(CancellationToken cancellationToken)
 		{

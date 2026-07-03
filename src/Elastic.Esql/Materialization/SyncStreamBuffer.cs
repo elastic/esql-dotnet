@@ -17,10 +17,15 @@ internal sealed class SyncStreamBuffer(Stream stream, int initialBufferSize = 16
 	private byte[] _buffer = ArrayPool<byte>.Shared.Rent(initialBufferSize);
 	private int _offset;
 	private int _filled;
+#pragma warning disable IDE0032
 	private bool _streamCompleted;
+#pragma warning restore IDE0032
 
 	/// <summary>Whether the underlying stream has been fully consumed.</summary>
 	public bool IsCompleted => _streamCompleted && _offset >= _filled;
+
+	/// <summary>Whether the underlying stream has reached end of data. Unconsumed data may remain buffered.</summary>
+	public bool IsEofReached => _streamCompleted;
 
 	/// <summary>Returns the unconsumed data currently in the buffer as a <see cref="ReadOnlySequence{T}"/>.</summary>
 	public ReadOnlySequence<byte> Buffer => new(_buffer, _offset, _filled - _offset);
