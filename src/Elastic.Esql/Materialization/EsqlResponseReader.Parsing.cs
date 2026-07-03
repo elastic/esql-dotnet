@@ -50,14 +50,22 @@ internal sealed partial class EsqlResponseReader
 		var rented = ArrayPool<byte>.Shared.Rent(16_384);
 		var written = 0;
 
-		while (await cursor.ReadAsync(ct).ConfigureAwait(false))
+		try
 		{
-			var buffer = cursor.Buffer;
-			written = CopyBuffer(buffer, ref rented, written);
-			cursor.AdvanceTo(buffer.End, buffer.End);
+			while (await cursor.ReadAsync(ct).ConfigureAwait(false))
+			{
+				var buffer = cursor.Buffer;
+				written = CopyBuffer(buffer, ref rented, written);
+				cursor.AdvanceTo(buffer.End, buffer.End);
 
-			if (cursor.IsCompleted)
-				break;
+				if (cursor.IsCompleted)
+					break;
+			}
+		}
+		catch
+		{
+			ArrayPool<byte>.Shared.Return(rented);
+			throw;
 		}
 
 		if (written == 0)
@@ -75,14 +83,22 @@ internal sealed partial class EsqlResponseReader
 		var rented = ArrayPool<byte>.Shared.Rent(16_384);
 		var written = 0;
 
-		while (cursor.Read())
+		try
 		{
-			var buffer = cursor.Buffer;
-			written = CopyBuffer(buffer, ref rented, written);
-			cursor.AdvanceTo(buffer.End, buffer.End);
+			while (cursor.Read())
+			{
+				var buffer = cursor.Buffer;
+				written = CopyBuffer(buffer, ref rented, written);
+				cursor.AdvanceTo(buffer.End, buffer.End);
 
-			if (cursor.IsCompleted)
-				break;
+				if (cursor.IsCompleted)
+					break;
+			}
+		}
+		catch
+		{
+			ArrayPool<byte>.Shared.Return(rented);
+			throw;
 		}
 
 		if (written == 0)
