@@ -109,6 +109,30 @@ internal sealed partial class EsqlResponseReader
 			syncBuffer.AdvanceTo(consumed, examined);
 	}
 
+	/// <summary>
+	/// Cursor over an already-drained response region. Exposes the remaining bytes directly instead of
+	/// re-copying them through a stream and a second pooled buffer.
+	/// </summary>
+	private sealed class DrainedBufferCursor(byte[] buffer, int start, int end) : ISyncBufferCursor
+	{
+		private int _consumed = start;
+
+		public ReadOnlySequence<byte> Buffer => new(buffer, _consumed, end - _consumed);
+
+		// The entire payload is in memory, so the exposed buffer is always the final block.
+		public bool IsCompleted => true;
+
+		// The entire payload is already drained into memory, so end of data is always reached.
+		public bool IsEofReached => true;
+
+		public bool Read() => _consumed < end;
+
+		// Positions originate from Buffer, a single-segment sequence over the backing array, so
+		// GetInteger() is the absolute array index (the same contract SyncStreamBuffer relies on).
+		public void AdvanceTo(SequencePosition consumed, SequencePosition examined) =>
+			_consumed = consumed.GetInteger();
+	}
+
 #if NET10_0_OR_GREATER
 	private sealed class PipeReaderCursor(PipeReader pipeReader) : IAsyncBufferCursor
 	{
