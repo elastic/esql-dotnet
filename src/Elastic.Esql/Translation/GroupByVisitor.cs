@@ -2,6 +2,7 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Globalization;
 using System.Linq.Expressions;
 using Elastic.Esql.Core;
 using Elastic.Esql.Extensions;
@@ -320,7 +321,8 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 				throw new NotSupportedException($"Aggregation argument '{arg}' must be constant or closure-captured.", ex);
 			}
 
-			return value?.ToString();
+			// Invariant culture: locale decimal separators (e.g. "99,9") would corrupt the ES|QL argument list.
+			return value is null ? null : Convert.ToString(value, CultureInfo.InvariantCulture);
 		}
 
 		var fieldExpr = ExtractField(1);
