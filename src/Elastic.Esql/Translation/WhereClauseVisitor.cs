@@ -10,6 +10,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using Elastic.Esql.Core;
 using Elastic.Esql.Extensions;
+using Elastic.Esql.Formatting;
 using Elastic.Esql.Functions;
 
 namespace Elastic.Esql.Translation;
@@ -511,7 +512,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 				_ = Visit(node.Object);
 				_ = _builder.Append(" LIKE ");
 				var containsValue = GetConstantValue(node.Arguments[0]);
-				_ = _builder.Append("\"*").Append(EscapeLikePattern(containsValue?.ToString() ?? "")).Append("*\"");
+				_ = _builder.Append(EsqlFormatting.FormatString($"*{EscapeLikePattern(containsValue?.ToString() ?? "")}*"));
 				break;
 
 			case "StartsWith":
@@ -519,7 +520,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 				_ = Visit(node.Object);
 				_ = _builder.Append(" LIKE ");
 				var startsValue = GetConstantValue(node.Arguments[0]);
-				_ = _builder.Append('"').Append(EscapeLikePattern(startsValue?.ToString() ?? "")).Append("*\"");
+				_ = _builder.Append(EsqlFormatting.FormatString($"{EscapeLikePattern(startsValue?.ToString() ?? "")}*"));
 				break;
 
 			case "EndsWith":
@@ -527,7 +528,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 				_ = Visit(node.Object);
 				_ = _builder.Append(" LIKE ");
 				var endsValue = GetConstantValue(node.Arguments[0]);
-				_ = _builder.Append("\"*").Append(EscapeLikePattern(endsValue?.ToString() ?? "")).Append('"');
+				_ = _builder.Append(EsqlFormatting.FormatString($"*{EscapeLikePattern(endsValue?.ToString() ?? "")}"));
 				break;
 
 			case "IsNullOrEmpty":
@@ -784,10 +785,10 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		expression is ConstantExpression { Value: null };
 
 	private static string EscapeLikePattern(string value) =>
-		// Escape special characters in LIKE patterns
+		// Pattern-level escaping only: a backslash escapes LIKE wildcards. String-literal
+		// escaping (quotes, backslashes) is applied afterwards by EsqlFormatting.FormatString.
 		value
 			.Replace("\\", "\\\\")
-			.Replace("\"", "\\\"")
 			.Replace("*", "\\*")
 			.Replace("?", "\\?");
 }
