@@ -116,7 +116,13 @@ internal sealed class EsqlTranslationContext
 		if (_anonymousTypeFields is not null && _anonymousTypeFields.TryGetValue(type, out var tracked))
 			return tracked;
 
-		return Metadata.GetAllPropertyNames(type);
+		// Callers compare these names against translator-resolved (escaped) column paths,
+		// so apply the same escaping here. Anonymous-type sets are already stored escaped.
+		var names = new HashSet<string>(StringComparer.Ordinal);
+		foreach (var name in Metadata.GetAllPropertyNames(type))
+			_ = names.Add(EsqlIdentifier.EscapeColumnName(name));
+
+		return names;
 	}
 
 	/// <summary>
