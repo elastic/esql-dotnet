@@ -248,9 +248,7 @@ internal sealed partial class EsqlResponseReader
 
 	private IEnumerable<T> StreamRowsFromBuffer<T>(byte[] buffer, int length, int valuesOffset, ColumnInfo[] columns, ColumnLayout layout)
 	{
-		using var memoryStream = new MemoryStream(buffer, valuesOffset, length - valuesOffset, writable: false);
-		using var syncBuf = new SyncStreamBuffer(memoryStream);
-		var bufferCursor = new SyncStreamBufferCursor(syncBuf);
+		var bufferCursor = new DrainedBufferCursor(buffer, valuesOffset, length);
 
 		var readerState = new JsonReaderState();
 		if (!AdvancePastStartArray(bufferCursor, ref readerState))
