@@ -509,6 +509,13 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 
 	private string TranslateBinary(BinaryExpression binary)
 	{
+		var dayOfWeekComparison = EsqlFunctionTranslator.TryGetDayOfWeekComparison(binary);
+		if (dayOfWeekComparison.HasValue)
+		{
+			var dateMember = TranslateExpression(dayOfWeekComparison.Value.DateMember);
+			return $"({dateMember} {GetOperator(binary.NodeType)} {dayOfWeekComparison.Value.IsoDayNumber})";
+		}
+
 		var left = TranslateExpression(binary.Left);
 		var right = TranslateExpression(binary.Right);
 		var op = GetOperator(binary.NodeType);

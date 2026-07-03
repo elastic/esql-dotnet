@@ -286,6 +286,58 @@ internal static class EsqlFunctionTranslator
 			_ => null
 		};
 
+	/// <summary>Maps a C# <see cref="DayOfWeek"/> (Sunday = 0) to the ISO number produced by ES|QL day_of_week (Monday = 1 ... Sunday = 7).</summary>
+	public static int ToIsoDayOfWeek(DayOfWeek dayOfWeek) =>
+		dayOfWeek == DayOfWeek.Sunday ? 7 : (int)dayOfWeek;
+
+	/// <summary>
+	/// Detects a comparison of a DateTime/DateTimeOffset DayOfWeek property against an evaluable constant
+	/// and returns the date member expression plus the ISO day number to compare against. The remapped
+	/// number must always be inlined (never parameterized) because it is derived from, not equal to, the
+	/// user-supplied value. Returns null when the expression is not such a comparison; DayOfWeek-to-DayOfWeek
+	/// member equality also returns null because both sides extract ISO numbers and need no remapping.
+	/// </summary>
+	public static (Expression DateMember, int IsoDayNumber)? TryGetDayOfWeekComparison(BinaryExpression node)
+	{
+		if (node.NodeType is not (ExpressionType.Equal or ExpressionType.NotEqual
+			or ExpressionType.LessThan or ExpressionType.LessThanOrEqual
+			or ExpressionType.GreaterThan or ExpressionType.GreaterThanOrEqual))
+			return null;
+
+		var left = node.Left.UnwrapConvertExpressions();
+		var right = node.Right.UnwrapConvertExpressions();
+
+		var leftIsDayOfWeek = IsDayOfWeekMember(left);
+		var rightIsDayOfWeek = IsDayOfWeekMember(right);
+
+		if (leftIsDayOfWeek == rightIsDayOfWeek)
+			return null;
+
+		if (node.NodeType is not (ExpressionType.Equal or ExpressionType.NotEqual))
+			throw new NotSupportedException(
+				"Relational comparisons on DayOfWeek are not supported: C# numbers the week Sunday = 0 to Saturday = 6 " +
+				"while ES|QL day_of_week uses ISO numbering Monday = 1 to Sunday = 7, so range semantics differ. " +
+				"Compare against specific days with == or != instead.");
+
+		var (memberSide, constantSide) = leftIsDayOfWeek ? (left, right) : (right, left);
+
+		if (!constantSide.SupportsEvaluation())
+			throw new NotSupportedException(
+				"Comparing DayOfWeek against a non-constant expression is not supported: C# numbers the week " +
+				"Sunday = 0 to Saturday = 6 while ES|QL day_of_week uses ISO numbering Monday = 1 to Sunday = 7.");
+
+		var value = ExpressionConstantResolver.Resolve(constantSide);
+		if (value is null)
+			return null;
+
+		var dayOfWeek = (DayOfWeek)Convert.ToInt32(value, CultureInfo.InvariantCulture);
+		return (memberSide, ToIsoDayOfWeek(dayOfWeek));
+	}
+
+	private static bool IsDayOfWeekMember(Expression expression) =>
+		expression is MemberExpression { Member: { Name: nameof(DateTime.DayOfWeek), DeclaringType: var declaringType } }
+		&& (declaringType == typeof(DateTime) || declaringType == typeof(DateTimeOffset));
+
 	/// <summary>Translates a Math static field/const access to ES|QL. Returns null if not recognized.</summary>
 	public static string? TryTranslateMathConstant(string memberName) =>
 		memberName switch
