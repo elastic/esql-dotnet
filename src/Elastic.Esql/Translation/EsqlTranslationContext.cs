@@ -31,7 +31,9 @@ internal sealed class EsqlTranslationContext
 	/// </summary>
 	public EsqlParameters Parameters { get; internal set; } = new();
 
-	public object? QueryOptions { get; set; }
+	public EsqlQueryOptions? QueryOptions { get; set; }
+
+	public object? ExecutorOptions { get; set; }
 
 	/// <summary>
 	/// Document metadata fields that are currently in scope (either requested via
