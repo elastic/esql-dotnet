@@ -70,7 +70,10 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		{
 			var propertyMember = enumComparison.Value.MemberSide.Member;
 			_ = Visit(enumComparison.Value.MemberSide);
-			var op = GetOperator(node.NodeType);
+
+			// The member side is always emitted first; when it originally sat on the right,
+			// relational operators must be mirrored to preserve the predicate.
+			var op = GetOperator(enumComparison.Value.Swapped ? MirrorComparison(node.NodeType) : node.NodeType);
 			_ = _builder.Append(' ').Append(op).Append(' ');
 
 			var constant = enumComparison.Value.ConstantSide;
@@ -99,9 +102,10 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 	/// <summary>
 	/// Inspects a <see cref="BinaryExpression"/> and determines whether it represents an enum comparison. If so, returns the enum type, the member site
-	/// expression (the property/field being compared), and the constant enum value. Handles both regular and nullable enums.
+	/// expression (the property/field being compared), the constant enum value, and whether the member side originally sat on the right-hand side.
+	/// Handles both regular and nullable enums.
 	/// </summary>
-	private static (Type EnumType, MemberExpression MemberSide, Expression ConstantSide)? TryGetEnumComparison(BinaryExpression binary)
+	private static (Type EnumType, MemberExpression MemberSide, Expression ConstantSide, bool Swapped)? TryGetEnumComparison(BinaryExpression binary)
 	{
 		// TODO: We can probably make this more robust by explicitly looking for the parametrized member access as the source of truth for the enum type.
 
@@ -111,9 +115,13 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 			return null;
 
 		// Try both orientations: member == constant and constant == member.
-		return TryMatch(binary.Left, binary.Right) ?? TryMatch(binary.Right, binary.Left);
+		return TryMatch(binary.Left, binary.Right, swapped: false) ?? TryMatch(binary.Right, binary.Left, swapped: true);
 
-		static (Type EnumType, MemberExpression MemberSide, Expression ConstantSide)? TryMatch(Expression candidateMember, Expression candidateConstant)
+		static (Type EnumType, MemberExpression MemberSide, Expression ConstantSide, bool Swapped)? TryMatch(
+			Expression candidateMember,
+			Expression candidateConstant,
+			bool swapped
+		)
 		{
 			var memberSide = candidateMember.UnwrapConvertExpressions();
 			var constantSide = candidateConstant.UnwrapConvertExpressions();
@@ -133,7 +141,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 			if (!constantSide.SupportsEvaluation())
 				return null;
 
-			return (enumType, memberExpression, constantSide);
+			return (enumType, memberExpression, constantSide, swapped);
 		}
 
 		static Type? GetEnumType(Type type)
@@ -751,6 +759,17 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 			ExpressionType.Divide => "/",
 			ExpressionType.Modulo => "%",
 			_ => throw new NotSupportedException($"Operator {nodeType} is not supported.")
+		};
+
+	/// <summary>Mirrors a relational operator for a comparison whose operands were swapped into member-first order.</summary>
+	private static ExpressionType MirrorComparison(ExpressionType nodeType) =>
+		nodeType switch
+		{
+			ExpressionType.LessThan => ExpressionType.GreaterThan,
+			ExpressionType.LessThanOrEqual => ExpressionType.GreaterThanOrEqual,
+			ExpressionType.GreaterThan => ExpressionType.LessThan,
+			ExpressionType.GreaterThanOrEqual => ExpressionType.LessThanOrEqual,
+			_ => nodeType
 		};
 
 	private static object? GetConstantValue(Expression expression)
