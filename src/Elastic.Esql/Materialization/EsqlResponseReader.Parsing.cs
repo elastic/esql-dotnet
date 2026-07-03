@@ -123,7 +123,9 @@ internal sealed partial class EsqlResponseReader
 
 		while (reader.Read())
 		{
-			if (reader.TokenType != JsonTokenType.PropertyName)
+			// Only depth-1 properties are response metadata; identical keys can appear inside
+			// object-valued row cells and must not be misread as schema or async-query metadata.
+			if (reader.CurrentDepth != 1 || reader.TokenType != JsonTokenType.PropertyName)
 				continue;
 
 			if (reader.ValueTextEquals("columns"u8))
@@ -176,6 +178,10 @@ internal sealed partial class EsqlResponseReader
 			{
 				_ = reader.Read(); // StartArray
 				valuesOffset = (int)reader.TokenStartIndex;
+
+				// The buffer holds the complete response, so skipping the row data cannot fail;
+				// scanning through it token by token would visit every key inside the cells.
+				_ = reader.TrySkip();
 			}
 			else if (reader.ValueTextEquals("id"u8))
 			{

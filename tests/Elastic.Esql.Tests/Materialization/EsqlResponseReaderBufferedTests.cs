@@ -257,6 +257,36 @@ public class EsqlResponseReaderBufferedTests
 		rows[499].Count.Should().Be(499);
 	}
 
+	[Test]
+	public void ReadRows_Stream_ValuesFirst_ObjectCellWithMetadataKeys_ParsesRealColumns()
+	{
+		var json = """
+			{
+			  "values": [
+			    ["John", { "street": "1st Ave", "city": "Springfield", "columns": "evil", "id": "fake", "is_running": true }]
+			  ],
+			  "columns": [
+			    { "name": "name", "type": "keyword" },
+			    { "name": "address", "type": "object" }
+			  ]
+			}
+			""";
+
+		using var stream = CreateStream(json);
+		var reader = CreateReader();
+
+		using var response = reader.ReadRows<PersonModel>(stream);
+		var rows = response.Rows.ToList();
+
+		rows.Should().HaveCount(1);
+		rows[0].Name.Should().Be("John");
+		rows[0].Address.Should().NotBeNull();
+		rows[0].Address!.Street.Should().Be("1st Ave");
+		rows[0].Address!.City.Should().Be("Springfield");
+		response.Id.Should().BeNull();
+		response.IsRunning.Should().BeNull();
+	}
+
 	private static EsqlResponseReader CreateReader()
 	{
 		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
