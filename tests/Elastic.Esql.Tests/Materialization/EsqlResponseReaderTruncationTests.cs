@@ -5,7 +5,6 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
-using Elastic.Esql.Core;
 using Elastic.Esql.Materialization;
 
 namespace Elastic.Esql.Tests.Materialization;
