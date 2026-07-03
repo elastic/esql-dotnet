@@ -81,12 +81,15 @@ internal sealed class EsqlTranslationContext
 	/// <summary>
 	/// Resolves a field name from a declaring type and member, handling anonymous types
 	/// by applying <see cref="JsonSerializerOptions.PropertyNamingPolicy"/> instead of
-	/// looking up registered type metadata.
+	/// looking up registered type metadata. The returned name is ES|QL-escaped via
+	/// <see cref="EsqlIdentifier.EscapeColumnName"/>.
 	/// </summary>
 	public string ResolveFieldName(Type declaringType, MemberInfo member) =>
-		declaringType.IsDefined(typeof(CompilerGeneratedAttribute), false)
-			? SerializerOptions.PropertyNamingPolicy?.ConvertName(member.Name) ?? member.Name
-			: Metadata.ResolvePropertyName(declaringType, member);
+		EsqlIdentifier.EscapeColumnName(
+			declaringType.IsDefined(typeof(CompilerGeneratedAttribute), false)
+				? SerializerOptions.PropertyNamingPolicy?.ConvertName(member.Name) ?? member.Name
+				: Metadata.ResolvePropertyName(declaringType, member)
+		);
 
 	/// <summary>
 	/// Registers the resolved field names for an anonymous type, extracted from a <see cref="NewExpression"/>.
