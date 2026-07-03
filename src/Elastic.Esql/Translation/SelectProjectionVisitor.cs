@@ -5,8 +5,6 @@
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
-using Elastic.Esql.Core;
-using Elastic.Esql.Functions;
 
 namespace Elastic.Esql.Translation;
 
