@@ -42,7 +42,7 @@ public class EsqlClient : IDisposable
 		var jsonOptions = settings.ResolveJsonOptions();
 		var executor = new EsqlTransportExecutor(settings);
 
-		_provider = new EsqlQueryProvider(jsonOptions, executor);
+		_provider = new EsqlQueryProvider(jsonOptions, executor) { Interceptor = settings.Interceptor };
 	}
 
 	/// <summary>
