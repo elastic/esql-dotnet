@@ -111,9 +111,20 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 		{
 			var agg = TryExtractAggregation(arg, memberName);
 			if (agg != null)
+			{
 				aggregations.Add(agg);
-			else if (TryGetKeyPropertyName(arg, out var keyPropName))
+				continue;
+			}
+
+			if (TryGetKeyPropertyName(arg, out var keyPropName))
+			{
 				keyAliasMap[keyPropName] = memberName;
+				continue;
+			}
+
+			throw new NotSupportedException(
+				$"Member '{memberName}' in the GroupBy result selector is neither a supported aggregation nor a group key access. " +
+				"STATS supports aggregation functions and 'g.Key' references only; compute derived values in a subsequent Select.");
 		}
 
 		// If no aggregations found, default to count
