@@ -72,6 +72,7 @@ internal static class TranslationExtensions
 
 	private static string ResolveMemberFieldPath(MemberExpression member, JsonMetadataManager metadata)
 	{
+		// Escape only the leaf segment; parent segments from recursion are already escaped to avoid double-quoting composed paths.
 		var segment = EsqlIdentifier.EscapeColumnName(ResolveMemberSegmentName(member, metadata));
 		var parent = member.Expression?.UnwrapConvertExpressions();
 
