@@ -47,7 +47,7 @@ public class ComparisonOperatorTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE duration > 1000
+            | WHERE duration > 1000.0
             """.NativeLineEndings());
 	}
 

@@ -44,7 +44,7 @@ public class RealWorldExamplesTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE duration > 5000
+            | WHERE duration > 5000.0
             | SORT duration DESC
             | RENAME @timestamp AS timestamp
             | KEEP message, duration, timestamp

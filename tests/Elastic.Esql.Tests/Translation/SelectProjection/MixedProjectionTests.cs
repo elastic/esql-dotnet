@@ -157,7 +157,7 @@ public class MixedProjectionTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
 			FROM logs-*
-			| EVAL adjusted = (statusCode - 100), durationMs = (duration * 1000)
+			| EVAL adjusted = (statusCode - 100), durationMs = (duration * 1000.0)
 			| KEEP adjusted, durationMs
 			""".NativeLineEndings());
 	}

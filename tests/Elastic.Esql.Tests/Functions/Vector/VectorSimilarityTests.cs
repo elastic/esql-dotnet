@@ -17,7 +17,7 @@ public class VectorSimilarityTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
 			FROM books
-			| WHERE V_COSINE(titleVec, [0, 255, 255]) > 0.5
+			| WHERE V_COSINE(titleVec, [0.0, 255.0, 255.0]) > 0.5
 			""".NativeLineEndings());
 	}
 
@@ -29,7 +29,7 @@ public class VectorSimilarityTests : EsqlTestBase
 			.Where(b => EsqlFunctions.VDotProduct(b.TitleVec, new float[] { 1f, 2f }) > 0)
 			.ToString();
 
-		_ = esql.Should().Contain("V_DOT_PRODUCT(titleVec, [1, 2])");
+		_ = esql.Should().Contain("V_DOT_PRODUCT(titleVec, [1.0, 2.0])");
 	}
 
 	[Test]
@@ -51,7 +51,7 @@ public class VectorSimilarityTests : EsqlTestBase
 			.Where(b => EsqlFunctions.VL1Norm(b.TitleVec, new float[] { 1f, 2f }) > 0)
 			.ToString();
 
-		_ = esql.Should().Contain("V_L1_NORM(titleVec, [1, 2])");
+		_ = esql.Should().Contain("V_L1_NORM(titleVec, [1.0, 2.0])");
 	}
 
 	[Test]
@@ -62,6 +62,6 @@ public class VectorSimilarityTests : EsqlTestBase
 			.Where(b => EsqlFunctions.VL2Norm(b.TitleVec, new float[] { 1f, 2f }) > 0)
 			.ToString();
 
-		_ = esql.Should().Contain("V_L2_NORM(titleVec, [1, 2])");
+		_ = esql.Should().Contain("V_L2_NORM(titleVec, [1.0, 2.0])");
 	}
 }

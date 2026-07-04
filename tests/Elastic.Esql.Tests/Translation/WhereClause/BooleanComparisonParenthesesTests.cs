@@ -17,7 +17,7 @@ public class BooleanComparisonParenthesesTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
 			FROM logs-*
-			| WHERE (duration > 1) == isError
+			| WHERE (duration > 1.0) == isError
 			""".NativeLineEndings());
 	}
 
@@ -32,7 +32,7 @@ public class BooleanComparisonParenthesesTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
 			FROM logs-*
-			| WHERE (duration > 1) != (statusCode < 500)
+			| WHERE (duration > 1.0) != (statusCode < 500)
 			""".NativeLineEndings());
 	}
 }

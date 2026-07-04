@@ -142,10 +142,17 @@ internal static class EsqlFormatting
 	private static string FormatFloat(float f) =>
 		float.IsNaN(f) || float.IsInfinity(f)
 			? "null"
-			: f.ToString("G9", InvariantCulture);
+			: WithExplicitFloatingPoint(f.ToString("G9", InvariantCulture));
 
 	private static string FormatDouble(double d) =>
 		double.IsNaN(d) || double.IsInfinity(d)
 			? "null"
-			: d.ToString("G", InvariantCulture);
+			: WithExplicitFloatingPoint(d.ToString("G", InvariantCulture));
+
+	/// <summary>
+	/// A whole-number double like 100.0 renders as "100" under "G", which ES|QL parses as an
+	/// integer literal; integer division then truncates silently. Keep the type explicit.
+	/// </summary>
+	private static string WithExplicitFloatingPoint(string text) =>
+		text.IndexOfAny(['.', 'e', 'E']) < 0 ? $"{text}.0" : text;
 }

@@ -17,7 +17,7 @@ public class AbsTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE ABS(duration) > 100
+            | WHERE ABS(duration) > 100.0
             """.NativeLineEndings());
 	}
 

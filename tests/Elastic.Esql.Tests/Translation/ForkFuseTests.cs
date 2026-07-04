@@ -19,7 +19,7 @@ public class ForkFuseTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
 			FROM books METADATA _id, _index, _score
-			| FORK (WHERE MATCH(title, "Shakespeare") | LIMIT 100) (WHERE KNN(titleVec, [1, 2]) | LIMIT 100)
+			| FORK (WHERE MATCH(title, "Shakespeare") | LIMIT 100) (WHERE KNN(titleVec, [1.0, 2.0]) | LIMIT 100)
 			""".NativeLineEndings());
 	}
 
