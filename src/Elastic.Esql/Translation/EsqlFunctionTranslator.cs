@@ -389,6 +389,19 @@ internal static class EsqlFunctionTranslator
 			_ => throw new NotSupportedException($"Operator {nodeType} is not supported.")
 		};
 
+	/// <summary>
+	/// Translates a string indexer access (<c>s[i]</c>, compiled as <c>get_Chars</c>) to a 1-based
+	/// SUBSTRING call. Constant-resolvable indexes (literals and closure captures) are folded into
+	/// the emitted literal; anything else is translated and shifted by +1 in the emitted expression.
+	/// </summary>
+	public static string TranslateStringIndexer(string target, Expression indexExpression, Func<Expression, string> translate)
+	{
+		if (indexExpression.SupportsEvaluation() && ExpressionConstantResolver.Resolve(indexExpression) is int index)
+			return $"SUBSTRING({target}, {index + 1}, 1)";
+
+		return $"SUBSTRING({target}, ({translate(indexExpression)}) + 1, 1)";
+	}
+
 	private static string TranslateParamsCall(string functionName, Func<Expression, string> translate, IReadOnlyList<Expression> args)
 	{
 		var translated = new List<string>();

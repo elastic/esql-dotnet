@@ -537,21 +537,12 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 			var target = TranslateExpression(methodCall.Object);
 			return methodName switch
 			{
-				"get_Chars" => TranslateStringIndexer(target, methodCall.Arguments[0]),
+				"get_Chars" => EsqlFunctionTranslator.TranslateStringIndexer(target, methodCall.Arguments[0], TranslateExpression),
 				_ => throw new NotSupportedException($"String method {methodName} is not supported in projections.")
 			};
 		}
 
 		throw new NotSupportedException($"Method {declaringType?.Name}.{methodName} is not supported in projections.");
-	}
-
-	private string TranslateStringIndexer(string target, Expression indexExpression)
-	{
-		if (indexExpression is ConstantExpression constant && constant.Value is int index)
-			return $"SUBSTRING({target}, {index + 1}, 1)";
-
-		var indexExpr = TranslateExpression(indexExpression);
-		return $"SUBSTRING({target}, ({indexExpr}) + 1, 1)";
 	}
 
 	private string TranslateConditional(ConditionalExpression conditional)
