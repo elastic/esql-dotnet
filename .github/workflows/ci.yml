@@ -1,4 +1,4 @@
-name: Always be deploying
+name: CI
 
 on:
   pull_request:
@@ -127,7 +127,7 @@ jobs:
   release-canary:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startswith(github.ref, 'refs/heads')
-    needs: [ build ]
+    needs: [ build, test-windows, aot-validate, integration-tests ]
     permissions:
       artifact-metadata: write
       attestations: write
