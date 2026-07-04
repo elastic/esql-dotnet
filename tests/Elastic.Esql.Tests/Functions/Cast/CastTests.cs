@@ -100,4 +100,68 @@ public class CastTests : EsqlTestBase
 			| WHERE duration::integer > 100
 			""".NativeLineEndings());
 	}
+
+	[Test]
+	public void CastToDatetime_InSelect_GeneratesCorrectEsql()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Select(l => new { Val = EsqlFunctions.CastToDatetime(l.Message) })
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| EVAL val = message::datetime
+			| KEEP val
+			""".NativeLineEndings());
+	}
+
+	[Test]
+	public void CastToDatetime_InWhere_GeneratesCorrectEsql()
+	{
+		var threshold = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => EsqlFunctions.CastToDatetime(l.Message) > threshold)
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| WHERE message::datetime > "2024-01-01T00:00:00.000Z"
+			""".NativeLineEndings());
+	}
+
+	[Test]
+	public void CastToIp_InSelect_GeneratesCorrectEsql()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Select(l => new { Val = EsqlFunctions.CastToIp(l.ClientIp!) })
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| EVAL val = clientIp::ip
+			| KEEP val
+			""".NativeLineEndings());
+	}
+
+	[Test]
+	public void CastToIp_InWhere_GeneratesCorrectEsql()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => EsqlFunctions.CastToIp(l.ClientIp!) == "10.0.0.1")
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| WHERE clientIp::ip == "10.0.0.1"
+			""".NativeLineEndings());
+	}
 }
