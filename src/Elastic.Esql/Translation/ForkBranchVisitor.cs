@@ -7,12 +7,13 @@ using System.Linq.Expressions;
 using Elastic.Esql.Core;
 using Elastic.Esql.Generation;
 using Elastic.Esql.QueryModel;
+using Elastic.Esql.QueryModel.Commands;
 
 namespace Elastic.Esql.Translation;
 
 /// <summary>
-/// Translates a single <c>Fork</c> branch lambda into an ordered list of ES|QL pipeline
-/// fragments. The branch's <see cref="LambdaExpression.Parameters"/>[0] is substituted with the
+/// Translates a single <c>Fork</c> branch lambda into a <see cref="ForkBranch"/>.
+/// The branch's <see cref="LambdaExpression.Parameters"/>[0] is substituted with the
 /// parent's source expression via <see cref="ExpressionVisitor"/>, then the rewritten expression
 /// is translated through the same <see cref="EsqlExpressionVisitor"/> machinery used for
 /// top-level queries. The resulting commands are formatted individually so they can be wrapped
@@ -20,7 +21,7 @@ namespace Elastic.Esql.Translation;
 /// </summary>
 internal static class ForkBranchVisitor
 {
-	public static IReadOnlyList<string> Translate(
+	public static ForkBranch Translate(
 		EsqlQueryProvider provider,
 		LambdaExpression branchLambda,
 		Type elementType,
@@ -55,7 +56,18 @@ internal static class ForkBranchVisitor
 			fragments.Add(formatter.Format(single));
 		}
 
-		return fragments;
+		// FUSE requires a LIMIT in every FORK branch. Track it on the command model here instead
+		// of string-sniffing formatted fragments during validation. Raw fragments are opaque
+		// strings by nature, so those alone are still inspected textually.
+		var hasLimit = query.Commands.Any(command => command switch
+		{
+			LimitCommand => true,
+			RawFragmentCommand raw =>
+				raw.Fragment.StartsWith("LIMIT ", StringComparison.Ordinal) || raw.Fragment.Equals("LIMIT", StringComparison.Ordinal),
+			_ => false
+		});
+
+		return new ForkBranch(fragments, hasLimit);
 	}
 
 	/// <summary>

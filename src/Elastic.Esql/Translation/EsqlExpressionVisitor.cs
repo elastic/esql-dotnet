@@ -669,7 +669,7 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 		var elementType = Context.ElementType
 			?? throw new InvalidOperationException("Fork must follow a typed source command (FROM or ROW).");
 
-		var branchFragments = new List<IReadOnlyList<string>>(branchesArray.Length);
+		var branches = new List<ForkBranch>(branchesArray.Length);
 		var inheritedMetadata = Context.ActiveMetadata;
 
 		for (var i = 0; i < branchesArray.Length; i++)
@@ -677,14 +677,14 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 			if (branchesArray.GetValue(i) is not LambdaExpression branchLambda)
 				throw new NotSupportedException($"Fork branch {i + 1} must be a lambda expression.");
 
-			var fragments = ForkBranchVisitor.Translate(Provider, branchLambda, elementType, inheritedMetadata, inlineParameters, Context);
-			if (fragments.Count == 0)
+			var branch = ForkBranchVisitor.Translate(Provider, branchLambda, elementType, inheritedMetadata, inlineParameters, Context);
+			if (branch.Fragments.Count == 0)
 				throw new NotSupportedException($"Fork branch {i + 1} produced no commands.");
 
-			branchFragments.Add(fragments);
+			branches.Add(branch);
 		}
 
-		Context.Commands.Add(new ForkCommand(branchFragments));
+		Context.Commands.Add(new ForkCommand(branches));
 		Context.ForkActive = true;
 		_lastForkBranchCount = branchesArray.Length;
 	}
@@ -757,18 +757,7 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 		// translator gives a clear error rather than relying on the server response.
 		for (var b = 0; b < matchingFork.Branches.Count; b++)
 		{
-			var branch = matchingFork.Branches[b];
-			var hasLimit = false;
-			foreach (var fragment in branch)
-			{
-				if (fragment.StartsWith("LIMIT ", StringComparison.Ordinal) || fragment.Equals("LIMIT", StringComparison.Ordinal))
-				{
-					hasLimit = true;
-					break;
-				}
-			}
-
-			if (!hasLimit)
+			if (!matchingFork.Branches[b].HasLimit)
 				throw new InvalidOperationException(
 					$"Fork branch {b + 1} must include a 'Take(...)' (LIMIT) before 'Fuse'. " +
 					"ES|QL requires a LIMIT inside each FORK branch when followed by FUSE.");
