@@ -39,8 +39,6 @@ internal sealed class DirectRowBinder
 	public required DirectBinderKind[] Kinds { get; init; }
 	public required JsonPropertyInfo[] Properties { get; init; }
 	public required Func<object> CreateObject { get; init; }
-	public Action<object>? OnDeserializing { get; init; }
-	public Action<object>? OnDeserialized { get; init; }
 
 	/// <summary>
 	/// Builds a binder for a flat layout, or returns null when any column cannot be bound with
@@ -59,6 +57,12 @@ internal sealed class DirectRowBinder
 			if (property.IsRequired)
 				return null;
 		}
+
+		// Types with serialization callbacks must stay on the slow path: the fast path may create
+		// (and discard) an instance on a fallback or incomplete-retry row, which would invoke
+		// OnDeserializing more than once. Letting the serializer own these keeps the callback contract.
+		if (typeInfo.OnDeserializing is not null || typeInfo.OnDeserialized is not null)
+			return null;
 
 		var kinds = new DirectBinderKind[leafNodes.Length];
 		var properties = new JsonPropertyInfo[leafNodes.Length];
@@ -80,9 +84,7 @@ internal sealed class DirectRowBinder
 		{
 			Kinds = kinds,
 			Properties = properties,
-			CreateObject = typeInfo.CreateObject,
-			OnDeserializing = typeInfo.OnDeserializing,
-			OnDeserialized = typeInfo.OnDeserialized
+			CreateObject = typeInfo.CreateObject
 		};
 	}
 

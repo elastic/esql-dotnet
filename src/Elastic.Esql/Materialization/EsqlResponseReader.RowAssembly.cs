@@ -112,7 +112,6 @@ internal sealed partial class EsqlResponseReader
 		var properties = binder.Properties;
 
 		var instance = binder.CreateObject();
-		binder.OnDeserializing?.Invoke(instance);
 
 		for (var i = 0; i < kinds.Length; i++)
 		{
@@ -147,7 +146,6 @@ internal sealed partial class EsqlResponseReader
 		if (reader.TokenType != JsonTokenType.EndArray)
 			return false;
 
-		binder.OnDeserialized?.Invoke(instance);
 		item = (T)instance;
 		return true;
 	}
