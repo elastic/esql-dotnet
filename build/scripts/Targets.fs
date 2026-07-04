@@ -61,7 +61,7 @@ let private pristineCheck (arguments:ParseResults<Arguments>) =
     | _ -> failwithf "The checkout folder has pending changes, aborting"
 
 let private test (arguments:ParseResults<Arguments>) =
-    let testProjects = ["tests/Elastic.Esql.Tests"]
+    let testProjects = ["tests/Elastic.Esql.Tests"; "tests/Elastic.Clients.Esql.Tests"]
     let testFrameworks = ["net8.0"; "net10.0"]
     testProjects
     |> List.iter (fun project ->
