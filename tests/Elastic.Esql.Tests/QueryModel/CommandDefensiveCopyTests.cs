@@ -67,15 +67,15 @@ public class CommandDefensiveCopyTests
 	[Test]
 	public void ForkCommand_MutateSourceLists_CommandUnaffected()
 	{
-		var branch = new List<string> { "WHERE a > 1", "LIMIT 10" };
-		var branches = new List<IReadOnlyList<string>> { branch };
+		var fragments = new List<string> { "WHERE a > 1", "LIMIT 10" };
+		var branches = new List<ForkBranch> { new(fragments, hasLimit: true) };
 		var command = new ForkCommand(branches);
 
-		branch[0] = "mutated";
+		fragments[0] = "mutated";
 		branches.Clear();
 
 		_ = command.Branches.Should().HaveCount(1);
-		_ = command.Branches[0][0].Should().Be("WHERE a > 1");
+		_ = command.Branches[0].Fragments[0].Should().Be("WHERE a > 1");
 	}
 
 	[Test]

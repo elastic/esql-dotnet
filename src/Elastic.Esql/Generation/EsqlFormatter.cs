@@ -135,17 +135,17 @@ internal sealed class EsqlFormatter : ICommandVisitor
 
 		foreach (var branch in command.Branches)
 		{
-			if (branch.Count == 0)
+			if (branch.Fragments.Count == 0)
 				continue;
 
 			_ = sb.Append(first ? " (" : " (");
 			first = false;
 
-			for (var i = 0; i < branch.Count; i++)
+			for (var i = 0; i < branch.Fragments.Count; i++)
 			{
 				if (i > 0)
 					_ = sb.Append(" | ");
-				_ = sb.Append(branch[i]);
+				_ = sb.Append(branch.Fragments[i]);
 			}
 
 			_ = sb.Append(')');
