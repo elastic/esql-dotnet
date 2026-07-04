@@ -369,6 +369,26 @@ internal static class EsqlFunctionTranslator
 			_ => null
 		};
 
+	/// <summary>Maps a binary expression node type to its ES|QL operator token.</summary>
+	public static string GetOperator(ExpressionType nodeType) =>
+		nodeType switch
+		{
+			ExpressionType.Equal => "==",
+			ExpressionType.NotEqual => "!=",
+			ExpressionType.LessThan => "<",
+			ExpressionType.LessThanOrEqual => "<=",
+			ExpressionType.GreaterThan => ">",
+			ExpressionType.GreaterThanOrEqual => ">=",
+			ExpressionType.AndAlso => "AND",
+			ExpressionType.OrElse => "OR",
+			ExpressionType.Add => "+",
+			ExpressionType.Subtract => "-",
+			ExpressionType.Multiply => "*",
+			ExpressionType.Divide => "/",
+			ExpressionType.Modulo => "%",
+			_ => throw new NotSupportedException($"Operator {nodeType} is not supported.")
+		};
+
 	private static string TranslateParamsCall(string functionName, Func<Expression, string> translate, IReadOnlyList<Expression> args)
 	{
 		var translated = new List<string>();

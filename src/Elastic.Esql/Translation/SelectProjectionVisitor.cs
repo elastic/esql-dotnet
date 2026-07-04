@@ -514,12 +514,12 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		if (dayOfWeekComparison.HasValue)
 		{
 			var dateMember = TranslateExpression(dayOfWeekComparison.Value.DateMember);
-			return $"({dateMember} {GetOperator(binary.NodeType)} {dayOfWeekComparison.Value.IsoDayNumber})";
+			return $"({dateMember} {EsqlFunctionTranslator.GetOperator(binary.NodeType)} {dayOfWeekComparison.Value.IsoDayNumber})";
 		}
 
 		var left = TranslateExpression(binary.Left);
 		var right = TranslateExpression(binary.Right);
-		var op = GetOperator(binary.NodeType);
+		var op = EsqlFunctionTranslator.GetOperator(binary.NodeType);
 
 		return $"({left} {op} {right})";
 	}
@@ -630,23 +630,4 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 			return base.VisitMember(node);
 		}
 	}
-
-	private static string GetOperator(ExpressionType nodeType) =>
-		nodeType switch
-		{
-			ExpressionType.Add => "+",
-			ExpressionType.Subtract => "-",
-			ExpressionType.Multiply => "*",
-			ExpressionType.Divide => "/",
-			ExpressionType.Modulo => "%",
-			ExpressionType.Equal => "==",
-			ExpressionType.NotEqual => "!=",
-			ExpressionType.LessThan => "<",
-			ExpressionType.LessThanOrEqual => "<=",
-			ExpressionType.GreaterThan => ">",
-			ExpressionType.GreaterThanOrEqual => ">=",
-			ExpressionType.AndAlso => "AND",
-			ExpressionType.OrElse => "OR",
-			_ => throw new NotSupportedException($"Operator {nodeType} is not supported in projections.")
-		};
 }
