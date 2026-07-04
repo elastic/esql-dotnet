@@ -40,14 +40,14 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		{
 			var nullOp = node.NodeType == ExpressionType.Equal ? "IS NULL" : "IS NOT NULL";
 
-			if (IsNullConstant(node.Right))
+			if (ResolvesToNull(node.Right))
 			{
 				_ = Visit(node.Left);
 				_ = _builder.Append(' ').Append(nullOp);
 				return node;
 			}
 
-			if (IsNullConstant(node.Left))
+			if (ResolvesToNull(node.Left))
 			{
 				_ = Visit(node.Right);
 				_ = _builder.Append(' ').Append(nullOp);
@@ -781,6 +781,29 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 	private static bool IsNullConstant(Expression expression) =>
 		expression is ConstantExpression { Value: null };
+
+	/// <summary>
+	/// True when the operand is a syntactic null or a closure/static-rooted expression whose
+	/// runtime value is null. Rendering such a value inline would emit a dead <c>== null</c>
+	/// comparison (always null in ES|QL) instead of the intended <c>IS NULL</c>.
+	/// </summary>
+	private static bool ResolvesToNull(Expression expression)
+	{
+		if (IsNullConstant(expression))
+			return true;
+
+		if (expression is ConstantExpression || !expression.SupportsEvaluation())
+			return false;
+
+		try
+		{
+			return ExpressionConstantResolver.Resolve(expression) is null;
+		}
+		catch
+		{
+			return false;
+		}
+	}
 
 	/// <summary>
 	/// Returns true when a member-access chain terminates in a <see cref="ConstantExpression"/>
