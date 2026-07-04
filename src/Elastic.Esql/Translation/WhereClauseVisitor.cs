@@ -395,6 +395,16 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		return translated ?? throw new NotSupportedException($"EsqlFunction {methodName} is not supported in DateTime context.");
 	}
 
+	protected override Expression VisitNew(NewExpression node)
+	{
+		// Fold inline constructor calls (e.g. new DateTime(2024, 1, 1)) to their value; the base
+		// visitor would render each ctor argument individually, concatenating a corrupt literal.
+		var value = ExpressionConstantResolver.Resolve(node);
+		_ = _builder.Append(_context.FormatValue(value, _comparisonPropertyContext));
+		_comparisonPropertyContext = null;
+		return node;
+	}
+
 	protected override Expression VisitConstant(ConstantExpression node)
 	{
 		_ = _builder.Append(_context.FormatValue(node.Value, _comparisonPropertyContext));
