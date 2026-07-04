@@ -402,6 +402,18 @@ internal static class EsqlFunctionTranslator
 		return $"SUBSTRING({target}, ({translate(indexExpression)}) + 1, 1)";
 	}
 
+	/// <summary>
+	/// Translates a <see cref="DateTime"/>/<see cref="DateTimeOffset"/> static property
+	/// (Now, UtcNow, Today) to ES|QL. Returns null if the property is not recognized.
+	/// </summary>
+	public static string? TryTranslateStaticDateProperty(string memberName) =>
+		memberName switch
+		{
+			"Now" or "UtcNow" => "NOW()",
+			"Today" => "DATE_TRUNC(\"day\", NOW())",
+			_ => null
+		};
+
 	private static string TranslateParamsCall(string functionName, Func<Expression, string> translate, IReadOnlyList<Expression> args)
 	{
 		var translated = new List<string>();

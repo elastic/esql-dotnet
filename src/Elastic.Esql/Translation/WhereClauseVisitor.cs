@@ -251,15 +251,11 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 			if (declaringType == typeof(DateTime) || declaringType == typeof(DateTimeOffset))
 			{
-				switch (memberName)
+				var translated = EsqlFunctionTranslator.TryTranslateStaticDateProperty(memberName);
+				if (translated is not null)
 				{
-					case "Now":
-					case "UtcNow":
-						_ = _builder.Append("NOW()");
-						return node;
-					case "Today":
-						_ = _builder.Append("DATE_TRUNC(\"day\", NOW())");
-						return node;
+					_ = _builder.Append(translated);
+					return node;
 				}
 			}
 
@@ -365,12 +361,8 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 	private string TranslateStaticDateTimeProperty(MemberExpression member)
 	{
 		var memberName = member.Member.Name;
-		return memberName switch
-		{
-			"Now" or "UtcNow" => "NOW()",
-			"Today" => "DATE_TRUNC(\"day\", NOW())",
-			_ => throw new NotSupportedException($"DateTime static property {memberName} is not supported.")
-		};
+		return EsqlFunctionTranslator.TryTranslateStaticDateProperty(memberName)
+			?? throw new NotSupportedException($"DateTime static property {memberName} is not supported.");
 	}
 
 	private string TranslateEsqlFunctionForDateTime(MethodCallExpression methodCall)
