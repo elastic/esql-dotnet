@@ -3,9 +3,11 @@
 // See the LICENSE file in the project root for more information
 
 using System.Diagnostics.CodeAnalysis;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Elastic.Esql.Core;
+using Elastic.Esql.Execution;
 using Elastic.Esql.Extensions;
 using EsqlAotSmoketest;
 
@@ -56,6 +58,45 @@ Console.WriteLine($"\nField resolution test:");
 Console.WriteLine($"  OrderId resolves to: {namingPolicy?.ConvertName("OrderId") ?? "OrderId"}");
 Console.WriteLine($"  TotalAmount resolves to: {namingPolicy?.ConvertName("TotalAmount") ?? "TotalAmount"}");
 
+// Materialization: run canned responses through the reader so PublishAot validates
+// row and scalar deserialization, not just query translation.
+const string rowsJson =
+	"""
+	{"took":1,"columns":[{"name":"orderId","type":"keyword"},{"name":"status","type":"keyword"},{"name":"totalAmount","type":"double"},{"name":"timestamp","type":"date"}],"values":[["A-1001","Shipped",150.5,"2026-01-01T10:00:00.000Z"],["A-1002","Pending",42.5,"2026-01-02T11:30:00.000Z"]]}
+	""";
+
+var rowsProvider = new EsqlQueryProvider(EsqlJsonContext.Default, new StubQueryExecutor(rowsJson));
+var orders = new EsqlQueryable<EsqlOrder>(rowsProvider)
+	.From("orders")
+	.ToList();
+
+if (orders.Count != 2)
+	throw new InvalidOperationException($"Expected 2 rows but materialized {orders.Count}.");
+if (orders[0].OrderId != "A-1001" || orders[0].Status != "Shipped" || orders[0].TotalAmount != 150.5)
+	throw new InvalidOperationException("Row 0 did not materialize the expected values.");
+if (orders[1].OrderId != "A-1002" || orders[1].Status != "Pending" || orders[1].TotalAmount != 42.5)
+	throw new InvalidOperationException("Row 1 did not materialize the expected values.");
+
+Console.WriteLine($"\nMaterialization test (rows):");
+Console.WriteLine($"  Row 0: {orders[0].OrderId} {orders[0].Status}");
+Console.WriteLine($"  Row 1: {orders[1].OrderId} {orders[1].Status}");
+
+const string scalarJson =
+	"""
+	{"took":1,"columns":[{"name":"result","type":"long"}],"values":[[2]]}
+	""";
+
+var scalarProvider = new EsqlQueryProvider(EsqlJsonContext.Default, new StubQueryExecutor(scalarJson));
+var count = new EsqlQueryable<EsqlOrder>(scalarProvider)
+	.From("orders")
+	.Count();
+
+if (count != 2)
+	throw new InvalidOperationException($"Expected scalar count 2 but got {count}.");
+
+Console.WriteLine($"\nMaterialization test (scalar):");
+Console.WriteLine($"  Count = {count}");
+
 Console.WriteLine("\nAOT smoketest passed!");
 
 // Expression.New with MemberInfo[] has [RequiresUnreferencedCode] — the Keep<T,TResult> overload
@@ -87,6 +128,51 @@ namespace EsqlAotSmoketest
 
 	[JsonSerializable(typeof(EsqlOrder))]
 	[JsonSerializable(typeof(EsqlProduct))]
+	[JsonSerializable(typeof(int))]
 	[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 	public partial class EsqlJsonContext : JsonSerializerContext;
+
+	/// <summary>Returns a canned ES|QL JSON response for every synchronous query.</summary>
+	internal sealed class StubQueryExecutor(string json) : IEsqlQueryExecutor
+	{
+		public IEsqlResponse ExecuteQuery(EsqlExecutionRequest request) =>
+			new StubResponse(json);
+
+		public Task<IEsqlAsyncResponse> ExecuteQueryAsync(EsqlExecutionRequest request, CancellationToken cancellationToken) =>
+			throw new NotSupportedException("The smoketest only exercises synchronous execution.");
+
+		public IEsqlResponse SubmitAsyncQuery(EsqlExecutionRequest request) =>
+			throw new NotSupportedException("The smoketest only exercises synchronous execution.");
+
+		public Task<IEsqlAsyncResponse> SubmitAsyncQueryAsync(EsqlExecutionRequest request, CancellationToken cancellationToken) =>
+			throw new NotSupportedException("The smoketest only exercises synchronous execution.");
+
+		public IEsqlResponse PollAsyncQuery(string queryId, EsqlExecutionRequest request) =>
+			throw new NotSupportedException("The smoketest only exercises synchronous execution.");
+
+		public Task<IEsqlAsyncResponse> PollAsyncQueryAsync(string queryId, EsqlExecutionRequest request, CancellationToken cancellationToken) =>
+			throw new NotSupportedException("The smoketest only exercises synchronous execution.");
+
+		public void DeleteAsyncQuery(string queryId, EsqlExecutionRequest request) =>
+			throw new NotSupportedException("The smoketest only exercises synchronous execution.");
+
+		public Task DeleteAsyncQueryAsync(string queryId, EsqlExecutionRequest request, CancellationToken cancellationToken) =>
+			throw new NotSupportedException("The smoketest only exercises synchronous execution.");
+	}
+
+	/// <summary>Wraps a canned JSON payload as a synchronous ES|QL response.</summary>
+	internal sealed class StubResponse(string json) : IEsqlResponse
+	{
+		private readonly MemoryStream _stream = new(Encoding.UTF8.GetBytes(json));
+
+		public Stream Body => _stream;
+
+		public bool TryGetHeader(string name, out IEnumerable<string> values)
+		{
+			values = [];
+			return false;
+		}
+
+		public void Dispose() => _stream.Dispose();
+	}
 }
