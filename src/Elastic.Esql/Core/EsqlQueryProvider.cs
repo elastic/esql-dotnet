@@ -62,6 +62,11 @@ public sealed class EsqlQueryProvider : IQueryProvider
 		: this(ResolveOptions(context), executor) { }
 
 	/// <inheritdoc/>
+	/// <remarks>
+	/// This non-generic overload instantiates <c>EsqlQueryable&lt;T&gt;</c> for a runtime-discovered element type
+	/// and is not supported under Native AOT or trimming. Use <see cref="CreateQuery{TElement}(Expression)"/> instead.
+	/// </remarks>
+	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "The generic CreateQuery<TElement> is the supported AOT-safe path. This non-generic IQueryProvider bridge requires runtime type instantiation and is documented as unsupported under Native AOT.")]
 	public IQueryable CreateQuery(Expression expression)
 	{
 		Verify.NotNull(expression);
