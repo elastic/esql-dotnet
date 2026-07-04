@@ -123,6 +123,14 @@ public class DirectRowBinderEligibilityTests
 	}
 
 	[Test]
+	public void Build_TypeWithOnDeserializing_DoesNotCreateDirectBinder()
+	{
+		var layout = BuildLayout<OnDeserializingModel>(("value", "keyword"), ("count", "integer"));
+
+		layout.DirectBinder.Should().BeNull();
+	}
+
+	[Test]
 	public void Build_UnmappedColumn_DoesNotCreateDirectBinder()
 	{
 		var layout = BuildLayout<ScalarStringModel>(("value", "keyword"), ("count", "integer"), ("extra", "keyword"));
@@ -196,6 +204,16 @@ public class DirectRowBinderEligibilityTests
 	{
 		public required string Name { get; set; }
 		public int Count { get; set; }
+	}
+
+	private sealed class OnDeserializingModel : IJsonOnDeserializing
+	{
+		public string Value { get; set; } = string.Empty;
+		public int Count { get; set; }
+
+		public void OnDeserializing()
+		{
+		}
 	}
 
 	private sealed class UnixEpochDateTimeConverter : JsonConverter<DateTime>
