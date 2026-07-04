@@ -34,7 +34,7 @@ internal sealed class ColumnNode
 /// </summary>
 internal sealed class ColumnLayout
 {
-	private const int DefaultMaxDepth = 64;
+	internal const int DefaultMaxDepth = 64;
 
 	/// <summary>Virtual root whose <see cref="ColumnNode.Children"/> are the top-level properties.</summary>
 	public ColumnNode Root { get; }

@@ -306,10 +306,14 @@ internal sealed partial class EsqlResponseReader
 	{
 		var plan = CreateRowMaterializationPlan<T>(columns, options);
 
+		// The batched path wraps rows in a JSON array, adding one nesting level over the per-row
+		// object deserialize, so it needs strictly more depth headroom than the layout itself.
+		var effectiveMaxDepth = options.MaxDepth > 0 ? options.MaxDepth : ColumnLayout.DefaultMaxDepth;
+
 		// Batching only pays off for nested layouts, where every per-row Deserialize call
 		// allocates serializer-internal depth-tracking state. Flat layouts keep true
 		// row-at-a-time streaming.
-		if (layout.BranchNodeCount > 0 && TryResolveListTypeInfo<T>(options) is { } listTypeInfo)
+		if (layout.BranchNodeCount > 0 && layout.MaxDepth < effectiveMaxDepth && TryResolveListTypeInfo<T>(options) is { } listTypeInfo)
 		{
 			await foreach (var item in StreamRowsBatchedAsync(cursor, readerState, plan, layout, listTypeInfo, cancellationToken, readerStateTracker).ConfigureAwait(false))
 				yield return item;
@@ -370,10 +374,14 @@ internal sealed partial class EsqlResponseReader
 	{
 		var plan = CreateRowMaterializationPlan<T>(columns, options);
 
+		// The batched path wraps rows in a JSON array, adding one nesting level over the per-row
+		// object deserialize, so it needs strictly more depth headroom than the layout itself.
+		var effectiveMaxDepth = options.MaxDepth > 0 ? options.MaxDepth : ColumnLayout.DefaultMaxDepth;
+
 		// Batching only pays off for nested layouts, where every per-row Deserialize call
 		// allocates serializer-internal depth-tracking state. Flat layouts keep true
 		// row-at-a-time streaming.
-		if (layout.BranchNodeCount > 0 && TryResolveListTypeInfo<T>(options) is { } listTypeInfo)
+		if (layout.BranchNodeCount > 0 && layout.MaxDepth < effectiveMaxDepth && TryResolveListTypeInfo<T>(options) is { } listTypeInfo)
 		{
 			foreach (var item in StreamRowsBatched(cursor, readerState, plan, layout, listTypeInfo, readerStateTracker))
 				yield return item;
@@ -427,8 +435,7 @@ internal sealed partial class EsqlResponseReader
 	// Batch thresholds for nested layouts: every JsonSerializer.Deserialize call on a type with
 	// nested objects allocates roughly 0.5 KB of serializer-internal depth-tracking state, so rows
 	// are grouped into a single call per batch. 64 rows amortizes that cost to a few bytes per row;
-	// the 64 KB cap bounds buffering (and first-item latency) when individual rows are large and
-	// keeps the batch buffer below the large-object-heap threshold.
+	// the 64 KB cap bounds buffering (and first-item latency) when individual rows are large.
 	private const int MaxBatchRowCount = 64;
 	private const int MaxBatchBufferBytes = 64 * 1024;
 
@@ -517,7 +524,7 @@ internal sealed partial class EsqlResponseReader
 		RowMaterializationPlan<T> plan,
 		ColumnLayout layout,
 		JsonTypeInfo<List<T>> listTypeInfo,
-		ReaderStateTracker? readerStateTracker)
+		ReaderStateTracker? readerStateTracker = null)
 	{
 		var rowBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
 		var valueBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize);

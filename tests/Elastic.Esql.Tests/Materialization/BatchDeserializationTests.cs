@@ -92,6 +92,21 @@ public class BatchDeserializationTests
 		AssertNestedRows(results, 100);
 	}
 
+	[Test]
+	public void ReadRows_NestedType_MaxDepthEqualsLayoutDepth_FallsBackToPerRow_AllRowsInOrder()
+	{
+		// BatchPerson's layout depth is 2. At MaxDepth = 2 the per-row object deserialize
+		// succeeds, but the batched list-wrapped deserialize needs one extra level and would
+		// throw. The dispatch gate must skip batching here and fall back to per-row.
+		using var stream = CreateStream(BuildPayload(100, DefaultRow));
+		var reader = CreateReaderWithMaxDepth(2);
+
+		using var response = reader.ReadRows<BatchPerson>(stream);
+		var results = response.Rows.ToList();
+
+		AssertNestedRows(results, 100);
+	}
+
 	// =========================================================================
 	// Exception behavior
 	// =========================================================================
@@ -299,6 +314,13 @@ public class BatchDeserializationTests
 		new(new JsonMetadataManager(new JsonSerializerOptions(JsonSerializerDefaults.Web)
 		{
 			TypeInfoResolver = BatchTestJsonContext.Default
+		}));
+
+	private static EsqlResponseReader CreateReaderWithMaxDepth(int maxDepth) =>
+		new(new JsonMetadataManager(new JsonSerializerOptions(JsonSerializerDefaults.Web)
+		{
+			TypeInfoResolver = BatchTestJsonContext.Default,
+			MaxDepth = maxDepth
 		}));
 
 	private static EsqlResponseReader CreateReaderWithoutListTypeInfo() =>
