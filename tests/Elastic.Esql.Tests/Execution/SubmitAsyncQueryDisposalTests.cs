@@ -2,7 +2,9 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+#if NET10_0_OR_GREATER
 using System.IO.Pipelines;
+#endif
 using System.Text.Json;
 using Elastic.Esql.Execution;
 using Elastic.Esql.QueryModel;
@@ -127,17 +129,29 @@ public class SubmitAsyncQueryDisposalTests
 
 	private sealed class TrackingAsyncResponse : IEsqlAsyncResponse
 	{
+#if NET10_0_OR_GREATER
 		private readonly Pipe _pipe = new();
+#else
+		private readonly MemoryStream _stream;
+#endif
 
 		public TrackingAsyncResponse(byte[] body)
 		{
+#if NET10_0_OR_GREATER
 			_pipe.Writer.WriteAsync(body).AsTask().GetAwaiter().GetResult();
 			_pipe.Writer.Complete();
+#else
+			_stream = new MemoryStream(body, writable: false);
+#endif
 		}
 
 		public bool Disposed { get; private set; }
 
+#if NET10_0_OR_GREATER
 		public PipeReader Body => _pipe.Reader;
+#else
+		public Stream Body => _stream;
+#endif
 
 		public bool TryGetHeader(string name, out IEnumerable<string> values)
 		{
@@ -148,7 +162,11 @@ public class SubmitAsyncQueryDisposalTests
 		public ValueTask DisposeAsync()
 		{
 			Disposed = true;
+#if NET10_0_OR_GREATER
 			_pipe.Reader.Complete();
+#else
+			_stream.Dispose();
+#endif
 			return ValueTask.CompletedTask;
 		}
 	}

@@ -2,7 +2,9 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+#if NET10_0_OR_GREATER
 using System.IO.Pipelines;
+#endif
 using System.Text;
 using Elastic.Esql.Execution;
 using Elastic.Esql.QueryModel;
@@ -240,6 +242,7 @@ public class StreamFormatAsyncQueryTests
 
 	private sealed class AsyncStub(StubResponse data) : IEsqlAsyncResponse
 	{
+#if NET10_0_OR_GREATER
 		private readonly Pipe _pipe = new();
 
 		public PipeReader Body
@@ -251,6 +254,11 @@ public class StreamFormatAsyncQueryTests
 				return _pipe.Reader;
 			}
 		}
+#else
+		private readonly MemoryStream _stream = new(data.Body, writable: false);
+
+		public Stream Body => _stream;
+#endif
 
 		public bool TryGetHeader(string name, out IEnumerable<string> values)
 		{
@@ -272,7 +280,11 @@ public class StreamFormatAsyncQueryTests
 
 		public ValueTask DisposeAsync()
 		{
+#if NET10_0_OR_GREATER
 			_pipe.Reader.Complete();
+#else
+			_stream.Dispose();
+#endif
 			return ValueTask.CompletedTask;
 		}
 	}

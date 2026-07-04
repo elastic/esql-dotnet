@@ -2,7 +2,9 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+#if NET10_0_OR_GREATER
 using System.IO.Pipelines;
+#endif
 using System.Text.Json;
 using Elastic.Esql.Execution;
 using Elastic.Esql.QueryModel;
@@ -137,17 +139,29 @@ public class TypedAsyncQueryIdTests
 
 	private sealed class AsyncStub : IEsqlAsyncResponse
 	{
+#if NET10_0_OR_GREATER
 		private readonly Pipe _pipe = new();
+#else
+		private readonly MemoryStream _stream;
+#endif
 		private readonly string? _headerId;
 
 		public AsyncStub(byte[] body, string? headerId)
 		{
 			_headerId = headerId;
+#if NET10_0_OR_GREATER
 			_pipe.Writer.WriteAsync(body).AsTask().GetAwaiter().GetResult();
 			_pipe.Writer.Complete();
+#else
+			_stream = new MemoryStream(body, writable: false);
+#endif
 		}
 
+#if NET10_0_OR_GREATER
 		public PipeReader Body => _pipe.Reader;
+#else
+		public Stream Body => _stream;
+#endif
 
 		public bool TryGetHeader(string name, out IEnumerable<string> values)
 		{
@@ -163,7 +177,11 @@ public class TypedAsyncQueryIdTests
 
 		public ValueTask DisposeAsync()
 		{
+#if NET10_0_OR_GREATER
 			_pipe.Reader.Complete();
+#else
+			_stream.Dispose();
+#endif
 			return ValueTask.CompletedTask;
 		}
 	}
