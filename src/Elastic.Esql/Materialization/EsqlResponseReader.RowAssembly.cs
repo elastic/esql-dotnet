@@ -292,9 +292,10 @@ internal sealed partial class EsqlResponseReader
 		switch (reader.TokenType)
 		{
 			case JsonTokenType.String:
-				writer.WriteStringValue(reader.HasValueSequence
-					? reader.ValueSequence.ToArray()
-					: reader.ValueSpan);
+				// GetString decodes the escaped token once; WriteStringValue re-encodes once.
+				// Passing raw ValueSpan/ValueSequence bytes would escape an already-escaped
+				// token, corrupting any string containing a backslash or quote.
+				writer.WriteStringValue(reader.GetString());
 				return true;
 
 			case JsonTokenType.Number:
