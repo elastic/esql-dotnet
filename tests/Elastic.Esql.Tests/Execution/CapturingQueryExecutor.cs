@@ -2,7 +2,9 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+#if NET10_0_OR_GREATER
 using System.IO.Pipelines;
+#endif
 using System.Text;
 using Elastic.Esql;
 using Elastic.Esql.Execution;
@@ -84,6 +86,7 @@ internal sealed class CapturingQueryExecutor : IEsqlQueryExecutor
 		public void Dispose() => stream.Dispose();
 	}
 
+#if NET10_0_OR_GREATER
 	private sealed class PipeResponse(byte[] data) : IEsqlAsyncResponse
 	{
 		private readonly Pipe _pipe = new();
@@ -110,4 +113,24 @@ internal sealed class CapturingQueryExecutor : IEsqlQueryExecutor
 			return ValueTask.CompletedTask;
 		}
 	}
+#else
+	private sealed class PipeResponse(byte[] data) : IEsqlAsyncResponse
+	{
+		private readonly MemoryStream _stream = new(data, writable: false);
+
+		public Stream Body => _stream;
+
+		public bool TryGetHeader(string name, out IEnumerable<string> values)
+		{
+			values = [];
+			return false;
+		}
+
+		public ValueTask DisposeAsync()
+		{
+			_stream.Dispose();
+			return ValueTask.CompletedTask;
+		}
+	}
+#endif
 }

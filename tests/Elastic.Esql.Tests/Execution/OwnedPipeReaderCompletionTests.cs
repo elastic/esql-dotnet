@@ -2,6 +2,9 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+// OwnedAsyncResponsePipeReader is a net10-only source type (PipeReader-based), so its tests only apply there.
+#if NET10_0_OR_GREATER
+
 using System.IO.Pipelines;
 using Elastic.Esql.Execution;
 
@@ -100,3 +103,5 @@ public class OwnedPipeReaderCompletionTests
 		}
 	}
 }
+
+#endif
