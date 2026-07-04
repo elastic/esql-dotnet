@@ -77,7 +77,7 @@ public class QuerySyntaxTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE log.level.keyword == "ERROR"
-            | WHERE duration > 1000
+            | WHERE duration > 1000.0
             """.NativeLineEndings());
 	}
 
@@ -114,7 +114,7 @@ public class QuerySyntaxTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE log.level.keyword == "ERROR"
-            | WHERE duration > 500
+            | WHERE duration > 500.0
             | SORT @timestamp DESC
             | KEEP message, duration
             """.NativeLineEndings());

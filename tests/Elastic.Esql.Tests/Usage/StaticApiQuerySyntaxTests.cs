@@ -60,7 +60,7 @@ public class QuerySyntaxTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE log.level.keyword == "ERROR"
-            | WHERE duration > 1000
+            | WHERE duration > 1000.0
             """.NativeLineEndings());
 	}
 

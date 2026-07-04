@@ -17,7 +17,7 @@ public class ClampTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | EVAL val = CLAMP(duration, 0, 100)
+            | EVAL val = CLAMP(duration, 0.0, 100.0)
             | KEEP val
             """.NativeLineEndings());
 	}
@@ -33,7 +33,7 @@ public class ClampTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | EVAL val = CLAMP(duration, 0, 100)
+            | EVAL val = CLAMP(duration, 0.0, 100.0)
             | KEEP val
             """.NativeLineEndings());
 	}
@@ -49,7 +49,7 @@ public class ClampTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE CLAMP(duration, 0, 100) > 50
+            | WHERE CLAMP(duration, 0.0, 100.0) > 50.0
             """.NativeLineEndings());
 	}
 
@@ -64,7 +64,7 @@ public class ClampTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE CLAMP(duration, 0, 100) > 50
+            | WHERE CLAMP(duration, 0.0, 100.0) > 50.0
             """.NativeLineEndings());
 	}
 }

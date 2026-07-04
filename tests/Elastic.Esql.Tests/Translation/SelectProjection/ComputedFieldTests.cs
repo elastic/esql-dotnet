@@ -17,7 +17,7 @@ public class ComputedFieldTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | EVAL doubleDuration = (duration * 2)
+            | EVAL doubleDuration = (duration * 2.0)
             | KEEP duration, doubleDuration
             """.NativeLineEndings());
 	}
@@ -49,7 +49,7 @@ public class ComputedFieldTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | EVAL durationSeconds = (duration / 1000)
+            | EVAL durationSeconds = (duration / 1000.0)
             | KEEP durationSeconds
             """.NativeLineEndings());
 	}

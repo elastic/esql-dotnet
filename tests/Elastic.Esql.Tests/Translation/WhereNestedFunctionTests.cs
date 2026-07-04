@@ -18,7 +18,7 @@ public class WhereNestedFunctionTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
 			FROM logs-*
-			| WHERE ROUND(ABS(duration), 2) > 100
+			| WHERE ROUND(ABS(duration), 2) > 100.0
 			""".NativeLineEndings());
 	}
 
@@ -33,7 +33,7 @@ public class WhereNestedFunctionTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
 			FROM logs-*
-			| WHERE (ROUND(ABS(duration), 2) > 100 AND statusCode >= 500)
+			| WHERE (ROUND(ABS(duration), 2) > 100.0 AND statusCode >= 500)
 			""".NativeLineEndings());
 	}
 

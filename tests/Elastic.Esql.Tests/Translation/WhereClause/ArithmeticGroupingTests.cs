@@ -17,7 +17,7 @@ public class ArithmeticGroupingTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
 			FROM logs-*
-			| WHERE ((duration + statusCode) * 2) > 10
+			| WHERE ((duration + statusCode) * 2.0) > 10.0
 			""".NativeLineEndings());
 	}
 
@@ -32,7 +32,7 @@ public class ArithmeticGroupingTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
 			FROM logs-*
-			| WHERE (duration - (statusCode - 5)) > 0
+			| WHERE (duration - (statusCode - 5)) > 0.0
 			""".NativeLineEndings());
 	}
 }
