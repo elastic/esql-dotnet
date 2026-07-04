@@ -35,6 +35,11 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 	public EsqlQueryProvider Provider { get; } = provider ?? throw new ArgumentNullException(nameof(provider));
 	public EsqlTranslationContext Context { get; } = new() { Metadata = provider.Metadata, InlineParameters = inlineParameters };
 
+#pragma warning disable IDE0032
+	private ProjectionCommandEmitter? _projectionEmitter;
+#pragma warning restore IDE0032
+	private ProjectionCommandEmitter ProjectionEmitter => _projectionEmitter ??= new ProjectionCommandEmitter(Context);
+
 	/// <summary>
 	/// Translates a LINQ expression to an ES|QL query model.
 	/// </summary>
@@ -277,7 +282,7 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 
 			var projectionVisitor = new SelectProjectionVisitor(Context);
 			var result = projectionVisitor.Translate(lambda);
-			EmitProjectionCommands(result);
+			ProjectionEmitter.Emit(result);
 		}
 	}
 
@@ -516,7 +521,7 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 		{
 			var projectionVisitor = new SelectProjectionVisitor(Context);
 			var result = projectionVisitor.Translate(lambda);
-			EmitProjectionCommands(result);
+			ProjectionEmitter.Emit(result);
 		}
 	}
 
@@ -1054,75 +1059,6 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 	}
 
 	/// <summary>
-	/// Emits RENAME, EVAL, and KEEP commands in the correct order from a projection result.
-	/// KEEP is always emitted to reduce the result set to only the projected fields.
-	/// Active metadata fields requested on the source <c>FROM</c> are auto-retained unless
-	/// the projection itself consumes them (e.g. via <c>EsqlMetadata.X</c> as a rename source).
-	/// When <paramref name="renameCollisionFields"/> is provided (join projections), renames whose
-	/// target collides with a field that still exists post-join are converted to EVALs, because
-	/// ES|QL's RENAME fails if the target column already exists while EVAL overwrites it.
-	/// </summary>
-	private void EmitProjectionCommands(SelectProjectionVisitor.ProjectionResult result, HashSet<string>? renameCollisionFields = null)
-	{
-		var safeRenames = new List<(string Source, string Target)>();
-		var evalExpressions = new List<string>(result.EvalExpressions);
-
-		foreach (var (source, target) in result.RenameFields)
-		{
-			if (renameCollisionFields is not null && renameCollisionFields.Contains(target))
-				evalExpressions.Add($"{target} = {source}");
-			else
-				safeRenames.Add((source, target));
-		}
-
-		if (safeRenames.Count > 0)
-			Context.Commands.Add(new RenameCommand(safeRenames));
-
-		if (evalExpressions.Count > 0)
-			Context.Commands.Add(new EvalCommand(evalExpressions));
-
-		var allKeepFields = new List<string>(result.KeepFields);
-		foreach (var (_, target) in safeRenames)
-			allKeepFields.Add(target);
-		foreach (var evalExpr in evalExpressions)
-			allKeepFields.Add(evalExpr.Split('=')[0].Trim());
-
-		AppendRetainedMetadataNames(allKeepFields, result);
-
-		if (allKeepFields.Count > 0)
-			Context.Commands.Add(new KeepCommand(allKeepFields));
-	}
-
-	/// <summary>
-	/// Appends active-metadata identifiers to <paramref name="keepFields"/> so they survive
-	/// the auto-emitted KEEP. Metadata fields whose underscore-prefixed name was used as a
-	/// rename source in the projection are skipped (they've been consumed by the projection).
-	/// </summary>
-	private void AppendRetainedMetadataNames(List<string> keepFields, SelectProjectionVisitor.ProjectionResult result)
-	{
-		if (Context.ActiveMetadata == MetadataField.None && !Context.ForkActive)
-			return;
-
-		var consumed = new HashSet<string>(StringComparer.Ordinal);
-		foreach (var (source, _) in result.RenameFields)
-			_ = consumed.Add(source);
-
-		foreach (var name in MetadataFieldHelper.EnumerateNames(Context.ActiveMetadata))
-		{
-			if (consumed.Contains(name))
-				continue;
-
-			if (keepFields.Contains(name))
-				continue;
-
-			keepFields.Add(name);
-		}
-
-		if (Context.ForkActive && !consumed.Contains("_fork") && !keepFields.Contains("_fork"))
-			keepFields.Add("_fork");
-	}
-
-	/// <summary>
 	/// Shared join emission: detects field collisions, emits EVAL to preserve outer values,
 	/// emits LOOKUP JOIN, and processes the result selector projection.
 	/// </summary>
@@ -1162,7 +1098,7 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 			: projectionVisitor.Translate(resultLambda);
 
 		var innerFieldNames = Context.GetAllFieldNames(innerType);
-		EmitProjectionCommands(result, innerFieldNames);
+		ProjectionEmitter.Emit(result, innerFieldNames);
 	}
 
 	/// <summary>
