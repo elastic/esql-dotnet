@@ -198,6 +198,24 @@ internal sealed partial class EsqlResponseReader
 		}
 	}
 
+	/// <summary>
+	/// Resolves <see cref="JsonTypeInfo{T}"/> for <c>List&lt;T&gt;</c>, enabling batched row deserialization.
+	/// Returns <see langword="null"/> when the configured resolver has no metadata for <c>List&lt;T&gt;</c>
+	/// (e.g. a source-generated context without a <c>List&lt;T&gt;</c> registration); callers must then use
+	/// the per-row typed path so AOT never silently falls back to reflection.
+	/// </summary>
+	private static JsonTypeInfo<List<T>>? TryResolveListTypeInfo<T>(JsonSerializerOptions options)
+	{
+		try
+		{
+			return options.GetTypeInfo(typeof(List<T>)) as JsonTypeInfo<List<T>>;
+		}
+		catch
+		{
+			return null;
+		}
+	}
+
 	private readonly record struct RowMaterializationPlan<T>(int EstimatedRowSize, bool IsScalar, JsonTypeInfo<T>? TypeInfo);
 
 	private static RowMaterializationPlan<T> CreateRowMaterializationPlan<T>(ColumnInfo[] columns, JsonSerializerOptions options)
