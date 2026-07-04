@@ -4,5 +4,6 @@ toc:
   - file: package-translation.md
   - file: functions-reference.md
   - file: linq-translation.md
+  - file: linq-translation-architecture.md
   - file: completion.md
   - file: vector-search.md
