@@ -1,4 +1,4 @@
-name: Always be deploying
+name: Release
 
 on:
   release:
@@ -50,9 +50,50 @@ jobs:
         name: build
         path: build/output/
 
+  aot-validate:
+    runs-on: ${{ matrix.os.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+        - runner: ubuntu-latest
+          ext: ''
+        - runner: macos-latest
+          ext: ''
+        - runner: windows-latest
+          ext: '.exe'
+    steps:
+    - uses: actions/checkout@v6
+
+    - uses: actions/setup-dotnet@v5
+      with:
+        global-json-file: ./global.json
+
+    - name: Publish esql AOT smoketest
+      run: dotnet publish examples/esql-aot-smoketest
+
+    - name: Invoke esql AOT smoketest
+      run: ./.artifacts/publish/esql-aot-smoketest/release/esql-aot-smoketest${{ matrix.os.ext }}
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 1
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v5
+      with:
+        global-json-file: ./global.json
+
+    - name: Run integration tests
+      run: dotnet run --project integration-tests/Elastic.Integration.Tests/Elastic.Esql.Integration.Tests.csproj
+
   release:
     runs-on: ubuntu-latest
-    needs: [ build ]
+    needs: [ build, aot-validate, integration-tests ]
     permissions:
       artifact-metadata: write
       attestations: write
