@@ -1058,19 +1058,33 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 	/// KEEP is always emitted to reduce the result set to only the projected fields.
 	/// Active metadata fields requested on the source <c>FROM</c> are auto-retained unless
 	/// the projection itself consumes them (e.g. via <c>EsqlMetadata.X</c> as a rename source).
+	/// When <paramref name="renameCollisionFields"/> is provided (join projections), renames whose
+	/// target collides with a field that still exists post-join are converted to EVALs, because
+	/// ES|QL's RENAME fails if the target column already exists while EVAL overwrites it.
 	/// </summary>
-	private void EmitProjectionCommands(SelectProjectionVisitor.ProjectionResult result)
+	private void EmitProjectionCommands(SelectProjectionVisitor.ProjectionResult result, HashSet<string>? renameCollisionFields = null)
 	{
-		if (result.RenameFields.Count > 0)
-			Context.Commands.Add(new RenameCommand(result.RenameFields));
+		var safeRenames = new List<(string Source, string Target)>();
+		var evalExpressions = new List<string>(result.EvalExpressions);
 
-		if (result.EvalExpressions.Count > 0)
-			Context.Commands.Add(new EvalCommand(result.EvalExpressions));
+		foreach (var (source, target) in result.RenameFields)
+		{
+			if (renameCollisionFields is not null && renameCollisionFields.Contains(target))
+				evalExpressions.Add($"{target} = {source}");
+			else
+				safeRenames.Add((source, target));
+		}
+
+		if (safeRenames.Count > 0)
+			Context.Commands.Add(new RenameCommand(safeRenames));
+
+		if (evalExpressions.Count > 0)
+			Context.Commands.Add(new EvalCommand(evalExpressions));
 
 		var allKeepFields = new List<string>(result.KeepFields);
-		foreach (var (_, target) in result.RenameFields)
+		foreach (var (_, target) in safeRenames)
 			allKeepFields.Add(target);
-		foreach (var evalExpr in result.EvalExpressions)
+		foreach (var evalExpr in evalExpressions)
 			allKeepFields.Add(evalExpr.Split('=')[0].Trim());
 
 		AppendRetainedMetadataNames(allKeepFields, result);
@@ -1148,43 +1162,7 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 			: projectionVisitor.Translate(resultLambda);
 
 		var innerFieldNames = Context.GetAllFieldNames(innerType);
-		EmitJoinProjectionCommands(result, innerFieldNames);
-	}
-
-	/// <summary>
-	/// Emits projection commands after a join, converting renames to EVALs when the
-	/// target name collides with an inner field that still exists post-join.
-	/// ES|QL's RENAME fails if the target column already exists; EVAL overwrites it.
-	/// </summary>
-	private void EmitJoinProjectionCommands(SelectProjectionVisitor.ProjectionResult result, HashSet<string> innerFieldNames)
-	{
-		var safeRenames = new List<(string Source, string Target)>();
-		var evalExpressions = new List<string>(result.EvalExpressions);
-
-		foreach (var (source, target) in result.RenameFields)
-		{
-			if (innerFieldNames.Contains(target))
-				evalExpressions.Add($"{target} = {source}");
-			else
-				safeRenames.Add((source, target));
-		}
-
-		if (safeRenames.Count > 0)
-			Context.Commands.Add(new RenameCommand(safeRenames));
-
-		if (evalExpressions.Count > 0)
-			Context.Commands.Add(new EvalCommand(evalExpressions));
-
-		var allKeepFields = new List<string>(result.KeepFields);
-		foreach (var (_, target) in safeRenames)
-			allKeepFields.Add(target);
-		foreach (var evalExpr in evalExpressions)
-			allKeepFields.Add(evalExpr.Split('=')[0].Trim());
-
-		AppendRetainedMetadataNames(allKeepFields, result);
-
-		if (allKeepFields.Count > 0)
-			Context.Commands.Add(new KeepCommand(allKeepFields));
+		EmitProjectionCommands(result, innerFieldNames);
 	}
 
 	/// <summary>
