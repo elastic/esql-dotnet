@@ -8,6 +8,7 @@ using System.IO.Pipelines;
 #endif
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 
 namespace Elastic.Esql.Materialization;
 
@@ -293,7 +294,7 @@ internal sealed partial class EsqlResponseReader
 		result.ReleaseBuffer();
 	}
 
-	/// <summary>Streams rows one at a time from the <c>values</c> array.</summary>
+	/// <summary>Streams rows from the <c>values</c> array, one at a time for flat layouts and in batches for nested layouts.</summary>
 	private static async IAsyncEnumerable<T> StreamRowsAsync<T>(
 		IAsyncBufferCursor cursor,
 		JsonReaderState readerState,
@@ -304,6 +305,17 @@ internal sealed partial class EsqlResponseReader
 		ReaderStateTracker? readerStateTracker = null)
 	{
 		var plan = CreateRowMaterializationPlan<T>(columns, options);
+
+		// Batching only pays off for nested layouts, where every per-row Deserialize call
+		// allocates serializer-internal depth-tracking state. Flat layouts keep true
+		// row-at-a-time streaming.
+		if (layout.BranchNodeCount > 0 && TryResolveListTypeInfo<T>(options) is { } listTypeInfo)
+		{
+			await foreach (var item in StreamRowsBatchedAsync(cursor, readerState, plan, layout, listTypeInfo, cancellationToken, readerStateTracker).ConfigureAwait(false))
+				yield return item;
+			yield break;
+		}
+
 		var rowBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
 		var valueBuffer = plan.IsScalar ? null : new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
 		await using var valueWriter = plan.IsScalar ? null : new Utf8JsonWriter(valueBuffer!, SkipValidationWriterOptions);
@@ -357,6 +369,17 @@ internal sealed partial class EsqlResponseReader
 		ReaderStateTracker? readerStateTracker = null)
 	{
 		var plan = CreateRowMaterializationPlan<T>(columns, options);
+
+		// Batching only pays off for nested layouts, where every per-row Deserialize call
+		// allocates serializer-internal depth-tracking state. Flat layouts keep true
+		// row-at-a-time streaming.
+		if (layout.BranchNodeCount > 0 && TryResolveListTypeInfo<T>(options) is { } listTypeInfo)
+		{
+			foreach (var item in StreamRowsBatched(cursor, readerState, plan, layout, listTypeInfo, readerStateTracker))
+				yield return item;
+			yield break;
+		}
+
 		var rowBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
 		var valueBuffer = plan.IsScalar ? null : new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
 		using var valueWriter = plan.IsScalar ? null : new Utf8JsonWriter(valueBuffer!, SkipValidationWriterOptions);
@@ -399,5 +422,174 @@ internal sealed partial class EsqlResponseReader
 		{
 			readerStateTracker?.Set(readerState);
 		}
+	}
+
+	// Batch thresholds for nested layouts: every JsonSerializer.Deserialize call on a type with
+	// nested objects allocates roughly 0.5 KB of serializer-internal depth-tracking state, so rows
+	// are grouped into a single call per batch. 64 rows amortizes that cost to a few bytes per row;
+	// the 64 KB cap bounds buffering (and first-item latency) when individual rows are large and
+	// keeps the batch buffer below the large-object-heap threshold.
+	private const int MaxBatchRowCount = 64;
+	private const int MaxBatchBufferBytes = 64 * 1024;
+
+	/// <summary>
+	/// Streams rows for nested layouts by assembling up to <see cref="MaxBatchRowCount"/> rows (or
+	/// <see cref="MaxBatchBufferBytes"/> bytes) into a JSON array and deserializing each batch with a
+	/// single serializer call. Rows are yielded in order; at most one batch is buffered before yielding.
+	/// </summary>
+	private static async IAsyncEnumerable<T> StreamRowsBatchedAsync<T>(
+		IAsyncBufferCursor cursor,
+		JsonReaderState readerState,
+		RowMaterializationPlan<T> plan,
+		ColumnLayout layout,
+		JsonTypeInfo<List<T>> listTypeInfo,
+		[EnumeratorCancellation] CancellationToken cancellationToken,
+		ReaderStateTracker? readerStateTracker = null)
+	{
+		var rowBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
+		var valueBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
+		var batchBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize * 8);
+		await using var valueWriter = new Utf8JsonWriter(valueBuffer, SkipValidationWriterOptions);
+		var batchRowCount = 0;
+
+		try
+		{
+			var done = false;
+
+			while (!done)
+			{
+				if (!await cursor.ReadAsync(cancellationToken).ConfigureAwait(false))
+					break;
+
+				var buffer = cursor.Buffer;
+				var isFinalBlock = cursor.IsEofReached;
+				var reachedEnd = false;
+
+				while (TryAssembleNextRow(ref buffer, isFinalBlock, ref readerState, layout, rowBuffer, valueBuffer, valueWriter, scalarWriter: null, out reachedEnd))
+				{
+					if (reachedEnd)
+					{
+						done = true;
+						break;
+					}
+
+					AppendRowToBatch(batchBuffer, rowBuffer, batchRowCount);
+					batchRowCount++;
+
+					if (batchRowCount < MaxBatchRowCount && batchBuffer.WrittenCount < MaxBatchBufferBytes)
+						continue;
+
+					foreach (var item in DeserializeBatch(batchBuffer, listTypeInfo))
+						yield return item;
+
+					batchRowCount = 0;
+				}
+
+				if (reachedEnd)
+					done = true;
+
+				cursor.AdvanceTo(buffer.Start, buffer.End);
+
+				if (cursor.IsEofReached)
+					break;
+			}
+
+			if (batchRowCount > 0)
+			{
+				foreach (var item in DeserializeBatch(batchBuffer, listTypeInfo))
+					yield return item;
+			}
+		}
+		finally
+		{
+			readerStateTracker?.Set(readerState);
+		}
+	}
+
+	/// <summary>
+	/// Streams rows for nested layouts by assembling up to <see cref="MaxBatchRowCount"/> rows (or
+	/// <see cref="MaxBatchBufferBytes"/> bytes) into a JSON array and deserializing each batch with a
+	/// single serializer call. Rows are yielded in order; at most one batch is buffered before yielding.
+	/// </summary>
+	private static IEnumerable<T> StreamRowsBatched<T>(
+		ISyncBufferCursor cursor,
+		JsonReaderState readerState,
+		RowMaterializationPlan<T> plan,
+		ColumnLayout layout,
+		JsonTypeInfo<List<T>> listTypeInfo,
+		ReaderStateTracker? readerStateTracker)
+	{
+		var rowBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
+		var valueBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
+		var batchBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize * 8);
+		using var valueWriter = new Utf8JsonWriter(valueBuffer, SkipValidationWriterOptions);
+		var batchRowCount = 0;
+
+		try
+		{
+			var done = false;
+
+			while (!done)
+			{
+				if (!cursor.Read() && cursor.IsCompleted && cursor.Buffer.IsEmpty)
+					break;
+
+				var buffer = cursor.Buffer;
+				var isFinalBlock = cursor.IsEofReached;
+				var reachedEnd = false;
+
+				while (TryAssembleNextRow(ref buffer, isFinalBlock, ref readerState, layout, rowBuffer, valueBuffer, valueWriter, scalarWriter: null, out reachedEnd))
+				{
+					if (reachedEnd)
+					{
+						done = true;
+						break;
+					}
+
+					AppendRowToBatch(batchBuffer, rowBuffer, batchRowCount);
+					batchRowCount++;
+
+					if (batchRowCount < MaxBatchRowCount && batchBuffer.WrittenCount < MaxBatchBufferBytes)
+						continue;
+
+					foreach (var item in DeserializeBatch(batchBuffer, listTypeInfo))
+						yield return item;
+
+					batchRowCount = 0;
+				}
+
+				if (reachedEnd)
+					done = true;
+
+				cursor.AdvanceTo(buffer.Start, buffer.End);
+
+				if (cursor.IsEofReached)
+					break;
+			}
+
+			if (batchRowCount > 0)
+			{
+				foreach (var item in DeserializeBatch(batchBuffer, listTypeInfo))
+					yield return item;
+			}
+		}
+		finally
+		{
+			readerStateTracker?.Set(readerState);
+		}
+	}
+
+	private static void AppendRowToBatch(ArrayBufferWriter<byte> batchBuffer, ArrayBufferWriter<byte> rowBuffer, int batchRowCount)
+	{
+		WriteRawByte(batchBuffer, batchRowCount == 0 ? (byte)'[' : (byte)',');
+		WriteRawBytes(batchBuffer, rowBuffer.WrittenSpan);
+	}
+
+	private static List<T> DeserializeBatch<T>(ArrayBufferWriter<byte> batchBuffer, JsonTypeInfo<List<T>> listTypeInfo)
+	{
+		WriteRawByte(batchBuffer, (byte)']');
+		var items = JsonSerializer.Deserialize(batchBuffer.WrittenSpan, listTypeInfo);
+		batchBuffer.ResetWrittenCount();
+		return items ?? [];
 	}
 }
