@@ -536,21 +536,8 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 			case "get_Chars":
 				// string[i] → SUBSTRING(s, i+1, 1)
-				_ = _builder.Append("SUBSTRING(");
-				_ = Visit(node.Object);
-				_ = _builder.Append(", ");
-				// Add 1 for 1-based indexing in ES|QL
-				var index = GetConstantValue(node.Arguments[0]);
-				if (index is int idx)
-					_ = _builder.Append(idx + 1);
-				else
-				{
-					_ = _builder.Append('(');
-					_ = Visit(node.Arguments[0]);
-					_ = _builder.Append(") + 1");
-				}
-
-				_ = _builder.Append(", 1)");
+				var indexer = EsqlFunctionTranslator.TranslateStringIndexer(TranslateSubExpression(node.Object!), node.Arguments[0], TranslateSubExpression);
+				_ = _builder.Append(indexer);
 				break;
 
 			default:
