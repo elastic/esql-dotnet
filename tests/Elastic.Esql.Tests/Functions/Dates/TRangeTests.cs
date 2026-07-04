@@ -25,7 +25,6 @@ public class TRangeTests : EsqlTestBase
 	}
 
 	[Test]
-	[Skip("Inline 'new DateTime(...)' arguments are folded into corrupt numeric literals (e.g. TRANGE(2024110001, 2024210001)) instead of ISO date strings. Expected-correct output matches the closure-captured form. Product fix belongs to separate work.")]
 	public void TRange_InWhereWithInlineConstructorDates_GeneratesCorrectEsql()
 	{
 		var esql = CreateQuery<LogEntry>()
