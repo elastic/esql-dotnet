@@ -2,6 +2,7 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -73,6 +74,7 @@ internal static class ExpressionConstantResolver
 		return instance;
 	}
 
+	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Element type is statically referenced in the expression tree's NewArrayExpression.")]
 	private static object? ResolveNewArray(NewArrayExpression newArray)
 	{
 		var elementType = newArray.Type.GetElementType()
