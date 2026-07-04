@@ -29,6 +29,37 @@ internal sealed partial class EsqlResponseReader
 		out bool reachedEnd)
 	{
 		item = default;
+
+		if (!TryAssembleNextRow(ref buffer, isFinalBlock, ref state, layout, rowBuffer, valueBuffer, valueWriter, scalarWriter, out reachedEnd))
+			return false;
+
+		if (reachedEnd)
+			return true;
+
+		item = typeInfo is not null
+			? JsonSerializer.Deserialize(rowBuffer.WrittenSpan, typeInfo)
+			: JsonSerializer.Deserialize<T>(rowBuffer.WrittenSpan, options);
+
+		return true;
+	}
+
+	/// <summary>
+	/// Parses the next row from the <c>values</c> array and assembles it into <paramref name="rowBuffer"/>
+	/// (a JSON object, or a bare scalar value when <paramref name="scalarWriter"/> is set) without
+	/// deserializing. Returns <see langword="false"/> when more input is needed; state and buffer are
+	/// restored so the caller can retry with more data.
+	/// </summary>
+	private static bool TryAssembleNextRow(
+		ref ReadOnlySequence<byte> buffer,
+		bool isFinalBlock,
+		ref JsonReaderState state,
+		ColumnLayout layout,
+		ArrayBufferWriter<byte> rowBuffer,
+		ArrayBufferWriter<byte>? valueBuffer,
+		Utf8JsonWriter? valueWriter,
+		Utf8JsonWriter? scalarWriter,
+		out bool reachedEnd)
+	{
 		reachedEnd = false;
 
 		var savedState = state;
@@ -69,10 +100,6 @@ internal sealed partial class EsqlResponseReader
 			buffer = savedBuffer;
 			return false;
 		}
-
-		item = typeInfo is not null
-			? JsonSerializer.Deserialize(rowBuffer.WrittenSpan, typeInfo)
-			: JsonSerializer.Deserialize<T>(rowBuffer.WrittenSpan, options);
 
 		state = reader.CurrentState;
 		buffer = buffer.Slice(reader.Position);
