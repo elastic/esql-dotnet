@@ -474,12 +474,8 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		{
 			if (declaringType == typeof(DateTime) || declaringType == typeof(DateTimeOffset))
 			{
-				return memberName switch
-				{
-					"Now" or "UtcNow" => "NOW()",
-					"Today" => "DATE_TRUNC(\"day\", NOW())",
-					_ => throw new NotSupportedException($"DateTime property {memberName} is not supported in projections.")
-				};
+				return EsqlFunctionTranslator.TryTranslateStaticDateProperty(memberName)
+					?? throw new NotSupportedException($"DateTime property {memberName} is not supported in projections.");
 			}
 
 			if (declaringType == typeof(Math))
