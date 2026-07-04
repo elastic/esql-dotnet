@@ -51,18 +51,23 @@ internal sealed class ColumnLayout
 	/// <summary>Total count of non-root branch nodes (nested objects).</summary>
 	public int BranchNodeCount { get; }
 
+	/// <summary>Direct-binding fast path metadata for eligible flat layouts, or null when rows must use the assemble-and-deserialize path.</summary>
+	public DirectRowBinder? DirectBinder { get; }
+
 	private ColumnLayout(
 		ColumnNode root,
 		int columnCount,
 		int maxDepth,
 		ColumnNode[] leafNodesByColumnIndex,
-		int branchNodeCount)
+		int branchNodeCount,
+		DirectRowBinder? directBinder)
 	{
 		Root = root;
 		ColumnCount = columnCount;
 		MaxDepth = maxDepth;
 		LeafNodesByColumnIndex = leafNodesByColumnIndex;
 		BranchNodeCount = branchNodeCount;
+		DirectBinder = directBinder;
 	}
 
 	/// <summary>
@@ -112,7 +117,13 @@ internal sealed class ColumnLayout
 		var leafNodesByColumnIndex = new ColumnNode[columnCount];
 		var branchNodeCount = IndexNodes(root, leafNodesByColumnIndex, 0);
 
-		return new ColumnLayout(root, columnCount, maxDepth, leafNodesByColumnIndex, branchNodeCount);
+		// The binder is cached together with this layout in the reader's column layout cache, so
+		// eligibility is decided once per (target type, column schema).
+		var directBinder = branchNodeCount == 0 && maxDepth <= 1 && columnCount > 0 && typeInfo is not null
+			? DirectRowBinder.TryCreate(leafNodesByColumnIndex, typeInfo, options)
+			: null;
+
+		return new ColumnLayout(root, columnCount, maxDepth, leafNodesByColumnIndex, branchNodeCount, directBinder);
 	}
 
 	/// <summary>
