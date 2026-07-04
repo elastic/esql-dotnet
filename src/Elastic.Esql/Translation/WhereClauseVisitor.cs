@@ -95,11 +95,12 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		}
 		else
 		{
+			var parentIsEquality = node.NodeType is ExpressionType.Equal or ExpressionType.NotEqual;
 			_comparisonPropertyContext = ExtractEntityPropertyMember(node);
-			_ = Visit(node.Left);
+			AppendComparisonOperand(node.Left, parentIsEquality);
 			var op = EsqlFunctionTranslator.GetOperator(node.NodeType);
 			_ = _builder.Append(' ').Append(op).Append(' ');
-			_ = Visit(node.Right);
+			AppendComparisonOperand(node.Right, parentIsEquality);
 			_comparisonPropertyContext = null;
 		}
 
@@ -107,6 +108,28 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 			_ = _builder.Append(')');
 
 		return node;
+	}
+
+	/// <summary>
+	/// A comparison nested as an equality operand must keep its own parentheses;
+	/// ES|QL misparses the flat form (e.g. <c>a > b == flag</c>).
+	/// </summary>
+	private void AppendComparisonOperand(Expression operand, bool parentIsEquality)
+	{
+		var isNestedComparison = parentIsEquality && operand.UnwrapConvertExpressions() is BinaryExpression
+		{
+			NodeType: ExpressionType.Equal or ExpressionType.NotEqual
+				or ExpressionType.LessThan or ExpressionType.LessThanOrEqual
+				or ExpressionType.GreaterThan or ExpressionType.GreaterThanOrEqual
+		};
+
+		if (isNestedComparison)
+			_ = _builder.Append('(');
+
+		_ = Visit(operand);
+
+		if (isNestedComparison)
+			_ = _builder.Append(')');
 	}
 
 	/// <summary>
