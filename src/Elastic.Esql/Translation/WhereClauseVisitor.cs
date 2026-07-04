@@ -60,7 +60,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		if (dayOfWeekComparison.HasValue)
 		{
 			_ = Visit(dayOfWeekComparison.Value.DateMember);
-			_ = _builder.Append(' ').Append(GetOperator(node.NodeType)).Append(' ').Append(dayOfWeekComparison.Value.IsoDayNumber);
+			_ = _builder.Append(' ').Append(EsqlFunctionTranslator.GetOperator(node.NodeType)).Append(' ').Append(dayOfWeekComparison.Value.IsoDayNumber);
 			return node;
 		}
 
@@ -82,7 +82,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 			// The member side is always emitted first; when it originally sat on the right,
 			// relational operators must be mirrored to preserve the predicate.
-			var op = GetOperator(enumComparison.Value.Swapped ? MirrorComparison(node.NodeType) : node.NodeType);
+			var op = EsqlFunctionTranslator.GetOperator(enumComparison.Value.Swapped ? MirrorComparison(node.NodeType) : node.NodeType);
 			_ = _builder.Append(' ').Append(op).Append(' ');
 
 			var constant = enumComparison.Value.ConstantSide;
@@ -97,7 +97,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		{
 			_comparisonPropertyContext = ExtractEntityPropertyMember(node);
 			_ = Visit(node.Left);
-			var op = GetOperator(node.NodeType);
+			var op = EsqlFunctionTranslator.GetOperator(node.NodeType);
 			_ = _builder.Append(' ').Append(op).Append(' ');
 			_ = Visit(node.Right);
 			_comparisonPropertyContext = null;
@@ -735,25 +735,6 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 		_ = _builder.Append(')');
 	}
-
-	private static string GetOperator(ExpressionType nodeType) =>
-		nodeType switch
-		{
-			ExpressionType.Equal => "==",
-			ExpressionType.NotEqual => "!=",
-			ExpressionType.LessThan => "<",
-			ExpressionType.LessThanOrEqual => "<=",
-			ExpressionType.GreaterThan => ">",
-			ExpressionType.GreaterThanOrEqual => ">=",
-			ExpressionType.AndAlso => "AND",
-			ExpressionType.OrElse => "OR",
-			ExpressionType.Add => "+",
-			ExpressionType.Subtract => "-",
-			ExpressionType.Multiply => "*",
-			ExpressionType.Divide => "/",
-			ExpressionType.Modulo => "%",
-			_ => throw new NotSupportedException($"Operator {nodeType} is not supported.")
-		};
 
 	/// <summary>Mirrors a relational operator for a comparison whose operands were swapped into member-first order.</summary>
 	private static ExpressionType MirrorComparison(ExpressionType nodeType) =>
