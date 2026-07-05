@@ -515,7 +515,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 	{
 		var methodName = node.Method.Name;
 
-		ThrowIfStringComparisonArgument(node);
+		EsqlFunctionTranslator.ThrowIfUnsupportedStringComparison(node);
 
 		switch (methodName)
 		{
@@ -577,21 +577,6 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		}
 
 		return node;
-	}
-
-	/// <summary>
-	/// ES|QL string matching has no comparison-mode argument, so a StringComparison overload cannot
-	/// be honored; throw instead of silently producing a case-sensitive translation.
-	/// </summary>
-	private static void ThrowIfStringComparisonArgument(MethodCallExpression node)
-	{
-		foreach (var argument in node.Arguments)
-		{
-			if (argument.Type == typeof(StringComparison))
-				throw new NotSupportedException(
-					$"String method {node.Method.Name} with a StringComparison argument is not supported. " +
-					"ES|QL string matching is case-sensitive; apply ToLower()/ToUpper() to both operands instead.");
-		}
 	}
 
 	private Expression VisitDateTimeMethod(MethodCallExpression node)
