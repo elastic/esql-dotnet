@@ -21,19 +21,6 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 	private LambdaExpression? _elementSelector;
 
 	/// <summary>
-	/// Translates a GroupBy key selector to a STATS command (without result selector).
-	/// </summary>
-	public StatsCommand Translate(LambdaExpression keySelector)
-	{
-		var groupByFields = ExtractGroupByFields(keySelector.Body);
-
-		// Default aggregation - Count
-		var aggregations = new[] { "count = COUNT(*)" };
-
-		return new StatsCommand(aggregations, groupByFields.Count > 0 ? groupByFields : null);
-	}
-
-	/// <summary>
 	/// Translates a GroupBy with result selector (from subsequent Select) to a STATS command.
 	/// </summary>
 	public StatsCommand Translate(LambdaExpression keySelector, LambdaExpression resultSelector, LambdaExpression? elementSelector = null)
