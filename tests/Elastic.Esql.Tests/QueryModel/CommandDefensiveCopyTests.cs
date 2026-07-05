@@ -79,6 +79,16 @@ public class CommandDefensiveCopyTests
 	}
 
 	[Test]
+	public void ForkCommand_NullBranchEntry_ThrowsArgumentException()
+	{
+		var branches = new List<ForkBranch> { new(["LIMIT 1"], hasLimit: true), null! };
+
+		var act = () => new ForkCommand(branches);
+
+		_ = act.Should().Throw<ArgumentException>();
+	}
+
+	[Test]
 	public void FuseCommand_MutateSourceLists_CommandUnaffected()
 	{
 		var weights = new List<double> { 0.7, 0.3 };
