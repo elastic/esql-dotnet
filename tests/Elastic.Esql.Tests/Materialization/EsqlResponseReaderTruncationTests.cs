@@ -90,6 +90,44 @@ public class EsqlResponseReaderTruncationTests
 		await AssertCompletes(run);
 	}
 
+	[Test]
+	public async Task ReadScalar_Stream_TruncatedMidValues_ThrowsJsonException()
+	{
+		var run = Task.Run(() =>
+		{
+			using var stream = CreateStream(TruncatedScalarJson);
+			var reader = CreateReader();
+
+			var act = () => reader.ReadScalar<int>(stream);
+
+			act.Should().Throw<JsonException>();
+		});
+
+		await AssertCompletes(run);
+	}
+
+	[Test]
+	public async Task ReadRowsAsync_Stream_TruncatedInsideColumns_ThrowsJsonException()
+	{
+		var run = Task.Run(async () =>
+		{
+			using var stream = CreateStream(TruncatedInsideColumnsJson);
+			var reader = CreateReader();
+
+			var act = async () =>
+			{
+				await using var response = await reader.ReadRowsAsync<ScalarStringModel>(stream);
+				await foreach (var _ in response.Rows)
+				{
+				}
+			};
+
+			await act.Should().ThrowAsync<JsonException>();
+		});
+
+		await AssertCompletes(run);
+	}
+
 	/// <summary>
 	/// Awaits the assertion task with a deadline so a regression back to the EOF busy loop fails
 	/// the test quickly instead of hanging the whole suite.
