@@ -257,7 +257,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 	{
 		// Closure-rooted member paths (captured variables and member chains of any depth on
 		// captured objects) resolve to a constant value and emit as a parameter or inline literal.
-		if (IsClosureRooted(node.Expression))
+		if (node.Expression.IsClosureRooted())
 		{
 			var value = ExpressionConstantResolver.Resolve(node);
 			_ = _builder.Append(_context.GetValueOrParameterName(node.Member.Name, value, _comparisonPropertyContext));
@@ -788,35 +788,6 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		{
 			return false;
 		}
-	}
-
-	/// <summary>
-	/// Returns true when a member-access chain terminates in a <see cref="ConstantExpression"/>
-	/// (a compiler-generated closure instance), meaning the chain can be evaluated to a value.
-	/// Static chains terminate in null and keep their dedicated translations (e.g. NOW()).
-	/// </summary>
-	private static bool IsClosureRooted(Expression? expression)
-	{
-		var current = expression;
-
-		while (current is not null)
-		{
-			switch (current)
-			{
-				case ConstantExpression:
-					return true;
-				case MemberExpression member:
-					current = member.Expression;
-					break;
-				case UnaryExpression { NodeType: ExpressionType.Convert or ExpressionType.ConvertChecked } convert:
-					current = convert.Operand;
-					break;
-				default:
-					return false;
-			}
-		}
-
-		return false;
 	}
 
 	private static string EscapeLikePattern(string value) =>
