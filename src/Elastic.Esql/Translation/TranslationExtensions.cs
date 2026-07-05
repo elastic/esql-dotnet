@@ -13,7 +13,11 @@ namespace Elastic.Esql.Translation;
 
 internal static class TranslationExtensions
 {
-	public static bool SupportsEvaluation(this Expression expression)
+	/// <summary>
+	/// Determines whether the expression is a constant/member-access chain that can be
+	/// evaluated to a value (closure-rooted, or static when <paramref name="allowStaticRoot"/> is set).
+	/// </summary>
+	private static bool TerminatesInEvaluableRoot(Expression? expression, bool allowStaticRoot)
 	{
 		var current = expression;
 
@@ -36,9 +40,24 @@ internal static class TranslationExtensions
 			}
 		}
 
-		// Static member access => not closure-rooted, but we allow evaluation.
-		return true;
+		// The chain walked off the end: a static member access.
+		return allowStaticRoot;
 	}
+
+	/// <summary>
+	/// Determines whether the expression can be evaluated to a constant value
+	/// (closure-rooted or static member-access chains).
+	/// </summary>
+	public static bool SupportsEvaluation(this Expression expression) =>
+		TerminatesInEvaluableRoot(expression, allowStaticRoot: true);
+
+	/// <summary>
+	/// Returns true when a member-access chain terminates in a <see cref="ConstantExpression"/>
+	/// (a compiler-generated closure instance), meaning the chain can be evaluated to a value.
+	/// Static chains terminate in null and keep their dedicated translations (e.g. NOW()).
+	/// </summary>
+	public static bool IsClosureRooted(this Expression? expression) =>
+		TerminatesInEvaluableRoot(expression, allowStaticRoot: false);
 
 	public static Expression UnwrapConvertExpressions(this Expression expression)
 	{
