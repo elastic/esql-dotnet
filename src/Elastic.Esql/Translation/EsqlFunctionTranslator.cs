@@ -250,8 +250,12 @@ internal static class EsqlFunctionTranslator
 		};
 
 	/// <summary>Translates a string instance method call to ES|QL. Returns null if not recognized.</summary>
-	public static string? TryTranslateString(string methodName, Func<Expression, string> translate, string target, IReadOnlyList<Expression> args) =>
-		methodName switch
+	public static string? TryTranslateString(string methodName, Func<Expression, string> translate, string target, IReadOnlyList<Expression> allArgs)
+	{
+		ThrowIfUnsupportedStringComparison(methodName, allArgs);
+		var args = allArgs.Where(a => a.Type != typeof(StringComparison)).ToList();
+
+		return methodName switch
 		{
 			nameof(string.ToLower) or nameof(string.ToLowerInvariant) => $"TO_LOWER({target})",
 			nameof(string.ToUpper) or nameof(string.ToUpperInvariant) => $"TO_UPPER({target})",
@@ -261,16 +265,13 @@ internal static class EsqlFunctionTranslator
 			nameof(string.Substring) when args.Count == 1 => $"SUBSTRING({target}, {TranslateOneBasedStart(translate, args[0])})",
 			nameof(string.Substring) when args.Count == 2 => $"SUBSTRING({target}, {TranslateOneBasedStart(translate, args[0])}, {translate(args[1])})",
 			nameof(string.Replace) => $"REPLACE({target}, {translate(args[0])}, {translate(args[1])})",
-			nameof(string.IndexOf) when HasStringComparisonArgument(args) =>
-				throw new NotSupportedException(
-					"string.IndexOf with a StringComparison argument is not supported. " +
-					"ES|QL string matching is case-sensitive; apply ToLower()/ToUpper() to both operands instead."),
 			nameof(string.IndexOf) when args.Count == 1 => $"(LOCATE({target}, {translate(args[0])}) - 1)",
 			nameof(string.IndexOf) when args.Count == 2 && args[1].Type == typeof(int) =>
 				$"(LOCATE({target}, {translate(args[0])}, {TranslateOneBasedStart(translate, args[1])}) - 1)",
 			nameof(string.Split) when args.Count >= 1 => $"SPLIT({target}, {translate(args[0])})",
 			_ => null
 		};
+	}
 
 	/// <summary>
 	/// Translates a 0-based C# start index to the 1-based position ES|QL SUBSTRING/LOCATE expect,
@@ -281,8 +282,28 @@ internal static class EsqlFunctionTranslator
 			? (index + 1).ToString(CultureInfo.InvariantCulture)
 			: $"({translate(expression)}) + 1";
 
-	private static bool HasStringComparisonArgument(IReadOnlyList<Expression> args) =>
-		args.Any(arg => arg.Type == typeof(StringComparison));
+	/// <summary>
+	/// ES|QL string matching is ordinal and case-sensitive, so only <see cref="StringComparison.Ordinal"/>
+	/// can be honored; any other mode would silently change semantics.
+	/// </summary>
+	internal static void ThrowIfUnsupportedStringComparison(MethodCallExpression node) =>
+		ThrowIfUnsupportedStringComparison(node.Method.Name, node.Arguments);
+
+	private static void ThrowIfUnsupportedStringComparison(string methodName, IReadOnlyList<Expression> args)
+	{
+		foreach (var argument in args)
+		{
+			if (argument.Type != typeof(StringComparison))
+				continue;
+
+			if (argument.SupportsEvaluation() && ExpressionConstantResolver.Resolve(argument) is StringComparison.Ordinal)
+				continue;
+
+			throw new NotSupportedException(
+				$"String method {methodName} with a StringComparison argument other than StringComparison.Ordinal is not supported. " +
+				"ES|QL string matching is ordinal and case-sensitive; apply ToLower()/ToUpper() to both operands for case-insensitive matching.");
+		}
+	}
 
 	/// <summary>
 	/// Translates a DateTime/DateTimeOffset instance property access to DATE_EXTRACT.
