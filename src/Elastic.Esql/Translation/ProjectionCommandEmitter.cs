@@ -27,12 +27,12 @@ internal sealed class ProjectionCommandEmitter(EsqlTranslationContext context)
 	public void Emit(SelectProjectionVisitor.ProjectionResult result, HashSet<string>? renameCollisionFields = null)
 	{
 		var safeRenames = new List<(string Source, string Target)>();
-		var evalExpressions = new List<string>(result.EvalExpressions);
+		var evalExpressions = new List<(string Field, string Expression)>(result.EvalExpressions);
 
 		foreach (var (source, target) in result.RenameFields)
 		{
 			if (renameCollisionFields is not null && renameCollisionFields.Contains(target))
-				evalExpressions.Add($"{target} = {source}");
+				evalExpressions.Add((target, source));
 			else
 				safeRenames.Add((source, target));
 		}
@@ -41,13 +41,13 @@ internal sealed class ProjectionCommandEmitter(EsqlTranslationContext context)
 			_context.Commands.Add(new RenameCommand(safeRenames));
 
 		if (evalExpressions.Count > 0)
-			_context.Commands.Add(new EvalCommand(evalExpressions));
+			_context.Commands.Add(new EvalCommand(evalExpressions.Select(e => $"{e.Field} = {e.Expression}").ToList()));
 
 		var allKeepFields = new List<string>(result.KeepFields);
 		foreach (var (_, target) in safeRenames)
 			allKeepFields.Add(target);
-		foreach (var evalExpr in evalExpressions)
-			allKeepFields.Add(evalExpr.Split('=')[0].Trim());
+		foreach (var (field, _) in evalExpressions)
+			allKeepFields.Add(field);
 
 		AppendRetainedMetadataNames(allKeepFields, result);
 

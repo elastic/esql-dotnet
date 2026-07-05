@@ -214,4 +214,20 @@ public class ColumnNameEscapingTests : EsqlTestBase
 			| KEEP outerUa, innerUa
 			""".NativeLineEndings());
 	}
+
+	[Test]
+	public void Select_ComputedFieldWithEqualsInLiteral_KeepsTargetFieldName()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Select(l => new { Marker = EsqlFunctions.Concat(l.Message, "a=b") })
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| EVAL marker = CONCAT(message, "a=b")
+			| KEEP marker
+			""".NativeLineEndings());
+	}
 }
