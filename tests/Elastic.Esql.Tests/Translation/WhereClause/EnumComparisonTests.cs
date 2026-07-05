@@ -52,4 +52,19 @@ public class EnumComparisonTests : EsqlTestBase
 			| WHERE priority < 2
 			""".NativeLineEndings());
 	}
+
+	[Test]
+	public void Where_ReversedEnumEquality_KeepsOperator()
+	{
+		var esql = CreateQuery<OrdinalEnumDocument>()
+			.From("docs-*")
+			.Where(d => Priority.High == d.Priority)
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM docs-*
+			| WHERE priority == 2
+			""".NativeLineEndings());
+	}
 }

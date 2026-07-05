@@ -27,7 +27,8 @@ internal sealed class SelectMergingVisitor : ExpressionVisitor
 		if (visited.Arguments[0] is not MethodCallExpression innerSelect || !IsSelectCall(innerSelect))
 			return visited;
 
-		if (innerSelect.Arguments[0] is MethodCallExpression { Method.Name: "GroupBy" })
+		if (innerSelect.Arguments[0] is MethodCallExpression { Method.Name: nameof(Queryable.GroupBy) } groupByCall
+			&& groupByCall.Method.DeclaringType == typeof(Queryable))
 			return visited;
 
 		var innerLambda = ExtractLambda(innerSelect.Arguments[1]);
