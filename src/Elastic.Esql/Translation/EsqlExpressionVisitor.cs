@@ -474,26 +474,39 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 		if (node.Arguments[1] is not UnaryExpression { Operand: LambdaExpression lambda })
 			return;
 
+		static NotSupportedException ResultSelectorNotSupported() =>
+			new(
+				"GroupBy with a result selector is not supported. " +
+				"Project the key and aggregations in a subsequent Select instead, " +
+				"e.g. '.GroupBy(x => x.Field).Select(g => new { g.Key, Count = g.Count() })'.");
+
+		LambdaExpression? elementSelector = null;
+
 		if (node.Arguments.Count > 2)
 		{
-			var extra = node.Arguments[2] is UnaryExpression { Operand: LambdaExpression extraLambda } ? extraLambda : null;
+			if (node.Arguments.Count > 3)
+				throw ResultSelectorNotSupported();
 
-			if (node.Arguments.Count > 3 || extra is null || extra.Parameters.Count != 1)
+			if (node.Arguments[2] is not UnaryExpression { Operand: LambdaExpression extraLambda })
 				throw new NotSupportedException(
-					"GroupBy with a result selector is not supported. " +
-					"Project the key and aggregations in a subsequent Select instead, " +
-					"e.g. '.GroupBy(x => x.Field).Select(g => new { g.Key, Count = g.Count() })'.");
+					"GroupBy with an IEqualityComparer or other non-lambda argument is not supported. " +
+					"Use a plain key selector, e.g. '.GroupBy(x => x.Field)'.");
 
-			if (extra.Body.UnwrapConvertExpressions() is not MemberExpression)
+			if (extraLambda.Parameters.Count != 1)
+				throw ResultSelectorNotSupported();
+
+			if (extraLambda.Body.UnwrapConvertExpressions() is not MemberExpression)
 				throw new NotSupportedException(
 					"GroupBy element selectors are limited to a single field access (e.g. '.GroupBy(x => x.Key, x => x.Field)'); " +
 					"project composite values in a subsequent Select instead.");
 
-			_pendingGroupByElementSelector = extra;
+			elementSelector = extraLambda;
 		}
 
 		// Store the selectors for combining with the subsequent Select into STATS...BY.
+		// Overwrite unconditionally: a later GroupBy without an element selector must not inherit a stale one.
 		_pendingGroupByKeySelector = lambda;
+		_pendingGroupByElementSelector = elementSelector;
 	}
 
 	private void VisitFrom(MethodCallExpression node)
