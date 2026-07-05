@@ -83,4 +83,12 @@ public class IndexPatternFormattingTests
 			| RENAME `user-agent` AS ua
 			""".NativeLineEndings());
 	}
+
+	[Test]
+	public void Format_FromWithMetadataInCommaList_EmitsDoubleQuoted()
+	{
+		var query = new EsqlQuery(typeof(object), [new FromCommand("logs-*,metadata")], null);
+
+		_ = _formatter.Format(query).Should().Be("FROM \"logs-*,metadata\"");
+	}
 }

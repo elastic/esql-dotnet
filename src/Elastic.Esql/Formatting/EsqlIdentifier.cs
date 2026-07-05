@@ -85,9 +85,13 @@ internal static class EsqlIdentifier
 			return false;
 
 		// An index literally named "metadata" collides with the METADATA directive that may
-		// follow the FROM target, so it must be quoted.
-		if (string.Equals(pattern, "metadata", StringComparison.OrdinalIgnoreCase))
-			return false;
+		// follow the FROM target, so it must be quoted - also when it appears as an entry in
+		// a comma-separated pattern list.
+		foreach (var entry in pattern.Split(','))
+		{
+			if (string.Equals(entry.Trim(), "metadata", StringComparison.OrdinalIgnoreCase))
+				return false;
+		}
 
 		foreach (var c in pattern)
 		{

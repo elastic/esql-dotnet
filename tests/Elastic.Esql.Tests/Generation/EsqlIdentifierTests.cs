@@ -123,4 +123,8 @@ public class EsqlIdentifierTests
 	[Test]
 	public void FormatIndexPattern_MetadataKeyword_ReturnsDoubleQuoted() =>
 		_ = EsqlIdentifier.FormatIndexPattern("metadata").Should().Be("\"metadata\"");
+
+	[Test]
+	public void FormatIndexPattern_MetadataInCommaList_ReturnsDoubleQuoted() =>
+		_ = EsqlIdentifier.FormatIndexPattern("logs-*,metadata").Should().Be("\"logs-*,metadata\"");
 }
