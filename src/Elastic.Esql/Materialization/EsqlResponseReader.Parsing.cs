@@ -249,13 +249,24 @@ internal sealed partial class EsqlResponseReader
 			if (TryParseColumns(buffer, cursor.IsEofReached, ref state, out var columns, out var consumed, ref id, ref isRunning, out var valuesFirst))
 			{
 				if (valuesFirst)
+				{
+					// Values precede columns: the caller falls back to a full drain, which issues its
+					// own ReadAsync. Release this read first - the PipeReader contract requires an
+					// AdvanceTo between consecutive ReadAsync calls. Nothing is consumed so the drain
+					// re-reads the complete payload.
+					cursor.AdvanceTo(buffer.Start, buffer.End);
 					return ([], state, consumed, id, isRunning, true);
+				}
 
 				return (columns!, state, consumed, id, isRunning, false);
 			}
 
 			if (valuesFirst)
-				return ([], new JsonReaderState(), cursor.Buffer.Start, id, isRunning, true);
+			{
+				var bufferStart = buffer.Start;
+				cursor.AdvanceTo(buffer.Start, buffer.End);
+				return ([], new JsonReaderState(), bufferStart, id, isRunning, true);
+			}
 
 			cursor.AdvanceTo(buffer.Start, buffer.End);
 
@@ -283,13 +294,24 @@ internal sealed partial class EsqlResponseReader
 			if (TryParseColumns(buffer, cursor.IsEofReached, ref state, out var columns, out var consumed, ref id, ref isRunning, out var valuesFirst))
 			{
 				if (valuesFirst)
+				{
+					// Values precede columns: the caller falls back to a full drain, which issues its
+					// own ReadAsync. Release this read first - the PipeReader contract requires an
+					// AdvanceTo between consecutive ReadAsync calls. Nothing is consumed so the drain
+					// re-reads the complete payload.
+					cursor.AdvanceTo(buffer.Start, buffer.End);
 					return ([], state, consumed, id, isRunning, true);
+				}
 
 				return (columns!, state, consumed, id, isRunning, false);
 			}
 
 			if (valuesFirst)
-				return ([], new JsonReaderState(), cursor.Buffer.Start, id, isRunning, true);
+			{
+				var bufferStart = buffer.Start;
+				cursor.AdvanceTo(buffer.Start, buffer.End);
+				return ([], new JsonReaderState(), bufferStart, id, isRunning, true);
+			}
 
 			cursor.AdvanceTo(buffer.Start, buffer.End);
 
