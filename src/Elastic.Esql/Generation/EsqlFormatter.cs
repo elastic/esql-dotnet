@@ -131,15 +131,13 @@ internal sealed class EsqlFormatter : ICommandVisitor
 			return;
 
 		var sb = new StringBuilder("FORK");
-		var first = true;
 
 		foreach (var branch in command.Branches)
 		{
 			if (branch.Fragments.Count == 0)
 				continue;
 
-			_ = sb.Append(first ? " (" : " (");
-			first = false;
+			_ = sb.Append(" (");
 
 			for (var i = 0; i < branch.Fragments.Count; i++)
 			{

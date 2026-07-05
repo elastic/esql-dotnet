@@ -116,7 +116,7 @@ public sealed class EsqlQuery(
 	public EsqlQuery WithFormat(EsqlFormat? format) =>
 		new(ElementType, Commands, Parameters, QueryOptions, ExecutorOptions, format);
 
-	/// <summary>Creates a copy with the source command set to FROM with the specified index pattern. Replaces an existing source command or prepends one.</summary>
+	/// <summary>Creates a copy with the source command set to FROM with the given index pattern. Replaces an existing source command or prepends one.</summary>
 	public EsqlQuery WithSource(string indexPattern)
 	{
 		var list = Commands.ToList();
