@@ -57,6 +57,42 @@ public class EsqlIdentifierTests
 		_ = EsqlIdentifier.EscapeColumnName("like").Should().Be("`like`");
 
 	[Test]
+	public void EscapeColumnName_GrammarKeyword_On_ReturnsBackticked() =>
+		_ = EsqlIdentifier.EscapeColumnName("on").Should().Be("`on`");
+
+	[Test]
+	public void EscapeColumnName_GrammarKeyword_With_ReturnsBackticked() =>
+		_ = EsqlIdentifier.EscapeColumnName("with").Should().Be("`with`");
+
+	[Test]
+	public void EscapeColumnName_GrammarKeyword_Using_ReturnsBackticked() =>
+		_ = EsqlIdentifier.EscapeColumnName("using").Should().Be("`using`");
+
+	[Test]
+	public void EscapeColumnName_GrammarKeyword_Fork_ReturnsBackticked() =>
+		_ = EsqlIdentifier.EscapeColumnName("fork").Should().Be("`fork`");
+
+	[Test]
+	public void EscapeColumnName_GrammarKeyword_Fuse_ReturnsBackticked() =>
+		_ = EsqlIdentifier.EscapeColumnName("fuse").Should().Be("`fuse`");
+
+	[Test]
+	public void EscapeColumnName_GrammarKeyword_InlineStats_ReturnsBackticked() =>
+		_ = EsqlIdentifier.EscapeColumnName("inlinestats").Should().Be("`inlinestats`");
+
+	[Test]
+	public void EscapeColumnName_GrammarKeyword_ChangePoint_ReturnsBackticked() =>
+		_ = EsqlIdentifier.EscapeColumnName("change_point").Should().Be("`change_point`");
+
+	[Test]
+	public void EscapeColumnName_GrammarKeyword_Sample_ReturnsBackticked() =>
+		_ = EsqlIdentifier.EscapeColumnName("sample").Should().Be("`sample`");
+
+	[Test]
+	public void EscapeColumnName_GrammarKeyword_Rerank_ReturnsBackticked() =>
+		_ = EsqlIdentifier.EscapeColumnName("rerank").Should().Be("`rerank`");
+
+	[Test]
 	public void FormatIndexPattern_WildcardPattern_ReturnsUnchanged() =>
 		_ = EsqlIdentifier.FormatIndexPattern("logs-*").Should().Be("logs-*");
 
