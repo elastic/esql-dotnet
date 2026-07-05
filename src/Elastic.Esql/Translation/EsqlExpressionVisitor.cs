@@ -7,6 +7,7 @@ using System.Linq.Expressions;
 
 using Elastic.Esql.Core;
 using Elastic.Esql.Extensions;
+using Elastic.Esql.Formatting;
 using Elastic.Esql.QueryModel;
 using Elastic.Esql.QueryModel.Commands;
 
@@ -607,7 +608,7 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 			var name = members[i].Name;
 			var value = ExpressionConstantResolver.Resolve(newExpr.Arguments[i]);
 			var formatted = Context.GetValueOrParameterName(name, value);
-			expressions.Add($"{name} = {formatted}");
+			expressions.Add($"{EsqlIdentifier.EscapeColumnName(name)} = {formatted}");
 		}
 
 		if (Context.Commands.OfType<SourceCommand>().Any())
