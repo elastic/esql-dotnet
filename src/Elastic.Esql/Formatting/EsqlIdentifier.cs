@@ -9,7 +9,11 @@ namespace Elastic.Esql.Formatting;
 /// grammars: column names are backtick-quoted per path segment, while index patterns are
 /// double-quoted as a whole when they contain characters invalid in an unquoted source target.
 /// </summary>
-internal static class EsqlIdentifier
+/// <remarks>
+/// Exposed for <see cref="Core.IEsqlQueryInterceptor"/> implementations that compose command
+/// fragments; the translator applies these rules automatically.
+/// </remarks>
+public static class EsqlIdentifier
 {
 	private static readonly HashSet<string> ReservedKeywords = new(
 		[
@@ -24,8 +28,8 @@ internal static class EsqlIdentifier
 	);
 
 	/// <summary>
-	/// Escapes a (possibly dotted) column path for ES|QL. Each dot-separated segment is
-	/// backtick-quoted independently when it is not a valid unquoted identifier, so a path
+	/// Escapes a dotted column path for ES|QL, backtick-quoting each segment that is not a
+	/// valid unquoted identifier (reserved keywords, non-ASCII, special characters), so a path
 	/// like <c>user-agent.os name</c> renders as <c>`user-agent`.`os name`</c>.
 	/// </summary>
 	public static string EscapeColumnName(string path)
@@ -70,9 +74,9 @@ internal static class EsqlIdentifier
 	}
 
 	/// <summary>
-	/// Formats an index name or pattern for a FROM / LOOKUP JOIN target. Valid patterns
-	/// (letters, digits, '-', '.', '*', '_', ':' for cross-cluster references and ',' for
-	/// pattern lists) are emitted verbatim; anything else is double-quoted.
+	/// Formats a FROM/LOOKUP index pattern, double-quoting it when it cannot appear unquoted.
+	/// Valid patterns (letters, digits, '-', '.', '*', '_', ':' for cross-cluster references and
+	/// ',' for pattern lists) are emitted verbatim; anything else is double-quoted.
 	/// </summary>
 	public static string FormatIndexPattern(string pattern) =>
 		IsValidUnquotedIndexPattern(pattern)
