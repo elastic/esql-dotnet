@@ -97,6 +97,28 @@ if (count != 2)
 Console.WriteLine($"\nMaterialization test (scalar):");
 Console.WriteLine($"  Count = {count}");
 
+// Dotted columns force a nested ColumnLayout, which routes materialization through
+// StreamRowsBatched instead of the flat row-at-a-time path - only that path exercises the
+// source-gen List<T> resolver under AOT.
+const string nestedJson =
+	"""
+	{"took":1,"columns":[{"name":"shipmentId","type":"keyword"},{"name":"address.city","type":"keyword"},{"name":"address.zip","type":"keyword"}],"values":[["S-1","Berlin","10115"],["S-2","Munich","80331"]]}
+	""";
+
+var nestedProvider = new EsqlQueryProvider(EsqlJsonContext.Default, new StubQueryExecutor(nestedJson));
+var shipments = new EsqlQueryable<EsqlShipment>(nestedProvider)
+	.From("shipments")
+	.ToList();
+
+if (shipments.Count != 2)
+	throw new InvalidOperationException($"Expected 2 rows but materialized {shipments.Count}.");
+if (shipments[0].Address is null || shipments[0].Address!.City != "Berlin")
+	throw new InvalidOperationException("Row 0 did not materialize the expected nested values.");
+
+Console.WriteLine($"\nMaterialization test (nested):");
+Console.WriteLine($"  Row 0: {shipments[0].ShipmentId} {shipments[0].Address!.City}");
+Console.WriteLine($"  Row 1: {shipments[1].ShipmentId} {shipments[1].Address!.City}");
+
 Console.WriteLine("\nAOT smoketest passed!");
 
 // Expression.New with MemberInfo[] has [RequiresUnreferencedCode] — the Keep<T,TResult> overload
@@ -126,8 +148,22 @@ namespace EsqlAotSmoketest
 		public bool InStock { get; set; }
 	}
 
+	public class EsqlShipment
+	{
+		public string? ShipmentId { get; set; }
+		public ShipmentAddress? Address { get; set; }
+	}
+
+	public class ShipmentAddress
+	{
+		public string? City { get; set; }
+		public string? Zip { get; set; }
+	}
+
 	[JsonSerializable(typeof(EsqlOrder))]
 	[JsonSerializable(typeof(EsqlProduct))]
+	[JsonSerializable(typeof(EsqlShipment))]
+	[JsonSerializable(typeof(List<EsqlShipment>))]
 	[JsonSerializable(typeof(int))]
 	[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 	public partial class EsqlJsonContext : JsonSerializerContext;
