@@ -277,4 +277,34 @@ public class DateExtractTests : EsqlTestBase
 		_ = act.Should().Throw<NotSupportedException>()
 			.WithMessage("*non-constant*");
 	}
+
+	[Test]
+	public void DateTime_UtcNowYear_InWhere_GeneratesDateExtractOnNow()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.StatusCode < DateTime.UtcNow.Year)
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+            FROM logs-*
+            | WHERE statusCode < DATE_EXTRACT("year", NOW())
+            """.NativeLineEndings());
+	}
+
+	[Test]
+	public void DateTime_DayOfWeekFieldToField_InWhere_ExtractsBothSides()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Timestamp.DayOfWeek == l.Timestamp.DayOfWeek)
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+            FROM logs-*
+            | WHERE DATE_EXTRACT("day_of_week", @timestamp) == DATE_EXTRACT("day_of_week", @timestamp)
+            """.NativeLineEndings());
+	}
 }
