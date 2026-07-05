@@ -90,8 +90,11 @@ internal sealed class ColumnLayout
 		{
 			typeInfo = metadata.GetPropertyBasedTypeInfo(targetType);
 		}
-		catch
+		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
 		{
+			// No property-based metadata (custom converter, or the resolver has none for the
+			// type): degrade to a flat layout - dotted column names stay single-segment and the
+			// row deserializes through the type's own converter/contract instead.
 			typeInfo = null;
 		}
 
