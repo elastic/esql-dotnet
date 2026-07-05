@@ -534,10 +534,10 @@ internal sealed partial class EsqlResponseReader
 			switch (reader.TokenType)
 			{
 				case JsonTokenType.PropertyName:
-					writer.WritePropertyName(reader.HasValueSequence
-						? reader.ValueSequence.ToArray()
-						: reader.ValueSpan
-					);
+					// GetString decodes the escaped token once; WritePropertyName re-encodes once.
+					// Raw ValueSpan/ValueSequence bytes would be escaped a second time (same rule
+					// as the String case in TryWriteCurrentValue).
+					writer.WritePropertyName(reader.GetString()!);
 					break;
 				case JsonTokenType.StartObject:
 					writer.WriteStartObject();
