@@ -34,7 +34,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 	{
 		public IReadOnlyList<string> KeepFields { get; init; } = [];
 		public IReadOnlyList<(string Source, string Target)> RenameFields { get; init; } = [];
-		public IReadOnlyList<string> EvalExpressions { get; init; } = [];
+		public IReadOnlyList<(string Field, string Expression)> EvalExpressions { get; init; } = [];
 	}
 
 	/// <summary>
@@ -83,7 +83,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		// Pass 2: translate eval expressions to strings (now rename-aware)
 		var keepFields = new List<string>();
 		var renameFields = new List<(string, string)>();
-		var evalExpressions = new List<string>();
+		var evalExpressions = new List<(string, string)>();
 
 		foreach (var entry in _projections)
 		{
@@ -97,7 +97,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 					break;
 				case ProjectionKind.Eval:
 					var expr = TranslateExpression(entry.SourceExpression!);
-					evalExpressions.Add($"{entry.ResultField} = {expr}");
+					evalExpressions.Add((entry.ResultField, expr));
 					break;
 			}
 		}
