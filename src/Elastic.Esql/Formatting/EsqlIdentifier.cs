@@ -17,7 +17,8 @@ internal static class EsqlIdentifier
 			"BY", "AS", "AND", "OR", "NOT", "IN", "LIKE", "RLIKE", "IS", "NULL",
 			"TRUE", "FALSE", "ASC", "DESC", "NULLS", "FIRST", "LAST",
 			"ROW", "SHOW", "META", "METADATA", "MV_EXPAND", "RENAME", "DISSECT", "GROK", "ENRICH",
-			"COMPLETION", "JOIN", "LOOKUP"
+			"COMPLETION", "JOIN", "LOOKUP",
+			"ON", "WITH", "USING", "FORK", "FUSE", "INLINESTATS", "CHANGE_POINT", "SAMPLE", "RERANK"
 		],
 		StringComparer.OrdinalIgnoreCase
 	);
