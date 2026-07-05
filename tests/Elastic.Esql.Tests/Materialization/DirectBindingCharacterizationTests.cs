@@ -295,6 +295,29 @@ public class DirectBindingCharacterizationTests
 		results[0].Count.Should().Be(1);
 	}
 
+	[Test]
+	public void ReadRows_EscapedObjectPropertyName_UnescapesCorrectly()
+	{
+		// Tags is `object`, not Dictionary<string, string>: Dictionary implements IEnumerable<KeyValuePair<,>>,
+		// which ColumnLayout.IsCollectionColumn treats as a collection column, wrapping the cell in `[...]`
+		// before the dictionary converter sees it - an unrelated failure that masks the escape bug under test.
+		// Raw string literals process no escapes, so two typed backslashes below become two literal
+		// backslash characters on the wire: one JSON escape (\\) decoding to the single-backslash key
+		// the assertion expects.
+		const string json =
+			"""{"columns":[{"name":"name","type":"keyword"},{"name":"tags","type":"object"}],"values":[["a",{"path\\key":"v"}]]}""";
+
+		using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+		var reader = CreateReflectionReader();
+
+		var rows = reader.ReadRows<TagBagModel>(stream).Rows.ToList();
+
+		_ = rows.Should().HaveCount(1);
+		var tags = (JsonElement)rows[0].Tags!;
+		_ = tags.TryGetProperty("path\\key", out var value).Should().BeTrue();
+		_ = value.GetString().Should().Be("v");
+	}
+
 	private static List<T> ReadRows<T>(string json)
 	{
 		using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
@@ -309,5 +332,17 @@ public class DirectBindingCharacterizationTests
 		var reader = new EsqlResponseReader(metadata);
 		using var results = reader.ReadRows<T>(stream);
 		return results.Rows.ToList();
+	}
+
+	private static EsqlResponseReader CreateReflectionReader() =>
+		new(new JsonMetadataManager(new JsonSerializerOptions(JsonSerializerDefaults.Web)
+		{
+			TypeInfoResolver = new DefaultJsonTypeInfoResolver()
+		}));
+
+	public sealed class TagBagModel
+	{
+		public string? Name { get; set; }
+		public object? Tags { get; set; }
 	}
 }
