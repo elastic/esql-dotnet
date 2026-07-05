@@ -18,6 +18,8 @@ internal sealed class AsyncStreamBuffer(Stream stream, int initialBufferSize = 1
 	private int _offset;
 	private int _filled;
 	private int _examined;
+	// IDE0032 suggests an auto-property, but the field feeds two computed properties
+	// (IsCompleted combines it with the offsets) and is written by the fill loop.
 #pragma warning disable IDE0032
 	private bool _streamCompleted;
 #pragma warning restore IDE0032
