@@ -18,6 +18,7 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 {
 	private const string SingleKeyMarker = "__single_key__";
 	private readonly EsqlTranslationContext _context = context ?? throw new ArgumentNullException(nameof(context));
+	private LambdaExpression? _elementSelector;
 
 	/// <summary>
 	/// Translates a GroupBy key selector to a STATS command (without result selector).
@@ -35,8 +36,10 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 	/// <summary>
 	/// Translates a GroupBy with result selector (from subsequent Select) to a STATS command.
 	/// </summary>
-	public StatsCommand Translate(LambdaExpression keySelector, LambdaExpression resultSelector)
+	public StatsCommand Translate(LambdaExpression keySelector, LambdaExpression resultSelector, LambdaExpression? elementSelector = null)
 	{
+		_elementSelector = elementSelector;
+
 		var groupByFields = ExtractGroupByFields(keySelector.Body);
 		var keyPropertyNames = ExtractKeyPropertyNames(keySelector.Body);
 		var (aggregations, keyAliasMap) = ExtractAggregationsAndKeyAliases(resultSelector);
@@ -279,6 +282,12 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 		{
 			var selector = methodCall.Arguments[1];
 			fieldExpr = ExtractFieldFromSelector(selector);
+		}
+		else if (_elementSelector is not null && methodName is "Sum" or "Average" or "Min" or "Max")
+		{
+			// A parameterless aggregation on IGrouping<K, TElement> aggregates the elements
+			// produced by the GroupBy element selector.
+			fieldExpr = ExtractFieldFromLambdaBody(_elementSelector.Body.UnwrapConvertExpressions());
 		}
 
 		return methodName switch

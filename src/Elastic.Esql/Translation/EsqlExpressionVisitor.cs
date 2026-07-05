@@ -20,6 +20,9 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 	// Tracks pending GroupBy key selector for combining with subsequent Select
 	private LambdaExpression? _pendingGroupByKeySelector;
 
+	// Tracks pending GroupBy element selector, applied to parameterless Sum/Average/Min/Max in the subsequent Select
+	private LambdaExpression? _pendingGroupByElementSelector;
+
 	// Tracks pending GroupJoin for combining with subsequent SelectMany (left outer join pattern)
 	private PendingGroupJoin? _pendingGroupJoin;
 
@@ -281,9 +284,10 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 			if (_pendingGroupByKeySelector != null)
 			{
 				var groupByVisitor = new GroupByVisitor(Context);
-				var statsCommand = groupByVisitor.Translate(_pendingGroupByKeySelector, lambda);
+				var statsCommand = groupByVisitor.Translate(_pendingGroupByKeySelector, lambda, _pendingGroupByElementSelector);
 				Context.Commands.Add(statsCommand);
 				_pendingGroupByKeySelector = null;
+				_pendingGroupByElementSelector = null;
 				ClearMetadataAfterStats();
 				return;
 			}
@@ -467,13 +471,29 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 		if (node.Arguments.Count < 2)
 			return;
 
-		var keySelector = node.Arguments[1];
-		if (keySelector is UnaryExpression unary && unary.Operand is LambdaExpression lambda)
+		if (node.Arguments[1] is not UnaryExpression { Operand: LambdaExpression lambda })
+			return;
+
+		if (node.Arguments.Count > 2)
 		{
-			// Store the key selector for combining with subsequent Select
-			_pendingGroupByKeySelector = lambda;
-			// Don't add command yet - wait for Select to combine into STATS...BY
+			var extra = node.Arguments[2] is UnaryExpression { Operand: LambdaExpression extraLambda } ? extraLambda : null;
+
+			if (node.Arguments.Count > 3 || extra is null || extra.Parameters.Count != 1)
+				throw new NotSupportedException(
+					"GroupBy with a result selector is not supported. " +
+					"Project the key and aggregations in a subsequent Select instead, " +
+					"e.g. '.GroupBy(x => x.Field).Select(g => new { g.Key, Count = g.Count() })'.");
+
+			if (extra.Body.UnwrapConvertExpressions() is not MemberExpression)
+				throw new NotSupportedException(
+					"GroupBy element selectors are limited to a single field access (e.g. '.GroupBy(x => x.Key, x => x.Field)'); " +
+					"project composite values in a subsequent Select instead.");
+
+			_pendingGroupByElementSelector = extra;
 		}
+
+		// Store the selectors for combining with the subsequent Select into STATS...BY.
+		_pendingGroupByKeySelector = lambda;
 	}
 
 	private void VisitFrom(MethodCallExpression node)
