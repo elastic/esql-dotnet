@@ -64,4 +64,35 @@ public class GroupByElementSelectorTests : EsqlTestBase
 		_ = act.Should().Throw<NotSupportedException>()
 			.WithMessage("*element selector*");
 	}
+
+	[Test]
+	public void GroupBy_WithEqualityComparer_ThrowsNotSupported()
+	{
+		var query = CreateQuery<SimpleDocument>()
+			.From("docs-*")
+			.GroupBy(d => d.Name, StringComparer.OrdinalIgnoreCase)
+			.Select(g => new { Name = g.Key, Count = g.Count() });
+
+		var act = () => query.ToString();
+
+		_ = act.Should().Throw<NotSupportedException>()
+			.WithMessage("*IEqualityComparer*");
+	}
+
+	[Test]
+	public void GroupBy_Chained_ElementSelectorDoesNotLeak()
+	{
+		var esql = CreateQuery<SimpleDocument>()
+			.From("docs-*")
+			.GroupBy(d => d.Name, d => d.Value)
+			.GroupBy(g => 1)
+			.Select(g => new { MinVal = g.Min() })
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM docs-*
+			| STATS minVal = MIN(*)
+			""".NativeLineEndings());
+	}
 }
