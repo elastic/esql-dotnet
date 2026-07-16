@@ -4,7 +4,6 @@
 
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
-using System.Text.Json;
 using System.Text.Json.Serialization;
 using Elastic.Esql.Core;
 using Elastic.Esql.Execution;

@@ -7,7 +7,6 @@ using System.IO.Pipelines;
 #endif
 using System.Text;
 using Elastic.Esql.Execution;
-using Elastic.Esql.QueryModel;
 
 namespace Elastic.Esql.Tests.Execution;
 

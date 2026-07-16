@@ -4,7 +4,6 @@
 
 using System.Globalization;
 using System.Linq.Expressions;
-using Elastic.Esql.Core;
 using Elastic.Esql.Extensions;
 using Elastic.Esql.Functions;
 using Elastic.Esql.QueryModel.Commands;
