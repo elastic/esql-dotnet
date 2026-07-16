@@ -17,6 +17,7 @@ var errors = await client.CreateQuery<LogEntry>()
     .Where(l => l.Level == "ERROR")
     .OrderByDescending(l => l.Timestamp)
     .Take(10)
+    .AsEsqlQueryable()
     .ToListAsync();
 ```
 
@@ -57,6 +58,7 @@ var topBrands = await client.CreateQuery<Product>()
     .Select(g => new { Brand = g.Key, Avg = g.Average(p => p.Price), Count = g.Count() })
     .OrderByDescending(x => x.Avg)
     .Take(5)
+    .AsEsqlQueryable()
     .ToListAsync();
 ```
 
@@ -69,7 +71,7 @@ var results = await (
     where log.Duration > 500
     orderby log.Timestamp descending
     select new { log.Message, log.Duration }
-).ToListAsync();
+).AsEsqlQueryable().ToListAsync();
 ```
 
 ### Lambda expression
@@ -143,6 +145,7 @@ Get the server-formatted bytes (`Csv`, `Tsv`, `Txt`, `Json`, `Arrow`, `Smile`, `
 using var stream = await client.CreateQuery<LogEntry>()
     .From("logs-*")
     .Where(l => l.Level == "ERROR")
+    .AsEsqlQueryable()
     .ToStreamAsync(EsqlFormat.Csv);
 
 await stream.CopyToAsync(File.Create("errors.csv"));
@@ -154,6 +157,7 @@ Server-side async with Apache Arrow. The query is best-effort `DELETE`d on dispo
 await using var q = await client.CreateQuery<LogEntry>()
     .From("logs-*")
     .Where(l => l.Level == "ERROR")
+    .AsEsqlQueryable()
     .ToAsyncQueryAsync(EsqlFormat.Arrow);
 
 await q.WaitForCompletionAsync();
@@ -175,6 +179,7 @@ var results = await client.CreateQuery<LogEntry>()
     .WithOptions(new EsqlQueryOptions { TimeZone = "America/New_York", Locale = "en-US" })
     .From("logs-*")
     .Where(l => l.Level == "ERROR")
+    .AsEsqlQueryable()
     .ToListAsync();
 ```
 
@@ -187,6 +192,7 @@ var results = await client.CreateQuery<LogEntry>()
         RequestConfiguration = new RequestConfiguration { RequestTimeout = TimeSpan.FromSeconds(120) }
     })
     .From("logs-*")
+    .AsEsqlQueryable()
     .ToListAsync();
 ```
 
@@ -197,6 +203,7 @@ await using var asyncQuery = await client.CreateQuery<LogEntry>()
     .WithOptions(new EsqlQueryOptions { TimeZone = "UTC" })
     .From("logs-*")
     .Where(l => l.Level == "ERROR")
+    .AsEsqlQueryable()
     .ToAsyncQueryAsync(new EsqlAsyncQueryOptions
     {
         WaitForCompletionTimeout = TimeSpan.FromSeconds(5),

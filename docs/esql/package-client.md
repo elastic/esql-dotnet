@@ -99,6 +99,7 @@ var results = await client.CreateQuery<LogEntry>()
     .Where(l => l.Level == "ERROR" && l.Duration > 500)
     .OrderByDescending(l => l.Timestamp)
     .Take(50)
+    .AsEsqlQueryable()
     .ToListAsync();
 ```
 
@@ -110,7 +111,7 @@ var results = await (
     where l.Level == "ERROR"
     orderby l.Timestamp descending
     select new { l.Message, l.Duration }
-).ToListAsync();
+).AsEsqlQueryable().ToListAsync();
 ```
 
 ### Lambda expression
@@ -180,6 +181,7 @@ var results = await client.CreateQuery<LogEntry>()
     .From("logs-*")
     .Where(l => l.Level == "ERROR")
     .Take(50)
+    .AsEsqlQueryable()
     .ToListAsync();
 ```
 
@@ -204,6 +206,7 @@ await using var asyncQuery = await client.CreateQuery<LogEntry>()
     .WithOptions(new EsqlQueryOptions { TimeZone = "UTC" })
     .From("logs-*")
     .Where(l => l.Level == "ERROR")
+    .AsEsqlQueryable()
     .ToAsyncQueryAsync(new EsqlAsyncQueryOptions
     {
         WaitForCompletionTimeout = TimeSpan.FromSeconds(5),
@@ -259,6 +262,7 @@ var results = await client.CreateQuery<LogEntry>()
         }
     })
     .From("logs-*")
+    .AsEsqlQueryable()
     .ToListAsync();
 ```
 
@@ -270,22 +274,26 @@ The `RequestConfiguration` is forwarded to all transport calls -- including poll
 var count = await client.CreateQuery<LogEntry>()
     .From("logs-*")
     .Where(l => l.Level == "ERROR")
+    .AsEsqlQueryable()
     .CountAsync();
 
 var hasErrors = await client.CreateQuery<LogEntry>()
     .From("logs-*")
     .Where(l => l.Level == "ERROR")
+    .AsEsqlQueryable()
     .AnyAsync();
 
 var first = await client.CreateQuery<LogEntry>()
     .From("logs-*")
     .Where(l => l.Level == "ERROR")
+    .AsEsqlQueryable()
     .FirstOrDefaultAsync();
 
 var single = await client.CreateQuery<LogEntry>()
     .From("logs-*")
     .Where(l => l.Level == "ERROR")
     .Take(1)
+    .AsEsqlQueryable()
     .SingleAsync();
 ```
 
@@ -304,7 +312,7 @@ await foreach (var entry in client.QueryAsync<LogEntry>(q =>
 You can also get an `IAsyncEnumerable<T>` from any queryable:
 
 ```csharp
-var query = client.CreateQuery<LogEntry>().From("logs-*").Take(100);
+var query = client.CreateQuery<LogEntry>().From("logs-*").Take(100).AsEsqlQueryable();
 
 await foreach (var entry in query.AsAsyncEnumerable())
 {
@@ -335,6 +343,7 @@ Pick the wire format with the `EsqlFormat` enum:
 using var stream = await client.CreateQuery<LogEntry>()
     .From("logs-*")
     .Where(l => l.Level == "ERROR")
+    .AsEsqlQueryable()
     .ToStreamAsync(EsqlFormat.Csv);
 
 await stream.CopyToAsync(File.Create("errors.csv"));
@@ -352,6 +361,7 @@ For long-running queries with a non-JSON format, use `ToAsyncQueryAsync(format)`
 await using var q = await client.CreateQuery<LogEntry>()
     .From("logs-*")
     .Where(l => l.Level == "ERROR")
+    .AsEsqlQueryable()
     .ToAsyncQueryAsync(EsqlFormat.Arrow);
 
 await q.WaitForCompletionAsync();
@@ -392,6 +402,7 @@ var results = await asyncQuery.ToListAsync();
 await using var asyncQuery = await client.CreateQuery<LogEntry>()
     .From("logs-*")
     .Where(l => l.Level == "ERROR")
+    .AsEsqlQueryable()
     .ToAsyncQueryAsync(new EsqlAsyncQueryOptions
     {
         WaitForCompletionTimeout = TimeSpan.FromSeconds(1),
@@ -442,6 +453,7 @@ Use `ROW` + `COMPLETION` in the LINQ pipeline for standalone prompts:
 var results = await client.CreateQuery<CompletionResult>()
     .Row(() => new { prompt = "Summarize the benefits of Elasticsearch" })
     .Completion("prompt", InferenceEndpoints.OpenAi.Gpt41, column: "answer")
+    .AsEsqlQueryable()
     .ToListAsync();
 ```
 
@@ -462,6 +474,7 @@ var results = await client.CreateQuery<Book>()
     .Fuse()
     .OrderByDescending(_ => EsqlMetadata.Score)
     .Take(10)
+    .AsEsqlQueryable()
     .ToListAsync();
 ```
 
@@ -511,6 +524,7 @@ try
 {
     var results = await client.CreateQuery<LogEntry>()
         .From("logs-*")
+        .AsEsqlQueryable()
         .ToListAsync();
 }
 catch (EsqlExecutionException ex)
