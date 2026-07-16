@@ -189,6 +189,7 @@ It works with all execution styles -- lambda, query syntax, and streaming:
 
 ```csharp
 await foreach (var entry in client.QueryAsync<LogEntry>(q => q
+     .AsEsqlQueryable()
      .WithOptions(new EsqlQueryOptions { TimeZone = "UTC" })
      .From("logs-*")
      .Where(l => l.Level == "ERROR")))
@@ -221,7 +222,8 @@ Or via the `EsqlClient` convenience methods:
 
 ```csharp
 await using var asyncQuery = await client.SubmitAsyncQueryAsync<LogEntry>(
-    q => q.WithOptions(new EsqlQueryOptions { TimeZone = "UTC" })
+    q => q.AsEsqlQueryable()
+          .WithOptions(new EsqlQueryOptions { TimeZone = "UTC" })
           .From("logs-*")
           .Where(l => l.Level == "ERROR"),
     new EsqlAsyncQueryOptions { KeepOnCompletion = true }
