@@ -198,6 +198,39 @@ public class EsqlTransportExecutorRequestTests
 	}
 
 	[Test]
+	public void PollAsyncQuery_DropNullColumnsAndKeepAlive_AppendsQueryParams()
+	{
+		var (executor, invoker) = TestExecutorFactory.Create();
+		var request = new EsqlExecutionRequest
+		{
+			Esql = "",
+			QueryOptions = new EsqlQueryOptions { DropNullColumns = true },
+			AsyncOptions = new EsqlAsyncQueryOptions { KeepAlive = TimeSpan.FromMinutes(5) }
+		};
+
+		using var response = executor.PollAsyncQuery("abc123", request);
+
+		_ = invoker.LastEndpoint!.Method.Should().Be(HttpMethod.GET);
+		_ = invoker.LastEndpoint.PathAndQuery.Should().Be("/_query/async/abc123?drop_null_columns=true&keep_alive=5m");
+	}
+
+	[Test]
+	public void DeleteAsyncQuery_WithOptions_OmitsQueryParams()
+	{
+		var (executor, invoker) = TestExecutorFactory.Create();
+		var request = new EsqlExecutionRequest
+		{
+			Esql = "",
+			QueryOptions = new EsqlQueryOptions { DropNullColumns = true },
+			AsyncOptions = new EsqlAsyncQueryOptions { KeepAlive = TimeSpan.FromMinutes(5) }
+		};
+
+		executor.DeleteAsyncQuery("abc123", request);
+
+		_ = invoker.LastEndpoint!.PathAndQuery.Should().Be("/_query/async/abc123");
+	}
+
+	[Test]
 	public void ExecuteQuery_ErrorStatusCode_ThrowsEsqlExecutionException()
 	{
 		var (executor, _) = TestExecutorFactory.Create(

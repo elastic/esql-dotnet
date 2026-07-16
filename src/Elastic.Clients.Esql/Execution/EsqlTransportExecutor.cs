@@ -92,7 +92,7 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 	public IEsqlResponse PollAsyncQuery(string queryId, EsqlExecutionRequest request)
 	{
 		var transportOptions = ResolveOptions(request.ExecutorOptions);
-		var endpointPath = BuildAsyncQueryEndpoint(HttpMethod.GET, queryId, request.Format);
+		var endpointPath = BuildAsyncQueryEndpoint(HttpMethod.GET, queryId, request);
 		var requestConfig = EnsureAsyncHeaders(ApplyAcceptForFormat(transportOptions?.RequestConfiguration, request.Format));
 		var response = _settings.Transport.Request<ElasticsearchStreamResponse>(in endpointPath, null, null, requestConfig);
 		ThrowIfError(response, "Failed to get async query status");
@@ -102,7 +102,7 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 	public async Task<IEsqlAsyncResponse> PollAsyncQueryAsync(string queryId, EsqlExecutionRequest request, CancellationToken cancellationToken)
 	{
 		var transportOptions = ResolveOptions(request.ExecutorOptions);
-		var endpointPath = BuildAsyncQueryEndpoint(HttpMethod.GET, queryId, request.Format);
+		var endpointPath = BuildAsyncQueryEndpoint(HttpMethod.GET, queryId, request);
 		var requestConfig = EnsureAsyncHeaders(ApplyAcceptForFormat(transportOptions?.RequestConfiguration, request.Format));
 
 #if NET10_0_OR_GREATER
@@ -123,7 +123,7 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 	public void DeleteAsyncQuery(string queryId, EsqlExecutionRequest request)
 	{
 		var transportOptions = ResolveOptions(request.ExecutorOptions);
-		var endpointPath = BuildAsyncQueryEndpoint(HttpMethod.DELETE, queryId, format: null);
+		var endpointPath = BuildAsyncQueryEndpoint(HttpMethod.DELETE, queryId, request: null);
 		using var response = _settings.Transport.Request<ElasticsearchStreamResponse>(in endpointPath, null, null, transportOptions?.RequestConfiguration);
 		ThrowIfError(response, "Failed to delete async query");
 	}
@@ -131,7 +131,7 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 	public async Task DeleteAsyncQueryAsync(string queryId, EsqlExecutionRequest request, CancellationToken cancellationToken)
 	{
 		var transportOptions = ResolveOptions(request.ExecutorOptions);
-		var endpointPath = BuildAsyncQueryEndpoint(HttpMethod.DELETE, queryId, format: null);
+		var endpointPath = BuildAsyncQueryEndpoint(HttpMethod.DELETE, queryId, request: null);
 		using var response = await _settings.Transport
 			.RequestAsync<ElasticsearchStreamResponse>(in endpointPath, null, null, transportOptions?.RequestConfiguration, cancellationToken)
 			.ConfigureAwait(false);
@@ -150,18 +150,31 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 			$"Expected executor options of type '{nameof(EsqlTransportOptions)}' but received '{options.GetType().FullName}'.");
 	}
 
-	private EndpointPath BuildAsyncQueryEndpoint(HttpMethod method, string queryId, EsqlFormat? format)
+	private EndpointPath BuildAsyncQueryEndpoint(HttpMethod method, string queryId, EsqlExecutionRequest? request)
 	{
 		if (string.IsNullOrWhiteSpace(queryId))
 			throw new ArgumentException("Async query ID cannot be null or empty.", nameof(queryId));
 
 		var basePath = $"/_query/async/{Uri.EscapeDataString(queryId)}";
 
-		if (format is null)
+		var format = request?.Format;
+		var dropNullColumns = request?.QueryOptions?.DropNullColumns;
+		var keepAlive = request?.AsyncOptions?.KeepAlive;
+
+		if (format is null && dropNullColumns is null && keepAlive is null)
 			return new EndpointPath(method, basePath);
 
 		var parameters = new DefaultRequestParameters();
-		parameters.SetQueryString("format", format.Value.GetFormatName());
+
+		if (dropNullColumns is { } dropNull)
+			parameters.SetQueryString("drop_null_columns", dropNull);
+
+		if (keepAlive is { } ka)
+			parameters.SetQueryString("keep_alive", FormatTimeSpan(ka));
+
+		if (format is { } fmt)
+			parameters.SetQueryString("format", fmt.GetFormatName());
+
 		var pathWithQuery = parameters.CreatePathWithQueryStrings(basePath, _settings.Transport.Configuration);
 		return new EndpointPath(method, pathWithQuery);
 	}
