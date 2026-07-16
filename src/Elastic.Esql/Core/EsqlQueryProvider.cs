@@ -213,7 +213,14 @@ public sealed class EsqlQueryProvider : IQueryProvider
 		catch
 		{
 			// The response is only owned by EsqlAsyncQuery after successful construction.
-			response.Dispose();
+			try
+			{
+				response.Dispose();
+			}
+			catch
+			{
+				// A failing dispose must not mask the in-flight exception.
+			}
 			throw;
 		}
 	}
@@ -249,7 +256,14 @@ public sealed class EsqlQueryProvider : IQueryProvider
 		catch
 		{
 			// The response is only owned by EsqlAsyncQuery after successful construction.
-			await response.DisposeAsync().ConfigureAwait(false);
+			try
+			{
+				await response.DisposeAsync().ConfigureAwait(false);
+			}
+			catch
+			{
+				// A failing dispose must not mask the in-flight exception.
+			}
 			throw;
 		}
 	}
