@@ -71,6 +71,7 @@ var errors = await client.CreateQuery<LogEntry>()
     .Where(l => l.Level == "ERROR")
     .OrderByDescending(l => l.Timestamp)
     .Take(10)
+    .AsEsqlQueryable()
     .ToListAsync();
 ```
 
@@ -162,6 +163,7 @@ await client.CreateQuery<Book>()
     .Fuse(method: FuseMethod.Linear, normalizer: ScoreNormalizer.MinMax, weights: [0.7, 0.3])
     .OrderByDescending(_ => EsqlMetadata.Score)
     .Take(10)
+    .AsEsqlQueryable()
     .ToListAsync();
 ```
 
@@ -175,6 +177,7 @@ Submit long-running queries asynchronously with `ToAsyncQueryAsync()`. Poll for 
 await using var asyncQuery = await client.CreateQuery<LogEntry>()
     .From("logs-*")
     .Where(l => l.Level == "ERROR")
+    .AsEsqlQueryable()
     .ToAsyncQueryAsync(new EsqlAsyncQueryOptions
     {
         WaitForCompletionTimeout = TimeSpan.FromSeconds(5),
@@ -192,6 +195,7 @@ Get the raw, server-formatted bytes (`Csv`, `Tsv`, `Txt`, `Json`, `Arrow`, `Smil
 using var stream = await client.CreateQuery<LogEntry>()
     .From("logs-*")
     .Where(l => l.Level == "ERROR")
+    .AsEsqlQueryable()
     .ToStreamAsync(EsqlFormat.Csv);
 
 await stream.CopyToAsync(File.Create("errors.csv"));
@@ -203,6 +207,7 @@ Server-side async with a non-JSON format. The query is best-effort `DELETE`d on 
 await using var q = await client.CreateQuery<LogEntry>()
     .From("logs-*")
     .Where(l => l.Level == "ERROR")
+    .AsEsqlQueryable()
     .ToAsyncQueryAsync(EsqlFormat.Arrow);
 
 await q.WaitForCompletionAsync();
@@ -254,6 +259,7 @@ var results = await client.CreateQuery<LogEntry>()
     .WithOptions(new EsqlQueryOptions { TimeZone = "America/New_York", Locale = "en-US" })
     .From("logs-*")
     .Where(l => l.Level == "ERROR")
+    .AsEsqlQueryable()
     .ToListAsync();
 ```
 

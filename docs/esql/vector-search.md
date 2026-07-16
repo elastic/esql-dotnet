@@ -49,6 +49,7 @@ var results = await client.CreateQuery<Book>()
     .Where(b => EsqlFunctions.Knn(b.Embedding, queryVec))
     .OrderByDescending(_ => EsqlMetadata.Score)
     .Take(10)
+    .AsEsqlQueryable()
     .ToListAsync();
 ```
 
@@ -97,6 +98,7 @@ await client.CreateQuery<Color>()
     .Where(c => EsqlFunctions.Knn(c.RgbVector, new byte[] { 0, 120, 0 }))
     .OrderByDescending(_ => EsqlMetadata.Score)
     .Take(5)
+    .AsEsqlQueryable()
     .ToListAsync();
 ```
 
@@ -144,6 +146,7 @@ await client.CreateQuery<Color>()
     })
     .OrderByDescending(c => c.Similarity)
     .Take(10)
+    .AsEsqlQueryable()
     .ToListAsync();
 ```
 
@@ -211,6 +214,7 @@ await client.CreateQuery<Book>()
         b.Title
     })
     .Take(10)
+    .AsEsqlQueryable()
     .ToListAsync();
 ```
 
@@ -307,6 +311,7 @@ var results = await client.CreateQuery<Book>()
     .Fuse()                                // RRF (default), rank constant 60
     .OrderByDescending(_ => EsqlMetadata.Score)
     .Take(10)
+    .AsEsqlQueryable()
     .ToListAsync();
 ```
 
