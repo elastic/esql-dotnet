@@ -213,7 +213,8 @@ await using var asyncQuery = await client.CreateQuery<LogEntry>()
         KeepAlive = TimeSpan.FromMinutes(10)
     });
 
-var results = await asyncQuery.ToListAsync();
+await asyncQuery.WaitForCompletionAsync();
+var results = asyncQuery.ToList();
 ```
 
 Or via the `EsqlClient` convenience methods:
@@ -393,7 +394,8 @@ await using var asyncQuery = await client.SubmitAsyncQueryAsync<LogEntry>(
 );
 
 // Wait for completion if still running, then get results
-var results = await asyncQuery.ToListAsync();
+await asyncQuery.WaitForCompletionAsync();
+var results = asyncQuery.ToList();
 ```
 
 ### Poll manually

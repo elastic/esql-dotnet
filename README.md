@@ -184,7 +184,8 @@ await using var asyncQuery = await client.CreateQuery<LogEntry>()
         KeepAlive = TimeSpan.FromMinutes(10)
     });
 
-var results = await asyncQuery.ToListAsync();
+await asyncQuery.WaitForCompletionAsync();
+var results = asyncQuery.ToList();
 ```
 
 ### Raw Response Formats
