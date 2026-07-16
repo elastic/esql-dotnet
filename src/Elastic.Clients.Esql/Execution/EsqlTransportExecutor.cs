@@ -2,7 +2,6 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-using System.Globalization;
 using System.Text.Json;
 using Elastic.Esql;
 using Elastic.Esql.Execution;
@@ -292,7 +291,13 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 		if (ts.Ticks % TimeSpan.TicksPerMillisecond == 0)
 			return $"{ts.Ticks / TimeSpan.TicksPerMillisecond}ms";
 
-		return $"{ts.TotalMilliseconds.ToString("0.###", CultureInfo.InvariantCulture)}ms";
+		// Elasticsearch rejects fractional time values; 1 tick = 100 ns, so 10 ticks = 1 microsecond
+		// and any tick count is a whole number of nanos. (10 stands in for TimeSpan.TicksPerMicrosecond,
+		// which netstandard2.0 lacks.)
+		if (ts.Ticks % 10 == 0)
+			return $"{ts.Ticks / 10}micros";
+
+		return $"{ts.Ticks * 100}nanos";
 	}
 
 	private static IRequestConfiguration? ApplyAcceptForFormat(IRequestConfiguration? userConfig, EsqlFormat? format)

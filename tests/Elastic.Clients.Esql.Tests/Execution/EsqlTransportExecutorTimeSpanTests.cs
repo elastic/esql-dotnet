@@ -65,12 +65,19 @@ public class EsqlTransportExecutorTimeSpanTests
 	}
 
 	[Test]
-	[Skip("FormatTimeSpan renders sub-millisecond TimeSpans as fractional milliseconds (0.5ms), but Elasticsearch rejects fractional time values. Expected-correct behavior is whole micros/nanos, e.g. 500micros for 5000 ticks. Product fix belongs to separate work.")]
 	public void SubmitAsyncQuery_KeepAliveSubMillisecond_FormatsAsWholeMicros()
 	{
 		var body = SubmitAndCaptureBody(new EsqlAsyncQueryOptions { KeepAlive = TimeSpan.FromTicks(5000) });
 
 		_ = body.Should().Contain("\"keep_alive\":\"500micros\"");
+	}
+
+	[Test]
+	public void SubmitAsyncQuery_KeepAliveSubMicrosecond_FormatsAsWholeNanos()
+	{
+		var body = SubmitAndCaptureBody(new EsqlAsyncQueryOptions { KeepAlive = TimeSpan.FromTicks(5) });
+
+		_ = body.Should().Contain("\"keep_alive\":\"500nanos\"");
 	}
 
 	[Test]
