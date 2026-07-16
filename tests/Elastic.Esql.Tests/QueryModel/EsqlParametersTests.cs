@@ -41,4 +41,14 @@ public class EsqlParametersTests
 
 		_ = act.Should().Throw<ArgumentException>();
 	}
+
+	[Test]
+	public void Add_NullName_ThrowsArgumentNullException()
+	{
+		var parameters = new EsqlParameters();
+
+		var act = () => parameters.Add(null!, JsonSerializer.SerializeToElement(1));
+
+		_ = act.Should().Throw<ArgumentNullException>();
+	}
 }
