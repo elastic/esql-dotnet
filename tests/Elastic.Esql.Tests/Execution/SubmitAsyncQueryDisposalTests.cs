@@ -48,6 +48,18 @@ public class SubmitAsyncQueryDisposalTests
 	}
 
 	[Test]
+	public void ToAsyncQuery_MalformedResponseBodyAndThrowingDispose_SurfacesOriginalException()
+	{
+		var executor = new TrackingExecutor("""{"unexpected":true}"""u8.ToArray(), throwOnDispose: true);
+		var query = CreateExecutableQuery(executor).From("logs-*").AsEsqlQueryable();
+
+		var act = () => query.ToAsyncQuery();
+
+		act.Should().Throw<JsonException>();
+		executor.LastSyncResponse!.Disposed.Should().BeTrue();
+	}
+
+	[Test]
 	public void ToAsyncQuery_WellFormedResponseBody_KeepsTransportResponseOpen()
 	{
 		var executor = new TrackingExecutor("""{"columns":[],"values":[]}"""u8.ToArray());
@@ -69,14 +81,14 @@ public class SubmitAsyncQueryDisposalTests
 		executor.LastAsyncResponse!.Disposed.Should().BeFalse();
 	}
 
-	private sealed class TrackingExecutor(byte[] submitBody) : IEsqlQueryExecutor
+	private sealed class TrackingExecutor(byte[] submitBody, bool throwOnDispose = false) : IEsqlQueryExecutor
 	{
 		public TrackingSyncResponse? LastSyncResponse { get; private set; }
 		public TrackingAsyncResponse? LastAsyncResponse { get; private set; }
 
 		public IEsqlResponse SubmitAsyncQuery(EsqlExecutionRequest request)
 		{
-			LastSyncResponse = new TrackingSyncResponse(submitBody);
+			LastSyncResponse = new TrackingSyncResponse(submitBody, throwOnDispose);
 			return LastSyncResponse;
 		}
 
@@ -106,7 +118,7 @@ public class SubmitAsyncQueryDisposalTests
 			Task.CompletedTask;
 	}
 
-	private sealed class TrackingSyncResponse(byte[] body) : IEsqlResponse
+	private sealed class TrackingSyncResponse(byte[] body, bool throwOnDispose = false) : IEsqlResponse
 	{
 		private readonly MemoryStream _stream = new(body, writable: false);
 
@@ -124,6 +136,9 @@ public class SubmitAsyncQueryDisposalTests
 		{
 			Disposed = true;
 			_stream.Dispose();
+
+			if (throwOnDispose)
+				throw new InvalidOperationException("Simulated dispose failure.");
 		}
 	}
 

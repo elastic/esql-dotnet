@@ -45,7 +45,14 @@ internal sealed partial class EsqlResponseReader
 		catch
 		{
 			// Ownership only transfers to the caller on successful return; reclaim the rented buffer on failure.
-			asyncBuffer.Dispose();
+			try
+			{
+				asyncBuffer.Dispose();
+			}
+			catch
+			{
+				// A failing dispose must not mask the in-flight exception.
+			}
 			throw;
 		}
 	}
@@ -92,7 +99,14 @@ internal sealed partial class EsqlResponseReader
 		catch
 		{
 			// Ownership only transfers to the caller on successful return; reclaim the rented buffer on failure.
-			syncBuffer.Dispose();
+			try
+			{
+				syncBuffer.Dispose();
+			}
+			catch
+			{
+				// A failing dispose must not mask the in-flight exception.
+			}
 			throw;
 		}
 	}
