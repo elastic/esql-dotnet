@@ -249,6 +249,8 @@ public class EsqlClient : IDisposable
 
 		_disposed = true;
 
+		// The built-in DistributedTransport is not IDisposable (only its ITransportConfiguration is),
+		// so this gate only takes effect for custom transports that implement IDisposable.
 		if (Settings.OwnsTransport && Settings.Transport is IDisposable disposableTransport)
 			disposableTransport.Dispose();
 	}
