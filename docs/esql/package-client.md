@@ -235,7 +235,7 @@ Protocol-level options live on `EsqlQueryOptions` (from `Elastic.Esql`) and work
 | `TimeZone` | `string?` | Timezone for date operations (e.g., `"UTC"`, `"America/New_York"`) |
 | `Locale` | `string?` | Locale for formatting (e.g., `"en-US"`) |
 
-Transport-level options live on `EsqlTransportOptions` (specific to `Elastic.Clients.Esql`):
+Transport-level options live on `EsqlTransportOptions`:
 
 | Option | Type | Description |
 |---|---|---|
@@ -342,7 +342,7 @@ await stream.CopyToAsync(File.Create("errors.csv"));
 
 `ToStreamAsync(format)` returns a `Stream`. Disposing the stream releases the underlying HTTP connection — the response wrapper is owned by the returned stream.
 
-A synchronous overload `ToStream(format)` is available for non-async call sites. On .NET 10+, `ToPipeReaderAsync(format)` returns a `PipeReader` for zero-copy consumers.
+A synchronous overload `ToStream(format)` is available for non-async call sites. On .NET 10+, `ToPipeReaderAsync(format)` returns a `PipeReader` for zero-copy consumers. The `format` argument is optional on all three methods; when omitted, the query's configured format applies, defaulting to JSON.
 
 ### Raw async queries
 
