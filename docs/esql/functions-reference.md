@@ -87,6 +87,8 @@ DateTime properties translate to `DATE_EXTRACT`. Arithmetic methods like `.AddDa
 | Date arithmetic | | `.AddDays(n)`, `.AddHours(n)`, `.AddMinutes(n)`, `.AddSeconds(n)`, `.AddMilliseconds(n)` |
 | Time intervals | | `TimeSpan.FromDays(n)`, `.FromHours(n)`, `.FromMinutes(n)`, `.FromSeconds(n)` |
 
+Comparisons against `DayOfWeek` values are remapped automatically: ES|QL `day_of_week` uses ISO numbering (Monday = 1 to Sunday = 7), while .NET `DayOfWeek` starts at Sunday = 0. A predicate like `l.Timestamp.DayOfWeek == DayOfWeek.Sunday` translates to `DATE_EXTRACT("day_of_week", @timestamp) == 7`.
+
 ## Grouping functions
 
 Grouping uses standard LINQ `.GroupBy()`. ES|QL-specific grouping functions are available through `EsqlFunctions`.
