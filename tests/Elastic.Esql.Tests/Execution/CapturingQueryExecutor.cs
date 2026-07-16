@@ -6,7 +6,6 @@
 using System.IO.Pipelines;
 #endif
 using System.Text;
-using Elastic.Esql;
 using Elastic.Esql.Execution;
 using Elastic.Esql.QueryModel;
 

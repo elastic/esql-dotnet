@@ -6,7 +6,6 @@ using Elastic.Esql.Core;
 using Elastic.Esql.Execution;
 using Elastic.Esql.Validation;
 #if NET10_0_OR_GREATER
-using System.Buffers;
 using System.IO.Pipelines;
 #endif
 
