@@ -192,7 +192,7 @@ var provider = new EsqlQueryProvider(MyContext.Default);
 var query = new EsqlQueryable<Product>(provider)
     .From("products")
     .Where(p => p.Name.Contains("laptop"))  // Resolves to the JSON field name
-    .ToString();
+    .ToEsqlString();
 ```
 
 Without an explicit context, field names are resolved via reflection using `[JsonPropertyName]` attributes or the camelCase naming convention.
