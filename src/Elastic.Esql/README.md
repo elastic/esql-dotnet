@@ -116,6 +116,8 @@ FROM orders
 .Select(l => new { Hour = l.Timestamp.Hour })               // EVAL hour = DATE_EXTRACT("hour_of_day", @timestamp)
 ```
 
+Comparisons against `DayOfWeek` values are remapped automatically -- ES|QL `day_of_week` uses ISO numbering (Monday = 1 to Sunday = 7), while .NET `DayOfWeek` starts at Sunday = 0. `l.Timestamp.DayOfWeek == DayOfWeek.Sunday` translates to `DATE_EXTRACT("day_of_week", @timestamp) == 7`.
+
 ### Math
 
 ```csharp
