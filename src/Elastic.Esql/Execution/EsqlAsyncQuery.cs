@@ -79,6 +79,11 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 	/// Calls <see cref="WaitForCompletionAsync"/> internally before returning rows.
 	/// Each response's rows can only be consumed once (the underlying stream is single-read).
 	/// </summary>
+	/// <remarks>
+	/// When the query id arrives only in the trailing response body, it is captured after the rows
+	/// have been fully enumerated. Terminating enumeration early (e.g. via <c>Take</c> or <c>break</c>)
+	/// can therefore leave the server-side query undeleted on dispose.
+	/// </remarks>
 	public async IAsyncEnumerable<T> AsAsyncEnumerable([EnumeratorCancellation] CancellationToken cancellationToken = default)
 	{
 		if (!IsCompleted)
@@ -104,6 +109,11 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 	/// <remarks>
 	/// When the query was submitted asynchronously, enumeration bridges async reads onto the calling thread
 	/// via the thread pool. Prefer <see cref="AsAsyncEnumerable"/> with <c>await foreach</c>.
+	/// <para>
+	/// When the query id arrives only in the trailing response body, it is captured after the rows
+	/// have been fully enumerated. Terminating enumeration early (e.g. via <c>Take</c> or <c>break</c>)
+	/// can therefore leave the server-side query undeleted on dispose.
+	/// </para>
 	/// </remarks>
 	public IEnumerable<T> AsEnumerable()
 	{
@@ -323,7 +333,7 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 	private static string? ReadAsyncIdHeader(IEsqlResponse response) =>
 		response.TryGetHeader("X-Elasticsearch-Async-Id", out var values) ? values.FirstOrDefault() : null;
 
-	/// <summary>The reader captures a trailing "id" property only once row enumeration has completed.</summary>
+	/// <summary>The reader captures a trailing <c>id</c> property only once row enumeration has completed.</summary>
 	private void SyncQueryIdFromResults() =>
 		QueryId ??= _asyncResult?.Id ?? _syncResult?.Id;
 
