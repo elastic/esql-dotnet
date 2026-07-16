@@ -133,7 +133,8 @@ await using var asyncQuery = await client.SubmitAsyncQueryAsync<LogEntry>(
 if (asyncQuery.IsRunning)
     Console.WriteLine($"Query {asyncQuery.QueryId} still running...");
 
-var results = await asyncQuery.ToListAsync();  // Polls until complete
+await asyncQuery.WaitForCompletionAsync();  // Polls until complete
+var results = asyncQuery.ToList();
 // Query automatically deleted from cluster when disposed
 ```
 
