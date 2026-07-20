@@ -485,13 +485,18 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 
 		if (node.Arguments.Count > 2)
 		{
+			// A comparer (or any other non-lambda) can trail every GroupBy overload; classify it
+			// before the arity check so 4-arg comparer forms do not get the result-selector message.
+			if (node.Arguments[^1] is not UnaryExpression { Operand: LambdaExpression })
+				throw new NotSupportedException(
+					"GroupBy with an IEqualityComparer or other non-lambda argument is not supported. " +
+					"Use a plain key selector, e.g. '.GroupBy(x => x.Field)'.");
+
 			if (node.Arguments.Count > 3)
 				throw ResultSelectorNotSupported();
 
 			if (node.Arguments[2] is not UnaryExpression { Operand: LambdaExpression extraLambda })
-				throw new NotSupportedException(
-					"GroupBy with an IEqualityComparer or other non-lambda argument is not supported. " +
-					"Use a plain key selector, e.g. '.GroupBy(x => x.Field)'.");
+				throw ResultSelectorNotSupported();
 
 			if (extraLambda.Parameters.Count != 1)
 				throw ResultSelectorNotSupported();
