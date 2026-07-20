@@ -4,6 +4,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Elastic.Esql.Tests.TypeMapping.Escaping;
 
 namespace Elastic.Esql.Tests;
 
@@ -33,6 +34,7 @@ namespace Elastic.Esql.Tests;
 [JsonSerializable(typeof(SpecialCharacterDocument))]
 [JsonSerializable(typeof(SpecialCharacterLookup))]
 [JsonSerializable(typeof(SpecialCharacterProjection))]
+[JsonSerializable(typeof(ColumnNameEscapingTests.EqualsSignTarget))]
 public sealed partial class EsqlTestMappingContext : JsonSerializerContext;
 
 /// <summary>Test document with dense_vector fields for KNN / V_* tests.</summary>
