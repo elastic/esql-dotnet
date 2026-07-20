@@ -95,4 +95,18 @@ public class GroupByElementSelectorTests : EsqlTestBase
 			| STATS minVal = MIN(*)
 			""".NativeLineEndings());
 	}
+
+	[Test]
+	public void GroupBy_WithElementSelectorAndComparer_ThrowsComparerMessage()
+	{
+		var query = CreateQuery<SimpleDocument>()
+			.From("docs-*")
+			.GroupBy(d => d.Name, d => d.Value, StringComparer.OrdinalIgnoreCase)
+			.Select(g => new { Name = g.Key, Total = g.Sum() });
+
+		var act = () => query.ToString();
+
+		_ = act.Should().Throw<NotSupportedException>()
+			.WithMessage("*IEqualityComparer*");
+	}
 }
