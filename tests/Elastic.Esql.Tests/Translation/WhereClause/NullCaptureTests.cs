@@ -56,4 +56,21 @@ public class NullCaptureTests : EsqlTestBase
 			| WHERE clientIp IS NULL
 			""".NativeLineEndings());
 	}
+
+	[Test]
+	public void Where_ComparisonEqualsNullCapture_ParenthesizesComparison()
+	{
+		bool? flag = null;
+
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => (l.Duration > 1) == flag)
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| WHERE (duration > 1.0) IS NULL
+			""".NativeLineEndings());
+	}
 }

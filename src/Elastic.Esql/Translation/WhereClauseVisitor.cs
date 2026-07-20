@@ -41,14 +41,14 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 			if (ResolvesToNull(node.Right))
 			{
-				_ = Visit(node.Left);
+				AppendComparisonOperand(node.Left, parentIsEquality: true);
 				_ = _builder.Append(' ').Append(nullOp);
 				return node;
 			}
 
 			if (ResolvesToNull(node.Left))
 			{
-				_ = Visit(node.Right);
+				AppendComparisonOperand(node.Right, parentIsEquality: true);
 				_ = _builder.Append(' ').Append(nullOp);
 				return node;
 			}
