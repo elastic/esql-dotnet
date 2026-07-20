@@ -102,8 +102,9 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 			var propertyMap = GetMemberPropertyMap(declaringType);
 			return propertyMap.TryGetValue(member, out var property) ? property.CustomConverter : null;
 		}
-		catch
+		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
 		{
+			// Declaring type not registered: no per-property converter can apply.
 			return null;
 		}
 	}
@@ -131,8 +132,9 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 		{
 			propertyMap = GetJsonPropertyMap(type);
 		}
-		catch
+		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
 		{
+			// No property metadata for the type: no column can be flagged as a collection.
 			return null;
 		}
 
