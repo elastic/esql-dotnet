@@ -61,4 +61,34 @@ public class StringComparisonOrdinalTests : EsqlTestBase
 		_ = act.Should().Throw<NotSupportedException>()
 			.WithMessage("*other than StringComparison.Ordinal*");
 	}
+
+	[Test]
+	public void Where_StartsWithOrdinal_TranslatesToLike()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message.StartsWith("err", StringComparison.Ordinal))
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| WHERE message LIKE "err*"
+			""".NativeLineEndings());
+	}
+
+	[Test]
+	public void Where_EndsWithOrdinal_TranslatesToLike()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message.EndsWith("err", StringComparison.Ordinal))
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| WHERE message LIKE "*err"
+			""".NativeLineEndings());
+	}
 }
