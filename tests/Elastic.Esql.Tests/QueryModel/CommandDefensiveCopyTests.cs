@@ -85,7 +85,15 @@ public class CommandDefensiveCopyTests
 
 		var act = () => new ForkCommand(branches);
 
-		_ = act.Should().Throw<ArgumentException>();
+		_ = act.Should().ThrowExactly<ArgumentException>().WithParameterName("branches");
+	}
+
+	[Test]
+	public void ForkBranch_NullFragmentEntry_ThrowsArgumentException()
+	{
+		var act = () => new ForkBranch(["LIMIT 1", null!], hasLimit: true);
+
+		_ = act.Should().ThrowExactly<ArgumentException>().WithParameterName("fragments");
 	}
 
 	[Test]
