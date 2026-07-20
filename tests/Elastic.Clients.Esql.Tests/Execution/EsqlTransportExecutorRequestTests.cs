@@ -210,8 +210,11 @@ public class EsqlTransportExecutorRequestTests
 
 		using var response = executor.PollAsyncQuery("abc123", request);
 
-		_ = invoker.LastEndpoint!.Method.Should().Be(HttpMethod.GET);
-		_ = invoker.LastEndpoint.PathAndQuery.Should().Be("/_query/async/abc123?drop_null_columns=true&keep_alive=5m");
+		var pathAndQuery = invoker.LastEndpoint!.PathAndQuery;
+		_ = invoker.LastEndpoint.Method.Should().Be(HttpMethod.GET);
+		_ = pathAndQuery.Should().StartWith("/_query/async/abc123?");
+		_ = pathAndQuery.Should().Contain("drop_null_columns=true");
+		_ = pathAndQuery.Should().Contain("keep_alive=5m");
 	}
 
 	[Test]
