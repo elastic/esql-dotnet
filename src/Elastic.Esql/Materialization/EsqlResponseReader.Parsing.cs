@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information
 
 using System.Buffers;
+using System.Diagnostics;
 using System.Text.Json;
 
 namespace Elastic.Esql.Materialization;
@@ -248,16 +249,9 @@ internal sealed partial class EsqlResponseReader
 
 			if (TryParseColumns(buffer, cursor.IsEofReached, ref state, out var columns, out var consumed, ref id, ref isRunning, out var valuesFirst))
 			{
-				if (valuesFirst)
-				{
-					// Values precede columns: the caller falls back to a full drain, which issues its
-					// own ReadAsync. Release this read first - the PipeReader contract requires an
-					// AdvanceTo between consecutive ReadAsync calls. Nothing is consumed so the drain
-					// re-reads the complete payload.
-					cursor.AdvanceTo(buffer.Start, buffer.End);
-					return ([], state, consumed, id, isRunning, true);
-				}
-
+				// TryParseColumns reports values-first only on the failure path; a successful
+				// parse means the columns array was read before any "values" property.
+				Debug.Assert(!valuesFirst);
 				return (columns!, state, consumed, id, isRunning, false);
 			}
 
@@ -293,16 +287,9 @@ internal sealed partial class EsqlResponseReader
 
 			if (TryParseColumns(buffer, cursor.IsEofReached, ref state, out var columns, out var consumed, ref id, ref isRunning, out var valuesFirst))
 			{
-				if (valuesFirst)
-				{
-					// Values precede columns: the caller falls back to a full drain, which issues its
-					// own ReadAsync. Release this read first - the PipeReader contract requires an
-					// AdvanceTo between consecutive ReadAsync calls. Nothing is consumed so the drain
-					// re-reads the complete payload.
-					cursor.AdvanceTo(buffer.Start, buffer.End);
-					return ([], state, consumed, id, isRunning, true);
-				}
-
+				// TryParseColumns reports values-first only on the failure path; a successful
+				// parse means the columns array was read before any "values" property.
+				Debug.Assert(!valuesFirst);
 				return (columns!, state, consumed, id, isRunning, false);
 			}
 
