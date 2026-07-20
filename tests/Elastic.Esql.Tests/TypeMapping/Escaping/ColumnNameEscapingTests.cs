@@ -2,6 +2,8 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Text.Json.Serialization;
+
 namespace Elastic.Esql.Tests.TypeMapping.Escaping;
 
 public class ColumnNameEscapingTests : EsqlTestBase
@@ -229,5 +231,27 @@ public class ColumnNameEscapingTests : EsqlTestBase
 			| EVAL marker = CONCAT(message, "a=b")
 			| KEEP marker
 			""".NativeLineEndings());
+	}
+
+	[Test]
+	public void Select_ComputedFieldWithEqualsInJsonName_KeepsFullEscapedName()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Select(l => new EqualsSignTarget { Weird = l.Duration + 1 })
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| EVAL `a=b` = (duration + 1.0)
+			| KEEP `a=b`
+			""".NativeLineEndings());
+	}
+
+	public sealed class EqualsSignTarget
+	{
+		[JsonPropertyName("a=b")]
+		public double Weird { get; set; }
 	}
 }
