@@ -11,7 +11,9 @@ namespace Elastic.Esql.QueryModel.Commands;
 public sealed class ForkBranch(IReadOnlyList<string> fragments, bool hasLimit)
 {
 	/// <summary>The branch pipeline as an ordered list of ES|QL fragments.</summary>
-	public IReadOnlyList<string> Fragments { get; } = [.. fragments ?? throw new ArgumentNullException(nameof(fragments))];
+	public IReadOnlyList<string> Fragments { get; } =
+		[.. (fragments ?? throw new ArgumentNullException(nameof(fragments)))
+			.Select(f => f ?? throw new ArgumentException("Fork branch fragments must not contain null entries.", nameof(fragments)))];
 
 	/// <summary>True when the branch pipeline contains a LIMIT. FUSE requires a LIMIT in every preceding FORK branch.</summary>
 	public bool HasLimit { get; } = hasLimit;
