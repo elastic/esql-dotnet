@@ -21,6 +21,13 @@ public class EsqlClientSettings
 	/// <summary>Whether the client created <see cref="Transport"/> (or was granted ownership) and must dispose it.</summary>
 	internal bool OwnsTransport { get; }
 
+	/// <summary>
+	/// The <see cref="ITransportConfiguration"/> created by the <see cref="Uri"/>/<see cref="NodePool"/> constructors, if any.
+	/// Non-null only when this instance created the configuration; a caller-supplied transport's configuration
+	/// belongs to the caller and is never tracked here, even when <see cref="OwnsTransport"/> is <see langword="true"/>.
+	/// </summary>
+	internal ITransportConfiguration? OwnedConfiguration { get; }
+
 	/// <summary>Default query options applied to all queries unless overridden.</summary>
 	public EsqlQueryDefaults Defaults { get; init; } = new();
 
@@ -45,6 +52,7 @@ public class EsqlClientSettings
 		);
 		Transport = new DistributedTransport(config);
 		OwnsTransport = true;
+		OwnedConfiguration = config;
 	}
 
 	/// <summary>
@@ -72,6 +80,7 @@ public class EsqlClientSettings
 		);
 		Transport = new DistributedTransport(config);
 		OwnsTransport = true;
+		OwnedConfiguration = config;
 	}
 
 	/// <summary>Resolves the effective <see cref="System.Text.Json.JsonSerializerOptions"/> from context or explicit options.</summary>

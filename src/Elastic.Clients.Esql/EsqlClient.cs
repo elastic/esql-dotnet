@@ -253,5 +253,9 @@ public class EsqlClient : IDisposable
 		// so this gate only takes effect for custom transports that implement IDisposable.
 		if (Settings.OwnsTransport && Settings.Transport is IDisposable disposableTransport)
 			disposableTransport.Dispose();
+
+		// Configurations created by the settings constructors are owned here and hold the
+		// connection resources; externally supplied configurations belong to the caller.
+		Settings.OwnedConfiguration?.Dispose();
 	}
 }
