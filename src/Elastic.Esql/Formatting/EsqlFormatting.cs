@@ -139,12 +139,12 @@ internal static class EsqlFormatting
 	private static string FormatTimeSpan(TimeSpan ts) =>
 		FormatTimeSpanRaw(ts);
 
-	private static string FormatFloat(float f) =>
+	internal static string FormatFloat(float f) =>
 		float.IsNaN(f) || float.IsInfinity(f)
 			? "null"
 			: WithExplicitFloatingPoint(f.ToString("G9", InvariantCulture));
 
-	private static string FormatDouble(double d) =>
+	internal static string FormatDouble(double d) =>
 		double.IsNaN(d) || double.IsInfinity(d)
 			? "null"
 			: WithExplicitFloatingPoint(d.ToString("G", InvariantCulture));

@@ -173,6 +173,19 @@ internal sealed class EsqlTranslationContext
 		if (value is not null && Metadata.FindPropertyConverter(propertyContext) is { } converter)
 			return JsonSerializer.SerializeToElement(value, value.GetType(), Metadata.GetOptionsWithConverter(converter));
 
+		// STJ renders whole doubles without a decimal point (100.0 -> 100), which ES types as an
+		// integer parameter and integer division truncates. Parse the explicit literal instead.
+		if (value is double doubleValue)
+			return ParseRawNumber(EsqlFormatting.FormatDouble(doubleValue));
+		if (value is float floatValue)
+			return ParseRawNumber(EsqlFormatting.FormatFloat(floatValue));
+
 		return JsonSerializer.SerializeToElement(value, value?.GetType() ?? typeof(object), SerializerOptions);
+	}
+
+	private static JsonElement ParseRawNumber(string literal)
+	{
+		using var document = JsonDocument.Parse(literal);
+		return document.RootElement.Clone();
 	}
 }
