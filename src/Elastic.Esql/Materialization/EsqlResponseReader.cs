@@ -192,8 +192,9 @@ internal sealed partial class EsqlResponseReader
 		{
 			return options.GetTypeInfo(typeof(T)) as JsonTypeInfo<T>;
 		}
-		catch
+		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
 		{
+			// No metadata for T: rows deserialize through the non-generic options-based overload instead.
 			return null;
 		}
 	}
@@ -210,8 +211,9 @@ internal sealed partial class EsqlResponseReader
 		{
 			return options.GetTypeInfo(typeof(List<T>)) as JsonTypeInfo<List<T>>;
 		}
-		catch
+		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
 		{
+			// No List<T> metadata: fall back to the per-row typed path.
 			return null;
 		}
 	}

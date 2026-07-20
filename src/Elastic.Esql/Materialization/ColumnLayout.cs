@@ -193,8 +193,9 @@ internal sealed class ColumnLayout
 				var subTypeInfo = options.GetTypeInfo(propType);
 				return subTypeInfo.Kind == JsonTypeInfoKind.Object ? subTypeInfo : null;
 			}
-			catch
+			catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
 			{
+				// Property type not registered: treat the dotted column as flat instead of nested.
 				return null;
 			}
 		}
@@ -238,8 +239,9 @@ internal sealed class ColumnLayout
 				if (currentTypeInfo.Kind != JsonTypeInfoKind.Object)
 					return false;
 			}
-			catch
+			catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
 			{
+				// Intermediate type not registered: the path cannot resolve to a collection column.
 				return false;
 			}
 		}
