@@ -783,8 +783,10 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		{
 			return ExpressionConstantResolver.Resolve(expression) is null;
 		}
-		catch
+		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException or TargetInvocationException)
 		{
+			// Resolution failure means "not proven null" - the operand keeps its dedicated
+			// translation (e.g. EsqlMetadata markers). Anything else is a real bug: propagate.
 			return false;
 		}
 	}
