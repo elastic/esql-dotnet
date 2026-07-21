@@ -35,4 +35,32 @@ public class ParameterizedDoubleTests : EsqlTestBase
 
 		_ = parameters.Parameters["threshold"].GetRawText().Should().Be("99.5");
 	}
+
+	[Test]
+	public void Row_CapturedWholeDoubleArray_ParameterKeepsDecimalPoints()
+	{
+		var values = new[] { 100.0, 200.5 };
+
+		var query = CreateQuery<LogEntry>()
+			.Row(() => new { vals = values });
+
+		_ = query.ToEsqlString(inlineParameters: false);
+		var parameters = query.GetParameters();
+
+		_ = parameters.Parameters["vals"].GetRawText().Should().Be("[100.0,200.5]");
+	}
+
+	[Test]
+	public void Row_CapturedFloatList_ParameterKeepsDecimalPoints()
+	{
+		var values = new List<float> { 1f, 2.5f };
+
+		var query = CreateQuery<LogEntry>()
+			.Row(() => new { vals = values });
+
+		_ = query.ToEsqlString(inlineParameters: false);
+		var parameters = query.GetParameters();
+
+		_ = parameters.Parameters["vals"].GetRawText().Should().Be("[1.0,2.5]");
+	}
 }
