@@ -13,6 +13,13 @@ using Elastic.Transport;
 namespace Elastic.Clients.Esql;
 
 /// <summary>Settings for the ES|QL client.</summary>
+/// <remarks>
+/// Settings created via the <see cref="EsqlClientSettings(Uri)"/> or <see cref="EsqlClientSettings(NodePool)"/>
+/// constructors own the transport configuration they create, and the first disposed <see cref="EsqlClient"/> using
+/// them disposes it. Do not share such an instance across multiple clients: disposing one client breaks the
+/// others. To share connection resources, create the <see cref="ITransport"/> externally and pass it to
+/// <see cref="EsqlClientSettings(ITransport, bool)"/> with <c>disposeTransport</c> left <see langword="false"/>.
+/// </remarks>
 public class EsqlClientSettings
 {
 	/// <summary>The HTTP transport to use for all requests.</summary>
