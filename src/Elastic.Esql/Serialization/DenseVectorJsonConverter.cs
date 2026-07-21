@@ -4,6 +4,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Elastic.Esql.Formatting;
 
 namespace Elastic.Esql.Serialization;
 
@@ -67,7 +68,9 @@ internal sealed class DenseVectorFloatJsonConverter : JsonConverter<DenseVector<
 				throw new JsonException(
 					$"DenseVector<float> element at index {i} is NaN or Infinity, which cannot be expressed in ES|QL.");
 
-			writer.WriteNumberValue(element);
+			// WriteNumberValue renders whole floats without a decimal point (1.0f -> 1), which ES
+			// types as an integer element; keep the explicit literal so the parameter stays float-typed.
+			writer.WriteRawValue(EsqlFormatting.FormatFloat(element), skipInputValidation: true);
 		}
 
 		writer.WriteEndArray();

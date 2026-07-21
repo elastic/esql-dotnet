@@ -156,4 +156,19 @@ public class KnnTests : EsqlTestBase
 		_ = esql.Should().Contain("KNN(titleVec, [1.0, 2.0])");
 		_ = esql.Should().Contain("KNN(titleVec, [3.0, 4.0])");
 	}
+
+	[Test]
+	public void Knn_WithCapturedClosureVector_Parameterized_KeepsFloatTyping()
+	{
+		var queryVec = new float[] { 1f, 2f, 3f };
+
+		var query = CreateQuery<BookDocument>()
+			.From("books", MetadataField.Score)
+			.Where(b => EsqlFunctions.Knn(b.TitleVec, queryVec));
+
+		_ = query.ToEsqlString(inlineParameters: false);
+		var parameters = query.GetParameters();
+
+		_ = parameters.Parameters["queryVec"].GetRawText().Should().Be("[1.0,2.0,3.0]");
+	}
 }
