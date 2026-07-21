@@ -4,6 +4,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Elastic.Esql.Tests.TypeMapping.Escaping;
 
 namespace Elastic.Esql.Tests;
 
@@ -30,6 +31,10 @@ namespace Elastic.Esql.Tests;
 [JsonSerializable(typeof(DottedLevelLookup))]
 [JsonSerializable(typeof(BookDocument))]
 [JsonSerializable(typeof(BookProjection))]
+[JsonSerializable(typeof(SpecialCharacterDocument))]
+[JsonSerializable(typeof(SpecialCharacterLookup))]
+[JsonSerializable(typeof(SpecialCharacterProjection))]
+[JsonSerializable(typeof(ColumnNameEscapingTests.EqualsSignTarget))]
 public sealed partial class EsqlTestMappingContext : JsonSerializerContext;
 
 /// <summary>Test document with dense_vector fields for KNN / V_* tests.</summary>
@@ -292,6 +297,38 @@ public class NestedSelectionGeo
 {
 	public string City { get; set; } = string.Empty;
 }
+
+/// <summary>Document whose JSON field names require backtick quoting in ES|QL.</summary>
+public class SpecialCharacterDocument
+{
+	[JsonPropertyName("user-agent")]
+	public UserAgentInfo UserAgent { get; set; } = new();
+
+	[JsonPropertyName("response size")]
+	public int ResponseSize { get; set; }
+
+	public string Message { get; set; } = string.Empty;
+}
+
+public class UserAgentInfo
+{
+	[JsonPropertyName("os name")]
+	public string OsName { get; set; } = string.Empty;
+
+	public string Version { get; set; } = string.Empty;
+}
+
+/// <summary>Lookup document sharing the quoted "user-agent" field name for join collision tests.</summary>
+public class SpecialCharacterLookup
+{
+	public string Message { get; set; } = string.Empty;
+
+	[JsonPropertyName("user-agent")]
+	public string UserAgent { get; set; } = string.Empty;
+}
+
+/// <summary>Projection record whose JSON name requires quoting, for constructor-call Select tests.</summary>
+public record SpecialCharacterProjection([property: JsonPropertyName("user-agent")] string UserAgent);
 
 // ============================================================================
 // MATERIALIZATION TEST MODELS: used by deserialization edge-case tests

@@ -31,8 +31,8 @@ internal static class EsqlFormatting
 			DateTime dt => FormatDateTime(dt),
 			DateTimeOffset dto => FormatDateTime(dto.UtcDateTime),
 #if NET6_0_OR_GREATER
-			DateOnly d => $"\"{d:yyyy-MM-dd}\"",
-			TimeOnly t => $"\"{t:HH:mm:ss}\"",
+			DateOnly d => $"\"{d.ToString("yyyy-MM-dd", InvariantCulture)}\"",
+			TimeOnly t => $"\"{t.ToString("HH:mm:ss", InvariantCulture)}\"",
 #endif
 			TimeSpan ts => FormatTimeSpan(ts),
 			float f => FormatFloat(f),
@@ -112,32 +112,47 @@ internal static class EsqlFormatting
 	internal static string FormatTimeSpanRaw(TimeSpan ts)
 	{
 		if (ts.Ticks % TimeSpan.TicksPerDay == 0)
-			return $"{ts.Ticks / TimeSpan.TicksPerDay} days";
+			return $"{(ts.Ticks / TimeSpan.TicksPerDay).ToString(InvariantCulture)} days";
 		if (ts.Ticks % TimeSpan.TicksPerHour == 0)
-			return $"{ts.Ticks / TimeSpan.TicksPerHour} hours";
+			return $"{(ts.Ticks / TimeSpan.TicksPerHour).ToString(InvariantCulture)} hours";
 		if (ts.Ticks % TimeSpan.TicksPerMinute == 0)
-			return $"{ts.Ticks / TimeSpan.TicksPerMinute} minutes";
+			return $"{(ts.Ticks / TimeSpan.TicksPerMinute).ToString(InvariantCulture)} minutes";
 		if (ts.Ticks % TimeSpan.TicksPerSecond == 0)
-			return $"{ts.Ticks / TimeSpan.TicksPerSecond} seconds";
+			return $"{(ts.Ticks / TimeSpan.TicksPerSecond).ToString(InvariantCulture)} seconds";
 		if (ts.Ticks % TimeSpan.TicksPerMillisecond == 0)
-			return $"{ts.Ticks / TimeSpan.TicksPerMillisecond} milliseconds";
+			return $"{(ts.Ticks / TimeSpan.TicksPerMillisecond).ToString(InvariantCulture)} milliseconds";
 
 		return $"{ts.TotalMilliseconds.ToString("0.###", InvariantCulture)} milliseconds";
 	}
 
-	private static string FormatDateTime(DateTime dt) =>
-		$"\"{dt.ToUniversalTime():yyyy-MM-ddTHH:mm:ss.fffZ}\"";
+	/// <summary>
+	/// Formats a <see cref="DateTime"/> as an invariant UTC ISO-8601 literal.
+	/// Kind policy: Utc is emitted as-is, Local is converted to UTC, and Unspecified is treated
+	/// as UTC without conversion so the query text does not depend on the machine time zone.
+	/// </summary>
+	private static string FormatDateTime(DateTime dt)
+	{
+		var utc = dt.Kind == DateTimeKind.Local ? dt.ToUniversalTime() : dt;
+		return $"\"{utc.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", InvariantCulture)}\"";
+	}
 
 	private static string FormatTimeSpan(TimeSpan ts) =>
 		FormatTimeSpanRaw(ts);
 
-	private static string FormatFloat(float f) =>
+	internal static string FormatFloat(float f) =>
 		float.IsNaN(f) || float.IsInfinity(f)
 			? "null"
-			: f.ToString("G9", InvariantCulture);
+			: WithExplicitFloatingPoint(f.ToString("G9", InvariantCulture));
 
-	private static string FormatDouble(double d) =>
+	internal static string FormatDouble(double d) =>
 		double.IsNaN(d) || double.IsInfinity(d)
 			? "null"
-			: d.ToString("G", InvariantCulture);
+			: WithExplicitFloatingPoint(d.ToString("G", InvariantCulture));
+
+	/// <summary>
+	/// A whole-number double like 100.0 renders as "100" under "G", which ES|QL parses as an
+	/// integer literal; integer division then truncates silently. Keep the type explicit.
+	/// </summary>
+	private static string WithExplicitFloatingPoint(string text) =>
+		text.IndexOfAny(['.', 'e', 'E']) < 0 ? $"{text}.0" : text;
 }

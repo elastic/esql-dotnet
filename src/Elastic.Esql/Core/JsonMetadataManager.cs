@@ -21,7 +21,6 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 	private readonly ConcurrentDictionary<Type, JsonSerializerOptions> _converterOptionsCache = [];
 	private readonly ConcurrentDictionary<Type, Dictionary<string, JsonPropertyInfo>> _ctorPropertyMapCache = [];
 	private readonly ConcurrentDictionary<Type, Dictionary<MemberInfo, JsonPropertyInfo>> _memberPropertyMapCache = [];
-	private readonly ConcurrentDictionary<Type, Dictionary<string, JsonPropertyInfo>> _jsonNamePropertyMapCache = [];
 
 	/// <summary>The underlying <see cref="JsonSerializerOptions"/>.</summary>
 	public JsonSerializerOptions Options => options;
@@ -102,8 +101,9 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 			var propertyMap = GetMemberPropertyMap(declaringType);
 			return propertyMap.TryGetValue(member, out var property) ? property.CustomConverter : null;
 		}
-		catch
+		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
 		{
+			// Declaring type not registered: no per-property converter can apply.
 			return null;
 		}
 	}
@@ -120,36 +120,6 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 			return result;
 		});
 
-	/// <summary>
-	/// Determines which <paramref name="columnNames"/> map to collection-typed properties
-	/// on <paramref name="type"/>. Returns <see langword="null"/> when no collection columns exist.
-	/// </summary>
-	public bool[]? GetCollectionColumnFlags(Type type, string[] columnNames)
-	{
-		Dictionary<string, JsonPropertyInfo>? propertyMap;
-		try
-		{
-			propertyMap = GetJsonPropertyMap(type);
-		}
-		catch
-		{
-			return null;
-		}
-
-		bool[]? flags = null;
-
-		for (var i = 0; i < columnNames.Length; i++)
-		{
-			if (!propertyMap.TryGetValue(columnNames[i], out var prop) || !TypeHelper.IsEnumerableType(prop.PropertyType))
-				continue;
-
-			flags ??= new bool[columnNames.Length];
-			flags[i] = true;
-		}
-
-		return flags;
-	}
-
 	private Dictionary<MemberInfo, JsonPropertyInfo> GetMemberPropertyMap(Type type) =>
 		_memberPropertyMapCache.GetOrAdd(type, t =>
 		{
@@ -161,18 +131,6 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 				if (property.AttributeProvider is MemberInfo member)
 					result[member] = property;
 			}
-
-			return result;
-		});
-
-	private Dictionary<string, JsonPropertyInfo> GetJsonPropertyMap(Type type) =>
-		_jsonNamePropertyMapCache.GetOrAdd(type, t =>
-		{
-			var typeInfo = GetPropertyBasedTypeInfo(t);
-			var result = new Dictionary<string, JsonPropertyInfo>(StringComparer.Ordinal);
-
-			foreach (var property in typeInfo.Properties)
-				result[property.Name] = property;
 
 			return result;
 		});

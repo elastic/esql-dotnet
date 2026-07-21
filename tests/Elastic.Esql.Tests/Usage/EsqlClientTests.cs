@@ -93,7 +93,7 @@ public class EsqlClientTests : EsqlTestBase
 			"""
             FROM logs-*
             | WHERE log.level.keyword == "ERROR"
-            | WHERE duration > 500
+            | WHERE duration > 500.0
             | SORT @timestamp DESC
             | KEEP message, duration
             """.NativeLineEndings());

@@ -5,7 +5,6 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
-using Elastic.Esql.Core;
 using Elastic.Esql.Materialization;
 
 namespace Elastic.Esql.Tests.Materialization;
@@ -255,6 +254,86 @@ public class EsqlResponseReaderBufferedTests
 		rows[0].Count.Should().Be(0);
 		rows[499].Value.Should().Be("item-499");
 		rows[499].Count.Should().Be(499);
+	}
+
+	[Test]
+	public void ReadRows_Stream_ValuesFirst_ObjectCellWithMetadataKeys_ParsesRealColumns()
+	{
+		var json = """
+			{
+			  "values": [
+			    ["John", { "street": "1st Ave", "city": "Springfield", "columns": "evil", "id": "fake", "is_running": true }]
+			  ],
+			  "columns": [
+			    { "name": "name", "type": "keyword" },
+			    { "name": "address", "type": "object" }
+			  ]
+			}
+			""";
+
+		using var stream = CreateStream(json);
+		var reader = CreateReader();
+
+		using var response = reader.ReadRows<PersonModel>(stream);
+		var rows = response.Rows.ToList();
+
+		rows.Should().HaveCount(1);
+		rows[0].Name.Should().Be("John");
+		rows[0].Address.Should().NotBeNull();
+		rows[0].Address!.Street.Should().Be("1st Ave");
+		rows[0].Address!.City.Should().Be("Springfield");
+		response.Id.Should().BeNull();
+		response.IsRunning.Should().BeNull();
+	}
+
+	[Test]
+	public void ReadScalar_Stream_ValuesPropertyBeforeColumns_ReturnsFirstValueAndRowCount()
+	{
+		var json = """
+			{
+			  "values": [
+			    [10],
+			    [20],
+			    [30]
+			  ],
+			  "columns": [
+			    { "name": "count", "type": "integer" }
+			  ]
+			}
+			""";
+
+		using var stream = CreateStream(json);
+		var reader = CreateReader();
+
+		var scalar = reader.ReadScalar<int>(stream);
+
+		scalar.Value.Should().Be(10);
+		scalar.RowCount.Should().Be(3);
+	}
+
+	[Test]
+	public async Task ReadScalarAsync_Stream_ValuesPropertyBeforeColumns_ReturnsFirstValueAndRowCount()
+	{
+		var json = """
+			{
+			  "values": [
+			    [10],
+			    [20],
+			    [30]
+			  ],
+			  "columns": [
+			    { "name": "count", "type": "integer" }
+			  ]
+			}
+			""";
+
+		using var stream = CreateStream(json);
+		var reader = CreateReader();
+
+		var scalar = await reader.ReadScalarAsync<int>(stream);
+
+		scalar.Value.Should().Be(10);
+		scalar.RowCount.Should().Be(3);
 	}
 
 	private static EsqlResponseReader CreateReader()

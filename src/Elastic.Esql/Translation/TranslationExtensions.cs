@@ -7,12 +7,17 @@ using System.Runtime.CompilerServices;
 
 using Elastic.Esql.Core;
 using Elastic.Esql.Extensions;
+using Elastic.Esql.Formatting;
 
 namespace Elastic.Esql.Translation;
 
 internal static class TranslationExtensions
 {
-	public static bool SupportsEvaluation(this Expression expression)
+	/// <summary>
+	/// Determines whether the expression is a constant/member-access chain that can be
+	/// evaluated to a value (closure-rooted, or static when <paramref name="allowStaticRoot"/> is set).
+	/// </summary>
+	private static bool TerminatesInEvaluableRoot(Expression? expression, bool allowStaticRoot)
 	{
 		var current = expression;
 
@@ -35,9 +40,24 @@ internal static class TranslationExtensions
 			}
 		}
 
-		// Static member access => not closure-rooted, but we allow evaluation.
-		return true;
+		// The chain walked off the end: a static member access.
+		return allowStaticRoot;
 	}
+
+	/// <summary>
+	/// Determines whether the expression can be evaluated to a constant value
+	/// (closure-rooted or static member-access chains).
+	/// </summary>
+	public static bool SupportsEvaluation(this Expression expression) =>
+		TerminatesInEvaluableRoot(expression, allowStaticRoot: true);
+
+	/// <summary>
+	/// Returns true when a member-access chain terminates in a <see cref="ConstantExpression"/>
+	/// (a compiler-generated closure instance), meaning the chain can be evaluated to a value.
+	/// Static chains terminate in null and keep their dedicated translations (e.g. NOW()).
+	/// </summary>
+	public static bool IsClosureRooted(this Expression? expression) =>
+		TerminatesInEvaluableRoot(expression, allowStaticRoot: false);
 
 	public static Expression UnwrapConvertExpressions(this Expression expression)
 	{
@@ -49,6 +69,7 @@ internal static class TranslationExtensions
 
 	/// <summary>
 	/// Resolves a field name from an expression, handling plain member access and <c>MultiField()</c> calls.
+	/// Returned paths are ES|QL-escaped per segment via <see cref="EsqlIdentifier.EscapeColumnName"/>.
 	/// </summary>
 	public static string ResolveFieldName(this Expression expression, JsonMetadataManager metadata)
 	{
@@ -62,7 +83,7 @@ internal static class TranslationExtensions
 				Arguments: [var sourceExpression, ConstantExpression { Value: string multiField }]
 			} mc
 				when mc.Method.DeclaringType == typeof(GeneralPurposeExtensions) =>
-				$"{sourceExpression.ResolveFieldName(metadata)}.{multiField}",
+				$"{sourceExpression.ResolveFieldName(metadata)}.{EsqlIdentifier.EscapeColumnName(multiField)}",
 			MemberExpression member => ResolveMemberFieldPath(member, metadata),
 			_ => throw new NotSupportedException($"Cannot extract field name from expression: {expression}")
 		};
@@ -70,7 +91,8 @@ internal static class TranslationExtensions
 
 	private static string ResolveMemberFieldPath(MemberExpression member, JsonMetadataManager metadata)
 	{
-		var segment = ResolveMemberSegmentName(member, metadata);
+		// Escape only the leaf segment; parent segments from recursion are already escaped to avoid double-quoting composed paths.
+		var segment = EsqlIdentifier.EscapeColumnName(ResolveMemberSegmentName(member, metadata));
 		var parent = member.Expression?.UnwrapConvertExpressions();
 
 		return parent switch

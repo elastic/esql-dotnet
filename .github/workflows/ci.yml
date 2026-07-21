@@ -1,4 +1,4 @@
-name: Always be deploying
+name: CI
 
 on:
   pull_request:
@@ -39,7 +39,7 @@ jobs:
         global-json-file: ./global.json
 
     - name: Publish esql AOT smoketest
-      run: dotnet publish examples/esql-aot-smoketest
+      run: dotnet publish examples/esql-aot-smoketest -c Release
 
     - name: Invoke esql AOT smoketest
       run: ./.artifacts/publish/esql-aot-smoketest/release/esql-aot-smoketest${{ matrix.os.ext }}
@@ -127,7 +127,7 @@ jobs:
   release-canary:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startswith(github.ref, 'refs/heads')
-    needs: [ build ]
+    needs: [ build, test-windows, aot-validate, integration-tests ]
     permissions:
       artifact-metadata: write
       attestations: write

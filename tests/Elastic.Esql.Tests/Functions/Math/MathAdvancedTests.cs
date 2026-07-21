@@ -177,7 +177,7 @@ public class MathAdvancedTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE EXP(duration) > 100
+            | WHERE EXP(duration) > 100.0
             """.NativeLineEndings());
 	}
 
@@ -192,7 +192,7 @@ public class MathAdvancedTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE EXP(duration) > 100
+            | WHERE EXP(duration) > 100.0
             """.NativeLineEndings());
 	}
 }

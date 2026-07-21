@@ -2,9 +2,10 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+#if NET10_0_OR_GREATER
 using System.IO.Pipelines;
+#endif
 using System.Text;
-using Elastic.Esql;
 using Elastic.Esql.Execution;
 using Elastic.Esql.QueryModel;
 
@@ -14,58 +15,65 @@ internal sealed record CapturedCall(
 	string Method,
 	string? Esql,
 	EsqlParameters? Parameters,
-	object? Options,
+	EsqlQueryOptions? QueryOptions,
+	object? ExecutorOptions,
 	EsqlAsyncQueryOptions? AsyncOptions = null,
 	EsqlFormat? Format = null);
 
 internal sealed class CapturingQueryExecutor : IEsqlQueryExecutor
 {
-	private static readonly byte[] EmptyResponse = Encoding.UTF8.GetBytes("""{"columns":[],"values":[]}""");
+	/// <summary>The JSON body served for every captured call. Defaults to an empty result set.</summary>
+	public string ResponseJson { get; set; } = """{"columns":[],"values":[]}""";
 
 	public List<CapturedCall> Calls { get; } = [];
 
-	public IEsqlResponse ExecuteQuery(string esql, EsqlParameters? parameters, object? options, EsqlFormat? format)
+	private byte[] ResponseBytes() => Encoding.UTF8.GetBytes(ResponseJson);
+
+	private static CapturedCall Capture(string method, EsqlExecutionRequest request) =>
+		new(method, request.Esql, request.Parameters, request.QueryOptions, request.ExecutorOptions, request.AsyncOptions, request.Format);
+
+	public IEsqlResponse ExecuteQuery(EsqlExecutionRequest request)
 	{
-		Calls.Add(new CapturedCall(nameof(ExecuteQuery), esql, parameters, options, Format: format));
-		return new StreamResponse(new MemoryStream(EmptyResponse));
+		Calls.Add(Capture(nameof(ExecuteQuery), request));
+		return new StreamResponse(new MemoryStream(ResponseBytes()));
 	}
 
-	public Task<IEsqlAsyncResponse> ExecuteQueryAsync(string esql, EsqlParameters? parameters, object? options, EsqlFormat? format, CancellationToken cancellationToken)
+	public Task<IEsqlAsyncResponse> ExecuteQueryAsync(EsqlExecutionRequest request, CancellationToken cancellationToken)
 	{
-		Calls.Add(new CapturedCall(nameof(ExecuteQueryAsync), esql, parameters, options, Format: format));
-		return Task.FromResult<IEsqlAsyncResponse>(new PipeResponse(EmptyResponse));
+		Calls.Add(Capture(nameof(ExecuteQueryAsync), request));
+		return Task.FromResult<IEsqlAsyncResponse>(new PipeResponse(ResponseBytes()));
 	}
 
-	public IEsqlResponse SubmitAsyncQuery(string esql, EsqlParameters? parameters, object? options, EsqlAsyncQueryOptions? asyncOptions, EsqlFormat? format)
+	public IEsqlResponse SubmitAsyncQuery(EsqlExecutionRequest request)
 	{
-		Calls.Add(new CapturedCall(nameof(SubmitAsyncQuery), esql, parameters, options, asyncOptions, format));
-		return new StreamResponse(new MemoryStream(EmptyResponse));
+		Calls.Add(Capture(nameof(SubmitAsyncQuery), request));
+		return new StreamResponse(new MemoryStream(ResponseBytes()));
 	}
 
-	public Task<IEsqlAsyncResponse> SubmitAsyncQueryAsync(string esql, EsqlParameters? parameters, object? options, EsqlAsyncQueryOptions? asyncOptions, EsqlFormat? format, CancellationToken cancellationToken)
+	public Task<IEsqlAsyncResponse> SubmitAsyncQueryAsync(EsqlExecutionRequest request, CancellationToken cancellationToken)
 	{
-		Calls.Add(new CapturedCall(nameof(SubmitAsyncQueryAsync), esql, parameters, options, asyncOptions, format));
-		return Task.FromResult<IEsqlAsyncResponse>(new PipeResponse(EmptyResponse));
+		Calls.Add(Capture(nameof(SubmitAsyncQueryAsync), request));
+		return Task.FromResult<IEsqlAsyncResponse>(new PipeResponse(ResponseBytes()));
 	}
 
-	public IEsqlResponse PollAsyncQuery(string queryId, object? options, EsqlFormat? format)
+	public IEsqlResponse PollAsyncQuery(string queryId, EsqlExecutionRequest request)
 	{
-		Calls.Add(new CapturedCall(nameof(PollAsyncQuery), null, null, options, Format: format));
-		return new StreamResponse(new MemoryStream(EmptyResponse));
+		Calls.Add(Capture(nameof(PollAsyncQuery), request));
+		return new StreamResponse(new MemoryStream(ResponseBytes()));
 	}
 
-	public Task<IEsqlAsyncResponse> PollAsyncQueryAsync(string queryId, object? options, EsqlFormat? format, CancellationToken cancellationToken)
+	public Task<IEsqlAsyncResponse> PollAsyncQueryAsync(string queryId, EsqlExecutionRequest request, CancellationToken cancellationToken)
 	{
-		Calls.Add(new CapturedCall(nameof(PollAsyncQueryAsync), null, null, options, Format: format));
-		return Task.FromResult<IEsqlAsyncResponse>(new PipeResponse(EmptyResponse));
+		Calls.Add(Capture(nameof(PollAsyncQueryAsync), request));
+		return Task.FromResult<IEsqlAsyncResponse>(new PipeResponse(ResponseBytes()));
 	}
 
-	public void DeleteAsyncQuery(string queryId, object? options) =>
-		Calls.Add(new CapturedCall(nameof(DeleteAsyncQuery), null, null, options));
+	public void DeleteAsyncQuery(string queryId, EsqlExecutionRequest request) =>
+		Calls.Add(Capture(nameof(DeleteAsyncQuery), request));
 
-	public Task DeleteAsyncQueryAsync(string queryId, object? options, CancellationToken cancellationToken)
+	public Task DeleteAsyncQueryAsync(string queryId, EsqlExecutionRequest request, CancellationToken cancellationToken)
 	{
-		Calls.Add(new CapturedCall(nameof(DeleteAsyncQueryAsync), null, null, options));
+		Calls.Add(Capture(nameof(DeleteAsyncQueryAsync), request));
 		return Task.CompletedTask;
 	}
 
@@ -80,6 +88,7 @@ internal sealed class CapturingQueryExecutor : IEsqlQueryExecutor
 		public void Dispose() => stream.Dispose();
 	}
 
+#if NET10_0_OR_GREATER
 	private sealed class PipeResponse(byte[] data) : IEsqlAsyncResponse
 	{
 		private readonly Pipe _pipe = new();
@@ -106,4 +115,24 @@ internal sealed class CapturingQueryExecutor : IEsqlQueryExecutor
 			return ValueTask.CompletedTask;
 		}
 	}
+#else
+	private sealed class PipeResponse(byte[] data) : IEsqlAsyncResponse
+	{
+		private readonly MemoryStream _stream = new(data, writable: false);
+
+		public Stream Body => _stream;
+
+		public bool TryGetHeader(string name, out IEnumerable<string> values)
+		{
+			values = [];
+			return false;
+		}
+
+		public ValueTask DisposeAsync()
+		{
+			_stream.Dispose();
+			return ValueTask.CompletedTask;
+		}
+	}
+#endif
 }

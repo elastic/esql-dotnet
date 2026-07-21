@@ -250,22 +250,135 @@ internal static class EsqlFunctionTranslator
 		};
 
 	/// <summary>Translates a string instance method call to ES|QL. Returns null if not recognized.</summary>
-	public static string? TryTranslateString(string methodName, Func<Expression, string> translate, string target, IReadOnlyList<Expression> args) =>
-		methodName switch
+	public static string? TryTranslateString(string methodName, Func<Expression, string> translate, string target, IReadOnlyList<Expression> allArgs)
+	{
+		ThrowIfUnsupportedStringComparison(methodName, allArgs);
+		var args = allArgs.Where(a => a.Type != typeof(StringComparison)).ToList();
+
+		return methodName switch
 		{
 			nameof(string.ToLower) or nameof(string.ToLowerInvariant) => $"TO_LOWER({target})",
 			nameof(string.ToUpper) or nameof(string.ToUpperInvariant) => $"TO_UPPER({target})",
 			nameof(string.Trim) => $"TRIM({target})",
 			nameof(string.TrimStart) => $"LTRIM({target})",
 			nameof(string.TrimEnd) => $"RTRIM({target})",
-			nameof(string.Substring) when args.Count == 1 => $"SUBSTRING({target}, {translate(args[0])})",
-			nameof(string.Substring) when args.Count == 2 => $"SUBSTRING({target}, {translate(args[0])}, {translate(args[1])})",
+			nameof(string.Substring) when args.Count == 1 => $"SUBSTRING({target}, {TranslateOneBasedStart(translate, args[0])})",
+			nameof(string.Substring) when args.Count == 2 => $"SUBSTRING({target}, {TranslateOneBasedStart(translate, args[0])}, {translate(args[1])})",
 			nameof(string.Replace) => $"REPLACE({target}, {translate(args[0])}, {translate(args[1])})",
-			nameof(string.IndexOf) when args.Count == 1 => $"LOCATE({target}, {translate(args[0])})",
-			nameof(string.IndexOf) when args.Count == 2 => $"LOCATE({target}, {translate(args[0])}, {translate(args[1])})",
+			nameof(string.IndexOf) when args.Count == 1 => $"(LOCATE({target}, {translate(args[0])}) - 1)",
+			nameof(string.IndexOf) when args.Count == 2 && args[1].Type == typeof(int) =>
+				$"(LOCATE({target}, {translate(args[0])}, {TranslateOneBasedStart(translate, args[1])}) - 1)",
 			nameof(string.Split) when args.Count >= 1 => $"SPLIT({target}, {translate(args[0])})",
 			_ => null
 		};
+	}
+
+	/// <summary>
+	/// Translates a 0-based C# start index to the 1-based position ES|QL SUBSTRING/LOCATE expect,
+	/// folding the +1 into the literal when the index is a constant.
+	/// </summary>
+	private static string TranslateOneBasedStart(Func<Expression, string> translate, Expression expression) =>
+		expression is ConstantExpression { Value: int index }
+			? (index + 1).ToString(CultureInfo.InvariantCulture)
+			: $"({translate(expression)}) + 1";
+
+	/// <summary>
+	/// ES|QL string matching is ordinal and case-sensitive, so only <see cref="StringComparison.Ordinal"/>
+	/// can be honored; any other mode would silently change semantics.
+	/// </summary>
+	internal static void ThrowIfUnsupportedStringComparison(MethodCallExpression node) =>
+		ThrowIfUnsupportedStringComparison(node.Method.Name, node.Arguments);
+
+	private static void ThrowIfUnsupportedStringComparison(string methodName, IReadOnlyList<Expression> args)
+	{
+		foreach (var argument in args)
+		{
+			if (argument.Type != typeof(StringComparison))
+				continue;
+
+			if (argument.SupportsEvaluation() && ExpressionConstantResolver.Resolve(argument) is StringComparison.Ordinal)
+				continue;
+
+			throw new NotSupportedException(
+				$"String method {methodName} with a StringComparison argument other than StringComparison.Ordinal is not supported. " +
+				"ES|QL string matching is ordinal and case-sensitive; apply ToLower()/ToUpper() to both operands for case-insensitive matching.");
+		}
+	}
+
+	/// <summary>
+	/// Translates a DateTime/DateTimeOffset instance property access to DATE_EXTRACT.
+	/// ES|QL DATE_EXTRACT accepts java.time.temporal.ChronoField names only; short aliases
+	/// like "month" or "hour" are rejected server-side. Returns null if not recognized.
+	/// </summary>
+	public static string? TryTranslateDateMember(string memberName, string target) =>
+		memberName switch
+		{
+			nameof(DateTime.Year) => $"DATE_EXTRACT(\"year\", {target})",
+			nameof(DateTime.Month) => $"DATE_EXTRACT(\"month_of_year\", {target})",
+			nameof(DateTime.Day) => $"DATE_EXTRACT(\"day_of_month\", {target})",
+			nameof(DateTime.Hour) => $"DATE_EXTRACT(\"hour_of_day\", {target})",
+			nameof(DateTime.Minute) => $"DATE_EXTRACT(\"minute_of_hour\", {target})",
+			nameof(DateTime.Second) => $"DATE_EXTRACT(\"second_of_minute\", {target})",
+			nameof(DateTime.DayOfWeek) => $"DATE_EXTRACT(\"day_of_week\", {target})",
+			nameof(DateTime.DayOfYear) => $"DATE_EXTRACT(\"day_of_year\", {target})",
+			_ => null
+		};
+
+	/// <summary>Maps a C# <see cref="DayOfWeek"/> (Sunday = 0) to the ISO number produced by ES|QL day_of_week (Monday = 1 ... Sunday = 7).</summary>
+	public static int ToIsoDayOfWeek(DayOfWeek dayOfWeek) =>
+		dayOfWeek == DayOfWeek.Sunday ? 7 : (int)dayOfWeek;
+
+	/// <summary>
+	/// Detects a comparison of a DateTime/DateTimeOffset DayOfWeek property against an evaluable constant
+	/// and returns the date member expression plus the ISO day number to compare against. The remapped
+	/// number must always be inlined (never parameterized) because it is derived from, not equal to, the
+	/// user-supplied value. Returns null when the expression is not such a comparison; DayOfWeek-to-DayOfWeek
+	/// member equality also returns null because both sides extract ISO numbers and need no remapping.
+	/// </summary>
+	/// <exception cref="NotSupportedException">
+	/// Thrown for relational comparisons against a DayOfWeek constant (only equality is supported due to differing number systems),
+	/// or when comparing DayOfWeek against a non-constant expression.
+	/// </exception>
+	public static (Expression DateMember, int IsoDayNumber)? TryGetDayOfWeekComparison(BinaryExpression node)
+	{
+		if (node.NodeType is not (ExpressionType.Equal or ExpressionType.NotEqual
+			or ExpressionType.LessThan or ExpressionType.LessThanOrEqual
+			or ExpressionType.GreaterThan or ExpressionType.GreaterThanOrEqual))
+			return null;
+
+		var left = node.Left.UnwrapConvertExpressions();
+		var right = node.Right.UnwrapConvertExpressions();
+
+		var leftIsDayOfWeek = IsDayOfWeekMember(left);
+		var rightIsDayOfWeek = IsDayOfWeekMember(right);
+
+		if (leftIsDayOfWeek == rightIsDayOfWeek)
+			return null;
+
+		if (node.NodeType is not (ExpressionType.Equal or ExpressionType.NotEqual))
+			throw new NotSupportedException(
+				"Relational comparisons on DayOfWeek are not supported: C# numbers the week Sunday = 0 to Saturday = 6 " +
+				"while ES|QL day_of_week uses ISO numbering Monday = 1 to Sunday = 7, so range semantics differ. " +
+				"Compare against specific days with == or != instead.");
+
+		var (memberSide, constantSide) = leftIsDayOfWeek ? (left, right) : (right, left);
+
+		if (!constantSide.SupportsEvaluation())
+			throw new NotSupportedException(
+				"Comparing DayOfWeek against a non-constant expression is not supported: C# numbers the week " +
+				"Sunday = 0 to Saturday = 6 while ES|QL day_of_week uses ISO numbering Monday = 1 to Sunday = 7.");
+
+		var value = ExpressionConstantResolver.Resolve(constantSide);
+		if (value is null)
+			return null;
+
+		var dayOfWeek = (DayOfWeek)Convert.ToInt32(value, CultureInfo.InvariantCulture);
+		return (memberSide, ToIsoDayOfWeek(dayOfWeek));
+	}
+
+	private static bool IsDayOfWeekMember(Expression expression) =>
+		expression is MemberExpression { Member: { Name: nameof(DateTime.DayOfWeek), DeclaringType: var declaringType } }
+		&& (declaringType == typeof(DateTime) || declaringType == typeof(DateTimeOffset));
 
 	/// <summary>Translates a Math static field/const access to ES|QL. Returns null if not recognized.</summary>
 	public static string? TryTranslateMathConstant(string memberName) =>
@@ -274,6 +387,51 @@ internal static class EsqlFunctionTranslator
 			nameof(Math.E) => "E()",
 			nameof(Math.PI) => "PI()",
 			"Tau" => "TAU()",
+			_ => null
+		};
+
+	/// <summary>Maps a binary expression node type to its ES|QL operator token.</summary>
+	public static string GetOperator(ExpressionType nodeType) =>
+		nodeType switch
+		{
+			ExpressionType.Equal => "==",
+			ExpressionType.NotEqual => "!=",
+			ExpressionType.LessThan => "<",
+			ExpressionType.LessThanOrEqual => "<=",
+			ExpressionType.GreaterThan => ">",
+			ExpressionType.GreaterThanOrEqual => ">=",
+			ExpressionType.AndAlso => "AND",
+			ExpressionType.OrElse => "OR",
+			ExpressionType.Add => "+",
+			ExpressionType.Subtract => "-",
+			ExpressionType.Multiply => "*",
+			ExpressionType.Divide => "/",
+			ExpressionType.Modulo => "%",
+			_ => throw new NotSupportedException($"Operator {nodeType} is not supported.")
+		};
+
+	/// <summary>
+	/// Translates a string indexer access (<c>s[i]</c>, compiled as <c>get_Chars</c>) to a 1-based
+	/// SUBSTRING call. Constant-resolvable indexes (literals and closure captures) are folded into
+	/// the emitted literal; anything else is translated and shifted by +1 in the emitted expression.
+	/// </summary>
+	public static string TranslateStringIndexer(string target, Expression indexExpression, Func<Expression, string> translate)
+	{
+		if (indexExpression.SupportsEvaluation() && ExpressionConstantResolver.Resolve(indexExpression) is int index)
+			return $"SUBSTRING({target}, {index + 1}, 1)";
+
+		return $"SUBSTRING({target}, ({translate(indexExpression)}) + 1, 1)";
+	}
+
+	/// <summary>
+	/// Translates a <see cref="DateTime"/>/<see cref="DateTimeOffset"/> static property
+	/// (Now, UtcNow, Today) to ES|QL. Returns null if the property is not recognized.
+	/// </summary>
+	public static string? TryTranslateStaticDateProperty(string memberName) =>
+		memberName switch
+		{
+			"Now" or "UtcNow" => "NOW()",
+			"Today" => "DATE_TRUNC(\"day\", NOW())",
 			_ => null
 		};
 

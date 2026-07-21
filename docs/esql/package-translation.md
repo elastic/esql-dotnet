@@ -145,7 +145,7 @@ See the [functions reference](functions-reference.md) for the complete list and 
 ```csharp
 .Where(l => l.Timestamp.Year == 2025)                      // WHERE DATE_EXTRACT("year", @timestamp) == 2025
 .Where(l => l.Timestamp > DateTime.UtcNow.AddHours(-1))    // WHERE @timestamp > (NOW() + -1 hours)
-.Select(l => new { Hour = l.Timestamp.Hour })               // EVAL hour = DATE_EXTRACT("hour", @timestamp)
+.Select(l => new { Hour = l.Timestamp.Hour })               // EVAL hour = DATE_EXTRACT("hour_of_day", @timestamp)
 ```
 
 ### Math

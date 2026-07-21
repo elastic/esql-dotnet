@@ -12,6 +12,7 @@ var results = await client.CreateQuery<LogEntry>()
     .Where(l => l.Level == "ERROR" && l.Duration > 1000)
     .OrderByDescending(l => l.Timestamp)
     .Take(50)
+    .AsEsqlQueryable()
     .ToListAsync();
 ```
 

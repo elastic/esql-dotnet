@@ -34,7 +34,7 @@ internal sealed class ColumnNode
 /// </summary>
 internal sealed class ColumnLayout
 {
-	private const int DefaultMaxDepth = 64;
+	internal const int DefaultMaxDepth = 64;
 
 	/// <summary>Virtual root whose <see cref="ColumnNode.Children"/> are the top-level properties.</summary>
 	public ColumnNode Root { get; }
@@ -51,18 +51,23 @@ internal sealed class ColumnLayout
 	/// <summary>Total count of non-root branch nodes (nested objects).</summary>
 	public int BranchNodeCount { get; }
 
+	/// <summary>Direct-binding fast path metadata for eligible flat layouts, or null when rows must use the assemble-and-deserialize path.</summary>
+	public DirectRowBinder? DirectBinder { get; }
+
 	private ColumnLayout(
 		ColumnNode root,
 		int columnCount,
 		int maxDepth,
 		ColumnNode[] leafNodesByColumnIndex,
-		int branchNodeCount)
+		int branchNodeCount,
+		DirectRowBinder? directBinder)
 	{
 		Root = root;
 		ColumnCount = columnCount;
 		MaxDepth = maxDepth;
 		LeafNodesByColumnIndex = leafNodesByColumnIndex;
 		BranchNodeCount = branchNodeCount;
+		DirectBinder = directBinder;
 	}
 
 	/// <summary>
@@ -85,8 +90,11 @@ internal sealed class ColumnLayout
 		{
 			typeInfo = metadata.GetPropertyBasedTypeInfo(targetType);
 		}
-		catch
+		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
 		{
+			// No property-based metadata (custom converter, or the resolver has none for the
+			// type): degrade to a flat layout - dotted column names stay single-segment and the
+			// row deserializes through the type's own converter/contract instead.
 			typeInfo = null;
 		}
 
@@ -112,7 +120,13 @@ internal sealed class ColumnLayout
 		var leafNodesByColumnIndex = new ColumnNode[columnCount];
 		var branchNodeCount = IndexNodes(root, leafNodesByColumnIndex, 0);
 
-		return new ColumnLayout(root, columnCount, maxDepth, leafNodesByColumnIndex, branchNodeCount);
+		// The binder is cached together with this layout in the reader's column layout cache, so
+		// eligibility is decided once per (target type, column schema).
+		var directBinder = branchNodeCount == 0 && maxDepth <= 1 && columnCount > 0 && typeInfo is not null
+			? DirectRowBinder.TryCreate(leafNodesByColumnIndex, typeInfo, options)
+			: null;
+
+		return new ColumnLayout(root, columnCount, maxDepth, leafNodesByColumnIndex, branchNodeCount, directBinder);
 	}
 
 	/// <summary>
@@ -179,8 +193,9 @@ internal sealed class ColumnLayout
 				var subTypeInfo = options.GetTypeInfo(propType);
 				return subTypeInfo.Kind == JsonTypeInfoKind.Object ? subTypeInfo : null;
 			}
-			catch
+			catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
 			{
+				// Property type not registered: treat the dotted column as flat instead of nested.
 				return null;
 			}
 		}
@@ -224,8 +239,9 @@ internal sealed class ColumnLayout
 				if (currentTypeInfo.Kind != JsonTypeInfoKind.Object)
 					return false;
 			}
-			catch
+			catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
 			{
+				// Intermediate type not registered: the path cannot resolve to a collection column.
 				return false;
 			}
 		}

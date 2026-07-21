@@ -4,6 +4,7 @@
 
 using System.Text;
 using Elastic.Esql.Core;
+using Elastic.Esql.Formatting;
 using Elastic.Esql.QueryModel;
 using Elastic.Esql.QueryModel.Commands;
 
@@ -48,7 +49,7 @@ internal sealed class EsqlFormatter : ICommandVisitor
 
 	public void Visit(FromCommand command)
 	{
-		var from = $"FROM {EscapeIdentifier(command.IndexPattern)}";
+		var from = $"FROM {EsqlIdentifier.FormatIndexPattern(command.IndexPattern)}";
 
 		if (command.Metadata != MetadataField.None)
 			from = $"{from} METADATA {string.Join(", ", MetadataFieldHelper.EnumerateNames(command.Metadata))}";
@@ -116,11 +117,11 @@ internal sealed class EsqlFormatter : ICommandVisitor
 	public void Visit(RenameCommand command)
 	{
 		if (command.Fields.Count > 0)
-			AppendCommand($"RENAME {string.Join(", ", command.Fields.Select(f => $"{EscapeIdentifier(f.OldName)} AS {EscapeIdentifier(f.NewName)}"))}");
+			AppendCommand($"RENAME {string.Join(", ", command.Fields.Select(f => $"{f.OldName} AS {f.NewName}"))}");
 	}
 
 	public void Visit(LookupJoinCommand command) =>
-		AppendCommand($"LOOKUP JOIN {EscapeIdentifier(command.LookupIndex)} ON {command.OnCondition}");
+		AppendCommand($"LOOKUP JOIN {EsqlIdentifier.FormatIndexPattern(command.LookupIndex)} ON {command.OnCondition}");
 
 	public void Visit(RawFragmentCommand command) => AppendCommand(command.Fragment);
 
@@ -130,21 +131,19 @@ internal sealed class EsqlFormatter : ICommandVisitor
 			return;
 
 		var sb = new StringBuilder("FORK");
-		var first = true;
 
 		foreach (var branch in command.Branches)
 		{
-			if (branch.Count == 0)
+			if (branch.Fragments.Count == 0)
 				continue;
 
-			_ = sb.Append(first ? " (" : " (");
-			first = false;
+			_ = sb.Append(" (");
 
-			for (var i = 0; i < branch.Count; i++)
+			for (var i = 0; i < branch.Fragments.Count; i++)
 			{
 				if (i > 0)
 					_ = sb.Append(" | ");
-				_ = sb.Append(branch[i]);
+				_ = sb.Append(branch.Fragments[i]);
 			}
 
 			_ = sb.Append(')');
@@ -188,56 +187,4 @@ internal sealed class EsqlFormatter : ICommandVisitor
 
 		AppendCommand(sb.ToString());
 	}
-
-	/// <summary>
-	/// Escapes an identifier for ES|QL if needed.
-	/// </summary>
-	private static string EscapeIdentifier(string identifier)
-	{
-		// Index patterns with wildcards don't need escaping
-		if (identifier.Contains('*') || identifier.Contains('?'))
-			return identifier;
-
-		// Check if identifier needs escaping (contains special characters)
-		if (NeedsEscaping(identifier))
-			return $"`{identifier.Replace("`", "``")}`";
-
-		return identifier;
-	}
-
-	private static bool NeedsEscaping(string identifier)
-	{
-		if (string.IsNullOrEmpty(identifier))
-			return false;
-
-		// Check for characters that require escaping
-		foreach (var c in identifier)
-		{
-			if (!char.IsLetterOrDigit(c) && c != '_' && c != '.' && c != '-' && c != '*' && c != '?' && c != '@')
-				return true;
-		}
-
-		// Check if it starts with a digit
-		if (char.IsDigit(identifier[0]))
-			return true;
-
-		// Check if it's a reserved keyword
-		if (IsReservedKeyword(identifier))
-			return true;
-
-		return false;
-	}
-
-	private static readonly HashSet<string> ReservedKeywords = new(
-		[
-			"FROM", "WHERE", "EVAL", "STATS", "SORT", "LIMIT", "KEEP", "DROP",
-			"BY", "AS", "AND", "OR", "NOT", "IN", "LIKE", "RLIKE", "IS", "NULL",
-			"TRUE", "FALSE", "ASC", "DESC", "NULLS", "FIRST", "LAST",
-			"ROW", "SHOW", "META", "METADATA", "MV_EXPAND", "RENAME", "DISSECT", "GROK", "ENRICH",
-			"COMPLETION", "JOIN", "LOOKUP"
-		],
-		StringComparer.OrdinalIgnoreCase
-	);
-
-	private static bool IsReservedKeyword(string identifier) => ReservedKeywords.Contains(identifier);
 }

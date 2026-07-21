@@ -6,7 +6,6 @@ using Elastic.Esql.Core;
 using Elastic.Esql.Execution;
 using Elastic.Esql.Validation;
 #if NET10_0_OR_GREATER
-using System.Buffers;
 using System.IO.Pipelines;
 #endif
 
@@ -16,10 +15,11 @@ public static partial class EsqlQueryableExtensions
 {
 	/// <summary>
 	/// Executes the query synchronously and returns the raw response body in the requested
-	/// <see cref="EsqlFormat"/>. The returned <see cref="Stream"/> owns the underlying HTTP
-	/// response — dispose it to release the connection.
+	/// <see cref="EsqlFormat"/>. When <paramref name="format"/> is <c>null</c>, the query model's format applies,
+	/// defaulting to JSON. The returned <see cref="Stream"/> owns the underlying HTTP
+	/// response - dispose it to release the connection.
 	/// </summary>
-	public static Stream ToStream<TSource>(this IEsqlQueryable<TSource> source, EsqlFormat format)
+	public static Stream ToStream<TSource>(this IEsqlQueryable<TSource> source, EsqlFormat? format = null)
 	{
 		Verify.NotNull(source);
 
@@ -32,12 +32,13 @@ public static partial class EsqlQueryableExtensions
 
 	/// <summary>
 	/// Executes the query asynchronously and returns the raw response body in the requested
-	/// <see cref="EsqlFormat"/>. The returned <see cref="Stream"/> owns the underlying HTTP
-	/// response — dispose it to release the connection.
+	/// <see cref="EsqlFormat"/>. When <paramref name="format"/> is <c>null</c>, the query model's format applies,
+	/// defaulting to JSON. The returned <see cref="Stream"/> owns the underlying HTTP
+	/// response - dispose it to release the connection.
 	/// </summary>
 	public static async Task<Stream> ToStreamAsync<TSource>(
 		this IEsqlQueryable<TSource> source,
-		EsqlFormat format,
+		EsqlFormat? format = null,
 		CancellationToken cancellationToken = default)
 	{
 		Verify.NotNull(source);
@@ -55,12 +56,13 @@ public static partial class EsqlQueryableExtensions
 #if NET10_0_OR_GREATER
 	/// <summary>
 	/// Executes the query asynchronously and returns the raw response body in the requested
-	/// <see cref="EsqlFormat"/> as a <see cref="PipeReader"/>. The reader owns the underlying
-	/// HTTP response — complete or dispose it to release the connection.
+	/// <see cref="EsqlFormat"/> as a <see cref="PipeReader"/>. When <paramref name="format"/> is <c>null</c>, the
+	/// query model's format applies, defaulting to JSON. The reader owns the underlying
+	/// HTTP response - complete or dispose it to release the connection.
 	/// </summary>
 	public static async Task<PipeReader> ToPipeReaderAsync<TSource>(
 		this IEsqlQueryable<TSource> source,
-		EsqlFormat format,
+		EsqlFormat? format = null,
 		CancellationToken cancellationToken = default)
 	{
 		Verify.NotNull(source);
@@ -208,7 +210,11 @@ internal sealed class OwnedAsyncResponseStream : Stream
 	protected override void Dispose(bool disposing)
 	{
 		if (disposing)
-			_response.DisposeAsync().AsTask().GetAwaiter().GetResult();
+		{
+			// Task.Run keeps the async disposal off the caller's SynchronizationContext so this blocking wait cannot deadlock.
+			Task.Run(() => _response.DisposeAsync().AsTask()).GetAwaiter().GetResult();
+		}
+
 		base.Dispose(disposing);
 	}
 
@@ -244,6 +250,16 @@ internal sealed class OwnedAsyncResponsePipeReader(IEsqlAsyncResponse response) 
 		DisposeResponse();
 	}
 
+	public override async ValueTask CompleteAsync(Exception? exception = null)
+	{
+		await _inner.CompleteAsync(exception).ConfigureAwait(false);
+
+		if (Interlocked.Exchange(ref _disposed, 1) != 0)
+			return;
+
+		await _response.DisposeAsync().ConfigureAwait(false);
+	}
+
 	public override ValueTask<ReadResult> ReadAsync(CancellationToken cancellationToken = default) =>
 		_inner.ReadAsync(cancellationToken);
 
@@ -255,7 +271,8 @@ internal sealed class OwnedAsyncResponsePipeReader(IEsqlAsyncResponse response) 
 		if (Interlocked.Exchange(ref _disposed, 1) != 0)
 			return;
 
-		_response.DisposeAsync().AsTask().GetAwaiter().GetResult();
+		// Task.Run keeps the async disposal off the caller's SynchronizationContext so this blocking wait cannot deadlock.
+		Task.Run(() => _response.DisposeAsync().AsTask()).GetAwaiter().GetResult();
 	}
 }
 #endif

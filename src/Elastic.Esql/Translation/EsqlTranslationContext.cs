@@ -31,7 +31,9 @@ internal sealed class EsqlTranslationContext
 	/// </summary>
 	public EsqlParameters Parameters { get; internal set; } = new();
 
-	public object? QueryOptions { get; set; }
+	public EsqlQueryOptions? QueryOptions { get; set; }
+
+	public object? ExecutorOptions { get; set; }
 
 	/// <summary>
 	/// Document metadata fields that are currently in scope (either requested via
@@ -81,12 +83,15 @@ internal sealed class EsqlTranslationContext
 	/// <summary>
 	/// Resolves a field name from a declaring type and member, handling anonymous types
 	/// by applying <see cref="JsonSerializerOptions.PropertyNamingPolicy"/> instead of
-	/// looking up registered type metadata.
+	/// looking up registered type metadata. The returned name is ES|QL-escaped via
+	/// <see cref="EsqlIdentifier.EscapeColumnName"/>.
 	/// </summary>
 	public string ResolveFieldName(Type declaringType, MemberInfo member) =>
-		declaringType.IsDefined(typeof(CompilerGeneratedAttribute), false)
-			? SerializerOptions.PropertyNamingPolicy?.ConvertName(member.Name) ?? member.Name
-			: Metadata.ResolvePropertyName(declaringType, member);
+		EsqlIdentifier.EscapeColumnName(
+			declaringType.IsDefined(typeof(CompilerGeneratedAttribute), false)
+				? SerializerOptions.PropertyNamingPolicy?.ConvertName(member.Name) ?? member.Name
+				: Metadata.ResolvePropertyName(declaringType, member)
+		);
 
 	/// <summary>
 	/// Registers the resolved field names for an anonymous type, extracted from a <see cref="NewExpression"/>.
@@ -113,7 +118,13 @@ internal sealed class EsqlTranslationContext
 		if (_anonymousTypeFields is not null && _anonymousTypeFields.TryGetValue(type, out var tracked))
 			return tracked;
 
-		return Metadata.GetAllPropertyNames(type);
+		// Callers compare these names against translator-resolved (escaped) column paths,
+		// so apply the same escaping here. Anonymous-type sets are already stored escaped.
+		var names = new HashSet<string>(StringComparer.Ordinal);
+		foreach (var name in Metadata.GetAllPropertyNames(type))
+			_ = names.Add(EsqlIdentifier.EscapeColumnName(name));
+
+		return names;
 	}
 
 	/// <summary>
@@ -162,6 +173,25 @@ internal sealed class EsqlTranslationContext
 		if (value is not null && Metadata.FindPropertyConverter(propertyContext) is { } converter)
 			return JsonSerializer.SerializeToElement(value, value.GetType(), Metadata.GetOptionsWithConverter(converter));
 
+		// STJ renders whole doubles without a decimal point (100.0 -> 100), which ES types as an
+		// integer parameter and integer division truncates. Parse the explicit literal instead.
+		if (value is double doubleValue)
+			return ParseRawJson(EsqlFormatting.FormatDouble(doubleValue));
+		if (value is float floatValue)
+			return ParseRawJson(EsqlFormatting.FormatFloat(floatValue));
+
+		// The same integer-typing hazard applies element-wise to captured numeric collections.
+		if (value is IEnumerable<double> doubles)
+			return ParseRawJson($"[{string.Join(",", doubles.Select(EsqlFormatting.FormatDouble))}]");
+		if (value is IEnumerable<float> floats)
+			return ParseRawJson($"[{string.Join(",", floats.Select(EsqlFormatting.FormatFloat))}]");
+
 		return JsonSerializer.SerializeToElement(value, value?.GetType() ?? typeof(object), SerializerOptions);
+	}
+
+	private static JsonElement ParseRawJson(string json)
+	{
+		using var document = JsonDocument.Parse(json);
+		return document.RootElement.Clone();
 	}
 }

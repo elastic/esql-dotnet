@@ -9,7 +9,13 @@ namespace Elastic.Esql.QueryModel.Commands;
 /// </summary>
 public sealed class StatsCommand(IEnumerable<string> aggregations, IEnumerable<string>? groupBy = null) : QueryCommand
 {
+	/// <summary>
+	/// The aggregation expressions as final ES|QL text (e.g. <c>alias = FUNC(field)</c>): already
+	/// escaped, may contain <c>?name</c> placeholders whose values live in <see cref="EsqlQuery.Parameters"/>.
+	/// </summary>
 	public IReadOnlyList<string> Aggregations { get; } = aggregations?.ToList() ?? throw new ArgumentNullException(nameof(aggregations));
+
+	/// <summary>The BY grouping expressions as final ES|QL text (already escaped), or <see langword="null"/> when ungrouped.</summary>
 	public IReadOnlyList<string>? GroupBy { get; } = groupBy?.ToList();
 
 	internal override void Accept(ICommandVisitor visitor) => visitor.Visit(this);

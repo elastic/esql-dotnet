@@ -9,6 +9,10 @@ namespace Elastic.Esql.QueryModel.Commands;
 /// </summary>
 public sealed class RawFragmentCommand(string fragment) : QueryCommand
 {
+	/// <summary>
+	/// The raw pipeline fragment as final ES|QL text (without the leading pipe): treated as
+	/// already escaped, may contain <c>?name</c> placeholders whose values live in <see cref="EsqlQuery.Parameters"/>.
+	/// </summary>
 	public string Fragment { get; } = !string.IsNullOrWhiteSpace(fragment)
 		? fragment
 		: throw new ArgumentException("Raw ES|QL fragment must not be empty.", nameof(fragment));

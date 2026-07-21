@@ -5,8 +5,7 @@
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
-using Elastic.Esql.Core;
-using Elastic.Esql.Functions;
+using Elastic.Esql.Formatting;
 
 namespace Elastic.Esql.Translation;
 
@@ -35,7 +34,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 	{
 		public IReadOnlyList<string> KeepFields { get; init; } = [];
 		public IReadOnlyList<(string Source, string Target)> RenameFields { get; init; } = [];
-		public IReadOnlyList<string> EvalExpressions { get; init; } = [];
+		public IReadOnlyList<(string Field, string Expression)> EvalExpressions { get; init; } = [];
 	}
 
 	/// <summary>
@@ -84,7 +83,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		// Pass 2: translate eval expressions to strings (now rename-aware)
 		var keepFields = new List<string>();
 		var renameFields = new List<(string, string)>();
-		var evalExpressions = new List<string>();
+		var evalExpressions = new List<(string, string)>();
 
 		foreach (var entry in _projections)
 		{
@@ -98,7 +97,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 					break;
 				case ProjectionKind.Eval:
 					var expr = TranslateExpression(entry.SourceExpression!);
-					evalExpressions.Add($"{entry.ResultField} = {expr}");
+					evalExpressions.Add((entry.ResultField, expr));
 					break;
 			}
 		}
@@ -154,7 +153,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 					"does not match any serializable property. " +
 					"Ensure each parameter name matches a property name (case-insensitive).");
 
-			ClassifyProjectionMember(jsonProp.Name, node.Arguments[i]);
+			ClassifyProjectionMember(EsqlIdentifier.EscapeColumnName(jsonProp.Name), node.Arguments[i]);
 		}
 
 		return node;
@@ -475,12 +474,8 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		{
 			if (declaringType == typeof(DateTime) || declaringType == typeof(DateTimeOffset))
 			{
-				return memberName switch
-				{
-					"Now" or "UtcNow" => "NOW()",
-					"Today" => "DATE_TRUNC(\"day\", NOW())",
-					_ => throw new NotSupportedException($"DateTime property {memberName} is not supported in projections.")
-				};
+				return EsqlFunctionTranslator.TryTranslateStaticDateProperty(memberName)
+					?? throw new NotSupportedException($"DateTime property {memberName} is not supported in projections.");
 			}
 
 			if (declaringType == typeof(Math))
@@ -494,18 +489,8 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		if (declaringType == typeof(DateTime) || declaringType == typeof(DateTimeOffset))
 		{
 			var dateExpr = TranslateExpression(member.Expression!);
-			return memberName switch
-			{
-				"Year" => $"DATE_EXTRACT(\"year\", {dateExpr})",
-				"Month" => $"DATE_EXTRACT(\"month\", {dateExpr})",
-				"Day" => $"DATE_EXTRACT(\"day_of_month\", {dateExpr})",
-				"Hour" => $"DATE_EXTRACT(\"hour\", {dateExpr})",
-				"Minute" => $"DATE_EXTRACT(\"minute\", {dateExpr})",
-				"Second" => $"DATE_EXTRACT(\"second\", {dateExpr})",
-				"DayOfWeek" => $"DATE_EXTRACT(\"day_of_week\", {dateExpr})",
-				"DayOfYear" => $"DATE_EXTRACT(\"day_of_year\", {dateExpr})",
-				_ => throw new NotSupportedException($"DateTime property {memberName} is not supported in projections.")
-			};
+			return EsqlFunctionTranslator.TryTranslateDateMember(memberName, dateExpr)
+				?? throw new NotSupportedException($"DateTime property {memberName} is not supported in projections.");
 		}
 
 		if (declaringType == typeof(string) && memberName == "Length")
@@ -521,9 +506,16 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 
 	private string TranslateBinary(BinaryExpression binary)
 	{
+		var dayOfWeekComparison = EsqlFunctionTranslator.TryGetDayOfWeekComparison(binary);
+		if (dayOfWeekComparison.HasValue)
+		{
+			var dateMember = TranslateExpression(dayOfWeekComparison.Value.DateMember);
+			return $"({dateMember} {EsqlFunctionTranslator.GetOperator(binary.NodeType)} {dayOfWeekComparison.Value.IsoDayNumber})";
+		}
+
 		var left = TranslateExpression(binary.Left);
 		var right = TranslateExpression(binary.Right);
-		var op = GetOperator(binary.NodeType);
+		var op = EsqlFunctionTranslator.GetOperator(binary.NodeType);
 
 		return $"({left} {op} {right})";
 	}
@@ -541,21 +533,12 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 			var target = TranslateExpression(methodCall.Object);
 			return methodName switch
 			{
-				"get_Chars" => TranslateStringIndexer(target, methodCall.Arguments[0]),
+				"get_Chars" => EsqlFunctionTranslator.TranslateStringIndexer(target, methodCall.Arguments[0], TranslateExpression),
 				_ => throw new NotSupportedException($"String method {methodName} is not supported in projections.")
 			};
 		}
 
 		throw new NotSupportedException($"Method {declaringType?.Name}.{methodName} is not supported in projections.");
-	}
-
-	private string TranslateStringIndexer(string target, Expression indexExpression)
-	{
-		if (indexExpression is ConstantExpression constant && constant.Value is int index)
-			return $"SUBSTRING({target}, {index + 1}, 1)";
-
-		var indexExpr = TranslateExpression(indexExpression);
-		return $"SUBSTRING({target}, ({indexExpr}) + 1, 1)";
 	}
 
 	private string TranslateConditional(ConditionalExpression conditional)
@@ -634,23 +617,4 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 			return base.VisitMember(node);
 		}
 	}
-
-	private static string GetOperator(ExpressionType nodeType) =>
-		nodeType switch
-		{
-			ExpressionType.Add => "+",
-			ExpressionType.Subtract => "-",
-			ExpressionType.Multiply => "*",
-			ExpressionType.Divide => "/",
-			ExpressionType.Modulo => "%",
-			ExpressionType.Equal => "==",
-			ExpressionType.NotEqual => "!=",
-			ExpressionType.LessThan => "<",
-			ExpressionType.LessThanOrEqual => "<=",
-			ExpressionType.GreaterThan => ">",
-			ExpressionType.GreaterThanOrEqual => ">=",
-			ExpressionType.AndAlso => "AND",
-			ExpressionType.OrElse => "OR",
-			_ => throw new NotSupportedException($"Operator {nodeType} is not supported in projections.")
-		};
 }

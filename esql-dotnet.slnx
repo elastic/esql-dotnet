@@ -4,6 +4,9 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/Elastic.Esql.Benchmarks/Elastic.Esql.Benchmarks.csproj" />
+  </Folder>
   <Folder Name="/examples/">
     <Project Path="examples/esql-aot-smoketest/esql-aot-smoketest.csproj" />
   </Folder>
@@ -14,6 +17,7 @@
   <Folder Name="/tests/">
     <File Path="tests\Directory.Build.props" />
     <Project Path="integration-tests/Elastic.Integration.Tests/Elastic.Esql.Integration.Tests.csproj" />
+    <Project Path="tests/Elastic.Clients.Esql.Tests/Elastic.Clients.Esql.Tests.csproj" />
     <Project Path="tests/Elastic.Esql.Tests/Elastic.Esql.Tests.csproj" />
   </Folder>
   <Folder Name="/_root/">

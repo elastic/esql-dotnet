@@ -32,7 +32,7 @@ public class DateExtractTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE DATE_EXTRACT("month", @timestamp) == 12
+            | WHERE DATE_EXTRACT("month_of_year", @timestamp) == 12
             """.NativeLineEndings());
 	}
 
@@ -62,7 +62,7 @@ public class DateExtractTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE (DATE_EXTRACT("hour", @timestamp) >= 9 AND DATE_EXTRACT("hour", @timestamp) <= 17)
+            | WHERE (DATE_EXTRACT("hour_of_day", @timestamp) >= 9 AND DATE_EXTRACT("hour_of_day", @timestamp) <= 17)
             """.NativeLineEndings());
 	}
 
@@ -77,7 +77,7 @@ public class DateExtractTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE DATE_EXTRACT("minute", @timestamp) == 0
+            | WHERE DATE_EXTRACT("minute_of_hour", @timestamp) == 0
             """.NativeLineEndings());
 	}
 
@@ -92,7 +92,7 @@ public class DateExtractTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE DATE_EXTRACT("second", @timestamp) < 30
+            | WHERE DATE_EXTRACT("second_of_minute", @timestamp) < 30
             """.NativeLineEndings());
 	}
 
@@ -153,7 +153,7 @@ public class DateExtractTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | EVAL year = DATE_EXTRACT("year", @timestamp), month = DATE_EXTRACT("month", @timestamp), day = DATE_EXTRACT("day_of_month", @timestamp)
+            | EVAL year = DATE_EXTRACT("year", @timestamp), month = DATE_EXTRACT("month_of_year", @timestamp), day = DATE_EXTRACT("day_of_month", @timestamp)
             | KEEP year, month, day
             """.NativeLineEndings());
 	}
@@ -169,8 +169,142 @@ public class DateExtractTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | EVAL hour = DATE_EXTRACT("hour", @timestamp)
+            | EVAL hour = DATE_EXTRACT("hour_of_day", @timestamp)
             | KEEP hour
+            """.NativeLineEndings());
+	}
+
+	[Test]
+	public void DateTime_DayOfWeekSundayEqual_InWhere_GeneratesIsoDayNumber()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Timestamp.DayOfWeek == DayOfWeek.Sunday)
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+            FROM logs-*
+            | WHERE DATE_EXTRACT("day_of_week", @timestamp) == 7
+            """.NativeLineEndings());
+	}
+
+	[Test]
+	public void DateTime_DayOfWeekSundayNotEqual_InWhere_GeneratesIsoDayNumber()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Timestamp.DayOfWeek != DayOfWeek.Sunday)
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+            FROM logs-*
+            | WHERE DATE_EXTRACT("day_of_week", @timestamp) != 7
+            """.NativeLineEndings());
+	}
+
+	[Test]
+	public void DateTime_DayOfWeekCapturedSunday_InWhere_GeneratesIsoDayNumber()
+	{
+		var day = DayOfWeek.Sunday;
+
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Timestamp.DayOfWeek == day)
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+            FROM logs-*
+            | WHERE DATE_EXTRACT("day_of_week", @timestamp) == 7
+            """.NativeLineEndings());
+	}
+
+	[Test]
+	public void DateTime_DayOfWeekReversedOperands_InWhere_GeneratesIsoDayNumber()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => DayOfWeek.Sunday == l.Timestamp.DayOfWeek)
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+            FROM logs-*
+            | WHERE DATE_EXTRACT("day_of_week", @timestamp) == 7
+            """.NativeLineEndings());
+	}
+
+	[Test]
+	public void DateTime_DayOfWeekRelational_InWhere_ThrowsNotSupported()
+	{
+		var query = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Timestamp.DayOfWeek < DayOfWeek.Wednesday);
+
+		var act = () => query.ToString();
+
+		_ = act.Should().Throw<NotSupportedException>()
+			.WithMessage("*day_of_week*");
+	}
+
+	[Test]
+	public void DateTime_DayOfWeekComparison_InSelect_GeneratesIsoDayNumber()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Select(l => new { IsSunday = l.Timestamp.DayOfWeek == DayOfWeek.Sunday })
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+            FROM logs-*
+            | EVAL isSunday = (DATE_EXTRACT("day_of_week", @timestamp) == 7)
+            | KEEP isSunday
+            """.NativeLineEndings());
+	}
+
+	[Test]
+	public void DateTime_DayOfWeekComparedToNonConstantExpression_InWhere_ThrowsNotSupported()
+	{
+		var query = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Timestamp.DayOfWeek == (DayOfWeek)l.StatusCode);
+
+		var act = () => query.ToString();
+
+		_ = act.Should().Throw<NotSupportedException>()
+			.WithMessage("*non-constant*");
+	}
+
+	[Test]
+	public void DateTime_UtcNowYear_InWhere_GeneratesDateExtractOnNow()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.StatusCode < DateTime.UtcNow.Year)
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+            FROM logs-*
+            | WHERE statusCode < DATE_EXTRACT("year", NOW())
+            """.NativeLineEndings());
+	}
+
+	[Test]
+	public void DateTime_DayOfWeekFieldToField_InWhere_ExtractsBothSides()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Timestamp.DayOfWeek == l.Timestamp.DayOfWeek)
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+            FROM logs-*
+            | WHERE DATE_EXTRACT("day_of_week", @timestamp) == DATE_EXTRACT("day_of_week", @timestamp)
             """.NativeLineEndings());
 	}
 }

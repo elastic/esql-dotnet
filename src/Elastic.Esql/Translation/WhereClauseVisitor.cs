@@ -8,8 +8,8 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
-using Elastic.Esql.Core;
 using Elastic.Esql.Extensions;
+using Elastic.Esql.Formatting;
 using Elastic.Esql.Functions;
 
 namespace Elastic.Esql.Translation;
@@ -39,25 +39,38 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		{
 			var nullOp = node.NodeType == ExpressionType.Equal ? "IS NULL" : "IS NOT NULL";
 
-			if (IsNullConstant(node.Right))
+			if (ResolvesToNull(node.Right))
 			{
-				_ = Visit(node.Left);
+				AppendComparisonOperand(node.Left, parentIsEquality: true);
 				_ = _builder.Append(' ').Append(nullOp);
 				return node;
 			}
 
-			if (IsNullConstant(node.Left))
+			if (ResolvesToNull(node.Left))
 			{
-				_ = Visit(node.Right);
+				AppendComparisonOperand(node.Right, parentIsEquality: true);
 				_ = _builder.Append(' ').Append(nullOp);
 				return node;
 			}
 		}
 
-		// Only add parentheses for logical operators (AND/OR) to ensure proper grouping
-		var isLogicalOperator = node.NodeType is ExpressionType.AndAlso or ExpressionType.OrElse;
+		// Must run after null handling (IS NULL wins) and before generic enum comparison (which would emit C# ordinals).
+		var dayOfWeekComparison = EsqlFunctionTranslator.TryGetDayOfWeekComparison(node);
+		if (dayOfWeekComparison.HasValue)
+		{
+			_ = Visit(dayOfWeekComparison.Value.DateMember);
+			_ = _builder.Append(' ').Append(EsqlFunctionTranslator.GetOperator(node.NodeType)).Append(' ').Append(dayOfWeekComparison.Value.IsoDayNumber);
+			return node;
+		}
 
-		if (isLogicalOperator)
+		// Parenthesize logical and arithmetic nodes so the C# expression tree grouping survives;
+		// a flat rendering would let ES|QL re-associate operands by its own precedence rules.
+		var needsParentheses = node.NodeType
+			is ExpressionType.AndAlso or ExpressionType.OrElse
+			or ExpressionType.Add or ExpressionType.Subtract
+			or ExpressionType.Multiply or ExpressionType.Divide or ExpressionType.Modulo;
+
+		if (needsParentheses)
 			_ = _builder.Append('(');
 
 		var enumComparison = TryGetEnumComparison(node);
@@ -65,7 +78,10 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		{
 			var propertyMember = enumComparison.Value.MemberSide.Member;
 			_ = Visit(enumComparison.Value.MemberSide);
-			var op = GetOperator(node.NodeType);
+
+			// The member side is always emitted first; when it originally sat on the right,
+			// relational operators must be mirrored to preserve the predicate.
+			var op = EsqlFunctionTranslator.GetOperator(enumComparison.Value.Swapped ? MirrorComparison(node.NodeType) : node.NodeType);
 			_ = _builder.Append(' ').Append(op).Append(' ');
 
 			var constant = enumComparison.Value.ConstantSide;
@@ -78,25 +94,49 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		}
 		else
 		{
+			var parentIsEquality = node.NodeType is ExpressionType.Equal or ExpressionType.NotEqual;
 			_comparisonPropertyContext = ExtractEntityPropertyMember(node);
-			_ = Visit(node.Left);
-			var op = GetOperator(node.NodeType);
+			AppendComparisonOperand(node.Left, parentIsEquality);
+			var op = EsqlFunctionTranslator.GetOperator(node.NodeType);
 			_ = _builder.Append(' ').Append(op).Append(' ');
-			_ = Visit(node.Right);
+			AppendComparisonOperand(node.Right, parentIsEquality);
 			_comparisonPropertyContext = null;
 		}
 
-		if (isLogicalOperator)
+		if (needsParentheses)
 			_ = _builder.Append(')');
 
 		return node;
 	}
 
 	/// <summary>
-	/// Inspects a <see cref="BinaryExpression"/> and determines whether it represents an enum comparison. If so, returns the enum type, the member site
-	/// expression (the property/field being compared), and the constant enum value. Handles both regular and nullable enums.
+	/// A comparison nested as an equality operand must keep its own parentheses;
+	/// ES|QL misparses the flat form (e.g. <c>a > b == flag</c>).
 	/// </summary>
-	private static (Type EnumType, MemberExpression MemberSide, Expression ConstantSide)? TryGetEnumComparison(BinaryExpression binary)
+	private void AppendComparisonOperand(Expression operand, bool parentIsEquality)
+	{
+		var isNestedComparison = parentIsEquality && operand.UnwrapConvertExpressions() is BinaryExpression
+		{
+			NodeType: ExpressionType.Equal or ExpressionType.NotEqual
+				or ExpressionType.LessThan or ExpressionType.LessThanOrEqual
+				or ExpressionType.GreaterThan or ExpressionType.GreaterThanOrEqual
+		};
+
+		if (isNestedComparison)
+			_ = _builder.Append('(');
+
+		_ = Visit(operand);
+
+		if (isNestedComparison)
+			_ = _builder.Append(')');
+	}
+
+	/// <summary>
+	/// Inspects a <see cref="BinaryExpression"/> and determines whether it represents an enum comparison. If so, returns the enum type, the member site
+	/// expression (the property/field being compared), the constant enum value, and whether the member side originally sat on the right-hand side.
+	/// Handles both regular and nullable enums.
+	/// </summary>
+	private static (Type EnumType, MemberExpression MemberSide, Expression ConstantSide, bool Swapped)? TryGetEnumComparison(BinaryExpression binary)
 	{
 		// TODO: We can probably make this more robust by explicitly looking for the parametrized member access as the source of truth for the enum type.
 
@@ -106,9 +146,13 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 			return null;
 
 		// Try both orientations: member == constant and constant == member.
-		return TryMatch(binary.Left, binary.Right) ?? TryMatch(binary.Right, binary.Left);
+		return TryMatch(binary.Left, binary.Right, swapped: false) ?? TryMatch(binary.Right, binary.Left, swapped: true);
 
-		static (Type EnumType, MemberExpression MemberSide, Expression ConstantSide)? TryMatch(Expression candidateMember, Expression candidateConstant)
+		static (Type EnumType, MemberExpression MemberSide, Expression ConstantSide, bool Swapped)? TryMatch(
+			Expression candidateMember,
+			Expression candidateConstant,
+			bool swapped
+		)
 		{
 			var memberSide = candidateMember.UnwrapConvertExpressions();
 			var constantSide = candidateConstant.UnwrapConvertExpressions();
@@ -128,7 +172,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 			if (!constantSide.SupportsEvaluation())
 				return null;
 
-			return (enumType, memberExpression, constantSide);
+			return (enumType, memberExpression, constantSide, swapped);
 		}
 
 		static Type? GetEnumType(Type type)
@@ -210,21 +254,11 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 	protected override Expression VisitMember(MemberExpression node)
 	{
-		// Check if this is accessing a captured variable (closure)
-		if (node.Expression is ConstantExpression constantExpression)
+		// Closure-rooted member paths (captured variables and member chains of any depth on
+		// captured objects) resolve to a constant value and emit as a parameter or inline literal.
+		if (node.Expression.IsClosureRooted())
 		{
-			var value = GetMemberValue(node, constantExpression.Value);
-			_ = _builder.Append(_context.GetValueOrParameterName(node.Member.Name, value, _comparisonPropertyContext));
-			_comparisonPropertyContext = null;
-			return node;
-		}
-
-		// Check if this is a nested member access on a captured variable
-		if (node.Expression is MemberExpression innerMember &&
-			innerMember.Expression is ConstantExpression innerConstant)
-		{
-			var innerValue = GetMemberValue(innerMember, innerConstant.Value);
-			var value = GetMemberValue(node, innerValue);
+			var value = ExpressionConstantResolver.Resolve(node);
 			_ = _builder.Append(_context.GetValueOrParameterName(node.Member.Name, value, _comparisonPropertyContext));
 			_comparisonPropertyContext = null;
 			return node;
@@ -239,15 +273,11 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 			if (declaringType == typeof(DateTime) || declaringType == typeof(DateTimeOffset))
 			{
-				switch (memberName)
+				var translated = EsqlFunctionTranslator.TryTranslateStaticDateProperty(memberName);
+				if (translated is not null)
 				{
-					case "Now":
-					case "UtcNow":
-						_ = _builder.Append("NOW()");
-						return node;
-					case "Today":
-						_ = _builder.Append("DATE_TRUNC(\"day\", NOW())");
-						return node;
+					_ = _builder.Append(translated);
+					return node;
 				}
 			}
 
@@ -288,34 +318,11 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		if (node.Member.DeclaringType == typeof(DateTime) || node.Member.DeclaringType == typeof(DateTimeOffset))
 		{
 			var dateExpr = TranslateDateTimeExpression(node.Expression);
-			var memberName = node.Member.Name;
-
-			switch (memberName)
+			var translated = EsqlFunctionTranslator.TryTranslateDateMember(node.Member.Name, dateExpr);
+			if (translated != null)
 			{
-				case "Year":
-					_ = _builder.Append("DATE_EXTRACT(\"year\", ").Append(dateExpr).Append(')');
-					return node;
-				case "Month":
-					_ = _builder.Append("DATE_EXTRACT(\"month\", ").Append(dateExpr).Append(')');
-					return node;
-				case "Day":
-					_ = _builder.Append("DATE_EXTRACT(\"day_of_month\", ").Append(dateExpr).Append(')');
-					return node;
-				case "Hour":
-					_ = _builder.Append("DATE_EXTRACT(\"hour\", ").Append(dateExpr).Append(')');
-					return node;
-				case "Minute":
-					_ = _builder.Append("DATE_EXTRACT(\"minute\", ").Append(dateExpr).Append(')');
-					return node;
-				case "Second":
-					_ = _builder.Append("DATE_EXTRACT(\"second\", ").Append(dateExpr).Append(')');
-					return node;
-				case "DayOfWeek":
-					_ = _builder.Append("DATE_EXTRACT(\"day_of_week\", ").Append(dateExpr).Append(')');
-					return node;
-				case "DayOfYear":
-					_ = _builder.Append("DATE_EXTRACT(\"day_of_year\", ").Append(dateExpr).Append(')');
-					return node;
+				_ = _builder.Append(translated);
+				return node;
 			}
 		}
 
@@ -376,12 +383,8 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 	private string TranslateStaticDateTimeProperty(MemberExpression member)
 	{
 		var memberName = member.Member.Name;
-		return memberName switch
-		{
-			"Now" or "UtcNow" => "NOW()",
-			"Today" => "DATE_TRUNC(\"day\", NOW())",
-			_ => throw new NotSupportedException($"DateTime static property {memberName} is not supported.")
-		};
+		return EsqlFunctionTranslator.TryTranslateStaticDateProperty(memberName)
+			?? throw new NotSupportedException($"DateTime static property {memberName} is not supported.");
 	}
 
 	private string TranslateEsqlFunctionForDateTime(MethodCallExpression methodCall)
@@ -389,6 +392,16 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		var methodName = methodCall.Method.Name;
 		var translated = EsqlFunctionTranslator.TryTranslateMethodCall(methodCall, TranslateDateTimeExpression);
 		return translated ?? throw new NotSupportedException($"EsqlFunction {methodName} is not supported in DateTime context.");
+	}
+
+	protected override Expression VisitNew(NewExpression node)
+	{
+		// Fold inline constructor calls (e.g. new DateTime(2024, 1, 1)) to their value; the base
+		// visitor would render each ctor argument individually, concatenating a corrupt literal.
+		var value = ExpressionConstantResolver.Resolve(node);
+		_ = _builder.Append(_context.FormatValue(value, _comparisonPropertyContext));
+		_comparisonPropertyContext = null;
+		return node;
 	}
 
 	protected override Expression VisitConstant(ConstantExpression node)
@@ -488,17 +501,20 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 	private string TranslateSubExpression(Expression expression)
 	{
-		var saved = _builder.ToString();
-		_ = _builder.Clear();
+		// Translate into the builder tail and truncate afterwards, so nested
+		// arguments never re-copy the already accumulated condition prefix.
+		var start = _builder.Length;
 		_ = Visit(expression);
-		var result = _builder.ToString();
-		_ = _builder.Clear().Append(saved);
+		var result = _builder.ToString(start, _builder.Length - start);
+		_builder.Length = start;
 		return result;
 	}
 
 	private Expression VisitStringMethod(MethodCallExpression node)
 	{
 		var methodName = node.Method.Name;
+
+		EsqlFunctionTranslator.ThrowIfUnsupportedStringComparison(node);
 
 		switch (methodName)
 		{
@@ -507,7 +523,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 				_ = Visit(node.Object);
 				_ = _builder.Append(" LIKE ");
 				var containsValue = GetConstantValue(node.Arguments[0]);
-				_ = _builder.Append("\"*").Append(EscapeLikePattern(containsValue?.ToString() ?? "")).Append("*\"");
+				_ = _builder.Append(EsqlFormatting.FormatString($"*{EscapeLikePattern(containsValue?.ToString() ?? "")}*"));
 				break;
 
 			case "StartsWith":
@@ -515,7 +531,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 				_ = Visit(node.Object);
 				_ = _builder.Append(" LIKE ");
 				var startsValue = GetConstantValue(node.Arguments[0]);
-				_ = _builder.Append('"').Append(EscapeLikePattern(startsValue?.ToString() ?? "")).Append("*\"");
+				_ = _builder.Append(EsqlFormatting.FormatString($"{EscapeLikePattern(startsValue?.ToString() ?? "")}*"));
 				break;
 
 			case "EndsWith":
@@ -523,7 +539,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 				_ = Visit(node.Object);
 				_ = _builder.Append(" LIKE ");
 				var endsValue = GetConstantValue(node.Arguments[0]);
-				_ = _builder.Append("\"*").Append(EscapeLikePattern(endsValue?.ToString() ?? "")).Append('"');
+				_ = _builder.Append(EsqlFormatting.FormatString($"*{EscapeLikePattern(endsValue?.ToString() ?? "")}"));
 				break;
 
 			case "IsNullOrEmpty":
@@ -544,21 +560,8 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 			case "get_Chars":
 				// string[i] → SUBSTRING(s, i+1, 1)
-				_ = _builder.Append("SUBSTRING(");
-				_ = Visit(node.Object);
-				_ = _builder.Append(", ");
-				// Add 1 for 1-based indexing in ES|QL
-				var index = GetConstantValue(node.Arguments[0]);
-				if (index is int idx)
-					_ = _builder.Append(idx + 1);
-				else
-				{
-					_ = _builder.Append('(');
-					_ = Visit(node.Arguments[0]);
-					_ = _builder.Append(") + 1");
-				}
-
-				_ = _builder.Append(", 1)");
+				var indexer = EsqlFunctionTranslator.TranslateStringIndexer(TranslateSubExpression(node.Object!), node.Arguments[0], TranslateSubExpression);
+				_ = _builder.Append(indexer);
 				break;
 
 			default:
@@ -729,23 +732,15 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		_ = _builder.Append(')');
 	}
 
-	private static string GetOperator(ExpressionType nodeType) =>
+	/// <summary>Mirrors a relational operator for a comparison whose operands were swapped into member-first order.</summary>
+	private static ExpressionType MirrorComparison(ExpressionType nodeType) =>
 		nodeType switch
 		{
-			ExpressionType.Equal => "==",
-			ExpressionType.NotEqual => "!=",
-			ExpressionType.LessThan => "<",
-			ExpressionType.LessThanOrEqual => "<=",
-			ExpressionType.GreaterThan => ">",
-			ExpressionType.GreaterThanOrEqual => ">=",
-			ExpressionType.AndAlso => "AND",
-			ExpressionType.OrElse => "OR",
-			ExpressionType.Add => "+",
-			ExpressionType.Subtract => "-",
-			ExpressionType.Multiply => "*",
-			ExpressionType.Divide => "/",
-			ExpressionType.Modulo => "%",
-			_ => throw new NotSupportedException($"Operator {nodeType} is not supported.")
+			ExpressionType.LessThan => ExpressionType.GreaterThan,
+			ExpressionType.LessThanOrEqual => ExpressionType.GreaterThanOrEqual,
+			ExpressionType.GreaterThan => ExpressionType.LessThan,
+			ExpressionType.GreaterThanOrEqual => ExpressionType.LessThanOrEqual,
+			_ => nodeType
 		};
 
 	private static object? GetConstantValue(Expression expression)
@@ -760,14 +755,6 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		}
 	}
 
-	private static object? GetMemberValue(MemberExpression member, object? instance) =>
-		member.Member switch
-		{
-			FieldInfo field => field.GetValue(instance),
-			PropertyInfo property => property.GetValue(instance),
-			_ => throw new NotSupportedException($"Member type {member.Member.GetType()} is not supported.")
-		};
-
 	private static object? GetStaticMemberValue(MemberExpression member) =>
 		member.Member switch
 		{
@@ -779,11 +766,36 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 	private static bool IsNullConstant(Expression expression) =>
 		expression is ConstantExpression { Value: null };
 
+	/// <summary>
+	/// True when the operand is a syntactic null or a closure/static-rooted expression whose
+	/// runtime value is null. Rendering such a value inline would emit a dead <c>== null</c>
+	/// comparison (always null in ES|QL) instead of the intended <c>IS NULL</c>.
+	/// </summary>
+	private static bool ResolvesToNull(Expression expression)
+	{
+		if (IsNullConstant(expression))
+			return true;
+
+		if (expression is ConstantExpression || !expression.SupportsEvaluation())
+			return false;
+
+		try
+		{
+			return ExpressionConstantResolver.Resolve(expression) is null;
+		}
+		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException or TargetInvocationException)
+		{
+			// Resolution failure means "not proven null" - the operand keeps its dedicated
+			// translation (e.g. EsqlMetadata markers). Anything else is a real bug: propagate.
+			return false;
+		}
+	}
+
 	private static string EscapeLikePattern(string value) =>
-		// Escape special characters in LIKE patterns
+		// Pattern-level escaping only: a backslash escapes LIKE wildcards. String-literal
+		// escaping (quotes, backslashes) is applied afterwards by EsqlFormatting.FormatString.
 		value
 			.Replace("\\", "\\\\")
-			.Replace("\"", "\\\"")
 			.Replace("*", "\\*")
 			.Replace("?", "\\?");
 }

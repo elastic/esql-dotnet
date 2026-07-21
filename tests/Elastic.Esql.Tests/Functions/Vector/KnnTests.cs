@@ -17,7 +17,7 @@ public class KnnTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
 			FROM books METADATA _score
-			| WHERE KNN(titleVec, [1, 2, 3])
+			| WHERE KNN(titleVec, [1.0, 2.0, 3.0])
 			""".NativeLineEndings());
 	}
 
@@ -32,7 +32,7 @@ public class KnnTests : EsqlTestBase
 			.ToString();
 
 		// Inline parameter mode (default for ToString) -> literal vector array
-		_ = esql.Should().Contain("KNN(titleVec, [1, 2, 3])");
+		_ = esql.Should().Contain("KNN(titleVec, [1.0, 2.0, 3.0])");
 	}
 
 	[Test]
@@ -45,7 +45,7 @@ public class KnnTests : EsqlTestBase
 			.Where(b => EsqlFunctions.Knn(b.TitleVec, queryVec))
 			.ToString();
 
-		_ = esql.Should().Contain("KNN(titleVec, [1, 2, 3])");
+		_ = esql.Should().Contain("KNN(titleVec, [1.0, 2.0, 3.0])");
 	}
 
 	[Test]
@@ -58,7 +58,7 @@ public class KnnTests : EsqlTestBase
 			.Where(b => EsqlFunctions.Knn(b.TitleVec, queryVec))
 			.ToString();
 
-		_ = esql.Should().Contain("KNN(titleVec, [1, 2, 3])");
+		_ = esql.Should().Contain("KNN(titleVec, [1.0, 2.0, 3.0])");
 	}
 
 	[Test]
@@ -72,7 +72,7 @@ public class KnnTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
 			FROM books METADATA _score
-			| WHERE KNN(titleVec, [1, 2], { "k": 10, "min_candidates": 100 })
+			| WHERE KNN(titleVec, [1.0, 2.0], { "k": 10, "min_candidates": 100 })
 			""".NativeLineEndings());
 	}
 
@@ -116,7 +116,7 @@ public class KnnTests : EsqlTestBase
 			.Where(b => EsqlFunctions.Knn(b.TitleVec, new float[] { 1f, 2f }, options))
 			.ToString();
 
-		_ = esql.Should().Contain("KNN(titleVec, [1, 2], { \"k\": 10, \"similarity\": 0.5 })");
+		_ = esql.Should().Contain("KNN(titleVec, [1.0, 2.0], { \"k\": 10, \"similarity\": 0.5 })");
 	}
 
 	[Test]
@@ -153,7 +153,22 @@ public class KnnTests : EsqlTestBase
 				|| EsqlFunctions.Knn(b.TitleVec, new float[] { 3f, 4f }))
 			.ToString();
 
-		_ = esql.Should().Contain("KNN(titleVec, [1, 2])");
-		_ = esql.Should().Contain("KNN(titleVec, [3, 4])");
+		_ = esql.Should().Contain("KNN(titleVec, [1.0, 2.0])");
+		_ = esql.Should().Contain("KNN(titleVec, [3.0, 4.0])");
+	}
+
+	[Test]
+	public void Knn_WithCapturedClosureVector_Parameterized_KeepsFloatTyping()
+	{
+		var queryVec = new float[] { 1f, 2f, 3f };
+
+		var query = CreateQuery<BookDocument>()
+			.From("books", MetadataField.Score)
+			.Where(b => EsqlFunctions.Knn(b.TitleVec, queryVec));
+
+		_ = query.ToEsqlString(inlineParameters: false);
+		var parameters = query.GetParameters();
+
+		_ = parameters.Parameters["queryVec"].GetRawText().Should().Be("[1.0,2.0,3.0]");
 	}
 }

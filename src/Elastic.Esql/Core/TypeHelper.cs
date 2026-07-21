@@ -2,6 +2,7 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 
@@ -12,10 +13,21 @@ internal static class TypeHelper
 {
 	/// <summary>
 	/// Returns <see langword="true"/> when <paramref name="type"/> implements <see cref="IEnumerable{T}"/> for some <c>T</c>, excluding <see cref="string"/>
-	/// (which implements <c>IEnumerable&lt;char&gt;</c>).
+	/// (which implements <c>IEnumerable&lt;char&gt;</c>) and dictionary types (which materialize as a single JSON object, not a multi-value array).
 	/// </summary>
-	internal static bool IsEnumerableType(Type type) =>
-		type != typeof(string) && FindGenericType(typeof(IEnumerable<>), type) is not null;
+	internal static bool IsEnumerableType(Type type)
+	{
+		if (type == typeof(string) || IsDictionaryType(type))
+			return false;
+
+		return FindGenericType(typeof(IEnumerable<>), type) is not null;
+	}
+
+	/// <summary>Returns <see langword="true"/> when <paramref name="type"/> is a dictionary type (<see cref="IDictionary"/>, <see cref="IDictionary{TKey,TValue}"/>, or <see cref="IReadOnlyDictionary{TKey,TValue}"/>).</summary>
+	private static bool IsDictionaryType(Type type) =>
+		typeof(IDictionary).IsAssignableFrom(type)
+			|| FindGenericType(typeof(IDictionary<,>), type) is not null
+			|| FindGenericType(typeof(IReadOnlyDictionary<,>), type) is not null;
 
 	/// <summary>
 	/// Searches the inheritance hierarchy of a given type to locate a constructed generic type

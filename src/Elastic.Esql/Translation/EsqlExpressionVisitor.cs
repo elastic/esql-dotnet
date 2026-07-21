@@ -2,13 +2,12 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
-using System.Text;
 
 using Elastic.Esql.Core;
 using Elastic.Esql.Extensions;
+using Elastic.Esql.Formatting;
 using Elastic.Esql.QueryModel;
 using Elastic.Esql.QueryModel.Commands;
 
@@ -21,6 +20,9 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 {
 	// Tracks pending GroupBy key selector for combining with subsequent Select
 	private LambdaExpression? _pendingGroupByKeySelector;
+
+	// Tracks pending GroupBy element selector, applied to parameterless Sum/Average/Min/Max in the subsequent Select
+	private LambdaExpression? _pendingGroupByElementSelector;
 
 	// Tracks pending GroupJoin for combining with subsequent SelectMany (left outer join pattern)
 	private PendingGroupJoin? _pendingGroupJoin;
@@ -35,6 +37,21 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 	public EsqlQueryProvider Provider { get; } = provider ?? throw new ArgumentNullException(nameof(provider));
 	public EsqlTranslationContext Context { get; } = new() { Metadata = provider.Metadata, InlineParameters = inlineParameters };
 
+#pragma warning disable IDE0032
+	private ProjectionCommandEmitter? _projectionEmitter;
+#pragma warning restore IDE0032
+	private ProjectionCommandEmitter ProjectionEmitter => _projectionEmitter ??= new ProjectionCommandEmitter(Context);
+
+#pragma warning disable IDE0032
+	private JoinTranslator? _joinTranslator;
+#pragma warning restore IDE0032
+	private JoinTranslator JoinTranslator => _joinTranslator ??= new JoinTranslator(Context, ProjectionEmitter);
+
+#pragma warning disable IDE0032
+	private ForkFuseTranslator? _forkFuseTranslator;
+#pragma warning restore IDE0032
+	private ForkFuseTranslator ForkFuse => _forkFuseTranslator ??= new ForkFuseTranslator(Provider, Context, inlineParameters);
+
 	/// <summary>
 	/// Translates a LINQ expression to an ES|QL query model.
 	/// </summary>
@@ -46,10 +63,21 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 		if (_pendingGroupJoin is not null)
 			throw new NotSupportedException("GroupJoin must be followed by SelectMany with DefaultIfEmpty() to form a left outer join pattern.");
 
+		if (_pendingGroupByKeySelector is not null)
+			throw new NotSupportedException(
+				"GroupBy must be followed by a Select that projects the group key and aggregations, " +
+				"e.g. '.GroupBy(x => x.Field).Select(g => new { g.Key, Count = g.Count() })'.");
+
 		if (Context.ElementType is null)
 			throw new InvalidOperationException("Failed to determine result type for the given expression.");
 
-		return new EsqlQuery(Context.ElementType, [.. Context.Commands], !Context.Parameters.HasParameters ? null : Context.Parameters, Context.QueryOptions);
+		return new EsqlQuery(
+			Context.ElementType,
+			[.. Context.Commands],
+			!Context.Parameters.HasParameters ? null : Context.Parameters,
+			Context.QueryOptions,
+			Context.ExecutorOptions
+		);
 	}
 
 	protected override Expression VisitConstant(ConstantExpression node)
@@ -191,11 +219,11 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 				break;
 
 			case nameof(EsqlQueryableExtensions.Fork) when isEsqlExtensionMethod:
-				VisitFork(node);
+				ForkFuse.TranslateFork(node);
 				break;
 
 			case nameof(EsqlQueryableExtensions.Fuse) when isEsqlExtensionMethod:
-				VisitFuse(node);
+				ForkFuse.TranslateFuse(node);
 				break;
 
 			case nameof(Queryable.Join) when isQueryableMethod:
@@ -214,15 +242,17 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 				// Transparent query shape conversion; no ES|QL command impact.
 				break;
 
-			// WithOptions extension methods are defined by downstream executor implementations
-			// (e.g., Elastic.Clients.Esql) with their own concrete options types. The core
-			// translator matches by method name only to remain agnostic to specific option
-			// types and their declaring classes.
-			case "WithOptions":
-				VisitWithOptions(node);
-				break;
-
 			default:
+				// Options-carrying extension methods are defined by downstream executor
+				// implementations (e.g. Elastic.Clients.Esql) with their own concrete options
+				// types, so the core translator matches on the marker attribute rather than
+				// method names or declaring types.
+				if (node.Method.IsDefined(typeof(EsqlQueryOptionsMethodAttribute), inherit: false))
+				{
+					VisitQueryOptions(node);
+					break;
+				}
+
 				throw new NotSupportedException($"Method '{declaringType?.Name}.{methodName}' is not supported in ES|QL translation.");
 		}
 
@@ -255,16 +285,17 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 			if (_pendingGroupByKeySelector != null)
 			{
 				var groupByVisitor = new GroupByVisitor(Context);
-				var statsCommand = groupByVisitor.Translate(_pendingGroupByKeySelector, lambda);
+				var statsCommand = groupByVisitor.Translate(_pendingGroupByKeySelector, lambda, _pendingGroupByElementSelector);
 				Context.Commands.Add(statsCommand);
 				_pendingGroupByKeySelector = null;
+				_pendingGroupByElementSelector = null;
 				ClearMetadataAfterStats();
 				return;
 			}
 
 			var projectionVisitor = new SelectProjectionVisitor(Context);
 			var result = projectionVisitor.Translate(lambda);
-			EmitProjectionCommands(result);
+			ProjectionEmitter.Emit(result);
 		}
 	}
 
@@ -334,6 +365,9 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 			Context.Commands.Add(new LimitCommand(count));
 		else if (ExpressionConstantResolver.Resolve(countArg) is int resolved)
 			Context.Commands.Add(new LimitCommand(resolved));
+		else
+			throw new NotSupportedException(
+				"'Take' with a non-int count (e.g. the 'Take(Range)' overload) is not supported in ES|QL. Use 'Take(int)' instead.");
 	}
 
 	private void VisitFirst(MethodCallExpression node)
@@ -438,13 +472,47 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 		if (node.Arguments.Count < 2)
 			return;
 
-		var keySelector = node.Arguments[1];
-		if (keySelector is UnaryExpression unary && unary.Operand is LambdaExpression lambda)
+		if (node.Arguments[1] is not UnaryExpression { Operand: LambdaExpression lambda })
+			return;
+
+		static NotSupportedException ResultSelectorNotSupported() =>
+			new(
+				"GroupBy with a result selector is not supported. " +
+				"Project the key and aggregations in a subsequent Select instead, " +
+				"e.g. '.GroupBy(x => x.Field).Select(g => new { g.Key, Count = g.Count() })'.");
+
+		LambdaExpression? elementSelector = null;
+
+		if (node.Arguments.Count > 2)
 		{
-			// Store the key selector for combining with subsequent Select
-			_pendingGroupByKeySelector = lambda;
-			// Don't add command yet - wait for Select to combine into STATS...BY
+			// A comparer (or any other non-lambda) can trail every GroupBy overload; classify it
+			// before the arity check so 4-arg comparer forms do not get the result-selector message.
+			if (node.Arguments[^1] is not UnaryExpression { Operand: LambdaExpression })
+				throw new NotSupportedException(
+					"GroupBy with an IEqualityComparer or other non-lambda argument is not supported. " +
+					"Use a plain key selector, e.g. '.GroupBy(x => x.Field)'.");
+
+			if (node.Arguments.Count > 3)
+				throw ResultSelectorNotSupported();
+
+			if (node.Arguments[2] is not UnaryExpression { Operand: LambdaExpression extraLambda })
+				throw ResultSelectorNotSupported();
+
+			if (extraLambda.Parameters.Count != 1)
+				throw ResultSelectorNotSupported();
+
+			if (extraLambda.Body.UnwrapConvertExpressions() is not MemberExpression)
+				throw new NotSupportedException(
+					"GroupBy element selectors are limited to a single field access (e.g. '.GroupBy(x => x.Key, x => x.Field)'); " +
+					"project composite values in a subsequent Select instead.");
+
+			elementSelector = extraLambda;
 		}
+
+		// Store the selectors for combining with the subsequent Select into STATS...BY.
+		// Overwrite unconditionally: a later GroupBy without an element selector must not inherit a stale one.
+		_pendingGroupByKeySelector = lambda;
+		_pendingGroupByElementSelector = elementSelector;
 	}
 
 	private void VisitFrom(MethodCallExpression node)
@@ -500,7 +568,7 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 		{
 			var projectionVisitor = new SelectProjectionVisitor(Context);
 			var result = projectionVisitor.Translate(lambda);
-			EmitProjectionCommands(result);
+			ProjectionEmitter.Emit(result);
 		}
 	}
 
@@ -545,7 +613,7 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 			var name = members[i].Name;
 			var value = ExpressionConstantResolver.Resolve(newExpr.Arguments[i]);
 			var formatted = Context.GetValueOrParameterName(name, value);
-			expressions.Add($"{name} = {formatted}");
+			expressions.Add($"{EsqlIdentifier.EscapeColumnName(name)} = {formatted}");
 		}
 
 		if (Context.Commands.OfType<SourceCommand>().Any())
@@ -596,195 +664,32 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 		Context.ElementType = ResolveQueryableElementType(node.Method.ReturnType) ?? Context.ElementType;
 	}
 
-	private void VisitWithOptions(MethodCallExpression node)
+	private void VisitQueryOptions(MethodCallExpression node)
 	{
 		if (node.Arguments.Count < 2)
 			return;
 
-		Context.QueryOptions = ExpressionConstantResolver.Resolve(node.Arguments[1]);
-	}
+		// The core WithOptions overload carries the typed protocol options; downstream executors
+		// define their own overloads with executor-specific types, so dispatch on the constant's
+		// type. Each slot may be set only once per chain, so guard the target slot independently.
+		var value = ExpressionConstantResolver.Resolve(node.Arguments[1]);
 
-	private void VisitFork(MethodCallExpression node)
-	{
-		if (Context.InsideForkBranch)
-			throw new InvalidOperationException(
-				"Nested 'Fork' is not supported: a 'Fork' command cannot appear inside another fork's branch lambda.");
-
-		if (Context.Commands.OfType<ForkCommand>().Any())
-			throw new InvalidOperationException(
-				"Only one 'Fork' command is supported per query (per the ES|QL spec).");
-
-		if (node.Arguments.Count < 2)
-			throw new NotSupportedException("Fork requires at least one branch.");
-
-		var branchesArg = ExpressionConstantResolver.Resolve(node.Arguments[1]);
-		if (branchesArg is not Array branchesArray || branchesArray.Length == 0)
-			throw new NotSupportedException("Fork requires at least one branch.");
-
-		var elementType = Context.ElementType
-			?? throw new InvalidOperationException("Fork must follow a typed source command (FROM or ROW).");
-
-		var branchFragments = new List<IReadOnlyList<string>>(branchesArray.Length);
-		var inheritedMetadata = Context.ActiveMetadata;
-
-		for (var i = 0; i < branchesArray.Length; i++)
+		if (value is EsqlQueryOptions queryOptions)
 		{
-			if (branchesArray.GetValue(i) is not LambdaExpression branchLambda)
-				throw new NotSupportedException($"Fork branch {i + 1} must be a lambda expression.");
-
-			var fragments = ForkBranchVisitor.Translate(Provider, branchLambda, elementType, inheritedMetadata, inlineParameters, Context);
-			if (fragments.Count == 0)
-				throw new NotSupportedException($"Fork branch {i + 1} produced no commands.");
-
-			branchFragments.Add(fragments);
-		}
-
-		Context.Commands.Add(new ForkCommand(branchFragments));
-		Context.ForkActive = true;
-		_lastForkBranchCount = branchesArray.Length;
-	}
-
-	private int _lastForkBranchCount;
-
-	private void VisitFuse(MethodCallExpression node)
-	{
-		// Fuse parameters: (source, method, rankConstant, normalizer, weights, score, group, key)
-		Debug.Assert(node.Arguments.Count == 8, "Fuse extension method always passes 8 arguments.");
-
-		var method = (FuseMethod)(ExpressionConstantResolver.Resolve(node.Arguments[1]) ?? FuseMethod.Rrf);
-		var rankConstant = ExpressionConstantResolver.Resolve(node.Arguments[2]) as int?;
-		var normalizer = (ScoreNormalizer)(ExpressionConstantResolver.Resolve(node.Arguments[3]) ?? ScoreNormalizer.None);
-		var weights = ExpressionConstantResolver.Resolve(node.Arguments[4]) as double[];
-		var scoreLambda = ExpressionConstantResolver.Resolve(node.Arguments[5]) as LambdaExpression;
-		var groupLambda = ExpressionConstantResolver.Resolve(node.Arguments[6]) as LambdaExpression;
-		var keyLambda = ExpressionConstantResolver.Resolve(node.Arguments[7]) as LambdaExpression;
-
-		ValidateFuseFollowsFork(weights);
-
-		var scoreColumn = scoreLambda is not null ? ResolveSingleColumnFromLambda(scoreLambda, nameof(EsqlQueryableExtensions.Fuse), "score") : null;
-		var groupColumn = groupLambda is not null ? ResolveSingleColumnFromLambda(groupLambda, nameof(EsqlQueryableExtensions.Fuse), "group") : null;
-		var keyColumns = keyLambda is not null ? ResolveKeyColumnsFromLambda(keyLambda) : null;
-
-		Context.Commands.Add(new FuseCommand(
-			method: method,
-			rankConstant: rankConstant,
-			normalizer: normalizer,
-			weights: weights,
-			scoreColumn: scoreColumn,
-			groupColumn: groupColumn,
-			keyColumns: keyColumns));
-
-		// Once Fuse merges the fork branches, the _fork discriminator is consumed; downstream
-		// projections should not auto-retain it.
-		Context.ForkActive = false;
-	}
-
-	private void ValidateFuseFollowsFork(double[]? weights)
-	{
-		// Fuse requires a Fork earlier in the pipeline (not necessarily immediately preceding).
-		// ES|QL allows row-shape transformations like DROP / KEEP / RENAME / EVAL / WHERE between
-		// them -- in particular DROP is recommended to remove dense_vector columns that FUSE rejects.
-		// Aggregations (STATS) however collapse the fork-discriminator column and break FUSE.
-		ForkCommand? matchingFork = null;
-		for (var i = Context.Commands.Count - 1; i >= 0; i--)
-		{
-			var cmd = Context.Commands[i];
-			if (cmd is ForkCommand fork)
-			{
-				matchingFork = fork;
-				break;
-			}
-
-			if (cmd is StatsCommand)
-				throw new InvalidOperationException("'Fuse' cannot follow a 'Stats' / aggregation command; aggregations break the FORK row layout.");
-		}
-
-		if (matchingFork is null)
-			throw new InvalidOperationException("'Fuse' must follow a 'Fork' command earlier in the pipeline.");
-
-		if (weights is not null && weights.Length != _lastForkBranchCount)
-			throw new ArgumentException(
-				$"Fuse weights count ({weights.Length}) must match the preceding Fork branch count ({_lastForkBranchCount}).",
-				nameof(weights));
-
-		// Per the ES|QL FUSE docs (Stack 9.4+ / Serverless), each FORK branch must contain a LIMIT
-		// before FUSE. Older versions inject an implicit LIMIT 1000, but we validate eagerly so the
-		// translator gives a clear error rather than relying on the server response.
-		for (var b = 0; b < matchingFork.Branches.Count; b++)
-		{
-			var branch = matchingFork.Branches[b];
-			var hasLimit = false;
-			foreach (var fragment in branch)
-			{
-				if (fragment.StartsWith("LIMIT ", StringComparison.Ordinal) || fragment.Equals("LIMIT", StringComparison.Ordinal))
-				{
-					hasLimit = true;
-					break;
-				}
-			}
-
-			if (!hasLimit)
+			if (Context.QueryOptions is not null)
 				throw new InvalidOperationException(
-					$"Fork branch {b + 1} must include a 'Take(...)' (LIMIT) before 'Fuse'. " +
-					"ES|QL requires a LIMIT inside each FORK branch when followed by FUSE.");
+					$"Query options were already set earlier in this query chain; '{node.Method.Name}' can only be called once per query.");
+
+			Context.QueryOptions = queryOptions;
 		}
-	}
-
-	private string ResolveSingleColumnFromLambda(LambdaExpression lambda, string commandName, string parameterName)
-	{
-		var body = lambda.Body.UnwrapConvertExpressions();
-
-		// EsqlMetadata.X marker access -> emit underscore-prefixed identifier.
-		if (body is MemberExpression { Expression: null, Member: { } metaMember }
-			&& metaMember.DeclaringType == typeof(EsqlMetadata))
-			return Context.ResolveMetadataMemberOrThrow(metaMember.Name);
-
-		// Parameter-rooted member access (e.g. x => x.Score).
-		if (body is MemberExpression member && ExpressionTranslationHelpers.IsRootedInParameter(member))
-			return body.ResolveFieldName(Context.Metadata);
-
-		throw new NotSupportedException(
-			$"'{commandName}({parameterName}:)' must reference a single column " +
-			$"(a parameter-rooted property or '{nameof(EsqlMetadata)}.X' marker), got '{body.NodeType}'.");
-	}
-
-	private List<string> ResolveKeyColumnsFromLambda(LambdaExpression lambda)
-	{
-		var body = lambda.Body.UnwrapConvertExpressions();
-
-		// Composite key via anonymous type: x => new { x.Id, x.Index } or new { Id = EsqlMetadata.Id, Index = EsqlMetadata.Index }
-		if (body is NewExpression newExpression)
+		else
 		{
-			if (newExpression.Members is null)
-				throw new NotSupportedException(
-					"Composite 'Fuse(key:)' must use an anonymous type, e.g. 'x => new { x.Id, x.Index }'.");
+			if (Context.ExecutorOptions is not null)
+				throw new InvalidOperationException(
+					$"Query options were already set earlier in this query chain; '{node.Method.Name}' can only be called once per query.");
 
-			var result = new List<string>(newExpression.Arguments.Count);
-			for (var i = 0; i < newExpression.Arguments.Count; i++)
-			{
-				var arg = newExpression.Arguments[i].UnwrapConvertExpressions();
-
-				if (arg is MemberExpression { Expression: null, Member: { } metaMember }
-					&& metaMember.DeclaringType == typeof(EsqlMetadata))
-				{
-					result.Add(Context.ResolveMetadataMemberOrThrow(metaMember.Name));
-					continue;
-				}
-
-				if (arg is MemberExpression keyMember && ExpressionTranslationHelpers.IsRootedInParameter(keyMember))
-				{
-					result.Add(arg.ResolveFieldName(Context.Metadata));
-					continue;
-				}
-
-				throw new NotSupportedException(
-					$"Each 'Fuse(key:)' member must be a parameter-rooted property or '{nameof(EsqlMetadata)}.X' marker, got '{arg.NodeType}'.");
-			}
-			return result;
+			Context.ExecutorOptions = value;
 		}
-
-		// Single key column.
-		return [ResolveSingleColumnFromLambda(lambda, nameof(EsqlQueryableExtensions.Fuse), "key")];
 	}
 
 	private static IReadOnlyList<string> NormalizeRawFragments(string rawEsql)
@@ -860,7 +765,7 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 			onCondition = whereVisitor.Translate(lambda.Body);
 		}
 
-		EmitJoinWithCollisionHandling(lookupIndex, onCondition, resultSelectorArg);
+		JoinTranslator.EmitJoin(lookupIndex, onCondition, resultSelectorArg);
 	}
 
 	private void VisitJoin(MethodCallExpression node)
@@ -875,7 +780,7 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 			? outerField
 			: $"{outerField} == {innerField}";
 
-		EmitJoinWithCollisionHandling(lookupIndex, onCondition, resultSelectorArg, whereNotNullField: innerField);
+		JoinTranslator.EmitJoin(lookupIndex, onCondition, resultSelectorArg, whereNotNullField: innerField);
 	}
 
 	private void VisitGroupJoin(MethodCallExpression node)
@@ -937,9 +842,9 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 		{
 			var rewrittenLambda = RewriteGroupJoinResultSelector(pending.ResultSelector, resultLambda);
 
-			// Wrap the rewritten lambda back into a UnaryExpression so EmitJoinWithCollisionHandling can unwrap it
+			// Wrap the rewritten lambda back into a UnaryExpression so JoinTranslator.EmitJoin can unwrap it
 			var quotedLambda = Expression.Quote(rewrittenLambda);
-			EmitJoinWithCollisionHandling(lookupIndex, onCondition, quotedLambda);
+			JoinTranslator.EmitJoin(lookupIndex, onCondition, quotedLambda);
 		}
 		else
 		{
@@ -1015,279 +920,6 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 
 		protected override Expression VisitParameter(ParameterExpression node) =>
 			node == originalInnerParam ? newInnerParam : base.VisitParameter(node);
-	}
-
-	/// <summary>
-	/// Emits RENAME, EVAL, and KEEP commands in the correct order from a projection result.
-	/// KEEP is always emitted to reduce the result set to only the projected fields.
-	/// Active metadata fields requested on the source <c>FROM</c> are auto-retained unless
-	/// the projection itself consumes them (e.g. via <c>EsqlMetadata.X</c> as a rename source).
-	/// </summary>
-	private void EmitProjectionCommands(SelectProjectionVisitor.ProjectionResult result)
-	{
-		if (result.RenameFields.Count > 0)
-			Context.Commands.Add(new RenameCommand(result.RenameFields));
-
-		if (result.EvalExpressions.Count > 0)
-			Context.Commands.Add(new EvalCommand(result.EvalExpressions));
-
-		var allKeepFields = new List<string>(result.KeepFields);
-		foreach (var (_, target) in result.RenameFields)
-			allKeepFields.Add(target);
-		foreach (var evalExpr in result.EvalExpressions)
-			allKeepFields.Add(evalExpr.Split('=')[0].Trim());
-
-		AppendRetainedMetadataNames(allKeepFields, result);
-
-		if (allKeepFields.Count > 0)
-			Context.Commands.Add(new KeepCommand(allKeepFields));
-	}
-
-	/// <summary>
-	/// Appends active-metadata identifiers to <paramref name="keepFields"/> so they survive
-	/// the auto-emitted KEEP. Metadata fields whose underscore-prefixed name was used as a
-	/// rename source in the projection are skipped (they've been consumed by the projection).
-	/// </summary>
-	private void AppendRetainedMetadataNames(List<string> keepFields, SelectProjectionVisitor.ProjectionResult result)
-	{
-		if (Context.ActiveMetadata == MetadataField.None && !Context.ForkActive)
-			return;
-
-		var consumed = new HashSet<string>(StringComparer.Ordinal);
-		foreach (var (source, _) in result.RenameFields)
-			_ = consumed.Add(source);
-
-		foreach (var name in MetadataFieldHelper.EnumerateNames(Context.ActiveMetadata))
-		{
-			if (consumed.Contains(name))
-				continue;
-
-			if (keepFields.Contains(name))
-				continue;
-
-			keepFields.Add(name);
-		}
-
-		if (Context.ForkActive && !consumed.Contains("_fork") && !keepFields.Contains("_fork"))
-			keepFields.Add("_fork");
-	}
-
-	/// <summary>
-	/// Shared join emission: detects field collisions, emits EVAL to preserve outer values,
-	/// emits LOOKUP JOIN, and processes the result selector projection.
-	/// </summary>
-	private void EmitJoinWithCollisionHandling(
-		string lookupIndex,
-		string onCondition,
-		Expression resultSelectorArg,
-		string? whereNotNullField = null
-	)
-	{
-		if (resultSelectorArg is not UnaryExpression { Operand: LambdaExpression resultLambda }
-			|| resultLambda.Body is ParameterExpression)
-		{
-			// Identity projection — no collision handling needed (no KEEP to filter temps)
-			Context.Commands.Add(new LookupJoinCommand(lookupIndex, onCondition));
-
-			if (whereNotNullField is not null)
-				Context.Commands.Add(new WhereCommand($"{whereNotNullField} IS NOT NULL"));
-
-			return;
-		}
-
-		var innerType = resultLambda.Parameters[1].Type;
-		var remappings = DetectJoinFieldCollisions(resultLambda, innerType);
-
-		if (remappings is not null)
-			EmitCollisionEval(remappings);
-
-		Context.Commands.Add(new LookupJoinCommand(lookupIndex, onCondition));
-
-		if (whereNotNullField is not null)
-			Context.Commands.Add(new WhereCommand($"{whereNotNullField} IS NOT NULL"));
-
-		var projectionVisitor = new SelectProjectionVisitor(Context);
-		var result = remappings is not null
-			? projectionVisitor.TranslateJoinProjection(resultLambda, resultLambda.Parameters[0], remappings)
-			: projectionVisitor.Translate(resultLambda);
-
-		var innerFieldNames = Context.GetAllFieldNames(innerType);
-		EmitJoinProjectionCommands(result, innerFieldNames);
-	}
-
-	/// <summary>
-	/// Emits projection commands after a join, converting renames to EVALs when the
-	/// target name collides with an inner field that still exists post-join.
-	/// ES|QL's RENAME fails if the target column already exists; EVAL overwrites it.
-	/// </summary>
-	private void EmitJoinProjectionCommands(SelectProjectionVisitor.ProjectionResult result, HashSet<string> innerFieldNames)
-	{
-		var safeRenames = new List<(string Source, string Target)>();
-		var evalExpressions = new List<string>(result.EvalExpressions);
-
-		foreach (var (source, target) in result.RenameFields)
-		{
-			if (innerFieldNames.Contains(target))
-				evalExpressions.Add($"{target} = {source}");
-			else
-				safeRenames.Add((source, target));
-		}
-
-		if (safeRenames.Count > 0)
-			Context.Commands.Add(new RenameCommand(safeRenames));
-
-		if (evalExpressions.Count > 0)
-			Context.Commands.Add(new EvalCommand(evalExpressions));
-
-		var allKeepFields = new List<string>(result.KeepFields);
-		foreach (var (_, target) in safeRenames)
-			allKeepFields.Add(target);
-		foreach (var evalExpr in evalExpressions)
-			allKeepFields.Add(evalExpr.Split('=')[0].Trim());
-
-		AppendRetainedMetadataNames(allKeepFields, result);
-
-		if (allKeepFields.Count > 0)
-			Context.Commands.Add(new KeepCommand(allKeepFields));
-	}
-
-	/// <summary>
-	/// Detects field name collisions between outer and inner types in a join result selector.
-	/// Returns a remapping dictionary (originalField -> tempField) for colliding outer fields,
-	/// or null if no collisions exist.
-	/// </summary>
-	private Dictionary<string, string>? DetectJoinFieldCollisions(LambdaExpression resultSelector, Type innerType)
-	{
-		var innerFieldNames = Context.GetAllFieldNames(innerType);
-
-		if (innerFieldNames.Count == 0)
-			return null;
-
-		var outerParam = resultSelector.Parameters[0];
-		var collector = new JoinFieldCollector(Context, outerParam);
-		_ = collector.Visit(resultSelector.Body);
-
-		Dictionary<string, string>? remappings = null;
-		var usedTempAliases = new HashSet<string>(StringComparer.Ordinal);
-		foreach (var outerFieldEntry in collector.OuterFields.OrderBy(kv => kv.Key, StringComparer.Ordinal))
-		{
-			var outerField = outerFieldEntry.Key;
-			var isNestedPath = outerFieldEntry.Value;
-			var collisionKey = FindCollisionKey(outerField, isNestedPath, innerFieldNames);
-			if (collisionKey is null)
-				continue;
-
-#pragma warning disable IDE0028 // collection-expression suggestion would silently drop the explicit comparer
-			remappings ??= new Dictionary<string, string>(StringComparer.Ordinal);
-#pragma warning restore IDE0028
-			if (remappings.ContainsKey(collisionKey))
-				continue;
-
-			remappings[collisionKey] = BuildCollisionTempFieldName(collisionKey, usedTempAliases);
-		}
-
-		return remappings;
-	}
-
-	private static string? FindCollisionKey(string outerField, bool isNestedPath, HashSet<string> innerFieldNames)
-	{
-		if (innerFieldNames.Contains(outerField))
-			return outerField;
-
-		if (isNestedPath)
-		{
-			for (var idx = outerField.LastIndexOf('.'); idx > 0; idx = outerField.LastIndexOf('.', idx - 1))
-			{
-				var prefix = outerField[..idx];
-				if (innerFieldNames.Contains(prefix))
-					return prefix;
-			}
-		}
-
-		var nestedPrefix = $"{outerField}.";
-		return innerFieldNames.Any(name => name.StartsWith(nestedPrefix, StringComparison.Ordinal))
-			? outerField
-			: null;
-	}
-
-	private static string BuildCollisionTempFieldName(string collisionKey, HashSet<string> usedAliases)
-	{
-		var sanitized = SanitizeFieldName(collisionKey);
-		var baseAlias = string.IsNullOrEmpty(sanitized) ? "_esql_outer_field" : $"_esql_outer_{sanitized}";
-		var alias = baseAlias;
-		var suffix = 1;
-
-		while (!usedAliases.Add(alias))
-		{
-			alias = $"{baseAlias}_{suffix}";
-			suffix++;
-		}
-
-		return alias;
-	}
-
-	private static string SanitizeFieldName(string fieldName)
-	{
-		var builder = new StringBuilder(fieldName.Length);
-		var previousWasUnderscore = false;
-
-		foreach (var character in fieldName)
-		{
-			if (char.IsLetterOrDigit(character) || character == '_')
-			{
-				_ = builder.Append(character);
-				previousWasUnderscore = false;
-				continue;
-			}
-
-			if (previousWasUnderscore)
-				continue;
-
-			_ = builder.Append('_');
-			previousWasUnderscore = true;
-		}
-
-		return builder.ToString().Trim('_');
-	}
-
-	/// <summary>
-	/// Emits <c>EVAL _esql_outer_x = x</c> for each colliding field to preserve outer values
-	/// before the LOOKUP JOIN overwrites them.
-	/// </summary>
-	private void EmitCollisionEval(Dictionary<string, string> remappings)
-	{
-		var evalExprs = remappings
-			.Select(kv => $"{kv.Value} = {kv.Key}")
-			.ToList();
-		Context.Commands.Add(new EvalCommand(evalExprs));
-	}
-
-	/// <summary>
-	/// Walks a join result selector collecting resolved field names accessed from the outer parameter.
-	/// </summary>
-	private sealed class JoinFieldCollector(
-		EsqlTranslationContext context,
-		ParameterExpression outerParam
-	) : ExpressionVisitor
-	{
-#pragma warning disable IDE0028 // collection-expression suggestion would silently drop the explicit comparer
-		public Dictionary<string, bool> OuterFields { get; } = new(StringComparer.Ordinal);
-#pragma warning restore IDE0028
-
-		protected override Expression VisitMember(MemberExpression node)
-		{
-			if (node.Member.DeclaringType is not null && ExpressionTranslationHelpers.IsRootedInParameter(node, outerParam))
-			{
-				var fieldName = node.ResolveFieldName(context.Metadata);
-				var isNestedPath = node.Expression?.UnwrapConvertExpressions() is MemberExpression;
-				OuterFields[fieldName] = OuterFields.TryGetValue(fieldName, out var trackedNested)
-					? trackedNested || isNestedPath
-					: isNestedPath;
-				return node;
-			}
-
-			return base.VisitMember(node);
-		}
 	}
 
 	private string ExtractLookupIndex(Expression innerExpression)

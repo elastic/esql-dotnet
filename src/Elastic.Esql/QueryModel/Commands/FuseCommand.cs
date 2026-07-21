@@ -21,10 +21,10 @@ public sealed class FuseCommand(
 	public FuseMethod Method { get; } = method;
 	public int? RankConstant { get; } = rankConstant;
 	public ScoreNormalizer Normalizer { get; } = normalizer;
-	public IReadOnlyList<double>? Weights { get; } = weights;
+	public IReadOnlyList<double>? Weights { get; } = weights?.ToList();
 	public string? ScoreColumn { get; } = scoreColumn;
 	public string? GroupColumn { get; } = groupColumn;
-	public IReadOnlyList<string>? KeyColumns { get; } = keyColumns;
+	public IReadOnlyList<string>? KeyColumns { get; } = keyColumns?.ToList();
 
 	internal override void Accept(ICommandVisitor visitor) => visitor.Visit(this);
 }

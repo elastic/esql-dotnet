@@ -89,11 +89,19 @@ public sealed class EsqlQueryable<T> : IEsqlQueryable<T>, IOrderedQueryable<T>
 	}
 
 	/// <inheritdoc/>
-	public object? GetQueryOptions()
+	public EsqlQueryOptions? GetQueryOptions()
 	{
 		var query = Provider.TranslateExpression(Expression, true);
 
 		return query.QueryOptions;
+	}
+
+	/// <inheritdoc/>
+	public object? GetExecutorOptions()
+	{
+		var query = Provider.TranslateExpression(Expression, true);
+
+		return query.ExecutorOptions;
 	}
 
 	/// <summary>

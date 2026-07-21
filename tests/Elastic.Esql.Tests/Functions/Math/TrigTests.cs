@@ -17,7 +17,7 @@ public class TrigTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE ACOS(duration) > 0
+            | WHERE ACOS(duration) > 0.0
             """.NativeLineEndings());
 	}
 
@@ -64,7 +64,7 @@ public class TrigTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE ACOS(duration) > 0
+            | WHERE ACOS(duration) > 0.0
             """.NativeLineEndings());
 	}
 

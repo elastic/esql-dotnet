@@ -61,9 +61,13 @@ let private pristineCheck (arguments:ParseResults<Arguments>) =
     | _ -> failwithf "The checkout folder has pending changes, aborting"
 
 let private test (arguments:ParseResults<Arguments>) =
-    let tfmArgs =
-        if getOS = OS.Windows then [] else ["-f"; "net10.0"]
-    exec "dotnet" (["run"; "--project"; "tests/Elastic.Esql.Tests"; "-c"; "Release"] @ tfmArgs) |> ignore
+    let testProjects = ["tests/Elastic.Esql.Tests"; "tests/Elastic.Clients.Esql.Tests"]
+    let testFrameworks = ["net8.0"; "net10.0"]
+    testProjects
+    |> List.iter (fun project ->
+        testFrameworks
+        |> List.iter (fun tfm ->
+            exec "dotnet" ["run"; "--project"; project; "-c"; "Release"; "-f"; tfm] |> ignore))
 
 let private generatePackages (arguments:ParseResults<Arguments>) =
     let output = Paths.RootRelative Paths.Output.FullName

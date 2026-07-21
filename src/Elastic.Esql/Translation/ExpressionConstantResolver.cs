@@ -2,6 +2,7 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -73,6 +74,7 @@ internal static class ExpressionConstantResolver
 		return instance;
 	}
 
+	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Element type is statically referenced in the expression tree's NewArrayExpression.")]
 	private static object? ResolveNewArray(NewArrayExpression newArray)
 	{
 		var elementType = newArray.Type.GetElementType()
@@ -93,6 +95,12 @@ internal static class ExpressionConstantResolver
 		var instance = member.Expression is not null
 			? Resolve(member.Expression)
 			: null;
+
+		// Reflection would otherwise surface a raw TargetException that names neither the
+		// member nor the null intermediate in the captured chain.
+		if (instance is null && member.Expression is not null)
+			throw new InvalidOperationException(
+				$"Cannot resolve member '{member.Member.Name}': the target expression '{member.Expression}' evaluated to null.");
 
 		return member.Member switch
 		{

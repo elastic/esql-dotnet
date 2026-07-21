@@ -5,13 +5,14 @@
 namespace Elastic.Esql.QueryModel.Commands;
 
 /// <summary>
-/// Represents the ES|QL <c>FORK</c> command. Each branch contains an ordered list of
-/// already-formatted ES|QL pipeline fragments (without the leading pipe).
+/// Represents the ES|QL <c>FORK</c> command.
 /// </summary>
-public sealed class ForkCommand(IReadOnlyList<IReadOnlyList<string>> branches) : QueryCommand
+public sealed class ForkCommand(IReadOnlyList<ForkBranch> branches) : QueryCommand
 {
-	/// <summary>The fork branches, each as an ordered list of ES|QL fragments.</summary>
-	public IReadOnlyList<IReadOnlyList<string>> Branches { get; } = branches ?? throw new ArgumentNullException(nameof(branches));
+	/// <summary>The fork branches.</summary>
+	public IReadOnlyList<ForkBranch> Branches { get; } =
+		[.. (branches ?? throw new ArgumentNullException(nameof(branches)))
+			.Select(b => b ?? throw new ArgumentException("Fork branches must not contain null entries.", nameof(branches)))];
 
 	internal override void Accept(ICommandVisitor visitor) => visitor.Visit(this);
 }

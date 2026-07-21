@@ -5,7 +5,8 @@
 namespace Elastic.Esql.QueryModel.Commands;
 
 /// <summary>
-/// Represents the RENAME command.
+/// Represents the RENAME command. Field names are emitted verbatim and must be valid ES|QL identifiers;
+/// the translator pre-escapes names it produces, but direct callers must supply valid identifier text.
 /// </summary>
 public sealed class RenameCommand(IEnumerable<(string OldName, string NewName)> fields) : QueryCommand
 {

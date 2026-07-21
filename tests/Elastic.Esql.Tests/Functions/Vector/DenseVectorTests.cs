@@ -109,4 +109,14 @@ public class DenseVectorTests
 
 		_ = vec.Length.Should().Be(3);
 	}
+
+	[Test]
+	public void DenseVectorFloat_WholeValues_SerializeWithExplicitDecimalPoint()
+	{
+		var vector = new DenseVector<float>([1f, 2f, 3f]);
+
+		var json = JsonSerializer.Serialize(vector);
+
+		_ = json.Should().Be("[1.0,2.0,3.0]");
+	}
 }

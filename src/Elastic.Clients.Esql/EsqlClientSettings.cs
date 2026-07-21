@@ -7,15 +7,33 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 
+using Elastic.Esql.Core;
 using Elastic.Transport;
 
 namespace Elastic.Clients.Esql;
 
 /// <summary>Settings for the ES|QL client.</summary>
+/// <remarks>
+/// Settings created via the <see cref="EsqlClientSettings(Uri)"/> or <see cref="EsqlClientSettings(NodePool)"/>
+/// constructors own the transport configuration they create, and the first disposed <see cref="EsqlClient"/> using
+/// them disposes it. Do not share such an instance across multiple clients: disposing one client breaks the
+/// others. To share connection resources, create the <see cref="ITransport"/> externally and pass it to
+/// <see cref="EsqlClientSettings(ITransport, bool)"/> with <c>disposeTransport</c> left <see langword="false"/>.
+/// </remarks>
 public class EsqlClientSettings
 {
 	/// <summary>The HTTP transport to use for all requests.</summary>
 	public ITransport Transport { get; }
+
+	/// <summary>Whether the client created <see cref="Transport"/> (or was granted ownership) and must dispose it.</summary>
+	internal bool OwnsTransport { get; }
+
+	/// <summary>
+	/// The <see cref="ITransportConfiguration"/> created by the <see cref="Uri"/>/<see cref="NodePool"/> constructors, if any.
+	/// Non-null only when this instance created the configuration; a caller-supplied transport's configuration
+	/// belongs to the caller and is never tracked here, even when <see cref="OwnsTransport"/> is <see langword="true"/>.
+	/// </summary>
+	internal ITransportConfiguration? OwnedConfiguration { get; }
 
 	/// <summary>Default query options applied to all queries unless overridden.</summary>
 	public EsqlQueryDefaults Defaults { get; init; } = new();
@@ -29,6 +47,9 @@ public class EsqlClientSettings
 	/// </summary>
 	public JsonSerializerContext? JsonSerializerContext { get; init; }
 
+	/// <summary>Optional interceptor invoked after translation but before formatting and execution of every query.</summary>
+	public IEsqlQueryInterceptor? Interceptor { get; init; }
+
 	/// <summary>Creates settings with a node URI.</summary>
 	public EsqlClientSettings(Uri nodeUri)
 	{
@@ -37,6 +58,8 @@ public class EsqlClientSettings
 			productRegistration: EsqlProductRegistration.Default
 		);
 		Transport = new DistributedTransport(config);
+		OwnsTransport = true;
+		OwnedConfiguration = config;
 	}
 
 	/// <summary>
@@ -44,8 +67,16 @@ public class EsqlClientSettings
 	/// The provided transport is responsible for its own product registration;
 	/// see <see cref="EsqlProductRegistration.Default"/> for the recommended value.
 	/// </summary>
-	public EsqlClientSettings(ITransport transport) =>
+	/// <param name="transport">The transport to use for all requests.</param>
+	/// <param name="disposeTransport">
+	/// Set <see langword="true"/> to transfer ownership so disposing the client disposes the transport.
+	/// Defaults to <see langword="false"/> because an externally created transport is typically shared with other clients.
+	/// </param>
+	public EsqlClientSettings(ITransport transport, bool disposeTransport = false)
+	{
 		Transport = transport ?? throw new ArgumentNullException(nameof(transport));
+		OwnsTransport = disposeTransport;
+	}
 
 	/// <summary>Creates settings with a connection pool.</summary>
 	public EsqlClientSettings(NodePool nodePool)
@@ -55,6 +86,8 @@ public class EsqlClientSettings
 			productRegistration: EsqlProductRegistration.Default
 		);
 		Transport = new DistributedTransport(config);
+		OwnsTransport = true;
+		OwnedConfiguration = config;
 	}
 
 	/// <summary>Resolves the effective <see cref="System.Text.Json.JsonSerializerOptions"/> from context or explicit options.</summary>
@@ -77,6 +110,8 @@ public class EsqlClientSettings
 		return JsonSerializerOptions ?? CreateDefaultJsonOptions();
 	}
 
+	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Default options are a convenience fallback; Native AOT scenarios should pass explicit JsonSerializerOptions/JsonSerializerContext.")]
+	[UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Default options are a convenience fallback; trimming-safe scenarios should pass explicit JsonSerializerOptions/JsonSerializerContext.")]
 	private static JsonSerializerOptions CreateDefaultJsonOptions() =>
 		new(JsonSerializerOptions.Default)
 		{

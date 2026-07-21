@@ -270,18 +270,6 @@ dotnet_diagnostic.CA1873.severity = suggestion
 # https://learn.microsoft.com/en-us/dotnet/fundamentals/code-analysis/quality-rules/ca1816
 dotnet_diagnostic.CA1816.severity = none
 
-[src/api/Elastic.Documentation.Api.Lambda/**.cs]
-dotnet_diagnostic.IL3050.severity = none
-dotnet_diagnostic.IL2026.severity = none
-
-[DocumentationWebHost.cs]
-dotnet_diagnostic.IL3050.severity = none
-dotnet_diagnostic.IL2026.severity = none
-
-[StaticWebHost.cs]
-dotnet_diagnostic.IL3050.severity = none
-dotnet_diagnostic.IL2026.severity = none
-
 [tests/**/*.cs]
 dotnet_diagnostic.IDE0058.severity = none
 dotnet_diagnostic.IDE0022.severity = none

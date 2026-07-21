@@ -7,6 +7,18 @@ namespace Elastic.Esql.Tests.Translation.LinqMethods;
 public class TakeTests : EsqlTestBase
 {
 	[Test]
+	public void Take_WithRangeArgument_ThrowsNotSupported()
+	{
+		var act = () => CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Take(..10)
+			.ToString();
+
+		_ = act.Should().Throw<NotSupportedException>()
+			.WithMessage("*Take(Range)*");
+	}
+
+	[Test]
 	public void Take_GeneratesLimit()
 	{
 		var esql = CreateQuery<LogEntry>()

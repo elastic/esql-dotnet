@@ -112,9 +112,11 @@ FROM orders
 
 ```csharp
 .Where(l => l.Timestamp.Year == 2025)                      // WHERE DATE_EXTRACT("year", @timestamp) == 2025
-.Where(l => l.Timestamp > DateTime.UtcNow.AddHours(-1))    // WHERE @timestamp > DATE_ADD("hours", -1, NOW())
-.Select(l => new { Hour = l.Timestamp.Hour })               // EVAL hour = DATE_EXTRACT("hour", @timestamp)
+.Where(l => l.Timestamp > DateTime.UtcNow.AddHours(-1))    // WHERE @timestamp > (NOW() - 1 hours)
+.Select(l => new { Hour = l.Timestamp.Hour })               // EVAL hour = DATE_EXTRACT("hour_of_day", @timestamp)
 ```
+
+Comparisons against `DayOfWeek` values are remapped automatically -- ES|QL `day_of_week` uses ISO numbering (Monday = 1 to Sunday = 7), while .NET `DayOfWeek` starts at Sunday = 0. `l.Timestamp.DayOfWeek == DayOfWeek.Sunday` translates to `DATE_EXTRACT("day_of_week", @timestamp) == 7`.
 
 ### Math
 
@@ -158,34 +160,39 @@ The `MetadataField` flags enum selects which document metadata fields to request
 
 Elastic.Esql has no dependency on `Elastic.Transport` or any HTTP library. The entire translation pipeline -- expression visitors, query model, ES|QL generation -- is pure computation with no reflection-based serialization, no dynamic code generation, and no runtime type emission.
 
-When paired with `Elastic.Mapping`'s source-generated field resolution, the full path from LINQ expression to ES|QL string is AOT safe.
+When constructed with a source-generated `JsonSerializerContext`, the full path from LINQ expression to ES|QL string is AOT safe.
 
 ## Execution
 
-Elastic.Esql is a pure translation library -- it generates ES|QL strings but does not execute them. Use **Elastic.Clients.Esql** for the official `Elastic.Transport`-based execution layer, or subclass `EsqlQueryProvider` to plug in your own transport:
+Elastic.Esql is a pure translation library -- it generates ES|QL strings but does not execute them. Use **Elastic.Clients.Esql** for the official `Elastic.Transport`-based execution layer, or implement `IEsqlQueryExecutor` and pass it to the `EsqlQueryProvider` constructor to plug in your own transport:
 
 ```csharp
-var provider = new MyCustomQueryProvider(fieldResolver);
+// MyExecutor implements Elastic.Esql.Execution.IEsqlQueryExecutor
+var provider = new EsqlQueryProvider(MyContext.Default, new MyExecutor());
+
 var results = await new EsqlQueryable<Order>(provider)
     .From("orders")
     .Where(o => o.Total > 100)
+    .AsEsqlQueryable()
     .ToListAsync();
 ```
 
+`AsEsqlQueryable()` casts the chain back to `IEsqlQueryable<T>` after standard LINQ operators have returned the base `IQueryable<T>` interface, which makes the async execution methods available.
+
 Without an execution-capable provider, queries translate to strings only -- calling `ToListAsync()` throws. This is by design.
 
-## Works With Elastic.Mapping
+## Field Name Resolution
 
-When paired with the `Elastic.Mapping` source generator, field names resolve from your generated mapping context instead of reflection -- fully AOT compatible:
+Field names resolve through `System.Text.Json` metadata. Pass a source-generated `JsonSerializerContext` so field names derive from the same compile-time source of truth as your serialization contracts, with zero reflection at runtime:
 
 ```csharp
-// Field names come from [JsonPropertyName], [Text], [Keyword], etc.
-// Aligned with your System.Text.Json source-generated serialization context
+// Field names come from [JsonPropertyName] attributes or the
+// PropertyNamingPolicy of your serializer context (camelCase by default)
 var provider = new EsqlQueryProvider(MyContext.Default);
 var query = new EsqlQueryable<Product>(provider)
     .From("products")
-    .Where(p => p.Name.Contains("laptop"))  // Uses generated field name
-    .ToString();
+    .Where(p => p.Name.Contains("laptop"))  // Resolves to the JSON field name
+    .ToEsqlString();
 ```
 
-Without `Elastic.Mapping`, field names are resolved via reflection using `JsonPropertyName` attributes or camelCase convention.
+Without an explicit context, field names are resolved via reflection using `[JsonPropertyName]` attributes or the camelCase naming convention.

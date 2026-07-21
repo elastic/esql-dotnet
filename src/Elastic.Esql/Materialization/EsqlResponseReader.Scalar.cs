@@ -61,6 +61,13 @@ internal sealed partial class EsqlResponseReader
 		CancellationToken cancellationToken)
 	{
 		var prepared = await PrepareRowsAsync<T>(cursor, cancellationToken).ConfigureAwait(false);
+
+		if (prepared.ValuesFirst)
+		{
+			var drained = await DrainToBufferAsync(cursor, cancellationToken).ConfigureAwait(false);
+			return ReadScalarFromDrainedBuffer<T>(drained);
+		}
+
 		var (columns, readerState, layout) = (prepared.Columns, prepared.ReaderState, prepared.Layout);
 		var plan = CreateRowMaterializationPlan<T>(columns, Options);
 
@@ -81,7 +88,7 @@ internal sealed partial class EsqlResponseReader
 			var buffer = cursor.Buffer;
 			ConsumeScalarRowsChunk(
 				ref buffer,
-				cursor.IsCompleted,
+				cursor.IsEofReached,
 				ref readerState,
 				layout,
 				rowBuffer,
@@ -97,7 +104,7 @@ internal sealed partial class EsqlResponseReader
 
 			cursor.AdvanceTo(buffer.Start, buffer.End);
 
-			if (cursor.IsCompleted)
+			if (cursor.IsEofReached)
 				break;
 		}
 
@@ -107,6 +114,10 @@ internal sealed partial class EsqlResponseReader
 	private ScalarResult<T> ReadScalar<T>(ISyncBufferCursor cursor)
 	{
 		var prepared = PrepareRows<T>(cursor);
+
+		if (prepared.ValuesFirst)
+			return ReadScalarFromDrainedBuffer<T>(DrainToBuffer(cursor));
+
 		var (columns, readerState, layout) = (prepared.Columns, prepared.ReaderState, prepared.Layout);
 		var plan = CreateRowMaterializationPlan<T>(columns, Options);
 
@@ -127,7 +138,7 @@ internal sealed partial class EsqlResponseReader
 			var buffer = cursor.Buffer;
 			ConsumeScalarRowsChunk(
 				ref buffer,
-				cursor.IsCompleted,
+				cursor.IsEofReached,
 				ref readerState,
 				layout,
 				rowBuffer,
@@ -142,9 +153,41 @@ internal sealed partial class EsqlResponseReader
 			);
 
 			cursor.AdvanceTo(buffer.Start, buffer.End);
+
+			if (cursor.IsEofReached)
+				break;
 		}
 
 		return new ScalarResult<T>(value, rowCount);
+	}
+
+	/// <summary>
+	/// Handles responses where <c>values</c> precedes <c>columns</c>: the schema is only known
+	/// after the row data, so the remaining response is buffered and re-parsed in full.
+	/// </summary>
+	private ScalarResult<T> ReadScalarFromDrainedBuffer<T>(DrainedBuffer drained)
+	{
+		try
+		{
+			var parsed = StreamFromBuffer<T>(drained.Buffer, drained.Length);
+
+			T? value = default;
+			var rowCount = 0;
+
+			foreach (var item in parsed.Rows)
+			{
+				if (rowCount == 0)
+					value = item;
+				rowCount++;
+			}
+
+			return new ScalarResult<T>(value, rowCount);
+		}
+		finally
+		{
+			if (drained.IsRented)
+				ArrayPool<byte>.Shared.Return(drained.Buffer);
+		}
 	}
 
 	private static void ConsumeScalarRowsChunk<T>(

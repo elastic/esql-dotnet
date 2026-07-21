@@ -2,22 +2,26 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+#if NET10_0_OR_GREATER
 using System.IO.Pipelines;
+#endif
 using System.Text;
 using Elastic.Esql.Execution;
-using Elastic.Esql.QueryModel;
 
 namespace Elastic.Esql.Tests.Execution;
 
 public class StreamFormatAsyncQueryTests
 {
+	private static EsqlExecutionRequest Request(EsqlFormat format) =>
+		new() { Esql = "FROM test", Format = format };
+
 	[Test]
 	public void Submit_PopulatesQueryIdAndIsRunningFromHeaders()
 	{
 		var executor = new StubRawExecutor();
 		executor.QueueSubmit(id: "abc123", isRunning: true, body: []);
 
-		using var q = new EsqlAsyncQuery(executor, executor.NextSyncSubmit(), EsqlFormat.Csv, queryOptions: null);
+		using var q = new EsqlAsyncQuery(executor, executor.NextSyncSubmit(), Request(EsqlFormat.Csv));
 
 		q.QueryId.Should().Be("abc123");
 		q.IsRunning.Should().BeTrue();
@@ -30,7 +34,7 @@ public class StreamFormatAsyncQueryTests
 		var executor = new StubRawExecutor();
 		executor.QueueSubmit(id: "abc123", isRunning: true, body: []);
 
-		using var q = new EsqlAsyncQuery(executor, executor.NextSyncSubmit(), EsqlFormat.Csv, queryOptions: null);
+		using var q = new EsqlAsyncQuery(executor, executor.NextSyncSubmit(), Request(EsqlFormat.Csv));
 
 		var act = () => q.GetResponseStream();
 		act.Should().Throw<InvalidOperationException>()
@@ -44,7 +48,7 @@ public class StreamFormatAsyncQueryTests
 		executor.QueueSubmit(id: "abc123", isRunning: true, body: []);
 		executor.QueuePoll(id: "abc123", isRunning: false, body: "a,b,c\n1,2,3"u8.ToArray());
 
-		using var q = new EsqlAsyncQuery(executor, executor.NextSyncSubmit(), EsqlFormat.Csv, queryOptions: null);
+		using var q = new EsqlAsyncQuery(executor, executor.NextSyncSubmit(), Request(EsqlFormat.Csv));
 		q.IsRunning.Should().BeTrue();
 
 		q.Refresh();
@@ -62,7 +66,7 @@ public class StreamFormatAsyncQueryTests
 		executor.QueuePoll(id: "abc123", isRunning: true, body: []);
 		executor.QueuePoll(id: "abc123", isRunning: false, body: "ok"u8.ToArray());
 
-		using var q = new EsqlAsyncQuery(executor, executor.NextSyncSubmit(), EsqlFormat.Csv, queryOptions: null);
+		using var q = new EsqlAsyncQuery(executor, executor.NextSyncSubmit(), Request(EsqlFormat.Csv));
 
 		q.WaitForCompletion(TimeSpan.FromMilliseconds(1));
 
@@ -78,7 +82,7 @@ public class StreamFormatAsyncQueryTests
 		executor.QueuePoll(id: "abc123", isRunning: true, body: []);
 		executor.QueuePoll(id: "abc123", isRunning: false, body: "ok"u8.ToArray());
 
-		await using var q = new EsqlAsyncQuery(executor, executor.NextAsyncSubmit(), EsqlFormat.Arrow, queryOptions: null);
+		await using var q = new EsqlAsyncQuery(executor, executor.NextAsyncSubmit(), Request(EsqlFormat.Arrow));
 
 		await q.WaitForCompletionAsync(TimeSpan.FromMilliseconds(1));
 
@@ -93,7 +97,7 @@ public class StreamFormatAsyncQueryTests
 		executor.QueueSubmit(id: "abc123", isRunning: true, body: []);
 		executor.QueuePoll(id: "abc123", isRunning: false, body: "a,b\n1,2"u8.ToArray());
 
-		using var q = new EsqlAsyncQuery(executor, executor.NextSyncSubmit(), EsqlFormat.Csv, queryOptions: null);
+		using var q = new EsqlAsyncQuery(executor, executor.NextSyncSubmit(), Request(EsqlFormat.Csv));
 		q.WaitForCompletion(TimeSpan.FromMilliseconds(1));
 
 		using var stream = q.GetResponseStream();
@@ -107,7 +111,7 @@ public class StreamFormatAsyncQueryTests
 		var executor = new StubRawExecutor();
 		executor.QueueSubmit(id: "abc123", isRunning: false, body: "data"u8.ToArray());
 
-		var q = new EsqlAsyncQuery(executor, executor.NextAsyncSubmit(), EsqlFormat.Csv, queryOptions: null);
+		var q = new EsqlAsyncQuery(executor, executor.NextAsyncSubmit(), Request(EsqlFormat.Csv));
 		await q.DisposeAsync();
 
 		executor.DeletedIds.Should().ContainSingle().Which.Should().Be("abc123");
@@ -119,7 +123,7 @@ public class StreamFormatAsyncQueryTests
 		var executor = new StubRawExecutor();
 		executor.QueueSubmit(id: null, isRunning: false, body: "data"u8.ToArray());
 
-		var q = new EsqlAsyncQuery(executor, executor.NextSyncSubmit(), EsqlFormat.Csv, queryOptions: null);
+		var q = new EsqlAsyncQuery(executor, executor.NextSyncSubmit(), Request(EsqlFormat.Csv));
 		q.Dispose();
 
 		executor.DeletedIds.Should().BeEmpty();
@@ -131,7 +135,7 @@ public class StreamFormatAsyncQueryTests
 		var executor = new StubRawExecutor();
 		executor.QueueSubmit(id: null, isRunning: false, body: "csv data here"u8.ToArray());
 
-		using var q = new EsqlAsyncQuery(executor, executor.NextSyncSubmit(), EsqlFormat.Csv, queryOptions: null);
+		using var q = new EsqlAsyncQuery(executor, executor.NextSyncSubmit(), Request(EsqlFormat.Csv));
 
 		q.IsCompleted.Should().BeTrue();
 		executor.PollCount.Should().Be(0);
@@ -148,7 +152,7 @@ public class StreamFormatAsyncQueryTests
 		executor.QueueSubmit(id: "abc", isRunning: true, body: []);
 		executor.QueuePoll(id: "abc", isRunning: false, body: []);
 
-		using var q = new EsqlAsyncQuery(executor, executor.NextSyncSubmit(), EsqlFormat.Arrow, queryOptions: null);
+		using var q = new EsqlAsyncQuery(executor, executor.NextSyncSubmit(), Request(EsqlFormat.Arrow));
 		q.Refresh();
 
 		executor.LastPollFormat.Should().Be(EsqlFormat.Arrow);
@@ -171,35 +175,35 @@ public class StreamFormatAsyncQueryTests
 		public IEsqlResponse NextSyncSubmit() => new SyncStub(_submitQueue.Dequeue());
 		public IEsqlAsyncResponse NextAsyncSubmit() => new AsyncStub(_submitQueue.Dequeue());
 
-		public IEsqlResponse ExecuteQuery(string esql, EsqlParameters? parameters, object? options, EsqlFormat? format) =>
+		public IEsqlResponse ExecuteQuery(EsqlExecutionRequest request) =>
 			throw new NotSupportedException();
 
-		public Task<IEsqlAsyncResponse> ExecuteQueryAsync(string esql, EsqlParameters? parameters, object? options, EsqlFormat? format, CancellationToken ct) =>
+		public Task<IEsqlAsyncResponse> ExecuteQueryAsync(EsqlExecutionRequest request, CancellationToken ct) =>
 			throw new NotSupportedException();
 
-		public IEsqlResponse SubmitAsyncQuery(string esql, EsqlParameters? parameters, object? options, EsqlAsyncQueryOptions? asyncOptions, EsqlFormat? format) =>
+		public IEsqlResponse SubmitAsyncQuery(EsqlExecutionRequest request) =>
 			NextSyncSubmit();
 
-		public Task<IEsqlAsyncResponse> SubmitAsyncQueryAsync(string esql, EsqlParameters? parameters, object? options, EsqlAsyncQueryOptions? asyncOptions, EsqlFormat? format, CancellationToken ct) =>
+		public Task<IEsqlAsyncResponse> SubmitAsyncQueryAsync(EsqlExecutionRequest request, CancellationToken ct) =>
 			Task.FromResult(NextAsyncSubmit());
 
-		public IEsqlResponse PollAsyncQuery(string queryId, object? options, EsqlFormat? format)
+		public IEsqlResponse PollAsyncQuery(string queryId, EsqlExecutionRequest request)
 		{
 			PollCount++;
-			LastPollFormat = format;
+			LastPollFormat = request.Format;
 			return new SyncStub(_pollQueue.Dequeue());
 		}
 
-		public Task<IEsqlAsyncResponse> PollAsyncQueryAsync(string queryId, object? options, EsqlFormat? format, CancellationToken ct)
+		public Task<IEsqlAsyncResponse> PollAsyncQueryAsync(string queryId, EsqlExecutionRequest request, CancellationToken ct)
 		{
 			PollCount++;
-			LastPollFormat = format;
+			LastPollFormat = request.Format;
 			return Task.FromResult<IEsqlAsyncResponse>(new AsyncStub(_pollQueue.Dequeue()));
 		}
 
-		public void DeleteAsyncQuery(string queryId, object? options) => DeletedIds.Add(queryId);
+		public void DeleteAsyncQuery(string queryId, EsqlExecutionRequest request) => DeletedIds.Add(queryId);
 
-		public Task DeleteAsyncQueryAsync(string queryId, object? options, CancellationToken ct)
+		public Task DeleteAsyncQueryAsync(string queryId, EsqlExecutionRequest request, CancellationToken ct)
 		{
 			DeletedIds.Add(queryId);
 			return Task.CompletedTask;
@@ -237,6 +241,7 @@ public class StreamFormatAsyncQueryTests
 
 	private sealed class AsyncStub(StubResponse data) : IEsqlAsyncResponse
 	{
+#if NET10_0_OR_GREATER
 		private readonly Pipe _pipe = new();
 
 		public PipeReader Body
@@ -248,6 +253,11 @@ public class StreamFormatAsyncQueryTests
 				return _pipe.Reader;
 			}
 		}
+#else
+		private readonly MemoryStream _stream = new(data.Body, writable: false);
+
+		public Stream Body => _stream;
+#endif
 
 		public bool TryGetHeader(string name, out IEnumerable<string> values)
 		{
@@ -269,7 +279,11 @@ public class StreamFormatAsyncQueryTests
 
 		public ValueTask DisposeAsync()
 		{
+#if NET10_0_OR_GREATER
 			_pipe.Reader.Complete();
+#else
+			_stream.Dispose();
+#endif
 			return ValueTask.CompletedTask;
 		}
 	}

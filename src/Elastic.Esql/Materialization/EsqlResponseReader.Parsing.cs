@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information
 
 using System.Buffers;
+using System.Diagnostics;
 using System.Text.Json;
 
 namespace Elastic.Esql.Materialization;
@@ -21,7 +22,9 @@ internal sealed partial class EsqlResponseReader
 		if (valuesFirst)
 			return new PrepareRowsResult(columns, readerState, default!, id, isRunning, true);
 
-		cursor.AdvanceTo(consumed, cursor.Buffer.End);
+		// Examined stops at consumed so the next read call returns the already buffered remainder
+		// of this chunk immediately instead of waiting for more data to arrive.
+		cursor.AdvanceTo(consumed, consumed);
 
 		(readerState, var id2, var isRunning2) = await AdvanceToValuesArrayFromAsyncCursorAsync(cursor, readerState, cancellationToken).ConfigureAwait(false);
 		return new PrepareRowsResult(columns, readerState, GetColumnLayout<T>(columns), id ?? id2, isRunning ?? isRunning2, false);
@@ -34,7 +37,9 @@ internal sealed partial class EsqlResponseReader
 		if (valuesFirst)
 			return new PrepareRowsResult(columns, readerState, default!, id, isRunning, true);
 
-		cursor.AdvanceTo(consumed, cursor.Buffer.End);
+		// Examined stops at consumed so the next read call returns the already buffered remainder
+		// of this chunk immediately instead of waiting for more data to arrive.
+		cursor.AdvanceTo(consumed, consumed);
 
 		(readerState, var id2, var isRunning2) = AdvanceToValuesArrayFromSyncCursor(cursor, readerState);
 		return new PrepareRowsResult(columns, readerState, GetColumnLayout<T>(columns), id ?? id2, isRunning ?? isRunning2, false);
@@ -46,14 +51,22 @@ internal sealed partial class EsqlResponseReader
 		var rented = ArrayPool<byte>.Shared.Rent(16_384);
 		var written = 0;
 
-		while (await cursor.ReadAsync(ct).ConfigureAwait(false))
+		try
 		{
-			var buffer = cursor.Buffer;
-			written = CopyBuffer(buffer, ref rented, written);
-			cursor.AdvanceTo(buffer.End, buffer.End);
+			while (await cursor.ReadAsync(ct).ConfigureAwait(false))
+			{
+				var buffer = cursor.Buffer;
+				written = CopyBuffer(buffer, ref rented, written);
+				cursor.AdvanceTo(buffer.End, buffer.End);
 
-			if (cursor.IsCompleted)
-				break;
+				if (cursor.IsCompleted)
+					break;
+			}
+		}
+		catch
+		{
+			ArrayPool<byte>.Shared.Return(rented);
+			throw;
 		}
 
 		if (written == 0)
@@ -71,14 +84,22 @@ internal sealed partial class EsqlResponseReader
 		var rented = ArrayPool<byte>.Shared.Rent(16_384);
 		var written = 0;
 
-		while (cursor.Read())
+		try
 		{
-			var buffer = cursor.Buffer;
-			written = CopyBuffer(buffer, ref rented, written);
-			cursor.AdvanceTo(buffer.End, buffer.End);
+			while (cursor.Read())
+			{
+				var buffer = cursor.Buffer;
+				written = CopyBuffer(buffer, ref rented, written);
+				cursor.AdvanceTo(buffer.End, buffer.End);
 
-			if (cursor.IsCompleted)
-				break;
+				if (cursor.IsCompleted)
+					break;
+			}
+		}
+		catch
+		{
+			ArrayPool<byte>.Shared.Return(rented);
+			throw;
 		}
 
 		if (written == 0)
@@ -123,7 +144,9 @@ internal sealed partial class EsqlResponseReader
 
 		while (reader.Read())
 		{
-			if (reader.TokenType != JsonTokenType.PropertyName)
+			// Only depth-1 properties are response metadata; identical keys can appear inside
+			// object-valued row cells and must not be misread as schema or async-query metadata.
+			if (reader.CurrentDepth != 1 || reader.TokenType != JsonTokenType.PropertyName)
 				continue;
 
 			if (reader.ValueTextEquals("columns"u8))
@@ -176,6 +199,10 @@ internal sealed partial class EsqlResponseReader
 			{
 				_ = reader.Read(); // StartArray
 				valuesOffset = (int)reader.TokenStartIndex;
+
+				// The buffer holds the complete response, so skipping the row data cannot fail;
+				// scanning through it token by token would visit every key inside the cells.
+				_ = reader.TrySkip();
 			}
 			else if (reader.ValueTextEquals("id"u8))
 			{
@@ -209,7 +236,6 @@ internal sealed partial class EsqlResponseReader
 		IAsyncBufferCursor cursor,
 		CancellationToken ct)
 	{
-		var state = new JsonReaderState();
 		string? id = null;
 		bool? isRunning = null;
 
@@ -217,20 +243,28 @@ internal sealed partial class EsqlResponseReader
 		{
 			var buffer = cursor.Buffer;
 
-			if (TryParseColumns(buffer, cursor.IsCompleted, ref state, out var columns, out var consumed, ref id, ref isRunning, out var valuesFirst))
-			{
-				if (valuesFirst)
-					return ([], state, consumed, id, isRunning, true);
+			// The cursor retains the whole buffer between attempts, so every retry must re-parse
+			// from a fresh state; a state mutated by a failed attempt no longer matches the bytes.
+			var state = new JsonReaderState();
 
+			if (TryParseColumns(buffer, cursor.IsEofReached, ref state, out var columns, out var consumed, ref id, ref isRunning, out var valuesFirst))
+			{
+				// TryParseColumns reports values-first only on the failure path; a successful
+				// parse means the columns array was read before any "values" property.
+				Debug.Assert(!valuesFirst);
 				return (columns!, state, consumed, id, isRunning, false);
 			}
 
 			if (valuesFirst)
-				return ([], state, cursor.Buffer.Start, id, isRunning, true);
+			{
+				var bufferStart = buffer.Start;
+				cursor.AdvanceTo(buffer.Start, buffer.End);
+				return ([], new JsonReaderState(), bufferStart, id, isRunning, true);
+			}
 
 			cursor.AdvanceTo(buffer.Start, buffer.End);
 
-			if (cursor.IsCompleted)
+			if (cursor.IsEofReached)
 				break;
 		}
 
@@ -240,7 +274,6 @@ internal sealed partial class EsqlResponseReader
 	private static (ColumnInfo[] Columns, JsonReaderState State, SequencePosition Consumed, string? Id, bool? IsRunning, bool ValuesFirst) ReadColumnsFromSyncCursor(
 		ISyncBufferCursor cursor)
 	{
-		var state = new JsonReaderState();
 		string? id = null;
 		bool? isRunning = null;
 
@@ -248,18 +281,29 @@ internal sealed partial class EsqlResponseReader
 		{
 			var buffer = cursor.Buffer;
 
-			if (TryParseColumns(buffer, cursor.IsCompleted, ref state, out var columns, out var consumed, ref id, ref isRunning, out var valuesFirst))
-			{
-				if (valuesFirst)
-					return ([], state, consumed, id, isRunning, true);
+			// The cursor retains the whole buffer between attempts, so every retry must re-parse
+			// from a fresh state; a state mutated by a failed attempt no longer matches the bytes.
+			var state = new JsonReaderState();
 
+			if (TryParseColumns(buffer, cursor.IsEofReached, ref state, out var columns, out var consumed, ref id, ref isRunning, out var valuesFirst))
+			{
+				// TryParseColumns reports values-first only on the failure path; a successful
+				// parse means the columns array was read before any "values" property.
+				Debug.Assert(!valuesFirst);
 				return (columns!, state, consumed, id, isRunning, false);
 			}
 
 			if (valuesFirst)
-				return ([], state, cursor.Buffer.Start, id, isRunning, true);
+			{
+				var bufferStart = buffer.Start;
+				cursor.AdvanceTo(buffer.Start, buffer.End);
+				return ([], new JsonReaderState(), bufferStart, id, isRunning, true);
+			}
 
 			cursor.AdvanceTo(buffer.Start, buffer.End);
+
+			if (cursor.IsEofReached)
+				break;
 		}
 
 		throw new JsonException("Stream ended before \"columns\" array was fully read.");
@@ -434,15 +478,17 @@ internal sealed partial class EsqlResponseReader
 		{
 			var buffer = cursor.Buffer;
 
-			if (TryAdvanceToValuesArray(buffer, cursor.IsCompleted, ref state, out var consumed, ref id, ref isRunning))
+			if (TryAdvanceToValuesArray(buffer, cursor.IsEofReached, ref state, out var consumed, ref id, ref isRunning))
 			{
-				cursor.AdvanceTo(consumed, buffer.End);
+				// Examined stops at consumed so the row loop's first read returns the already
+				// buffered rows of this chunk immediately instead of waiting for more data.
+				cursor.AdvanceTo(consumed, consumed);
 				return (state, id, isRunning);
 			}
 
 			cursor.AdvanceTo(consumed, buffer.End);
 
-			if (cursor.IsCompleted)
+			if (cursor.IsEofReached)
 				break;
 		}
 
@@ -460,13 +506,18 @@ internal sealed partial class EsqlResponseReader
 		{
 			var buffer = cursor.Buffer;
 
-			if (TryAdvanceToValuesArray(buffer, cursor.IsCompleted, ref state, out var consumed, ref id, ref isRunning))
+			if (TryAdvanceToValuesArray(buffer, cursor.IsEofReached, ref state, out var consumed, ref id, ref isRunning))
 			{
-				cursor.AdvanceTo(consumed, buffer.End);
+				// Examined stops at consumed so the row loop's first read returns the already
+				// buffered rows of this chunk immediately instead of waiting for more data.
+				cursor.AdvanceTo(consumed, consumed);
 				return (state, id, isRunning);
 			}
 
 			cursor.AdvanceTo(consumed, buffer.End);
+
+			if (cursor.IsEofReached)
+				break;
 		}
 
 		throw new JsonException("ES|QL response does not contain a \"values\" property.");
@@ -482,10 +533,20 @@ internal sealed partial class EsqlResponseReader
 	{
 		var reader = new Utf8JsonReader(buffer, isFinalBlock, state);
 
+		// Resume points are only recorded after a property (name plus value) has been fully
+		// processed; failing mid-property would otherwise consume the property name and make
+		// the retry miss it, e.g. when a chunk ends between "values": and its opening bracket.
+		var safeState = state;
+		var safePosition = buffer.Start;
+
 		while (reader.Read())
 		{
 			if (reader.TokenType != JsonTokenType.PropertyName)
+			{
+				safeState = reader.CurrentState;
+				safePosition = reader.Position;
 				continue;
+			}
 
 			if (reader.ValueTextEquals("values"u8))
 			{
@@ -502,23 +563,24 @@ internal sealed partial class EsqlResponseReader
 				if (!reader.Read())
 					break;
 				id = reader.GetString();
-				continue;
 			}
-
-			if (reader.ValueTextEquals("is_running"u8))
+			else if (reader.ValueTextEquals("is_running"u8))
 			{
 				if (!reader.Read())
 					break;
 				isRunning = reader.GetBoolean();
-				continue;
+			}
+			else if (!reader.TrySkip())
+			{
+				break;
 			}
 
-			if (!reader.TrySkip())
-				break;
+			safeState = reader.CurrentState;
+			safePosition = reader.Position;
 		}
 
-		state = reader.CurrentState;
-		consumed = reader.Position;
+		state = safeState;
+		consumed = safePosition;
 		return false;
 	}
 
@@ -562,7 +624,8 @@ internal sealed partial class EsqlResponseReader
 			}
 		}
 
-		state = reader.CurrentState;
+		// Callers retain the whole buffer on failure, so the state must keep matching the buffer
+		// start; persisting the failed attempt's state would desync state and bytes.
 		consumed = buffer.Start;
 		return false;
 	}
@@ -574,7 +637,7 @@ internal sealed partial class EsqlResponseReader
 	{
 		while (await cursor.ReadAsync(ct).ConfigureAwait(false))
 		{
-			if (TryScanForId(cursor.Buffer, cursor.IsCompleted, ref state, out var consumed, out var id, out var reachedEnd))
+			if (TryScanForId(cursor.Buffer, cursor.IsEofReached, ref state, out var consumed, out var id, out var reachedEnd))
 			{
 				cursor.AdvanceTo(consumed, cursor.Buffer.End);
 				return (reachedEnd ? null : id, state);
@@ -582,7 +645,7 @@ internal sealed partial class EsqlResponseReader
 
 			cursor.AdvanceTo(consumed, cursor.Buffer.End);
 
-			if (cursor.IsCompleted)
+			if (cursor.IsEofReached)
 				break;
 		}
 
@@ -595,13 +658,16 @@ internal sealed partial class EsqlResponseReader
 	{
 		while (cursor.Read())
 		{
-			if (TryScanForId(cursor.Buffer, cursor.IsCompleted, ref state, out var consumed, out var id, out var reachedEnd))
+			if (TryScanForId(cursor.Buffer, cursor.IsEofReached, ref state, out var consumed, out var id, out var reachedEnd))
 			{
 				cursor.AdvanceTo(consumed, cursor.Buffer.End);
 				return (reachedEnd ? null : id, state);
 			}
 
 			cursor.AdvanceTo(consumed, cursor.Buffer.End);
+
+			if (cursor.IsEofReached)
+				break;
 		}
 
 		return (null, state);
@@ -612,12 +678,16 @@ internal sealed partial class EsqlResponseReader
 		while (cursor.Read())
 		{
 			var buffer = cursor.Buffer;
-			var reader = new Utf8JsonReader(buffer, cursor.IsCompleted, state);
+			var reader = new Utf8JsonReader(buffer, cursor.IsEofReached, state);
 
 			if (!reader.Read())
 			{
 				state = reader.CurrentState;
 				cursor.AdvanceTo(buffer.Start, buffer.End);
+
+				if (cursor.IsEofReached)
+					return false;
+
 				continue;
 			}
 
