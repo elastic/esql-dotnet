@@ -213,8 +213,11 @@ public class EsqlTransportExecutorRequestTests
 		var pathAndQuery = invoker.LastEndpoint!.PathAndQuery;
 		_ = invoker.LastEndpoint.Method.Should().Be(HttpMethod.GET);
 		_ = pathAndQuery.Should().StartWith("/_query/async/abc123?");
-		_ = pathAndQuery.Should().Contain("drop_null_columns=true");
-		_ = pathAndQuery.Should().Contain("keep_alive=5m");
+
+		// Split into whole parameters so a value like "5ms" cannot satisfy a "5m" substring match.
+		var queryParameters = pathAndQuery["/_query/async/abc123?".Length..].Split('&');
+		_ = queryParameters.Should().Contain("drop_null_columns=true");
+		_ = queryParameters.Should().Contain("keep_alive=5m");
 	}
 
 	[Test]
