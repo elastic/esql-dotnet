@@ -176,16 +176,22 @@ internal sealed class EsqlTranslationContext
 		// STJ renders whole doubles without a decimal point (100.0 -> 100), which ES types as an
 		// integer parameter and integer division truncates. Parse the explicit literal instead.
 		if (value is double doubleValue)
-			return ParseRawNumber(EsqlFormatting.FormatDouble(doubleValue));
+			return ParseRawJson(EsqlFormatting.FormatDouble(doubleValue));
 		if (value is float floatValue)
-			return ParseRawNumber(EsqlFormatting.FormatFloat(floatValue));
+			return ParseRawJson(EsqlFormatting.FormatFloat(floatValue));
+
+		// The same integer-typing hazard applies element-wise to captured numeric collections.
+		if (value is IEnumerable<double> doubles)
+			return ParseRawJson($"[{string.Join(",", doubles.Select(EsqlFormatting.FormatDouble))}]");
+		if (value is IEnumerable<float> floats)
+			return ParseRawJson($"[{string.Join(",", floats.Select(EsqlFormatting.FormatFloat))}]");
 
 		return JsonSerializer.SerializeToElement(value, value?.GetType() ?? typeof(object), SerializerOptions);
 	}
 
-	private static JsonElement ParseRawNumber(string literal)
+	private static JsonElement ParseRawJson(string json)
 	{
-		using var document = JsonDocument.Parse(literal);
+		using var document = JsonDocument.Parse(json);
 		return document.RootElement.Clone();
 	}
 }
