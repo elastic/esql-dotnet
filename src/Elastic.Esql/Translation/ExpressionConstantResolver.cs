@@ -96,6 +96,12 @@ internal static class ExpressionConstantResolver
 			? Resolve(member.Expression)
 			: null;
 
+		// Reflection would otherwise surface a raw TargetException that names neither the
+		// member nor the null intermediate in the captured chain.
+		if (instance is null && member.Expression is not null)
+			throw new InvalidOperationException(
+				$"Cannot resolve member '{member.Member.Name}': the target expression '{member.Expression}' evaluated to null.");
+
 		return member.Member switch
 		{
 			FieldInfo field => field.GetValue(instance),
