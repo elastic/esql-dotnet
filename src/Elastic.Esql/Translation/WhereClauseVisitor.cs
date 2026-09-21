@@ -560,7 +560,8 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 			case "get_Chars":
 				// string[i] → SUBSTRING(s, i+1, 1)
-				var indexer = EsqlFunctionTranslator.TranslateStringIndexer(TranslateSubExpression(node.Object!), node.Arguments[0], TranslateSubExpression);
+				var indexerTarget = node.Object ?? throw new NotSupportedException("The string indexer requires an instance.");
+				var indexer = EsqlFunctionTranslator.TranslateStringIndexer(TranslateSubExpression(indexerTarget), node.Arguments[0], TranslateSubExpression);
 				_ = _builder.Append(indexer);
 				break;
 
