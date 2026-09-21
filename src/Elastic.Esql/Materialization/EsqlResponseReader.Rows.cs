@@ -3,10 +3,12 @@
 // See the LICENSE file in the project root for more information
 
 using System.Buffers;
+using System.Diagnostics.CodeAnalysis;
 #if NET10_0_OR_GREATER
 using System.IO.Pipelines;
 #endif
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 
@@ -489,13 +491,34 @@ internal sealed partial class EsqlResponseReader
 				var isFinalBlock = cursor.IsEofReached;
 				var reachedEnd = false;
 
-				while (TryAssembleNextRow(ref buffer, isFinalBlock, ref readerState, layout, buffers, out reachedEnd))
+				while (true)
 				{
-					if (reachedEnd)
+					bool assembled;
+					ExceptionDispatchInfo? assemblyFailure = null;
+
+					try
 					{
-						done = true;
-						break;
+						assembled = TryAssembleNextRow(ref buffer, isFinalBlock, ref readerState, layout, buffers, out reachedEnd);
 					}
+					catch (JsonException ex) when (batchRowCount > 0)
+					{
+						// Rows assembled before the faulty one are complete; hand them over before
+						// surfacing the error, as the per-row path would.
+						assemblyFailure = ExceptionDispatchInfo.Capture(ex);
+						assembled = false;
+					}
+
+					if (assemblyFailure is not null)
+					{
+						foreach (var item in DeserializeBatch(batchBuffer, listTypeInfo, plan))
+							yield return item;
+
+						batchRowCount = 0;
+						assemblyFailure.Throw();
+					}
+
+					if (!assembled || reachedEnd)
+						break;
 
 					AppendRowToBatch(batchBuffer, rowBuffer, batchRowCount);
 					batchRowCount++;
@@ -503,7 +526,7 @@ internal sealed partial class EsqlResponseReader
 					if (batchRowCount < MaxBatchRowCount && batchBuffer.WrittenCount < MaxBatchBufferBytes)
 						continue;
 
-					foreach (var item in DeserializeBatch(batchBuffer, listTypeInfo))
+					foreach (var item in DeserializeBatch(batchBuffer, listTypeInfo, plan))
 						yield return item;
 
 					batchRowCount = 0;
@@ -520,7 +543,7 @@ internal sealed partial class EsqlResponseReader
 
 			if (batchRowCount > 0)
 			{
-				foreach (var item in DeserializeBatch(batchBuffer, listTypeInfo))
+				foreach (var item in DeserializeBatch(batchBuffer, listTypeInfo, plan))
 					yield return item;
 			}
 		}
@@ -563,13 +586,34 @@ internal sealed partial class EsqlResponseReader
 				var isFinalBlock = cursor.IsEofReached;
 				var reachedEnd = false;
 
-				while (TryAssembleNextRow(ref buffer, isFinalBlock, ref readerState, layout, buffers, out reachedEnd))
+				while (true)
 				{
-					if (reachedEnd)
+					bool assembled;
+					ExceptionDispatchInfo? assemblyFailure = null;
+
+					try
 					{
-						done = true;
-						break;
+						assembled = TryAssembleNextRow(ref buffer, isFinalBlock, ref readerState, layout, buffers, out reachedEnd);
 					}
+					catch (JsonException ex) when (batchRowCount > 0)
+					{
+						// Rows assembled before the faulty one are complete; hand them over before
+						// surfacing the error, as the per-row path would.
+						assemblyFailure = ExceptionDispatchInfo.Capture(ex);
+						assembled = false;
+					}
+
+					if (assemblyFailure is not null)
+					{
+						foreach (var item in DeserializeBatch(batchBuffer, listTypeInfo, plan))
+							yield return item;
+
+						batchRowCount = 0;
+						assemblyFailure.Throw();
+					}
+
+					if (!assembled || reachedEnd)
+						break;
 
 					AppendRowToBatch(batchBuffer, rowBuffer, batchRowCount);
 					batchRowCount++;
@@ -577,7 +621,7 @@ internal sealed partial class EsqlResponseReader
 					if (batchRowCount < MaxBatchRowCount && batchBuffer.WrittenCount < MaxBatchBufferBytes)
 						continue;
 
-					foreach (var item in DeserializeBatch(batchBuffer, listTypeInfo))
+					foreach (var item in DeserializeBatch(batchBuffer, listTypeInfo, plan))
 						yield return item;
 
 					batchRowCount = 0;
@@ -594,7 +638,7 @@ internal sealed partial class EsqlResponseReader
 
 			if (batchRowCount > 0)
 			{
-				foreach (var item in DeserializeBatch(batchBuffer, listTypeInfo))
+				foreach (var item in DeserializeBatch(batchBuffer, listTypeInfo, plan))
 					yield return item;
 			}
 		}
@@ -610,11 +654,63 @@ internal sealed partial class EsqlResponseReader
 		WriteRawBytes(batchBuffer, rowBuffer.WrittenSpan);
 	}
 
-	private static List<T> DeserializeBatch<T>(ArrayBufferWriter<byte> batchBuffer, JsonTypeInfo<List<T>> listTypeInfo)
+	/// <summary>
+	/// Deserializes one assembled batch. When the batch fails as a whole, the rows are re-read one
+	/// by one so every row before the faulty one still reaches the consumer, matching the per-row
+	/// path's partial-result behavior; the faulty row then rethrows.
+	/// </summary>
+	private static IEnumerable<T> DeserializeBatch<T>(ArrayBufferWriter<byte> batchBuffer, JsonTypeInfo<List<T>> listTypeInfo, RowMaterializationPlan<T> plan)
 	{
 		WriteRawByte(batchBuffer, (byte)']');
-		var items = JsonSerializer.Deserialize(batchBuffer.WrittenSpan, listTypeInfo);
+
+		List<T>? items;
+		try
+		{
+			items = JsonSerializer.Deserialize(batchBuffer.WrittenSpan, listTypeInfo);
+		}
+		catch (JsonException)
+		{
+			var snapshot = batchBuffer.WrittenSpan.ToArray();
+			batchBuffer.ResetWrittenCount();
+			return DeserializeBatchElementWise(snapshot, plan);
+		}
+
 		batchBuffer.ResetWrittenCount();
 		return items ?? [];
+	}
+
+	private static IEnumerable<T> DeserializeBatchElementWise<T>(byte[] batch, RowMaterializationPlan<T> plan)
+	{
+		// Utf8JsonReader is a ref struct and cannot be preserved across a yield, so the read position
+		// and reader state travel between elements and a fresh reader resumes from them.
+		var state = new JsonReaderState();
+		var consumed = 0;
+
+		while (TryDeserializeBatchElement(batch, plan, ref consumed, ref state, out var item))
+			yield return item!;
+	}
+
+	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Serialization delegates to the user-provided JsonSerializerOptions/JsonSerializerContext which is expected to include an AOT-safe TypeInfoResolver.")]
+	[UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Serialization delegates to the user-provided JsonSerializerOptions/JsonSerializerContext which is expected to include an AOT-safe TypeInfoResolver.")]
+	private static bool TryDeserializeBatchElement<T>(byte[] batch, RowMaterializationPlan<T> plan, ref int consumed, ref JsonReaderState state, out T? item)
+	{
+		item = default;
+		var reader = new Utf8JsonReader(batch.AsSpan(consumed), isFinalBlock: true, state);
+
+		// The first element still sits behind the batch array's opening bracket.
+		if (consumed == 0)
+			_ = reader.Read();
+
+		_ = reader.Read();
+		if (reader.TokenType == JsonTokenType.EndArray)
+			return false;
+
+		item = plan.TypeInfo is { } typeInfo
+			? JsonSerializer.Deserialize(ref reader, typeInfo)
+			: JsonSerializer.Deserialize<T>(ref reader, plan.Options);
+
+		consumed += (int)reader.BytesConsumed;
+		state = reader.CurrentState;
+		return true;
 	}
 }

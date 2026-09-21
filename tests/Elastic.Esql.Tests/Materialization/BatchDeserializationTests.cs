@@ -131,6 +131,119 @@ public class BatchDeserializationTests
 		_ = act.Should().Throw<JsonException>();
 	}
 
+	[Test]
+	public void ReadRows_NestedType_MalformedJsonInSecondBatch_YieldsPrecedingRowsThenThrows()
+	{
+		using var stream = CreateStream(BuildPayload(100, i => i == 69 ? """["person-69", 20, "street" "city-0"]""" : DefaultRow(i)));
+		var reader = CreateReader();
+		using var response = reader.ReadRows<BatchPerson>(stream);
+		var collected = new List<BatchPerson>();
+
+		var act = () =>
+		{
+			foreach (var row in response.Rows)
+				collected.Add(row);
+		};
+
+		_ = act.Should().Throw<JsonException>();
+		_ = collected.Should().HaveCount(69);
+		_ = collected[68].Name.Should().Be("person-68");
+	}
+
+	[Test]
+	public void ReadRows_NestedType_TypeMismatchInSecondBatch_YieldsPrecedingRowsThenThrows()
+	{
+		using var stream = CreateStream(BuildPayload(100, i => i == 69 ? """["person-69", "not-a-number", "street", "city-0"]""" : DefaultRow(i)));
+		var reader = CreateReader();
+		using var response = reader.ReadRows<BatchPerson>(stream);
+		var collected = new List<BatchPerson>();
+
+		var act = () =>
+		{
+			foreach (var row in response.Rows)
+				collected.Add(row);
+		};
+
+		_ = act.Should().Throw<JsonException>();
+		_ = collected.Should().HaveCount(69);
+	}
+
+	[Test]
+	public void ReadRows_NestedType_TruncatedInSecondBatch_YieldsCompleteRowsThenThrows()
+	{
+		var payload = BuildPayload(100, DefaultRow);
+		var cut = payload.IndexOf("person-69", StringComparison.Ordinal) + 4;
+		using var stream = CreateStream(payload[..cut]);
+		var reader = CreateReader();
+		using var response = reader.ReadRows<BatchPerson>(stream);
+		var collected = new List<BatchPerson>();
+
+		var act = () =>
+		{
+			foreach (var row in response.Rows)
+				collected.Add(row);
+		};
+
+		_ = act.Should().Throw<JsonException>();
+		_ = collected.Should().HaveCount(69);
+	}
+
+	[Test]
+	public async Task ReadRowsAsync_NestedType_MalformedJsonInSecondBatch_YieldsPrecedingRowsThenThrows()
+	{
+		using var stream = CreateStream(BuildPayload(100, i => i == 69 ? """["person-69", 20, "street" "city-0"]""" : DefaultRow(i)));
+		var reader = CreateReader();
+		await using var response = await reader.ReadRowsAsync<BatchPerson>(stream);
+		var collected = new List<BatchPerson>();
+
+		var act = async () =>
+		{
+			await foreach (var row in response.Rows)
+				collected.Add(row);
+		};
+
+		_ = await act.Should().ThrowAsync<JsonException>();
+		_ = collected.Should().HaveCount(69);
+	}
+
+	[Test]
+	public async Task ReadRowsAsync_NestedType_TypeMismatchInSecondBatch_YieldsPrecedingRowsThenThrows()
+	{
+		using var stream = CreateStream(BuildPayload(100, i => i == 69 ? """["person-69", "not-a-number", "street", "city-0"]""" : DefaultRow(i)));
+		var reader = CreateReader();
+		await using var response = await reader.ReadRowsAsync<BatchPerson>(stream);
+		var collected = new List<BatchPerson>();
+
+		var act = async () =>
+		{
+			await foreach (var row in response.Rows)
+				collected.Add(row);
+		};
+
+		_ = await act.Should().ThrowAsync<JsonException>();
+		_ = collected.Should().HaveCount(69);
+	}
+
+	[Test]
+	public async Task ReadRowsAsync_NestedType_TruncatedInSecondBatch_YieldsCompleteRowsThenThrows()
+	{
+		var payload = BuildPayload(100, DefaultRow);
+		var cut = payload.IndexOf("person-69", StringComparison.Ordinal) + 4;
+		using var stream = CreateStream(payload[..cut]);
+		var reader = CreateReader();
+		await using var response = await reader.ReadRowsAsync<BatchPerson>(stream);
+		var collected = new List<BatchPerson>();
+
+		var act = async () =>
+		{
+			await foreach (var row in response.Rows)
+				collected.Add(row);
+		};
+
+		_ = await act.Should().ThrowAsync<JsonException>();
+		_ = collected.Should().HaveCount(69);
+	}
+
 	// =========================================================================
 	// Cancellation
 	// =========================================================================
