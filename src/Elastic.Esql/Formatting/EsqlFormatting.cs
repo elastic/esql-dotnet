@@ -122,7 +122,10 @@ internal static class EsqlFormatting
 		if (ts.Ticks % TimeSpan.TicksPerMillisecond == 0)
 			return $"{(ts.Ticks / TimeSpan.TicksPerMillisecond).ToString(InvariantCulture)} milliseconds";
 
-		return $"{ts.TotalMilliseconds.ToString("0.###", InvariantCulture)} milliseconds";
+		// ES|QL duration literals are an integer count and a unit, and the smallest unit is
+		// milliseconds; a fractional count is a parse error on the server.
+		throw new NotSupportedException(
+			$"TimeSpan {ts} cannot be expressed as an ES|QL duration: the smallest ES|QL unit is milliseconds. Round the value to whole milliseconds.");
 	}
 
 	/// <summary>

@@ -57,6 +57,14 @@ public class NumericFormattingTests : EsqlTestBase
 	}
 
 	[Test]
+	public void FormatValue_SubMillisecondTimeSpan_ThrowsNotSupported()
+	{
+		var act = () => EsqlFormatting.FormatValue(TimeSpan.FromTicks(15), ReaderOptions);
+
+		_ = act.Should().Throw<NotSupportedException>();
+	}
+
+	[Test]
 	public void FormatValue_DoubleNaN_ReturnsNull()
 	{
 		var result = EsqlFormatting.FormatValue(double.NaN, ReaderOptions);

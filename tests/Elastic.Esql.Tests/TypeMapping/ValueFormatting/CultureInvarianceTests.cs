@@ -87,13 +87,21 @@ public class CultureInvarianceTests : EsqlTestBase
 		});
 
 	[Test]
-	public void FormatValue_FractionalTimeSpan_UnderGermanCulture_EmitsInvariantDecimalSeparator() =>
+	public void FormatValue_WholeMillisecondTimeSpan_UnderGermanCulture_EmitsCorrectDuration() =>
 		RunWithCulture("de-DE", () =>
 		{
-			// 15005000 ticks = 1500.5 ms, forcing the fractional-milliseconds branch.
-			var result = EsqlFormatting.FormatValue(TimeSpan.FromTicks(15005000), ReaderOptions);
+			var result = EsqlFormatting.FormatValue(TimeSpan.FromMilliseconds(1500), ReaderOptions);
 
-			_ = result.Should().Be("1500.5 milliseconds");
+			_ = result.Should().Be("1500 milliseconds");
+		});
+
+	[Test]
+	public void FormatValue_SubMillisecondTimeSpan_UnderGermanCulture_ThrowsNotSupported() =>
+		RunWithCulture("de-DE", () =>
+		{
+			var act = () => EsqlFormatting.FormatValue(TimeSpan.FromMilliseconds(1500.5), ReaderOptions);
+
+			_ = act.Should().Throw<NotSupportedException>();
 		});
 
 	[Test]

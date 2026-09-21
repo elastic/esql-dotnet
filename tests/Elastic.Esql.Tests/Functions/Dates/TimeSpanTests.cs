@@ -144,4 +144,17 @@ public class TimeSpanTests : EsqlTestBase
             | WHERE @timestamp < (NOW() + 24 hours)
             """.NativeLineEndings());
 	}
+
+	[Test]
+	public void Where_SubMillisecondTimeSpanLiteral_ThrowsNotSupported()
+	{
+		var elapsed = TimeSpan.FromTicks(5000);
+
+		var act = () => CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Timestamp > EsqlFunctions.Now() - elapsed)
+			.ToString();
+
+		_ = act.Should().Throw<NotSupportedException>().WithMessage("*milliseconds*");
+	}
 }
