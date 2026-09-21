@@ -41,8 +41,8 @@ public class EsqlResponseReaderBufferedTests
 		rows[0].Count.Should().Be(1);
 		rows[1].Value.Should().Be("second");
 		rows[1].Count.Should().Be(2);
-		response.Id.Should().BeNull();
-		response.IsRunning.Should().BeNull();
+		response.Id.Should().Be("query-123");
+		response.IsRunning.Should().Be(false);
 	}
 
 	[Test]
@@ -76,8 +76,8 @@ public class EsqlResponseReaderBufferedTests
 		rows[0].Count.Should().Be(1);
 		rows[1].Value.Should().Be("second");
 		rows[1].Count.Should().Be(2);
-		response.Id.Should().BeNull();
-		response.IsRunning.Should().BeNull();
+		response.Id.Should().Be("query-123");
+		response.IsRunning.Should().Be(false);
 	}
 
 	[Test]
@@ -335,6 +335,39 @@ public class EsqlResponseReaderBufferedTests
 
 		scalar.Value.Should().Be(10);
 		scalar.RowCount.Should().Be(3);
+	}
+
+	[Test]
+	public void ReadRows_Stream_ValuesFirstWithTrailingMetadata_CapturesIdAndIsRunning()
+	{
+		var json = """{"values":[["a",1]],"columns":[{"name":"value","type":"keyword"},{"name":"count","type":"integer"}],"id":"q1","is_running":false}""";
+
+		using var stream = CreateStream(json);
+		var reader = CreateReader();
+
+		using var response = reader.ReadRows<ScalarStringModel>(stream);
+		var rows = response.Rows.ToList();
+
+		rows.Should().HaveCount(1);
+		rows[0].Value.Should().Be("a");
+		rows[0].Count.Should().Be(1);
+		response.Id.Should().Be("q1");
+		response.IsRunning.Should().Be(false);
+	}
+
+	[Test]
+	public void ReadRows_Stream_ValuesFirstTruncatedBuffer_ThrowsJsonException()
+	{
+		// JSON cut after the columns array's closing bracket - no closing brace for the root object.
+		var json = """{"values":[["a",1]],"columns":[{"name":"value","type":"keyword"},{"name":"count","type":"integer"}]""";
+
+		using var stream = CreateStream(json);
+		var reader = CreateReader();
+
+		using var response = reader.ReadRows<ScalarStringModel>(stream);
+		var act = () => response.Rows.ToList();
+
+		act.Should().Throw<JsonException>();
 	}
 
 	private static EsqlResponseReader CreateReader()

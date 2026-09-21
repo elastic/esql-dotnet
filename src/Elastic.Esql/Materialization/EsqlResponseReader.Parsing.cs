@@ -219,8 +219,8 @@ internal sealed partial class EsqlResponseReader
 				_ = reader.TrySkip();
 			}
 
-			if (columns is not null && valuesOffset >= 0)
-				break;
+			// No early exit: the loop runs to the end of the root object so that a truncated buffer raises JsonException
+			// and any trailing metadata properties (id, is_running) are captured regardless of property order.
 		}
 
 		if (columns is null)
