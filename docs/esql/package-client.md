@@ -350,9 +350,11 @@ discards one instance of the type; a constructor with side effects therefore run
 for such rows.
 
 Nested result types are deserialized in batches of up to 64 rows or 64 KB, so the first row
-becomes available after the first batch rather than immediately. When a row inside a batch is
-malformed or does not match the type, the rows before it are still delivered and the error
-surfaces at the faulty row, the same as for flat types.
+becomes available after the first batch rather than immediately. Batching also requires the
+serializer to resolve type metadata for `List<T>`; a source-generated context that does not
+declare `List<T>` for the result type streams rows one at a time instead. When a row inside a
+batch is malformed or does not match the type, the rows before it are still delivered and the
+error surfaces at the faulty row, the same as for flat types.
 
 ## Raw response formats
 
