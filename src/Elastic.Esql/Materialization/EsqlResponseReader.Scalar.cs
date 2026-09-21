@@ -7,7 +7,6 @@ using System.Buffers;
 using System.IO.Pipelines;
 #endif
 using System.Text.Json;
-using System.Text.Json.Serialization.Metadata;
 
 namespace Elastic.Esql.Materialization;
 
@@ -75,6 +74,7 @@ internal sealed partial class EsqlResponseReader
 		var valueBuffer = plan.IsScalar ? null : new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
 		await using var valueWriter = plan.IsScalar ? null : new Utf8JsonWriter(valueBuffer!, SkipValidationWriterOptions);
 		await using var scalarWriter = plan.IsScalar ? new Utf8JsonWriter(rowBuffer, SkipValidationWriterOptions) : null;
+		var buffers = new RowAssemblyBuffers(rowBuffer, valueBuffer, valueWriter, scalarWriter);
 
 		T? value = default;
 		var rowCount = 0;
@@ -91,11 +91,8 @@ internal sealed partial class EsqlResponseReader
 				cursor.IsEofReached,
 				ref readerState,
 				layout,
-				rowBuffer,
-				valueBuffer,
-				valueWriter,
-				scalarWriter,
-				plan.TypeInfo,
+				buffers,
+				plan,
 				Options,
 				ref value,
 				ref rowCount,
@@ -125,6 +122,7 @@ internal sealed partial class EsqlResponseReader
 		var valueBuffer = plan.IsScalar ? null : new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
 		using var valueWriter = plan.IsScalar ? null : new Utf8JsonWriter(valueBuffer!, SkipValidationWriterOptions);
 		using var scalarWriter = plan.IsScalar ? new Utf8JsonWriter(rowBuffer, SkipValidationWriterOptions) : null;
+		var buffers = new RowAssemblyBuffers(rowBuffer, valueBuffer, valueWriter, scalarWriter);
 
 		T? value = default;
 		var rowCount = 0;
@@ -141,11 +139,8 @@ internal sealed partial class EsqlResponseReader
 				cursor.IsEofReached,
 				ref readerState,
 				layout,
-				rowBuffer,
-				valueBuffer,
-				valueWriter,
-				scalarWriter,
-				plan.TypeInfo,
+				buffers,
+				plan,
 				Options,
 				ref value,
 				ref rowCount,
@@ -195,11 +190,8 @@ internal sealed partial class EsqlResponseReader
 		bool isFinalBlock,
 		ref JsonReaderState readerState,
 		ColumnLayout layout,
-		ArrayBufferWriter<byte> rowBuffer,
-		ArrayBufferWriter<byte>? valueBuffer,
-		Utf8JsonWriter? valueWriter,
-		Utf8JsonWriter? scalarWriter,
-		JsonTypeInfo<T>? typeInfo,
+		RowAssemblyBuffers buffers,
+		RowMaterializationPlan<T> plan,
 		JsonSerializerOptions options,
 		ref T? value,
 		ref int rowCount,
@@ -209,7 +201,7 @@ internal sealed partial class EsqlResponseReader
 		{
 			if (rowCount == 0)
 			{
-				if (!TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, rowBuffer, valueBuffer, valueWriter, scalarWriter, typeInfo, options, out var item, out var reachedEnd))
+				if (!TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, buffers, plan, options, out var item, out var reachedEnd))
 					return;
 
 				if (reachedEnd)

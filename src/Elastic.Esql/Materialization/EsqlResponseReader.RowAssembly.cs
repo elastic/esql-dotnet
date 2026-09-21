@@ -19,11 +19,8 @@ internal sealed partial class EsqlResponseReader
 		bool isFinalBlock,
 		ref JsonReaderState state,
 		ColumnLayout layout,
-		ArrayBufferWriter<byte> rowBuffer,
-		ArrayBufferWriter<byte>? valueBuffer,
-		Utf8JsonWriter? valueWriter,
-		Utf8JsonWriter? scalarWriter,
-		JsonTypeInfo<T>? typeInfo,
+		RowAssemblyBuffers buffers,
+		RowMaterializationPlan<T> plan,
 		JsonSerializerOptions options,
 		out T? item,
 		out bool reachedEnd)
@@ -35,7 +32,7 @@ internal sealed partial class EsqlResponseReader
 		// value re-write and the second parse. Only attempt when a binder exists and this is not the
 		// scalar path. Any row whose token shapes need serializer semantics falls through per-row to
 		// the assemble-and-deserialize path below, which re-reads nothing outside this row.
-		if (scalarWriter is null && layout.DirectBinder is { } directBinder)
+		if (buffers.ScalarWriter is null && layout.DirectBinder is { } directBinder)
 		{
 			var savedState = state;
 			var savedBuffer = buffer;
@@ -79,15 +76,15 @@ internal sealed partial class EsqlResponseReader
 			}
 		}
 
-		if (!TryAssembleNextRow(ref buffer, isFinalBlock, ref state, layout, rowBuffer, valueBuffer, valueWriter, scalarWriter, out reachedEnd))
+		if (!TryAssembleNextRow(ref buffer, isFinalBlock, ref state, layout, buffers, out reachedEnd))
 			return false;
 
 		if (reachedEnd)
 			return true;
 
-		item = typeInfo is not null
-			? JsonSerializer.Deserialize(rowBuffer.WrittenSpan, typeInfo)
-			: JsonSerializer.Deserialize<T>(rowBuffer.WrittenSpan, options);
+		item = plan.TypeInfo is not null
+			? JsonSerializer.Deserialize(buffers.RowBuffer.WrittenSpan, plan.TypeInfo)
+			: JsonSerializer.Deserialize<T>(buffers.RowBuffer.WrittenSpan, options);
 
 		return true;
 	}
@@ -225,9 +222,9 @@ internal sealed partial class EsqlResponseReader
 	}
 
 	/// <summary>
-	/// Parses the next row from the <c>values</c> array and assembles it into <paramref name="rowBuffer"/>
-	/// (a JSON object, or a bare scalar value when <paramref name="scalarWriter"/> is set) without
-	/// deserializing. Returns <see langword="false"/> when more input is needed; state and buffer are
+	/// Parses the next row from the <c>values</c> array and assembles it into the row buffer
+	/// (a JSON object, or a bare scalar value when <paramref name="buffers"/>.<see cref="RowAssemblyBuffers.ScalarWriter"/> is set)
+	/// without deserializing. Returns <see langword="false"/> when more input is needed; state and buffer are
 	/// restored so the caller can retry with more data.
 	/// </summary>
 	private static bool TryAssembleNextRow(
@@ -235,10 +232,7 @@ internal sealed partial class EsqlResponseReader
 		bool isFinalBlock,
 		ref JsonReaderState state,
 		ColumnLayout layout,
-		ArrayBufferWriter<byte> rowBuffer,
-		ArrayBufferWriter<byte>? valueBuffer,
-		Utf8JsonWriter? valueWriter,
-		Utf8JsonWriter? scalarWriter,
+		RowAssemblyBuffers buffers,
 		out bool reachedEnd)
 	{
 		reachedEnd = false;
@@ -266,16 +260,16 @@ internal sealed partial class EsqlResponseReader
 			return false;
 		}
 
-		if (scalarWriter is not null)
+		if (buffers.ScalarWriter is not null)
 		{
-			if (!TryWriteScalarValue(ref reader, rowBuffer, scalarWriter))
+			if (!TryWriteScalarValue(ref reader, buffers.RowBuffer, buffers.ScalarWriter))
 			{
 				state = savedState;
 				buffer = savedBuffer;
 				return false;
 			}
 		}
-		else if (valueBuffer is null || valueWriter is null || !TryMaterializeRow(ref reader, layout, rowBuffer, valueBuffer, valueWriter))
+		else if (buffers.ValueBuffer is null || buffers.ValueWriter is null || !TryMaterializeRow(ref reader, layout, buffers.RowBuffer, buffers.ValueBuffer, buffers.ValueWriter))
 		{
 			state = savedState;
 			buffer = savedBuffer;

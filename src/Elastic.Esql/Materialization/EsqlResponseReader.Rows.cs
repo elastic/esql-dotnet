@@ -338,6 +338,7 @@ internal sealed partial class EsqlResponseReader
 		var valueBuffer = plan.IsScalar ? null : new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
 		await using var valueWriter = plan.IsScalar ? null : new Utf8JsonWriter(valueBuffer!, SkipValidationWriterOptions);
 		await using var scalarWriter = plan.IsScalar ? new Utf8JsonWriter(rowBuffer, SkipValidationWriterOptions) : null;
+		var buffers = new RowAssemblyBuffers(rowBuffer, valueBuffer, valueWriter, scalarWriter);
 
 		try
 		{
@@ -352,7 +353,7 @@ internal sealed partial class EsqlResponseReader
 				var isFinalBlock = cursor.IsEofReached;
 				var reachedEnd = false;
 
-				while (TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, rowBuffer, valueBuffer, valueWriter, scalarWriter, plan.TypeInfo, options, out var item, out reachedEnd))
+				while (TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, buffers, plan, options, out var item, out reachedEnd))
 				{
 					if (reachedEnd)
 					{
@@ -406,6 +407,7 @@ internal sealed partial class EsqlResponseReader
 		var valueBuffer = plan.IsScalar ? null : new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
 		using var valueWriter = plan.IsScalar ? null : new Utf8JsonWriter(valueBuffer!, SkipValidationWriterOptions);
 		using var scalarWriter = plan.IsScalar ? new Utf8JsonWriter(rowBuffer, SkipValidationWriterOptions) : null;
+		var buffers = new RowAssemblyBuffers(rowBuffer, valueBuffer, valueWriter, scalarWriter);
 
 		try
 		{
@@ -420,7 +422,7 @@ internal sealed partial class EsqlResponseReader
 				var isFinalBlock = cursor.IsEofReached;
 				var reachedEnd = false;
 
-				while (TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, rowBuffer, valueBuffer, valueWriter, scalarWriter, plan.TypeInfo, options, out var item, out reachedEnd))
+				while (TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, buffers, plan, options, out var item, out reachedEnd))
 				{
 					if (reachedEnd)
 					{
@@ -471,6 +473,7 @@ internal sealed partial class EsqlResponseReader
 		var valueBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
 		var batchBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize * 8);
 		await using var valueWriter = new Utf8JsonWriter(valueBuffer, SkipValidationWriterOptions);
+		var buffers = new RowAssemblyBuffers(rowBuffer, valueBuffer, valueWriter, scalarWriter: null);
 		var batchRowCount = 0;
 
 		try
@@ -486,7 +489,7 @@ internal sealed partial class EsqlResponseReader
 				var isFinalBlock = cursor.IsEofReached;
 				var reachedEnd = false;
 
-				while (TryAssembleNextRow(ref buffer, isFinalBlock, ref readerState, layout, rowBuffer, valueBuffer, valueWriter, scalarWriter: null, out reachedEnd))
+				while (TryAssembleNextRow(ref buffer, isFinalBlock, ref readerState, layout, buffers, out reachedEnd))
 				{
 					if (reachedEnd)
 					{
@@ -544,6 +547,7 @@ internal sealed partial class EsqlResponseReader
 		var valueBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
 		var batchBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize * 8);
 		using var valueWriter = new Utf8JsonWriter(valueBuffer, SkipValidationWriterOptions);
+		var buffers = new RowAssemblyBuffers(rowBuffer, valueBuffer, valueWriter, scalarWriter: null);
 		var batchRowCount = 0;
 
 		try
@@ -559,7 +563,7 @@ internal sealed partial class EsqlResponseReader
 				var isFinalBlock = cursor.IsEofReached;
 				var reachedEnd = false;
 
-				while (TryAssembleNextRow(ref buffer, isFinalBlock, ref readerState, layout, rowBuffer, valueBuffer, valueWriter, scalarWriter: null, out reachedEnd))
+				while (TryAssembleNextRow(ref buffer, isFinalBlock, ref readerState, layout, buffers, out reachedEnd))
 				{
 					if (reachedEnd)
 					{
