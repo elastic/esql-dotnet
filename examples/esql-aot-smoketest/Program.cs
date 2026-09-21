@@ -5,9 +5,11 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using System.Text.Json.Serialization;
+using Elastic.Clients.Esql;
 using Elastic.Esql.Core;
 using Elastic.Esql.Execution;
 using Elastic.Esql.Extensions;
+using Elastic.Transport;
 using EsqlAotSmoketest;
 
 Console.WriteLine("Elastic.Esql AOT Smoketest");
@@ -117,6 +119,26 @@ if (shipments[0].Address is null || shipments[0].Address!.City != "Berlin")
 Console.WriteLine($"\nMaterialization test (nested):");
 Console.WriteLine($"  Row 0: {shipments[0].ShipmentId} {shipments[0].Address!.City}");
 Console.WriteLine($"  Row 1: {shipments[1].ShipmentId} {shipments[1].Address!.City}");
+
+// Client: the transport-backed path must AOT-compile too, so run one typed query through
+// EsqlClient over an in-memory request invoker that serves the rows payload.
+var clientConfig = new TransportConfiguration(
+	new SingleNodePool(new Uri("http://localhost:9200")),
+	new InMemoryRequestInvoker(Encoding.UTF8.GetBytes(rowsJson), 200),
+	productRegistration: EsqlProductRegistration.Default);
+var clientSettings = new EsqlClientSettings(new DistributedTransport(clientConfig))
+{
+	JsonSerializerContext = EsqlJsonContext.Default
+};
+
+using (var client = new EsqlClient(clientSettings))
+{
+	var clientOrders = client.CreateQuery<EsqlOrder>().From("orders").ToList();
+	Console.WriteLine($"\nClient materialization test:");
+	Console.WriteLine($"  Rows via client: {clientOrders.Count}");
+	if (clientOrders.Count != orders.Count)
+		throw new InvalidOperationException("Client path returned a different row count than the reader path.");
+}
 
 Console.WriteLine("\nAOT smoketest passed!");
 

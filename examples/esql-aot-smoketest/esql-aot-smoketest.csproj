@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <ProjectReference Include="$(SolutionRoot)\src\Elastic.Esql\Elastic.Esql.csproj" />
+    <ProjectReference Include="$(SolutionRoot)\src\Elastic.Clients.Esql\Elastic.Clients.Esql.csproj" />
   </ItemGroup>
 
 </Project>
