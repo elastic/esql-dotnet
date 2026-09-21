@@ -90,7 +90,9 @@ public class LocateTests : EsqlTestBase
 	{
 		var act = () => CreateQuery<LogEntry>()
 			.From("logs-*")
+#pragma warning disable CA1858 // IndexOf == 0 is the call shape the translator is tested against; StartsWith would change the translation path
 			.Where(l => l.Message.MultiField("keyword").IndexOf("error", StringComparison.OrdinalIgnoreCase) == 0)
+#pragma warning restore CA1858
 			.ToString();
 
 		_ = act.Should().Throw<NotSupportedException>()

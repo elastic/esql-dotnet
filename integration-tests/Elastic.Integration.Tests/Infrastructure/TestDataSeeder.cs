@@ -288,7 +288,7 @@ public static class TestDataSeeder
 		new() { Id = "book-08", Title = "Shakespeare for Programmers", Description = "Cross-disciplinary essays on language design and the bard.", TitleVec = new float[] { 0.50f, 0.00f, 0.85f, 0.00f }, RgbVector = new byte[] { 100, 0, 200 } },
 		new() { Id = "book-09", Title = "The Complete Shakespeare", Description = "All plays and sonnets in one volume.", TitleVec = new float[] { 0.10f, 0.10f, 0.95f, 0.00f }, RgbVector = new byte[] { 20, 20, 220 } },
 		new() { Id = "book-10", Title = "Mixed Topics Anthology", Description = "Essays spanning many subjects.", TitleVec = new float[] { 0.50f, 0.50f, 0.50f, 0.50f }, RgbVector = new byte[] { 128, 128, 128 } },
-		new() { Id = "book-11", Title = "Generalist Knowledge", Description = "A primer on broad subject expertise.", TitleVec = new float[] { 0.40f, 0.40f, 0.40f, 0.40f }, RgbVector = "ddd"u8.ToArray() },
+		new() { Id = "book-11", Title = "Generalist Knowledge", Description = "A primer on broad subject expertise.", TitleVec = new float[] { 0.40f, 0.40f, 0.40f, 0.40f }, RgbVector = new byte[] { 100, 150, 200 } },
 		new() { Id = "book-12", Title = "Outlier Volume", Description = "Niche material on obscure topics.", TitleVec = new float[] { 0.00f, 0.00f, 0.00f, 1.00f }, RgbVector = new byte[] { 0, 0, 0 } }
 	];
 

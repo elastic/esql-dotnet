@@ -26,7 +26,9 @@ public class StringComparisonOrdinalTests : EsqlTestBase
 	{
 		var esql = CreateQuery<LogEntry>()
 			.From("logs-*")
+#pragma warning disable CA2249, CA1865 // IndexOf with StringComparison.Ordinal >= 0 is the exact call shape the translator is tested against
 			.Where(l => l.Message.IndexOf("x", StringComparison.Ordinal) >= 0)
+#pragma warning restore CA2249, CA1865
 			.ToString();
 
 		_ = esql.Should().Be(
