@@ -157,9 +157,10 @@ internal sealed class DirectRowBinder
 			return options.TryGetTypeInfo(propertyType, out var propertyTypeInfo)
 				&& propertyTypeInfo.Converter.GetType().Assembly == typeof(JsonSerializerOptions).Assembly;
 		}
-		catch
+		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
 		{
-			// Resolvers may throw for unregistered types - treat as ineligible and keep the slow path.
+			// The documented STJ failures for an unsupported type: keep the slow path. Anything
+			// else is a resolver bug and must surface.
 			return false;
 		}
 	}
