@@ -26,6 +26,19 @@ internal sealed class EsqlTranslationContext
 	public List<QueryCommand> Commands { get; } = [];
 
 	/// <summary>
+	/// Whether a Select has replaced the rows with something built from them. Keep and
+	/// Drop narrow the columns but leave the row itself, so they do not set this.
+	/// </summary>
+	public bool HasProjected { get; set; }
+
+	/// <summary>
+	/// How many values of a multi-value field a predicate may read, one position at a
+	/// time, as stated with <c>MultiValueLimit</c>. Null until stated; while it is null,
+	/// the predicates that need it are refused rather than translated.
+	/// </summary>
+	public int? MultiValueLimit { get; set; }
+
+	/// <summary>
 	/// Named-parameter accumulator. Settable internally so sub-pipeline visitors (e.g. FORK
 	/// branches) can share the parent's instance and avoid losing parameters at branch boundaries.
 	/// </summary>

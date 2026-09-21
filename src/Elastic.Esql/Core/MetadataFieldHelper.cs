@@ -26,6 +26,9 @@ internal static class MetadataFieldHelper
 			_ => throw new ArgumentOutOfRangeException(nameof(field), field, "Not a single metadata field flag.")
 		};
 
+	/// <summary>The ES|QL column that carries the indexed document.</summary>
+	public const string SourceColumnName = "_source";
+
 	/// <summary>
 	/// Returns the ES|QL identifier for the named member of <see cref="EsqlMetadata"/>
 	/// (e.g. <c>nameof(EsqlMetadata.Id)</c> -> <c>_id</c>). Returns <see langword="null"/>

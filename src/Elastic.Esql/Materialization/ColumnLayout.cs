@@ -51,18 +51,38 @@ internal sealed class ColumnLayout
 	/// <summary>Total count of non-root branch nodes (nested objects).</summary>
 	public int BranchNodeCount { get; }
 
+	/// <summary>
+	/// Index of the <c>_source</c> column when the response carries one and the target type holds a
+	/// list of objects, otherwise -1.
+	/// </summary>
+	/// <remarks>
+	/// A list of objects is the one shape the columnar form cannot express:
+	/// <c>[{"sku":"a","qty":1},{"sku":"a","qty":2}]</c> reaches ES|QL as parallel <c>lines.sku</c>
+	/// and <c>lines.qty</c> values, deduplicated, with no way back to the pairs. The document under
+	/// <c>_source</c> is the one that was indexed, so it keeps them. It is read for those members
+	/// alone: everything else, a column an EVAL computes above all, still comes from the columns.
+	/// </remarks>
+	public int SourceColumnIndex { get; }
+
+	/// <summary>JSON names of the target's members that hold a list of objects, in document order.</summary>
+	public string[] ObjectListMembers { get; }
+
 	private ColumnLayout(
 		ColumnNode root,
 		int columnCount,
 		int maxDepth,
 		ColumnNode[] leafNodesByColumnIndex,
-		int branchNodeCount)
+		int branchNodeCount,
+		int sourceColumnIndex,
+		string[] objectListMembers)
 	{
 		Root = root;
 		ColumnCount = columnCount;
 		MaxDepth = maxDepth;
 		LeafNodesByColumnIndex = leafNodesByColumnIndex;
 		BranchNodeCount = branchNodeCount;
+		SourceColumnIndex = sourceColumnIndex;
+		ObjectListMembers = objectListMembers;
 	}
 
 	/// <summary>
@@ -111,8 +131,58 @@ internal sealed class ColumnLayout
 
 		var leafNodesByColumnIndex = new ColumnNode[columnCount];
 		var branchNodeCount = IndexNodes(root, leafNodesByColumnIndex, 0);
+		var objectListMembers = typeInfo is null ? [] : FindObjectListMembers(typeInfo, options);
+		var sourceColumnIndex = objectListMembers.Length == 0 ? -1 : FindSourceColumn(columns);
 
-		return new ColumnLayout(root, columnCount, maxDepth, leafNodesByColumnIndex, branchNodeCount);
+		return new ColumnLayout(
+			root, columnCount, maxDepth, leafNodesByColumnIndex, branchNodeCount, sourceColumnIndex, objectListMembers);
+	}
+
+	/// <summary>Index of the <c>_source</c> column in the response, or -1 when there is none.</summary>
+	private static int FindSourceColumn(ReadOnlySpan<EsqlResponseReader.ColumnInfo> columns)
+	{
+		for (var i = 0; i < columns.Length; i++)
+		{
+			if (columns[i].Name == MetadataFieldHelper.SourceColumnName)
+				return i;
+		}
+
+		return -1;
+	}
+
+	/// <summary>
+	/// JSON names of the target's members typed as a collection of objects, which is the shape the
+	/// columnar form flattens into parallel columns.
+	/// </summary>
+	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Type info resolution delegates to the user-provided JsonSerializerOptions/JsonSerializerContext.")]
+	[UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Type info resolution delegates to the user-provided JsonSerializerOptions/JsonSerializerContext.")]
+	private static string[] FindObjectListMembers(JsonTypeInfo typeInfo, JsonSerializerOptions options)
+	{
+		List<string>? names = null;
+
+		foreach (var prop in typeInfo.Properties)
+		{
+			var propType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+			if (propType == typeof(string) || !TypeHelper.IsEnumerableType(propType))
+				continue;
+
+			try
+			{
+				if (options.GetTypeInfo(propType).ElementType is not { } elementType)
+					continue;
+
+				if (options.GetTypeInfo(elementType).Kind != JsonTypeInfoKind.Object)
+					continue;
+			}
+			catch
+			{
+				continue;
+			}
+
+			(names ??= []).Add(prop.Name);
+		}
+
+		return names?.ToArray() ?? [];
 	}
 
 	/// <summary>

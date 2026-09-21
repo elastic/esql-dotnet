@@ -5,6 +5,7 @@
 using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 
@@ -145,6 +146,13 @@ internal sealed partial class EsqlResponseReader
 			rowBuffer.ResetWrittenCount();
 			WriteRawByte(rowBuffer, (byte)'{');
 			AssembleChildren(layout.Root.Children!, rowBuffer, valueBuffer.WrittenSpan, slices, activeBranches);
+
+			// a list of objects is the one member the columns cannot carry, since they arrive
+			// flattened and deduplicated; the indexed document keeps it, so it is read from there
+			// and appended, leaving every other member to the columns, computed ones included
+			if (layout.SourceColumnIndex >= 0)
+				AppendObjectListsFromSource(layout, rowBuffer, valueBuffer.WrittenSpan, slices);
+
 			WriteRawByte(rowBuffer, (byte)'}');
 
 			return true;
@@ -156,6 +164,76 @@ internal sealed partial class EsqlResponseReader
 			if (rentedActiveBranches is not null)
 				ArrayPool<bool>.Shared.Return(rentedActiveBranches);
 		}
+	}
+
+	/// <summary>
+	/// Copies the target's lists of objects out of the <c>_source</c> column into the row being
+	/// assembled. The row is otherwise built from the columns, so only these members are taken
+	/// from the document.
+	/// </summary>
+	private static void AppendObjectListsFromSource(
+		ColumnLayout layout,
+		ArrayBufferWriter<byte> rowBuffer,
+		ReadOnlySpan<byte> valueSpan,
+		ReadOnlySpan<ValueSlice> slices)
+	{
+		var slice = slices[layout.SourceColumnIndex];
+		if (slice.IsNull || slice.FirstToken != JsonTokenType.StartObject)
+			return;
+
+		var document = valueSpan.Slice(slice.Start, slice.Length);
+
+		foreach (var memberName in layout.ObjectListMembers)
+		{
+			var reader = new Utf8JsonReader(document);
+			if (!TryFindMember(ref reader, memberName))
+				continue;
+
+			var start = (int)reader.TokenStartIndex;
+			if (!reader.TrySkip())
+				continue;
+
+			var end = (int)reader.BytesConsumed;
+
+			WriteRawByte(rowBuffer, (byte)',');
+			WriteRawByte(rowBuffer, (byte)'"');
+			rowBuffer.Write(Encoding.UTF8.GetBytes(memberName));
+			WriteRawByte(rowBuffer, (byte)'"');
+			WriteRawByte(rowBuffer, (byte)':');
+			rowBuffer.Write(document[start..end]);
+		}
+	}
+
+	/// <summary>
+	/// Advances <paramref name="reader"/> to the value of the named top-level member of the object
+	/// it is positioned on. Returns <see langword="false"/> when the object has no such member.
+	/// </summary>
+	private static bool TryFindMember(ref Utf8JsonReader reader, string memberName)
+	{
+		if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
+			return false;
+
+		while (reader.Read())
+		{
+			if (reader.TokenType == JsonTokenType.EndObject)
+				return false;
+
+			if (reader.TokenType != JsonTokenType.PropertyName)
+				return false;
+
+			var isWanted = reader.ValueTextEquals(memberName);
+
+			if (!reader.Read())
+				return false;
+
+			if (isWanted)
+				return true;
+
+			if (!reader.TrySkip())
+				return false;
+		}
+
+		return false;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]

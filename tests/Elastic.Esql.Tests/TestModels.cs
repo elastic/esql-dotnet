@@ -2,6 +2,7 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Collections;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -12,6 +13,9 @@ namespace Elastic.Esql.Tests;
 // ============================================================================
 
 [JsonSerializable(typeof(LogEntry))]
+[JsonSerializable(typeof(TaggedProduct))]
+[JsonSerializable(typeof(OptionalDocument))]
+[JsonSerializable(typeof(TreeNode))]
 [JsonSerializable(typeof(SimpleDocument))]
 [JsonSerializable(typeof(MetricDocument))]
 [JsonSerializable(typeof(EventDocument))]
@@ -26,6 +30,12 @@ namespace Elastic.Esql.Tests;
 [JsonSerializable(typeof(UnmatchedCtorProjection))]
 [JsonSerializable(typeof(CollisionRecord))]
 [JsonSerializable(typeof(NestedSelectionDocument))]
+[JsonSerializable(typeof(EagerNestedDocument))]
+[JsonSerializable(typeof(SetTaggedProduct))]
+[JsonSerializable(typeof(OwnTaggedProduct))]
+[JsonSerializable(typeof(InterfaceTaggedProduct))]
+[JsonSerializable(typeof(EagerHostRecord))]
+[JsonSerializable(typeof(LazyHostRecord))]
 [JsonSerializable(typeof(NestedHostLookup))]
 [JsonSerializable(typeof(DottedLevelLookup))]
 [JsonSerializable(typeof(BookDocument))]
@@ -47,6 +57,42 @@ public class BookProjection
 	public string Id { get; set; } = string.Empty;
 	public string Title { get; set; } = string.Empty;
 	public float Score { get; set; }
+}
+
+/// <summary>
+/// Self-referencing document: a projection onto <see cref="Child"/> keeps the element
+/// type, so the type alone cannot tell a projected row from a document.
+/// </summary>
+public class TreeNode
+{
+	public string Name { get; set; } = string.Empty;
+
+	public TreeNode? Child { get; set; }
+}
+
+/// <summary>
+/// Document whose members are all nullable: the compiler then records the annotation
+/// once on the type, as a NullableContext, rather than on each member.
+/// </summary>
+public class OptionalDocument
+{
+	public string? Message { get; set; }
+
+	public string? ClientIp { get; set; }
+}
+
+/// <summary>
+/// Document with multi-value fields, for predicates over collections.
+/// </summary>
+public class TaggedProduct
+{
+	public string Name { get; set; } = string.Empty;
+
+	public string[] Tags { get; set; } = [];
+
+	public List<string> Categories { get; set; } = [];
+
+	public List<int> Ratings { get; set; } = [];
 }
 
 /// <summary>
@@ -273,14 +319,14 @@ public record CollisionRecord(string OuterMsg, string InnerMsg);
 public class NestedSelectionDocument
 {
 	public string Message { get; set; } = string.Empty;
-	public NestedSelectionHost Host { get; set; } = new();
-	public NestedSelectionAgent Agent { get; set; } = new();
+	public NestedSelectionHost? Host { get; set; }
+	public NestedSelectionAgent? Agent { get; set; }
 }
 
 public class NestedSelectionHost
 {
 	public string Name { get; set; } = string.Empty;
-	public NestedSelectionGeo Geo { get; set; } = new();
+	public NestedSelectionGeo? Geo { get; set; }
 }
 
 public class NestedSelectionAgent
@@ -317,6 +363,9 @@ public class NestedSelectionGeo
 [JsonSerializable(typeof(MixedDotModel))]
 [JsonSerializable(typeof(OuterWithDotInner))]
 [JsonSerializable(typeof(PersonWithTaggedAddress))]
+[JsonSerializable(typeof(SourceOrder))]
+[JsonSerializable(typeof(SourceOrderLine))]
+[JsonSerializable(typeof(SourceOrderWithTotal))]
 [JsonSerializable(typeof(MultiNestedModel))]
 [JsonSerializable(typeof(NullableNestedModel))]
 [JsonSerializable(typeof(FlatDotFallbackModel))]
@@ -540,3 +589,80 @@ public class FlatDotFallbackModel
 
 	public string Name { get; set; } = string.Empty;
 }
+
+/// <summary>A nested child whose constructor takes a value, for the guard over a constructor argument.</summary>
+public class NestedSelectionHostWithTag(string tag)
+{
+	public string Tag { get; } = tag;
+	public string Name { get; set; } = string.Empty;
+}
+
+/// <summary>A document whose tags are a set: a set answers Contains by its own comparer.</summary>
+public class SetTaggedProduct
+{
+	public string Name { get; set; } = string.Empty;
+	public HashSet<string> Tags { get; set; } = [];
+}
+
+/// <summary>An element of a list of objects, the shape the columnar form cannot express.</summary>
+public class SourceOrderLine
+{
+	public string Sku { get; set; } = string.Empty;
+
+	public int Quantity { get; set; }
+}
+
+/// <summary>A document holding a list of objects, which reaches ES|QL as one column per member.</summary>
+public class SourceOrder
+{
+	public string Reference { get; set; } = string.Empty;
+
+	public List<SourceOrderLine> Lines { get; set; } = [];
+}
+
+/// <summary>A document read together with a column an EVAL computes, which the indexed document does not carry.</summary>
+public class SourceOrderWithTotal
+{
+	public string Reference { get; set; } = string.Empty;
+
+	public int Total { get; set; }
+}
+
+/// <summary>A document whose tags are declared through an interface, which says nothing about the collection behind it.</summary>
+public class InterfaceTaggedProduct
+{
+	public string Name { get; set; } = string.Empty;
+	public IList<string> Tags { get; set; } = [];
+}
+
+/// <summary>A document whose tags are a collection type of its own, which may answer Contains any way.</summary>
+public class OwnTaggedProduct
+{
+	public string Name { get; set; } = string.Empty;
+	public OwnTags Tags { get; set; } = new();
+}
+
+/// <summary>A collection of the document's own: it happens to be a list, but its declared type says nothing of the kind.</summary>
+public class OwnTags : IEnumerable<string>
+{
+	private readonly List<string> _items = [];
+
+	public void Add(string item) => _items.Add(item);
+
+	public IEnumerator<string> GetEnumerator() => _items.GetEnumerator();
+
+	IEnumerator IEnumerable.GetEnumerator() => _items.GetEnumerator();
+}
+
+/// <summary>A document whose nested member is declared non-nullable, with an initializer.</summary>
+public class EagerNestedDocument
+{
+	public string Message { get; set; } = string.Empty;
+	public NestedSelectionHost Host { get; set; } = new();
+}
+
+/// <summary>A record whose constructor takes the nested child as non-nullable: it cannot hold a guard's null.</summary>
+public record EagerHostRecord(NestedSelectionHost Host);
+
+/// <summary>The same record with the child declared nullable, where a guard's null has a place to go.</summary>
+public record LazyHostRecord(NestedSelectionHost? Host);

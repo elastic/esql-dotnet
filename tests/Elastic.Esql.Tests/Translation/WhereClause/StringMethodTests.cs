@@ -98,4 +98,52 @@ public class StringMethodTests : EsqlTestBase
             | WHERE TRIM(message.keyword) == "test"
             """.NativeLineEndings());
 	}
+
+	[Test]
+	public void Contains_EscapesTheWildcardsOfThePattern()
+	{
+		// "*" and "?" are wildcards to LIKE, so a value holding them is escaped for the
+		// pattern, and the pattern's backslash is escaped again for the string literal
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message.Contains("a*b?c"))
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+            FROM logs-*
+            | WHERE message LIKE "*a\\*b\\?c*"
+            """.NativeLineEndings());
+	}
+
+	[Test]
+	public void StartsWith_EscapesABackslashTwice()
+	{
+		// a backslash in the value is escaped once for the pattern and once for the literal
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message.StartsWith("C:\\"))
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+            FROM logs-*
+            | WHERE message LIKE "C:\\\\*"
+            """.NativeLineEndings());
+	}
+
+	[Test]
+	public void EndsWith_EscapesAQuoteForTheLiteralOnly()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message.EndsWith("say \"hi\""))
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+            FROM logs-*
+            | WHERE message LIKE "*say \"hi\""
+            """.NativeLineEndings());
+	}
 }

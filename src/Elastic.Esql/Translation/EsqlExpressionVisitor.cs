@@ -65,14 +65,19 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 
 	protected override Expression VisitMethodCall(MethodCallExpression node)
 	{
-		// Visit the source first (builds the query from inside out).
-		if (node.Arguments.Count > 0)
-			_ = Visit(node.Arguments[0]);
-
 		var methodName = node.Method.Name;
 		var declaringType = node.Method.DeclaringType;
 		var isQueryableMethod = declaringType == typeof(Queryable);
 		var isEsqlExtensionMethod = declaringType == typeof(EsqlQueryableExtensions);
+
+		// A statement about the data rather than a step of the query: read before the
+		// source, so that it holds for what precedes it in the chain as well.
+		if (isEsqlExtensionMethod && methodName == nameof(EsqlQueryableExtensions.MultiValueLimit))
+			VisitMultiValueLimit(node);
+
+		// Visit the source first (builds the query from inside out).
+		if (node.Arguments.Count > 0)
+			_ = Visit(node.Arguments[0]);
 
 		switch (methodName)
 		{
@@ -82,6 +87,12 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 
 			case nameof(Queryable.Where) when isQueryableMethod:
 				VisitWhere(node);
+				break;
+
+			case nameof(EsqlQueryableExtensions.MultiValueLimit) when isEsqlExtensionMethod:
+				// read again after the source: of two statements, the later one holds for
+				// what follows it, rather than the inner one lingering from the source visit
+				VisitMultiValueLimit(node);
 				break;
 
 			case nameof(Queryable.Select) when isQueryableMethod:
@@ -259,13 +270,31 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 				Context.Commands.Add(statsCommand);
 				_pendingGroupByKeySelector = null;
 				ClearMetadataAfterStats();
+				Context.HasProjected = true;
 				return;
 			}
 
 			var projectionVisitor = new SelectProjectionVisitor(Context);
 			var result = projectionVisitor.Translate(lambda);
 			EmitProjectionCommands(result);
+
+			// From here the rows are whatever the selector built, not the document, unless
+			// the selector hands the row back as it is: an identity Select emits nothing
+			// and leaves the document where it was. Raised after the translation, since
+			// within this selector the parameter is still the row that came before.
+			Context.HasProjected |= !IsIdentitySelector(lambda);
 		}
+	}
+
+	/// <summary>A selector that returns its parameter, possibly through a conversion.</summary>
+	private static bool IsIdentitySelector(LambdaExpression lambda)
+	{
+		var body = lambda.Body;
+
+		while (body is UnaryExpression { NodeType: ExpressionType.Convert or ExpressionType.ConvertChecked } convert)
+			body = convert.Operand;
+
+		return lambda.Parameters.Count == 1 && body == lambda.Parameters[0];
 	}
 
 	private void VisitOrderBy(MethodCallExpression node, bool descending)
@@ -594,6 +623,14 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 			Context.Commands.Add(new RawFragmentCommand(fragment));
 
 		Context.ElementType = ResolveQueryableElementType(node.Method.ReturnType) ?? Context.ElementType;
+	}
+
+	private void VisitMultiValueLimit(MethodCallExpression node)
+	{
+		if (node.Arguments.Count < 2)
+			return;
+
+		Context.MultiValueLimit = (int)ExpressionConstantResolver.Resolve(node.Arguments[1])!;
 	}
 
 	private void VisitWithOptions(MethodCallExpression node)
