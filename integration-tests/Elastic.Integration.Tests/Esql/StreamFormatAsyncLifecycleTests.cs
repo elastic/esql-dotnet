@@ -133,7 +133,7 @@ public class StreamFormatAsyncLifecycleTests : IntegrationTestBase
 	}
 
 	[Test]
-	public async Task SyncSubmit_RawCsv_LifecycleWorks()
+	public void SyncSubmit_RawCsv_LifecycleWorks()
 	{
 		var options = new EsqlAsyncQueryOptions
 		{

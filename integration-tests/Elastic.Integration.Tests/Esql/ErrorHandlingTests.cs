@@ -28,7 +28,7 @@ public class ErrorHandlingTests : IntegrationTestBase
 		ex.ResponseBody.Should().NotBeNullOrEmpty();
 		ex.ApiCallDetails.Should().NotBeNull();
 		ex.ServerError.Should().NotBeNull();
-		ex.ServerError!.Error?.Type.Should().BeOneOf("parsing_exception", "verification_exception");
+		ex.ServerError.Error?.Type.Should().BeOneOf("parsing_exception", "verification_exception");
 	}
 
 	[Test]
@@ -46,7 +46,7 @@ public class ErrorHandlingTests : IntegrationTestBase
 		ex.StatusCode.Should().Be(400);
 		ex.ResponseBody.Should().NotBeNullOrEmpty();
 		ex.ServerError.Should().NotBeNull();
-		ex.ServerError!.Error?.Type.Should().Be("verification_exception");
+		ex.ServerError.Error?.Type.Should().Be("verification_exception");
 	}
 
 	[Test]
@@ -65,7 +65,7 @@ public class ErrorHandlingTests : IntegrationTestBase
 		ex.StatusCode.Should().Be(400);
 		ex.ResponseBody.Should().NotBeNullOrEmpty();
 		ex.ServerError.Should().NotBeNull();
-		ex.ServerError!.Error?.Type.Should().BeOneOf("parsing_exception", "verification_exception");
+		ex.ServerError.Error?.Type.Should().BeOneOf("parsing_exception", "verification_exception");
 	}
 
 	[Test]
@@ -84,6 +84,6 @@ public class ErrorHandlingTests : IntegrationTestBase
 		ex.StatusCode.Should().NotBeNull().And.BeOneOf(400, 404);
 		ex.ResponseBody.Should().NotBeNullOrEmpty();
 		ex.ServerError.Should().NotBeNull();
-		ex.ServerError!.Error?.Type.Should().Be("verification_exception");
+		ex.ServerError.Error?.Type.Should().Be("verification_exception");
 	}
 }

@@ -31,7 +31,7 @@ public class ParameterNameCollisionTests : EsqlTestBase
 		var parameters = queryable.GetParameters();
 
 		_ = parameters.Should().NotBeNull();
-		_ = parameters!.Parameters.Should().HaveCount(3);
+		_ = parameters.Parameters.Should().HaveCount(3);
 		_ = parameters.Parameters["id_2"].GetInt32().Should().Be(99);
 		_ = parameters.Parameters["id"].GetInt32().Should().Be(5);
 		_ = parameters.Parameters["id_3"].GetInt32().Should().Be(5);

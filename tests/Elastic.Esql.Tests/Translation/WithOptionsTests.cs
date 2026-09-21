@@ -18,7 +18,7 @@ public class WithOptionsTests : EsqlTestBase
 			.GetExecutorOptions();
 
 		_ = result.Should().BeOfType<TestQueryOptions>();
-		_ = ((TestQueryOptions)result!).TimeZone.Should().Be("UTC");
+		_ = ((TestQueryOptions)result).TimeZone.Should().Be("UTC");
 	}
 
 	[Test]
@@ -51,7 +51,7 @@ public class WithOptionsTests : EsqlTestBase
 			.GetExecutorOptions();
 
 		_ = result.Should().BeOfType<TestQueryOptions>();
-		_ = ((TestQueryOptions)result!).TimeZone.Should().Be("UTC");
+		_ = ((TestQueryOptions)result).TimeZone.Should().Be("UTC");
 	}
 
 	[Test]
@@ -76,7 +76,7 @@ public class WithOptionsTests : EsqlTestBase
 			.GetQueryOptions();
 
 		_ = result.Should().NotBeNull();
-		_ = result!.TimeZone.Should().Be("UTC");
+		_ = result.TimeZone.Should().Be("UTC");
 		_ = result.Locale.Should().Be("en-US");
 	}
 

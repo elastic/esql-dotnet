@@ -87,7 +87,7 @@ public class DirectBindingStreamingTests
 		var scalar = reader.ReadScalar<ScalarStringModel>(stream);
 
 		scalar.Value.Should().NotBeNull();
-		scalar.Value!.Value.Should().Be("first");
+		scalar.Value.Value.Should().Be("first");
 		scalar.Value.Count.Should().Be(1);
 		scalar.RowCount.Should().Be(3);
 	}
@@ -101,7 +101,7 @@ public class DirectBindingStreamingTests
 		var scalar = await reader.ReadScalarAsync<ScalarStringModel>(stream);
 
 		scalar.Value.Should().NotBeNull();
-		scalar.Value!.Value.Should().Be("first");
+		scalar.Value.Value.Should().Be("first");
 		scalar.Value.Count.Should().Be(1);
 		scalar.RowCount.Should().Be(3);
 	}

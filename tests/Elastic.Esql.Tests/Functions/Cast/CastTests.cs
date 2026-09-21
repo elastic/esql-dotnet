@@ -139,7 +139,7 @@ public class CastTests : EsqlTestBase
 	{
 		var esql = CreateQuery<LogEntry>()
 			.From("logs-*")
-			.Select(l => new { Val = EsqlFunctions.CastToIp(l.ClientIp!) })
+			.Select(l => new { Val = EsqlFunctions.CastToIp(l.ClientIp) })
 			.ToString();
 
 		_ = esql.Should().Be(
@@ -155,7 +155,7 @@ public class CastTests : EsqlTestBase
 	{
 		var esql = CreateQuery<LogEntry>()
 			.From("logs-*")
-			.Where(l => EsqlFunctions.CastToIp(l.ClientIp!) == "10.0.0.1")
+			.Where(l => EsqlFunctions.CastToIp(l.ClientIp) == "10.0.0.1")
 			.ToString();
 
 		_ = esql.Should().Be(

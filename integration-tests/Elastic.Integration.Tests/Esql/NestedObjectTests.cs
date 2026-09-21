@@ -63,6 +63,6 @@ public class NestedObjectTests : IntegrationTestBase
 		result.Should().NotBeNull();
 		result.UserId.Should().Be("user-0001");
 		result.Address.Should().NotBeNull();
-		result.Address!.City.Should().NotBeNullOrEmpty();
+		result.Address.City.Should().NotBeNullOrEmpty();
 	}
 }

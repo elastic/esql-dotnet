@@ -18,7 +18,7 @@ public class DirectRowBinderEligibilityTests
 		var layout = BuildLayout<ScalarStringModel>(("value", "keyword"), ("count", "integer"));
 
 		layout.DirectBinder.Should().NotBeNull();
-		layout.DirectBinder!.Kinds.Should().Equal([DirectBinderKind.String, DirectBinderKind.Int32]);
+		layout.DirectBinder.Kinds.Should().Equal([DirectBinderKind.String, DirectBinderKind.Int32]);
 	}
 
 	[Test]
@@ -39,7 +39,7 @@ public class DirectRowBinderEligibilityTests
 		);
 
 		layout.DirectBinder.Should().NotBeNull();
-		layout.DirectBinder!.Kinds.Should().Equal(
+		layout.DirectBinder.Kinds.Should().Equal(
 		[
 			DirectBinderKind.String,
 			DirectBinderKind.Bool,

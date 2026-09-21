@@ -64,7 +64,7 @@ public class EdgeCaseTests : IntegrationTestBase
 		ex.ResponseBody.Should().NotBeNullOrEmpty();
 		ex.ApiCallDetails.Should().NotBeNull();
 		ex.ServerError.Should().NotBeNull();
-		ex.ServerError!.Error?.Type.Should().Be("verification_exception");
+		ex.ServerError.Error?.Type.Should().Be("verification_exception");
 	}
 
 	[Test]

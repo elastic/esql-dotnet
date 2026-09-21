@@ -215,7 +215,7 @@ public class ParameterizedQueryTests : EsqlTestBase
 		var parameters = queryable.GetParameters();
 
 		_ = parameters.Should().NotBeNull();
-		_ = parameters!.Parameters.Should().HaveCount(2);
+		_ = parameters.Parameters.Should().HaveCount(2);
 
 		var thresholdParam = parameters.Parameters["threshold"];
 		_ = thresholdParam.ValueKind.Should().Be(JsonValueKind.Number);
@@ -251,7 +251,7 @@ public class ParameterizedQueryTests : EsqlTestBase
 
 		_ = parameters.Should().NotBeNull();
 
-		var levelParam = parameters!.Parameters["level"];
+		var levelParam = parameters.Parameters["level"];
 		_ = levelParam.ValueKind.Should().Be(JsonValueKind.String);
 		_ = levelParam.GetString().Should().Be("Error");
 	}
@@ -301,7 +301,7 @@ public class ParameterizedQueryTests : EsqlTestBase
 		var parameters = queryable.GetParameters();
 
 		_ = parameters.Should().NotBeNull();
-		_ = parameters!.Parameters.Should().HaveCount(2);
+		_ = parameters.Parameters.Should().HaveCount(2);
 
 		_ = parameters.Parameters["threshold"].GetInt32().Should().Be(500);
 		_ = parameters.Parameters["level"].GetString().Should().Be("ERROR");
@@ -369,7 +369,7 @@ public class ParameterizedQueryTests : EsqlTestBase
 
 		_ = parameters.Should().NotBeNull();
 
-		var prioParam = parameters!.Parameters["prio"];
+		var prioParam = parameters.Parameters["prio"];
 		_ = prioParam.ValueKind.Should().Be(JsonValueKind.Number);
 		_ = prioParam.GetInt32().Should().Be(2);
 	}
@@ -419,7 +419,7 @@ public class ParameterizedQueryTests : EsqlTestBase
 
 		_ = parameters.Should().NotBeNull();
 
-		var idParam = parameters!.Parameters["someId"];
+		var idParam = parameters.Parameters["someId"];
 		_ = idParam.ValueKind.Should().Be(JsonValueKind.String);
 		_ = idParam.GetString().Should().Be("ID-42");
 	}

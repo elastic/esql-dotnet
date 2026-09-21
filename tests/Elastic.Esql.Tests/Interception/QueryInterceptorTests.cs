@@ -230,7 +230,7 @@ public class QueryInterceptorTests
 			""".NativeLineEndings());
 
 		_ = parameters.Should().NotBeNull();
-		_ = parameters!.Parameters["minStatus"].GetInt32().Should().Be(500);
+		_ = parameters.Parameters["minStatus"].GetInt32().Should().Be(500);
 	}
 
 	private sealed class SourceInferenceInterceptor(string defaultIndex) : IEsqlQueryInterceptor

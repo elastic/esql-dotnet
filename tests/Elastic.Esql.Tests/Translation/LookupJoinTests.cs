@@ -584,7 +584,7 @@ public class LookupJoinTests : EsqlTestBase
 			from outer in CreateQuery<LogEntry>().From("employees")
 			join inner in lookup on outer.StatusCode equals inner.LanguageCode into ps
 			from inner in ps.DefaultIfEmpty()
-			select new { outer.Message, inner!.LanguageName }
+			select new { outer.Message, inner.LanguageName }
 		).ToString();
 
 		_ = esql.Should().Be(
@@ -604,7 +604,7 @@ public class LookupJoinTests : EsqlTestBase
 			from outer in CreateQuery<LogEntry>().From("firewall_logs")
 			join inner in lookup on outer.ClientIp equals inner.ClientIp into ps
 			from inner in ps.DefaultIfEmpty()
-			select new { outer.Message, inner!.ThreatLevel }
+			select new { outer.Message, inner.ThreatLevel }
 		).ToString();
 
 		_ = esql.Should().Be(
@@ -624,7 +624,7 @@ public class LookupJoinTests : EsqlTestBase
 			from outer in CreateQuery<LogEntry>().From("employees")
 			join inner in lookup on outer.StatusCode equals inner.LanguageCode into ps
 			from inner in ps.DefaultIfEmpty()
-			select new { Msg = outer.Message, inner!.LanguageName }
+			select new { Msg = outer.Message, inner.LanguageName }
 		).ToString();
 
 		_ = esql.Should().Be(
@@ -645,7 +645,7 @@ public class LookupJoinTests : EsqlTestBase
 			from outer in CreateQuery<LogEntry>().From("employees")
 			join inner in lookup on outer.StatusCode equals inner.LanguageCode into ps
 			from inner in ps.DefaultIfEmpty()
-			select new { Msg = outer.Message, Lang = inner!.LanguageName.ToUpperInvariant() }
+			select new { Msg = outer.Message, Lang = inner.LanguageName.ToUpperInvariant() }
 		).ToString();
 
 		_ = esql.Should().Be(
@@ -667,7 +667,7 @@ public class LookupJoinTests : EsqlTestBase
 			from outer in CreateQuery<LogEntry>().From("employees").Where(l => l.StatusCode >= 10091)
 			join inner in lookup on outer.StatusCode equals inner.LanguageCode into ps
 			from inner in ps.DefaultIfEmpty()
-			select new { outer.Message, inner!.LanguageName }
+			select new { outer.Message, inner.LanguageName }
 		).ToString();
 
 		_ = esql.Should().Be(
@@ -711,7 +711,7 @@ public class LookupJoinTests : EsqlTestBase
 			join inner in lookup on outer.StatusCode equals inner.LanguageCode into ps
 			where outer.StatusCode >= 10091
 			from inner in ps.DefaultIfEmpty()
-			select new { outer.Message, inner!.LanguageName }
+			select new { outer.Message, inner.LanguageName }
 		).ToString();
 
 		_ = esql.Should().Be(
@@ -732,7 +732,7 @@ public class LookupJoinTests : EsqlTestBase
 	{
 		var act = () => CreateQuery<LogEntry>()
 			.From("employees")
-			.SelectMany(l => new[] { l.Message, l.ClientIp! })
+			.SelectMany(l => new[] { l.Message, l.ClientIp })
 			.ToString();
 
 		_ = act.Should().Throw<NotSupportedException>();
@@ -1032,7 +1032,7 @@ public class LookupJoinTests : EsqlTestBase
 			from outer in CreateQuery<LogEntry>().From("logs-*")
 			join inner in lookup on outer.ClientIp equals inner.ClientIp into ps
 			from inner in ps.DefaultIfEmpty()
-			select new { OuterMsg = outer.Message, InnerMsg = inner!.Message }
+			select new { OuterMsg = outer.Message, InnerMsg = inner.Message }
 		).ToString();
 
 		_ = esql.Should().Be(
