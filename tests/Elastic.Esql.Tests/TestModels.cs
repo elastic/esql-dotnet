@@ -23,6 +23,7 @@ namespace Elastic.Esql.Tests;
 [JsonSerializable(typeof(StatsProjection))]
 [JsonSerializable(typeof(OrdinalEnumDocument))]
 [JsonSerializable(typeof(CustomConverterDocument))]
+[JsonSerializable(typeof(ConvertedDurationDocument))]
 [JsonSerializable(typeof(RecordProjection))]
 [JsonSerializable(typeof(UnmatchedCtorProjection))]
 [JsonSerializable(typeof(CollisionRecord))]
@@ -251,6 +252,25 @@ public class CustomConverterDocument
 {
 	[JsonConverter(typeof(PrefixedIntConverter))]
 	public int CustomId { get; set; }
+
+	public string Name { get; set; } = string.Empty;
+}
+
+/// <summary>Serializes a <see cref="TimeSpan"/> as whole milliseconds, as a duration stored in a numeric column would be.</summary>
+public class MillisecondsTimeSpanConverter : JsonConverter<TimeSpan>
+{
+	public override TimeSpan Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+		TimeSpan.FromMilliseconds(reader.GetInt64());
+
+	public override void Write(Utf8JsonWriter writer, TimeSpan value, JsonSerializerOptions options) =>
+		writer.WriteNumberValue((long)value.TotalMilliseconds);
+}
+
+/// <summary>Document whose duration carries a property-level converter that must win over the default duration literal.</summary>
+public class ConvertedDurationDocument
+{
+	[JsonConverter(typeof(MillisecondsTimeSpanConverter))]
+	public TimeSpan Duration { get; set; }
 
 	public string Name { get; set; } = string.Empty;
 }

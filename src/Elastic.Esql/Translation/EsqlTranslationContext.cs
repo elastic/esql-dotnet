@@ -162,14 +162,12 @@ internal sealed class EsqlTranslationContext
 	[UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Serialization delegates to the user-provided JsonSerializerOptions/JsonSerializerContext which is expected to include an AOT-safe TypeInfoResolver.")]
 	private JsonElement SerializeToElement(object? value, MemberInfo? propertyContext = null)
 	{
-		value = value switch
-		{
-			TimeSpan ts => EsqlFormatting.FormatTimeSpanRaw(ts),
-			_ => value
-		};
-
+		// A property-level converter receives the original value; the duration literal is only the default for members without one.
 		if (value is not null && Metadata.FindPropertyConverter(propertyContext) is { } converter)
 			return JsonSerializer.SerializeToElement(value, value.GetType(), Metadata.GetOptionsWithConverter(converter));
+
+		if (value is TimeSpan ts)
+			value = EsqlFormatting.FormatTimeSpanRaw(ts);
 
 		// STJ renders whole doubles without a decimal point (100.0 -> 100), which ES types as an
 		// integer parameter and integer division truncates. Parse the explicit literal instead.
