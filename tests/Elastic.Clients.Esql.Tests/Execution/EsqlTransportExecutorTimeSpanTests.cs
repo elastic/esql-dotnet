@@ -82,6 +82,14 @@ public class EsqlTransportExecutorTimeSpanTests
 	}
 
 	[Test]
+	public void SubmitAsyncQuery_KeepAliveMaxValue_FormatsNanosWithoutOverflow()
+	{
+		var body = SubmitAndCaptureBody(new EsqlAsyncQueryOptions { KeepAlive = TimeSpan.MaxValue });
+
+		_ = body.Should().Contain("\"keep_alive\":\"922337203685477580700nanos\"");
+	}
+
+	[Test]
 	public void SubmitAsyncQuery_WaitForCompletionTimeout_FormatsLikeKeepAlive()
 	{
 		var body = SubmitAndCaptureBody(new EsqlAsyncQueryOptions { WaitForCompletionTimeout = TimeSpan.FromMinutes(90) });

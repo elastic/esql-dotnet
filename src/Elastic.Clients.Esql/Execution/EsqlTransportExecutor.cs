@@ -310,7 +310,8 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 		if (ts.Ticks % 10 == 0)
 			return $"{ts.Ticks / 10}micros";
 
-		return $"{ts.Ticks * 100}nanos";
+		// Appending the two zeros keeps the value exact where multiplying by 100 would overflow past roughly 106 days.
+		return $"{ts.Ticks}00nanos";
 	}
 
 	private static IRequestConfiguration? ApplyAcceptForFormat(IRequestConfiguration? userConfig, EsqlFormat? format)
