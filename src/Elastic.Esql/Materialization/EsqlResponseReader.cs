@@ -209,11 +209,12 @@ internal sealed partial class EsqlResponseReader
 	{
 		try
 		{
-			return options.GetTypeInfo(typeof(List<T>)) as JsonTypeInfo<List<T>>;
+			// TryGetTypeInfo answers "not registered" without an exception, which matters for
+			// source-generated contexts that omit List<T>: this runs once per enumeration.
+			return options.TryGetTypeInfo(typeof(List<T>), out var typeInfo) ? typeInfo as JsonTypeInfo<List<T>> : null;
 		}
 		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
 		{
-			// No List<T> metadata: fall back to the per-row typed path.
 			return null;
 		}
 	}
