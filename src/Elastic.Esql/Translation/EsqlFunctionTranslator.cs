@@ -275,10 +275,10 @@ internal static class EsqlFunctionTranslator
 
 	/// <summary>
 	/// Translates a 0-based C# start index to the 1-based position ES|QL SUBSTRING/LOCATE expect,
-	/// folding the +1 into the literal when the index is a constant.
+	/// folding the +1 into the literal when the index is a constant or a captured value.
 	/// </summary>
 	private static string TranslateOneBasedStart(Func<Expression, string> translate, Expression expression) =>
-		expression is ConstantExpression { Value: int index }
+		expression.SupportsEvaluation() && ExpressionConstantResolver.Resolve(expression) is int index
 			? (index + 1).ToString(CultureInfo.InvariantCulture)
 			: $"({translate(expression)}) + 1";
 

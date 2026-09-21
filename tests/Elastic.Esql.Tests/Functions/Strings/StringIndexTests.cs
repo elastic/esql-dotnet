@@ -133,7 +133,7 @@ public class StringIndexTests : EsqlTestBase
 	}
 
 	[Test]
-	public void String_Substring_CapturedStartIndex_InWhere_GeneratesAdjustedExpression()
+	public void String_Substring_CapturedStartIndex_InWhere_FoldsOneBasedStart()
 	{
 		var start = 3;
 
@@ -145,7 +145,7 @@ public class StringIndexTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | WHERE SUBSTRING(message.keyword, (3) + 1, 1) == "O"
+            | WHERE SUBSTRING(message.keyword, 4, 1) == "O"
             """.NativeLineEndings());
 	}
 }
