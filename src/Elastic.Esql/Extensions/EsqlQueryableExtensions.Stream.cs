@@ -161,6 +161,7 @@ internal sealed class OwnedAsyncResponseStream : Stream
 {
 	private readonly IEsqlAsyncResponse _response;
 	private readonly Stream _body;
+	private int _disposed;
 
 	public OwnedAsyncResponseStream(IEsqlAsyncResponse response)
 	{
@@ -209,7 +210,7 @@ internal sealed class OwnedAsyncResponseStream : Stream
 
 	protected override void Dispose(bool disposing)
 	{
-		if (disposing)
+		if (disposing && Interlocked.Exchange(ref _disposed, 1) == 0)
 		{
 			// Task.Run keeps the async disposal off the caller's SynchronizationContext so this blocking wait cannot deadlock.
 			Task.Run(() => _response.DisposeAsync().AsTask()).GetAwaiter().GetResult();
@@ -221,7 +222,10 @@ internal sealed class OwnedAsyncResponseStream : Stream
 #if !NETSTANDARD2_0
 	public override async ValueTask DisposeAsync()
 	{
-		await _response.DisposeAsync().ConfigureAwait(false);
+		// Stream.DisposeAsync ends in Dispose(true); the guard keeps the response from being disposed a second time.
+		if (Interlocked.Exchange(ref _disposed, 1) == 0)
+			await _response.DisposeAsync().ConfigureAwait(false);
+
 		await base.DisposeAsync().ConfigureAwait(false);
 	}
 #endif
