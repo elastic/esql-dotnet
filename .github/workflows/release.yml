@@ -28,6 +28,7 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v5
       with:
+        dotnet-version: 8.0.x
         global-json-file: ./global.json
 
     - name: Build
@@ -67,6 +68,7 @@ jobs:
 
     - uses: actions/setup-dotnet@v5
       with:
+        dotnet-version: 8.0.x
         global-json-file: ./global.json
 
     - name: Publish esql AOT smoketest
@@ -86,6 +88,7 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v5
       with:
+        dotnet-version: 8.0.x
         global-json-file: ./global.json
 
     - name: Run integration tests
@@ -109,7 +112,8 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v5
       with:
-          global-json-file: ./global.json
+        dotnet-version: 8.0.x
+        global-json-file: ./global.json
 
     - uses: actions/download-artifact@v7
       with:
