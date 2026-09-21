@@ -339,8 +339,13 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 
 	private void DisposeResults()
 	{
-		_asyncResult?.DisposeAsync().AsTask().GetAwaiter().GetResult();
-		_asyncResult = null;
+		if (_asyncResult is { } asyncResult)
+		{
+			_asyncResult = null;
+			// Task.Run keeps the async disposal off the caller's SynchronizationContext so this blocking wait cannot deadlock.
+			Task.Run(() => asyncResult.DisposeAsync().AsTask()).GetAwaiter().GetResult();
+		}
+
 		_syncResult?.Dispose();
 		_syncResult = null;
 	}

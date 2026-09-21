@@ -38,6 +38,18 @@ public class SyncBridgeDisposalTests
 	}
 
 	[Test]
+	public async Task Dispose_AsyncQueryWithMaterializedResultsUnderSynchronizationContext_DoesNotDeadlock()
+	{
+		var executor = new DelayedDisposeExecutor(OneRowBody);
+		var asyncQuery = await CreateExecutableQuery(executor).From("idx").AsEsqlQueryable().ToAsyncQueryAsync();
+		await asyncQuery.WaitForCompletionAsync();
+
+		var completed = RunOnThreadWithSynchronizationContext(asyncQuery.Dispose);
+
+		completed.Should().BeTrue("Dispose must not deadlock when results were materialized and the calling thread has a SynchronizationContext");
+	}
+
+	[Test]
 	public async Task Dispose_OwnedStreamUnderSynchronizationContext_DoesNotDeadlock()
 	{
 		var executor = new DelayedDisposeExecutor(OneRowBody);

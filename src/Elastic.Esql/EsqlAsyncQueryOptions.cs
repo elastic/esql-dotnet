@@ -13,7 +13,11 @@ public sealed record EsqlAsyncQueryOptions
 	private readonly TimeSpan? _keepAlive;
 #pragma warning restore IDE0032
 
-	/// <summary>How long to wait before returning async ID. Default: 1s.</summary>
+	/// <summary>
+	/// How long the submit request waits for completion before returning an async id. Default: 1s.
+	/// Applied to the submit request only; later polls return the current state immediately and
+	/// the client waits between polls.
+	/// </summary>
 	public TimeSpan? WaitForCompletionTimeout
 	{
 		get => _waitForCompletionTimeout;
@@ -26,7 +30,11 @@ public sealed record EsqlAsyncQueryOptions
 		}
 	}
 
-	/// <summary>How long to keep results. Default: 5d.</summary>
+	/// <summary>
+	/// How long Elasticsearch keeps the results. Default: 5d. Sent with the submit request and
+	/// re-sent on every poll, so retention is extended from the most recent poll rather than from
+	/// submission.
+	/// </summary>
 	public TimeSpan? KeepAlive
 	{
 		get => _keepAlive;
