@@ -166,7 +166,7 @@ public class QueryInterceptorTests
 	}
 
 	[Test]
-	public void Interceptor_NotAppliedToGetQueryOptions()
+	public void Interceptor_AppliedToGetQueryOptions()
 	{
 		var called = false;
 		var interceptor = new TypeCapturingInterceptor(_ => called = true);
@@ -177,7 +177,38 @@ public class QueryInterceptorTests
 
 		_ = query.GetQueryOptions();
 
-		_ = called.Should().BeFalse();
+		_ = called.Should().BeTrue();
+	}
+
+	[Test]
+	public void Interceptor_AppliedToGetExecutorOptions()
+	{
+		var called = false;
+		var interceptor = new TypeCapturingInterceptor(_ => called = true);
+
+		var query = CreateQuery<LogEntry>(interceptor)
+			.From("logs-*")
+			.AsEsqlQueryable();
+
+		_ = query.GetExecutorOptions();
+
+		_ = called.Should().BeTrue();
+	}
+
+	[Test]
+	public void Interceptor_SetsQueryOptions_VisibleThroughGetQueryOptions()
+	{
+		var query = CreateQuery<LogEntry>(new TimeZoneInterceptor())
+			.From("logs-*")
+			.AsEsqlQueryable();
+
+		_ = query.GetQueryOptions()!.TimeZone.Should().Be("UTC");
+	}
+
+	private sealed class TimeZoneInterceptor : IEsqlQueryInterceptor
+	{
+		public EsqlQuery Intercept(EsqlQuery query) =>
+			query.WithQueryOptions(new EsqlQueryOptions { TimeZone = "UTC" });
 	}
 
 	[Test]

@@ -26,12 +26,14 @@ public interface IEsqlQueryable<out T> : IQueryable<T>
 
 	/// <summary>
 	/// Translates the query and returns the protocol-level query options set via <c>WithOptions</c>, or <see langword="null"/> if none.
+	/// The configured query interceptor is applied first, so the result reflects the query that would execute.
 	/// </summary>
 	EsqlQueryOptions? GetQueryOptions();
 
 	/// <summary>
 	/// Translates the query and returns the opaque executor-specific options set via a downstream
 	/// <c>WithOptions</c> overload, or <see langword="null"/> if none.
+	/// The configured query interceptor is applied first, so the result reflects the query that would execute.
 	/// </summary>
 	object? GetExecutorOptions();
 

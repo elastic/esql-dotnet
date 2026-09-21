@@ -91,7 +91,7 @@ public sealed class EsqlQueryable<T> : IEsqlQueryable<T>, IOrderedQueryable<T>
 	/// <inheritdoc/>
 	public EsqlQueryOptions? GetQueryOptions()
 	{
-		var query = Provider.TranslateExpression(Expression, true);
+		var query = Provider.TranslateAndIntercept(Expression, true);
 
 		return query.QueryOptions;
 	}
@@ -99,7 +99,7 @@ public sealed class EsqlQueryable<T> : IEsqlQueryable<T>, IOrderedQueryable<T>
 	/// <inheritdoc/>
 	public object? GetExecutorOptions()
 	{
-		var query = Provider.TranslateExpression(Expression, true);
+		var query = Provider.TranslateAndIntercept(Expression, true);
 
 		return query.ExecutorOptions;
 	}
