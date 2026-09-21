@@ -21,7 +21,6 @@ internal sealed partial class EsqlResponseReader
 		ColumnLayout layout,
 		RowAssemblyBuffers buffers,
 		RowMaterializationPlan<T> plan,
-		JsonSerializerOptions options,
 		out T? item,
 		out bool reachedEnd)
 	{
@@ -84,7 +83,7 @@ internal sealed partial class EsqlResponseReader
 
 		item = plan.TypeInfo is not null
 			? JsonSerializer.Deserialize(buffers.RowBuffer.WrittenSpan, plan.TypeInfo)
-			: JsonSerializer.Deserialize<T>(buffers.RowBuffer.WrittenSpan, options);
+			: JsonSerializer.Deserialize<T>(buffers.RowBuffer.WrittenSpan, plan.Options);
 
 		return true;
 	}

@@ -131,14 +131,12 @@ var clientSettings = new EsqlClientSettings(new DistributedTransport(clientConfi
 	JsonSerializerContext = EsqlJsonContext.Default
 };
 
-using (var client = new EsqlClient(clientSettings))
-{
-	var clientOrders = client.CreateQuery<EsqlOrder>().From("orders").ToList();
-	Console.WriteLine($"\nClient materialization test:");
-	Console.WriteLine($"  Rows via client: {clientOrders.Count}");
-	if (clientOrders.Count != orders.Count)
-		throw new InvalidOperationException("Client path returned a different row count than the reader path.");
-}
+using var client = new EsqlClient(clientSettings);
+var clientOrders = client.CreateQuery<EsqlOrder>().From("orders").ToList();
+Console.WriteLine("\nClient materialization test:");
+Console.WriteLine($"  Rows via client: {clientOrders.Count}");
+if (clientOrders.Count != orders.Count)
+	throw new InvalidOperationException("Client path returned a different row count than the reader path.");
 
 Console.WriteLine("\nAOT smoketest passed!");
 

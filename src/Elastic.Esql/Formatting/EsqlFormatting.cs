@@ -155,7 +155,7 @@ internal static class EsqlFormatting
 	// ES|QL has no NaN or Infinity literal; rendering null instead would silently turn the
 	// comparison into a null test that matches no rows.
 	private static NotSupportedException NonFiniteNotSupported(object value) =>
-		new($"{value} cannot be expressed in ES|QL: there is no literal for NaN or Infinity.");
+		new(string.Format(InvariantCulture, "{0} cannot be expressed in ES|QL: there is no literal for NaN or Infinity.", value));
 
 	/// <summary>
 	/// A whole-number double like 100.0 renders as "100" under "G", which ES|QL parses as an

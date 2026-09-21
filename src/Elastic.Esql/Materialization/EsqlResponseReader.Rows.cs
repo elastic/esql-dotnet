@@ -355,7 +355,7 @@ internal sealed partial class EsqlResponseReader
 				var isFinalBlock = cursor.IsEofReached;
 				var reachedEnd = false;
 
-				while (TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, buffers, plan, options, out var item, out reachedEnd))
+				while (TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, buffers, plan, out var item, out reachedEnd))
 				{
 					if (reachedEnd)
 					{
@@ -424,7 +424,7 @@ internal sealed partial class EsqlResponseReader
 				var isFinalBlock = cursor.IsEofReached;
 				var reachedEnd = false;
 
-				while (TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, buffers, plan, options, out var item, out reachedEnd))
+				while (TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, buffers, plan, out var item, out reachedEnd))
 				{
 					if (reachedEnd)
 					{

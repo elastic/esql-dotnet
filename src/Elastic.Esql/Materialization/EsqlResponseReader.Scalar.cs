@@ -93,7 +93,6 @@ internal sealed partial class EsqlResponseReader
 				layout,
 				buffers,
 				plan,
-				Options,
 				ref value,
 				ref rowCount,
 				ref done
@@ -141,7 +140,6 @@ internal sealed partial class EsqlResponseReader
 				layout,
 				buffers,
 				plan,
-				Options,
 				ref value,
 				ref rowCount,
 				ref done
@@ -192,7 +190,6 @@ internal sealed partial class EsqlResponseReader
 		ColumnLayout layout,
 		RowAssemblyBuffers buffers,
 		RowMaterializationPlan<T> plan,
-		JsonSerializerOptions options,
 		ref T? value,
 		ref int rowCount,
 		ref bool done)
@@ -201,7 +198,7 @@ internal sealed partial class EsqlResponseReader
 		{
 			if (rowCount == 0)
 			{
-				if (!TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, buffers, plan, options, out var item, out var reachedEnd))
+				if (!TryReadNextRow<T>(ref buffer, isFinalBlock, ref readerState, layout, buffers, plan, out var item, out var reachedEnd))
 					return;
 
 				if (reachedEnd)

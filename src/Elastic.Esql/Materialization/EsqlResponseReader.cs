@@ -215,6 +215,7 @@ internal sealed partial class EsqlResponseReader
 		}
 		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
 		{
+			// A resolver that throws for List<T> (for example the reflection fallback under Native AOT) means: fall back to the per-row path.
 			return null;
 		}
 	}
