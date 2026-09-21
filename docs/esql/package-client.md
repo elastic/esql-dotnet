@@ -408,7 +408,7 @@ while (await reader.ReadNextRecordBatchAsync() is { } batch)
     Console.WriteLine($"Batch: {batch.Length} rows, {batch.ColumnCount} cols");
 ```
 
-Disposing the `EsqlAsyncQuery` issues a best-effort `DELETE /_query/async/{id}` and releases the held response.
+Disposing the `EsqlAsyncQuery` releases the held response and issues a best-effort `DELETE /_query/async/{id}`. The delete still runs when releasing the response throws.
 
 Calling `GetResponseStream()` before completion throws `InvalidOperationException`. Use `RefreshAsync()` for a single poll or `WaitForCompletionAsync()` to poll until done (default 100 ms interval).
 

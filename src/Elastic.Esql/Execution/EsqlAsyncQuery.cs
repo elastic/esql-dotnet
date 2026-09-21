@@ -197,19 +197,14 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 		if (Interlocked.Exchange(ref _disposed, 1) != 0)
 			return;
 
-		DisposeResults();
-		await DisposeOwnedResponseAsync().ConfigureAwait(false);
-
-		if (QueryId is null)
-			return;
-
 		try
 		{
-			await _executor.DeleteAsyncQueryAsync(QueryId, _request, default).ConfigureAwait(false);
+			DisposeResults();
+			await DisposeOwnedResponseAsync().ConfigureAwait(false);
 		}
-		catch (Exception)
+		finally
 		{
-			// Best-effort cleanup; executor may throw transport-specific exceptions
+			await DeleteServerQueryAsync().ConfigureAwait(false);
 		}
 	}
 
@@ -282,15 +277,41 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 		if (Interlocked.Exchange(ref _disposed, 1) != 0)
 			return;
 
-		DisposeResults();
-		DisposeOwnedResponse();
+		try
+		{
+			DisposeResults();
+			DisposeOwnedResponse();
+		}
+		finally
+		{
+			DeleteServerQuery();
+		}
+	}
 
+	// The server-side query outlives a failed local teardown unless it is deleted, so the dispose paths call this from a finally block.
+	private void DeleteServerQuery()
+	{
 		if (QueryId is null)
 			return;
 
 		try
 		{
 			_executor.DeleteAsyncQuery(QueryId, _request);
+		}
+		catch (Exception)
+		{
+			// Best-effort cleanup; executor may throw transport-specific exceptions
+		}
+	}
+
+	private async ValueTask DeleteServerQueryAsync()
+	{
+		if (QueryId is null)
+			return;
+
+		try
+		{
+			await _executor.DeleteAsyncQueryAsync(QueryId, _request, default).ConfigureAwait(false);
 		}
 		catch (Exception)
 		{
@@ -614,18 +635,13 @@ public sealed class EsqlAsyncQuery : IAsyncDisposable, IDisposable
 		if (Interlocked.Exchange(ref _disposed, 1) != 0)
 			return;
 
-		await DisposeOwnedResponseAsync().ConfigureAwait(false);
-
-		if (QueryId is null)
-			return;
-
 		try
 		{
-			await _executor.DeleteAsyncQueryAsync(QueryId, _request, default).ConfigureAwait(false);
+			await DisposeOwnedResponseAsync().ConfigureAwait(false);
 		}
-		catch (Exception)
+		finally
 		{
-			// Best-effort cleanup; executor may throw transport-specific exceptions
+			await DeleteServerQueryAsync().ConfigureAwait(false);
 		}
 	}
 
@@ -636,14 +652,40 @@ public sealed class EsqlAsyncQuery : IAsyncDisposable, IDisposable
 		if (Interlocked.Exchange(ref _disposed, 1) != 0)
 			return;
 
-		DisposeOwnedResponse();
+		try
+		{
+			DisposeOwnedResponse();
+		}
+		finally
+		{
+			DeleteServerQuery();
+		}
+	}
 
+	// The server-side query outlives a failed local teardown unless it is deleted, so the dispose paths call this from a finally block.
+	private void DeleteServerQuery()
+	{
 		if (QueryId is null)
 			return;
 
 		try
 		{
 			_executor.DeleteAsyncQuery(QueryId, _request);
+		}
+		catch (Exception)
+		{
+			// Best-effort cleanup; executor may throw transport-specific exceptions
+		}
+	}
+
+	private async ValueTask DeleteServerQueryAsync()
+	{
+		if (QueryId is null)
+			return;
+
+		try
+		{
+			await _executor.DeleteAsyncQueryAsync(QueryId, _request, default).ConfigureAwait(false);
 		}
 		catch (Exception)
 		{
