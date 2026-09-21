@@ -62,12 +62,18 @@ internal static class ForkBranchVisitor
 		var hasLimit = query.Commands.Any(command => command switch
 		{
 			LimitCommand => true,
-			RawFragmentCommand raw =>
-				raw.Fragment.StartsWith("LIMIT ", StringComparison.Ordinal) || raw.Fragment.Equals("LIMIT", StringComparison.Ordinal),
+			RawFragmentCommand raw => IsLimitFragment(raw.Fragment),
 			_ => false
 		});
 
 		return new ForkBranch(fragments, hasLimit: hasLimit);
+	}
+
+	// ES|QL keywords are case-insensitive, so a raw "limit 10" satisfies FUSE just like "LIMIT 10".
+	private static bool IsLimitFragment(string fragment)
+	{
+		var trimmed = fragment.TrimStart();
+		return trimmed.StartsWith("LIMIT ", StringComparison.OrdinalIgnoreCase) || trimmed.Equals("LIMIT", StringComparison.OrdinalIgnoreCase);
 	}
 
 	/// <summary>

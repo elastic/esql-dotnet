@@ -136,6 +136,20 @@ public class ForkFuseTests : EsqlTestBase
 	}
 
 	[Test]
+	public void Fuse_WithLowercaseRawLimitInBranch_AcceptsTheBranch()
+	{
+		var esql = CreateQuery<BookDocument>()
+			.From("books", MetadataField.Id | MetadataField.Index | MetadataField.Score)
+			.Fork(
+				b => b.Where(x => EsqlFunctions.Match(x.Title, "x")).RawEsql("limit 10"),
+				b => b.Where(x => EsqlFunctions.Knn(x.TitleVec, FloatVec1)).Take(50))
+			.Fuse()
+			.ToString();
+
+		_ = esql.Should().Contain("| limit 10)").And.EndWith("| FUSE");
+	}
+
+	[Test]
 	public void Fuse_AfterFork_ClearsForkActiveSoSelectDoesNotRetainFork()
 	{
 		var esql = CreateQuery<BookDocument>()
