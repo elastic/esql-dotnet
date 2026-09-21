@@ -35,7 +35,8 @@ public sealed class DenseVectorJsonConverterFactory : JsonConverterFactory
 
 /// <summary>
 /// Reads / writes <see cref="DenseVector{T}"/> with <c>T = float</c> as a JSON array of numbers.
-/// Throws on NaN / Infinity values during writing — they are not representable in ES|QL.
+/// Throws <see cref="NotSupportedException"/> on NaN or Infinity values during writing; those values
+/// are not representable in ES|QL.
 /// </summary>
 internal sealed class DenseVectorFloatJsonConverter : JsonConverter<DenseVector<float>>
 {
@@ -65,8 +66,7 @@ internal sealed class DenseVectorFloatJsonConverter : JsonConverter<DenseVector<
 		{
 			var element = span[i];
 			if (float.IsNaN(element) || float.IsInfinity(element))
-				throw new JsonException(
-					$"DenseVector<float> element at index {i} is NaN or Infinity, which cannot be expressed in ES|QL.");
+				throw EsqlFormatting.NonFiniteVectorElementNotSupported(i);
 
 			// WriteNumberValue renders whole floats without a decimal point (1.0f -> 1), which ES
 			// types as an integer element; keep the explicit literal so the parameter stays float-typed.

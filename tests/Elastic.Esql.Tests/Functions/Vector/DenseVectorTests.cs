@@ -72,7 +72,7 @@ public class DenseVectorTests
 
 		var act = () => JsonSerializer.Serialize(vector);
 
-		_ = act.Should().Throw<JsonException>().WithMessage("*NaN*");
+		_ = act.Should().Throw<NotSupportedException>().WithMessage("*NaN*");
 	}
 
 	[Test]
@@ -82,7 +82,7 @@ public class DenseVectorTests
 
 		var act = () => JsonSerializer.Serialize(vector);
 
-		_ = act.Should().Throw<JsonException>().WithMessage("*Infinity*");
+		_ = act.Should().Throw<NotSupportedException>().WithMessage("*Infinity*");
 	}
 
 	[Test]

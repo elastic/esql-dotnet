@@ -49,9 +49,7 @@ internal static class EsqlFormatting
 		for (var i = 0; i < span.Length; i++)
 		{
 			if (float.IsNaN(span[i]) || float.IsInfinity(span[i]))
-				throw new ArgumentException(
-					$"Vector element at index {i} is NaN or Infinity, which cannot be expressed in ES|QL.",
-					nameof(span));
+				throw NonFiniteVectorElementNotSupported(i);
 		}
 
 		var sb = new StringBuilder("[");
@@ -156,6 +154,9 @@ internal static class EsqlFormatting
 	// comparison into a null test that matches no rows.
 	private static NotSupportedException NonFiniteNotSupported(object value) =>
 		new(string.Format(InvariantCulture, "{0} cannot be expressed in ES|QL: there is no literal for NaN or Infinity.", value));
+
+	internal static NotSupportedException NonFiniteVectorElementNotSupported(int index) =>
+		new(string.Format(InvariantCulture, "Vector element at index {0} is NaN or Infinity, which cannot be expressed in ES|QL.", index));
 
 	/// <summary>
 	/// A whole-number double like 100.0 renders as "100" under "G", which ES|QL parses as an

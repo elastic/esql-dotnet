@@ -133,7 +133,7 @@ public class KnnTests : EsqlTestBase
 			.Where(b => EsqlFunctions.Knn(b.TitleVec, new float[] { 1f, float.NaN, 3f }))
 			.ToString();
 
-		_ = act.Should().Throw<ArgumentException>().WithMessage("*NaN*");
+		_ = act.Should().Throw<NotSupportedException>().WithMessage("*NaN*");
 	}
 
 	[Test]
@@ -144,7 +144,7 @@ public class KnnTests : EsqlTestBase
 			.Where(b => EsqlFunctions.Knn(b.TitleVec, new float[] { 1f, float.PositiveInfinity, 3f }))
 			.ToString();
 
-		_ = act.Should().Throw<ArgumentException>().WithMessage("*Infinity*");
+		_ = act.Should().Throw<NotSupportedException>().WithMessage("*Infinity*");
 	}
 
 	[Test]
