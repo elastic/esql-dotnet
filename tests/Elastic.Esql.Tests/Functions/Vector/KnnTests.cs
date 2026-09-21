@@ -169,6 +169,7 @@ public class KnnTests : EsqlTestBase
 		_ = query.ToEsqlString(inlineParameters: false);
 		var parameters = query.GetParameters();
 
-		_ = parameters.Parameters["queryVec"].GetRawText().Should().Be("[1.0,2.0,3.0]");
+		_ = parameters.Should().NotBeNull();
+		_ = parameters!.Parameters["queryVec"].GetRawText().Should().Be("[1.0,2.0,3.0]");
 	}
 }

@@ -50,7 +50,7 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 #pragma warning disable IDE0032
 	private ForkFuseTranslator? _forkFuseTranslator;
 #pragma warning restore IDE0032
-	private ForkFuseTranslator ForkFuse => _forkFuseTranslator ??= new ForkFuseTranslator(Provider, Context, inlineParameters);
+	private ForkFuseTranslator ForkFuse => _forkFuseTranslator ??= new ForkFuseTranslator(Provider, Context, inlineParameters: inlineParameters);
 
 	/// <summary>
 	/// Translates a LINQ expression to an ES|QL query model.

@@ -67,7 +67,7 @@ internal static class ForkBranchVisitor
 			_ => false
 		});
 
-		return new ForkBranch(fragments, hasLimit);
+		return new ForkBranch(fragments, hasLimit: hasLimit);
 	}
 
 	/// <summary>

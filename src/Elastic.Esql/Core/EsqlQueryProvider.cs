@@ -250,7 +250,7 @@ public sealed class EsqlQueryProvider : IQueryProvider
 
 		try
 		{
-			var result = await _reader.ReadRowsAsync<T>(response.Body, requireId, cancellationToken).ConfigureAwait(false);
+			var result = await _reader.ReadRowsAsync<T>(response.Body, requireId: requireId, cancellationToken).ConfigureAwait(false);
 			return new EsqlAsyncQuery<T>(_executor, result, response, _reader, request);
 		}
 		catch

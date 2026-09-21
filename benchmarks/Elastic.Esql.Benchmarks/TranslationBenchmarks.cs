@@ -2,6 +2,7 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using BenchmarkDotNet.Attributes;
 using Elastic.Esql.Core;
@@ -12,7 +13,7 @@ using Elastic.Esql.Materialization;
 namespace Elastic.Esql.Benchmarks;
 
 [MemoryDiagnoser]
-[System.Diagnostics.CodeAnalysis.SuppressMessage("Naming", "CA1707:Identifiers should not contain underscores")]
+[SuppressMessage("Naming", "CA1707:Identifiers should not contain underscores")]
 public class TranslationBenchmarks
 {
 	private EsqlQueryProvider _provider = null!;
