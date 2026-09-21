@@ -70,7 +70,7 @@ DateTime properties translate to `DATE_EXTRACT`. Arithmetic methods like `.AddDa
 
 ```csharp
 .Where(l => l.Timestamp > DateTime.UtcNow.AddHours(-1) && l.Timestamp.Year == 2025)
-// WHERE (@timestamp > (NOW() + -1 hours) AND DATE_EXTRACT("year", @timestamp) == 2025)
+// WHERE (@timestamp > (NOW() - 1 hours) AND DATE_EXTRACT("year", @timestamp) == 2025)
 ```
 
 | ES\|QL | `EsqlFunctions` | C# native |
