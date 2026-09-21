@@ -24,7 +24,7 @@ namespace Elastic.Clients.Esql;
 public class EsqlClient : IDisposable
 {
 	private readonly EsqlQueryProvider _provider;
-	private bool _disposed;
+	private int _disposed;
 
 	/// <summary>
 	/// Gets the client settings.
@@ -244,10 +244,9 @@ public class EsqlClient : IDisposable
 
 	public void Dispose()
 	{
-		if (_disposed)
+		// The client is documented as thread-safe, so concurrent Dispose calls must release the owned resources once.
+		if (Interlocked.Exchange(ref _disposed, 1) != 0)
 			return;
-
-		_disposed = true;
 
 		// The built-in DistributedTransport is not IDisposable (only its ITransportConfiguration is),
 		// so this gate only takes effect for custom transports that implement IDisposable.

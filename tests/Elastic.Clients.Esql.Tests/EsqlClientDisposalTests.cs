@@ -38,4 +38,25 @@ public class EsqlClientDisposalTests
 		var act = () => client.Dispose();
 		_ = act.Should().NotThrow();
 	}
+
+	[Test]
+	public void Dispose_CalledConcurrently_DisposesOwnedTransportOnce()
+	{
+		var transport = new CountingDisposableTransport(new TransportConfiguration(new Uri("http://localhost:9200")));
+		var client = new EsqlClient(new EsqlClientSettings(transport, disposeTransport: true));
+
+		_ = Parallel.For(0, 16, _ => client.Dispose());
+
+		_ = transport.DisposeCount.Should().Be(1);
+	}
+
+	private sealed class CountingDisposableTransport(ITransportConfiguration configuration)
+		: DistributedTransport<ITransportConfiguration>(configuration), IDisposable
+	{
+		private int _disposeCount;
+
+		public int DisposeCount => _disposeCount;
+
+		public void Dispose() => Interlocked.Increment(ref _disposeCount);
+	}
 }
