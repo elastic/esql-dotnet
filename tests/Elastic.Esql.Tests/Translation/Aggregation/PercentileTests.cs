@@ -54,7 +54,19 @@ public class PercentileTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | STATS p99 = PERCENTILE(duration, 99) BY level = log.level.keyword
+            | STATS p99 = PERCENTILE(duration, 99.0) BY level = log.level.keyword
             """.NativeLineEndings());
+	}
+
+	[Test]
+	public void Percentile_WholeDoubleConstant_KeepsDecimalPoint()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.GroupBy(l => l.Level)
+			.Select(g => new { g.Key, P = EsqlFunctions.Percentile(g, l => l.Duration, 99.0) })
+			.ToString();
+
+		_ = esql.Should().Contain("PERCENTILE(duration, 99.0)");
 	}
 }

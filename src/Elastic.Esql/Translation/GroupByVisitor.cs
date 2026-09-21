@@ -2,7 +2,6 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-using System.Globalization;
 using System.Linq.Expressions;
 using Elastic.Esql.Extensions;
 using Elastic.Esql.Functions;
@@ -316,8 +315,9 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 				throw new NotSupportedException($"Aggregation argument '{arg}' must be constant or closure-captured.", ex);
 			}
 
-			// Invariant culture: locale decimal separators (e.g. "99,9") would corrupt the ES|QL argument list.
-			return value is null ? null : Convert.ToString(value, CultureInfo.InvariantCulture);
+			// The shared formatter keeps whole doubles explicit (99.0) and quotes strings, so
+			// aggregation arguments type the same way as WHERE and EVAL literals.
+			return value is null ? null : _context.FormatValue(value);
 		}
 
 		var fieldExpr = ExtractField(1);
@@ -331,7 +331,7 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 			"StdDev" => $"{resultName} = STD_DEV({fieldExpr})",
 			"Variance" => $"{resultName} = VARIANCE({fieldExpr})",
 			"WeightedAvg" => $"{resultName} = WEIGHTED_AVG({fieldExpr}, {ExtractField(2)})",
-			"Top" => $"{resultName} = TOP({fieldExpr}, {ExtractConstantArg(2)}, {_context.FormatValue(ExtractConstantArg(3))})",
+			"Top" => $"{resultName} = TOP({fieldExpr}, {ExtractConstantArg(2)}, {ExtractConstantArg(3)})",
 			"Values" => $"{resultName} = VALUES({fieldExpr})",
 			"First" => $"{resultName} = FIRST({fieldExpr})",
 			"Last" => $"{resultName} = LAST({fieldExpr})",
