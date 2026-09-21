@@ -2,6 +2,8 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Reflection;
+
 namespace Elastic.Esql.Tests.Translation.WhereClause;
 
 public class NullCaptureTests : EsqlTestBase
@@ -87,6 +89,49 @@ public class NullCaptureTests : EsqlTestBase
 		_ = holder.Reads.Should().Be(1);
 	}
 
+	[Test]
+	public void Where_CapturedChainWithNullIntermediate_EvaluatesGetterOnceBeforeThrowing()
+	{
+		var holder = new ChainHolder(null);
+
+		var act = () => CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message == holder.Inner!.Value)
+			.ToString();
+
+		_ = act.Should().Throw<InvalidOperationException>().WithMessage("*evaluated to null*");
+		_ = holder.Reads.Should().Be(1);
+	}
+
+	[Test]
+	public void Where_CapturedThrowingGetter_EvaluatesGetterOnce()
+	{
+		var holder = new ThrowingHolder();
+
+		var act = () => CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message == holder.Value)
+			.ToString();
+
+		_ = act.Should().Throw<TargetInvocationException>().WithInnerException<InvalidOperationException>();
+		_ = holder.Reads.Should().Be(1);
+	}
+
+	[Test]
+	public void Where_StaticNullMember_EmitsIsNull()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message == StaticNulls.Value)
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| WHERE message IS NULL
+			""".NativeLineEndings());
+	}
+
 	private sealed class CountingHolder(string? value)
 	{
 		public int Reads { get; private set; }
@@ -99,5 +144,38 @@ public class NullCaptureTests : EsqlTestBase
 				return value;
 			}
 		}
+	}
+
+	private sealed class ChainHolder(CountingHolder? inner)
+	{
+		public int Reads { get; private set; }
+
+		public CountingHolder? Inner
+		{
+			get
+			{
+				Reads++;
+				return inner;
+			}
+		}
+	}
+
+	private sealed class ThrowingHolder
+	{
+		public int Reads { get; private set; }
+
+		public string? Value
+		{
+			get
+			{
+				Reads++;
+				throw new InvalidOperationException("Simulated getter failure.");
+			}
+		}
+	}
+
+	private static class StaticNulls
+	{
+		public static string? Value => null;
 	}
 }

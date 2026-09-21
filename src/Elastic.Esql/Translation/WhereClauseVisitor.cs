@@ -788,17 +788,25 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		if (expression is ConstantExpression || !expression.SupportsEvaluation())
 			return false;
 
-		try
+		var target = expression.UnwrapConvertExpressions();
+
+		// A closure-rooted chain runs exactly once: a failure here is the failure VisitMember would
+		// raise anyway, so it propagates instead of re-running the chain's getters.
+		if (target.IsClosureRooted())
 		{
-			var target = expression.UnwrapConvertExpressions();
 			var value = ExpressionConstantResolver.Resolve(target);
 			_resolvedCaptures[target] = value;
 			return value is null;
 		}
+
+		try
+		{
+			return ExpressionConstantResolver.Resolve(target) is null;
+		}
 		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException or TargetInvocationException)
 		{
-			// Resolution failure means "not proven null" - the operand keeps its dedicated
-			// translation (e.g. EsqlMetadata markers). Anything else is a real bug: propagate.
+			// Static markers such as EsqlMetadata throw on evaluation and keep their dedicated
+			// translation. Anything else is a real bug: propagate.
 			return false;
 		}
 	}
