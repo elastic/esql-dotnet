@@ -148,4 +148,28 @@ public class StringIndexTests : EsqlTestBase
             | WHERE SUBSTRING(message.keyword, 4, 1) == "O"
             """.NativeLineEndings());
 	}
+
+	[Test]
+	public void String_Substring_FieldStartIndex_InWhere_EmitsShiftedExpression()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message.MultiField("keyword").Substring(l.StatusCode, 1) == "O")
+			.ToString();
+
+		_ = esql.Should().Contain("SUBSTRING(message.keyword, (statusCode) + 1, 1)");
+	}
+
+	[Test]
+	public void String_Substring_CapturedStartIndex_Parameterized_FoldsToLiteral()
+	{
+		var start = 3;
+
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message.MultiField("keyword").Substring(start, 1) == "O")
+			.ToEsqlString(inlineParameters: false);
+
+		_ = esql.Should().Contain("SUBSTRING(message.keyword, 4, 1)");
+	}
 }
