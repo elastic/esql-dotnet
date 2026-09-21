@@ -249,6 +249,21 @@ public class ColumnNameEscapingTests : EsqlTestBase
 			""".NativeLineEndings());
 	}
 
+	[Test]
+	public void Where_JsonPropertyNameContainingDot_TranslatesAsNestedPath()
+	{
+		var esql = CreateQuery<DottedJsonNameDocument>()
+			.From("idx")
+			.Where(d => d.Value == "x")
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM idx
+			| WHERE a.b == "x"
+			""".NativeLineEndings());
+	}
+
 	public sealed class EqualsSignTarget
 	{
 		[JsonPropertyName("a=b")]

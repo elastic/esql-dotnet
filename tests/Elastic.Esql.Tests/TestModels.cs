@@ -31,6 +31,7 @@ namespace Elastic.Esql.Tests;
 [JsonSerializable(typeof(DottedLevelLookup))]
 [JsonSerializable(typeof(BookDocument))]
 [JsonSerializable(typeof(BookProjection))]
+[JsonSerializable(typeof(DottedJsonNameDocument))]
 [JsonSerializable(typeof(SpecialCharacterDocument))]
 [JsonSerializable(typeof(SpecialCharacterLookup))]
 [JsonSerializable(typeof(SpecialCharacterProjection))]
@@ -296,6 +297,13 @@ public class NestedSelectionAgent
 public class NestedSelectionGeo
 {
 	public string City { get; set; } = string.Empty;
+}
+
+/// <summary>Document with a JSON property name containing a dot, which the translator treats as a nested path.</summary>
+public class DottedJsonNameDocument
+{
+	[JsonPropertyName("a.b")]
+	public string? Value { get; set; }
 }
 
 /// <summary>Document whose JSON field names require backtick quoting in ES|QL.</summary>

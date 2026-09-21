@@ -93,6 +93,30 @@ public class EsqlIdentifierTests
 		_ = EsqlIdentifier.EscapeColumnName("rerank").Should().Be("`rerank`");
 
 	[Test]
+	public void EscapeColumnName_SingleUnderscore_QuotesSegment() =>
+		_ = EsqlIdentifier.EscapeColumnName("_").Should().Be("`_`");
+
+	[Test]
+	public void EscapeColumnName_SingleAt_QuotesSegment() =>
+		_ = EsqlIdentifier.EscapeColumnName("@").Should().Be("`@`");
+
+	[Test]
+	public void EscapeColumnName_DottedPathWithSingleUnderscoreSegment_QuotesOnlyThatSegment() =>
+		_ = EsqlIdentifier.EscapeColumnName("a._.b").Should().Be("a.`_`.b");
+
+	[Test]
+	public void EscapeColumnName_Backtick_DoublesBacktickInsideQuotes() =>
+		_ = EsqlIdentifier.EscapeColumnName("a`b").Should().Be("`a``b`");
+
+	[Test]
+	public void EscapeColumnName_DottedPathWithoutEscaping_ReturnsSameInstance()
+	{
+		var path = "log.level.keyword";
+
+		_ = EsqlIdentifier.EscapeColumnName(path).Should().BeSameAs(path);
+	}
+
+	[Test]
 	public void FormatIndexPattern_WildcardPattern_ReturnsUnchanged() =>
 		_ = EsqlIdentifier.FormatIndexPattern("logs-*").Should().Be("logs-*");
 

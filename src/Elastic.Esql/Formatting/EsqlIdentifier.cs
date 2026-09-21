@@ -41,6 +41,21 @@ public static class EsqlIdentifier
 			return EscapeColumnSegment(path);
 
 		var segments = path.Split('.');
+		var needsEscaping = false;
+
+		foreach (var segment in segments)
+		{
+			if (IsValidUnquotedColumnSegment(segment))
+				continue;
+
+			needsEscaping = true;
+			break;
+		}
+
+		// Every field reference passes through here, and almost none need quoting.
+		if (!needsEscaping)
+			return path;
+
 		for (var i = 0; i < segments.Length; i++)
 			segments[i] = EscapeColumnSegment(segments[i]);
 
@@ -61,6 +76,11 @@ public static class EsqlIdentifier
 		// and continues with letters, digits or '_'.
 		var first = segment[0];
 		if (!IsAsciiLetter(first) && first is not ('_' or '@'))
+			return false;
+
+		// The ES|QL lexer allows '_' and '@' only as the first character of a longer identifier;
+		// a lone '_' or '@' is not an identifier.
+		if (segment.Length == 1 && first is '_' or '@')
 			return false;
 
 		for (var i = 1; i < segment.Length; i++)
