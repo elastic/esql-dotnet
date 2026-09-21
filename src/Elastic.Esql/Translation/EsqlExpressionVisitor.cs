@@ -75,8 +75,8 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 			Context.ElementType,
 			[.. Context.Commands],
 			!Context.Parameters.HasParameters ? null : Context.Parameters,
-			Context.QueryOptions,
-			Context.ExecutorOptions
+			queryOptions: Context.QueryOptions,
+			executorOptions: Context.ExecutorOptions
 		);
 	}
 
