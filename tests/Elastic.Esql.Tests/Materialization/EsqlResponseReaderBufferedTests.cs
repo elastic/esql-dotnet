@@ -2,6 +2,7 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
@@ -237,7 +238,7 @@ public class EsqlResponseReaderBufferedTests
 		{
 			if (i > 0)
 				sb.Append(',');
-			sb.AppendLine($"""["item-{i}", {i}]""");
+			sb.AppendLine(CultureInfo.InvariantCulture, $"""["item-{i}", {i}]""");
 		}
 		sb.AppendLine("""], "columns": [ { "name": "value", "type": "keyword" }, { "name": "count", "type": "integer" } ] }""");
 

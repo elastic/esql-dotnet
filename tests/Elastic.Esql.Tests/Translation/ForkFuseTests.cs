@@ -6,6 +6,9 @@ namespace Elastic.Esql.Tests.Translation;
 
 public class ForkFuseTests : EsqlTestBase
 {
+	private static readonly float[] FloatVec1 = [1f];
+	private static readonly float[] FloatVec1_2 = [1f, 2f];
+
 	[Test]
 	public void Fork_TwoBranches_GeneratesParenthesisedBranches()
 	{
@@ -13,7 +16,7 @@ public class ForkFuseTests : EsqlTestBase
 			.From("books", MetadataField.Id | MetadataField.Index | MetadataField.Score)
 			.Fork(
 				b => b.Where(x => EsqlFunctions.Match(x.Title, "Shakespeare")).Take(100),
-				b => b.Where(x => EsqlFunctions.Knn(x.TitleVec, new float[] { 1f, 2f })).Take(100))
+				b => b.Where(x => EsqlFunctions.Knn(x.TitleVec, FloatVec1_2)).Take(100))
 			.ToString();
 
 		_ = esql.Should().Be(
@@ -30,7 +33,7 @@ public class ForkFuseTests : EsqlTestBase
 			.From("books", MetadataField.Id | MetadataField.Index | MetadataField.Score)
 			.Fork(
 				b => b.Where(x => EsqlFunctions.Match(x.Title, "shakespeare")).Take(50),
-				b => b.Where(x => EsqlFunctions.Knn(x.TitleVec, new float[] { 1f })).Take(50))
+				b => b.Where(x => EsqlFunctions.Knn(x.TitleVec, FloatVec1)).Take(50))
 			.Fuse()
 			.ToString();
 
@@ -44,7 +47,7 @@ public class ForkFuseTests : EsqlTestBase
 			.From("books", MetadataField.Id | MetadataField.Index | MetadataField.Score)
 			.Fork(
 				b => b.Where(x => EsqlFunctions.Match(x.Title, "x")).Take(50),
-				b => b.Where(x => EsqlFunctions.Knn(x.TitleVec, new float[] { 1f })).Take(50))
+				b => b.Where(x => EsqlFunctions.Knn(x.TitleVec, FloatVec1)).Take(50))
 			.Fuse(rankConstant: 80)
 			.ToString();
 
@@ -58,7 +61,7 @@ public class ForkFuseTests : EsqlTestBase
 			.From("books", MetadataField.Id | MetadataField.Index | MetadataField.Score)
 			.Fork(
 				b => b.Where(x => EsqlFunctions.Match(x.Title, "x")).Take(50),
-				b => b.Where(x => EsqlFunctions.Knn(x.TitleVec, new float[] { 1f })).Take(50))
+				b => b.Where(x => EsqlFunctions.Knn(x.TitleVec, FloatVec1)).Take(50))
 			.Fuse(method: FuseMethod.Linear, normalizer: ScoreNormalizer.MinMax, weights: [0.7, 0.3])
 			.ToString();
 
@@ -72,7 +75,7 @@ public class ForkFuseTests : EsqlTestBase
 			.From("books", MetadataField.Id | MetadataField.Index | MetadataField.Score)
 			.Fork(
 				b => b.Where(x => EsqlFunctions.Match(x.Title, "x")).Take(50),
-				b => b.Where(x => EsqlFunctions.Knn(x.TitleVec, new float[] { 1f })).Take(50))
+				b => b.Where(x => EsqlFunctions.Knn(x.TitleVec, FloatVec1)).Take(50))
 			.Fuse(weights: [0.7, 0.3, 0.5])
 			.ToString();
 
@@ -97,8 +100,8 @@ public class ForkFuseTests : EsqlTestBase
 			.From("books", MetadataField.Id | MetadataField.Index | MetadataField.Score)
 			.Fork(
 				b => b.Where(x => EsqlFunctions.Match(x.Title, "x")).Take(50),
-				b => b.Where(x => EsqlFunctions.Knn(x.TitleVec, new float[] { 1f })).Take(50))
-			.Fuse(key: x => new { Id = EsqlMetadata.Id })
+				b => b.Where(x => EsqlFunctions.Knn(x.TitleVec, FloatVec1)).Take(50))
+			.Fuse(key: x => new { EsqlMetadata.Id })
 			.ToString();
 
 		_ = esql.Should().EndWith("| FUSE KEY BY _id");
@@ -111,7 +114,7 @@ public class ForkFuseTests : EsqlTestBase
 			.From("books", MetadataField.Score)
 			.Fork(
 				b => b.Where(x => EsqlFunctions.Match(x.Title, "x")).Take(50),
-				b => b.Where(x => EsqlFunctions.Knn(x.TitleVec, new float[] { 1f })).Take(50))
+				b => b.Where(x => EsqlFunctions.Knn(x.TitleVec, FloatVec1)).Take(50))
 			.Fuse(score: x => EsqlMetadata.Score * 2)
 			.ToString();
 
@@ -125,7 +128,7 @@ public class ForkFuseTests : EsqlTestBase
 			.From("books", MetadataField.Id | MetadataField.Index | MetadataField.Score)
 			.Fork(
 				b => b.Where(x => EsqlFunctions.Match(x.Title, "x")),
-				b => b.Where(x => EsqlFunctions.Knn(x.TitleVec, new float[] { 1f })).Take(50))
+				b => b.Where(x => EsqlFunctions.Knn(x.TitleVec, FloatVec1)).Take(50))
 			.Fuse()
 			.ToString();
 
@@ -139,7 +142,7 @@ public class ForkFuseTests : EsqlTestBase
 			.From("books", MetadataField.Id | MetadataField.Score)
 			.Fork(
 				b => b.Where(x => EsqlFunctions.Match(x.Title, "x")).Take(50),
-				b => b.Where(x => EsqlFunctions.Knn(x.TitleVec, new float[] { 1f })).Take(50))
+				b => b.Where(x => EsqlFunctions.Knn(x.TitleVec, FloatVec1)).Take(50))
 			.Fuse()
 			.Select(b => new { b.Title })
 			.ToString();

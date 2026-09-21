@@ -6,12 +6,16 @@ namespace Elastic.Esql.Tests.Functions.Vector;
 
 public class KnnTests : EsqlTestBase
 {
+	private static readonly float[] FloatVec1_2 = [1f, 2f];
+	private static readonly float[] FloatVec1_2_3 = [1f, 2f, 3f];
+	private static readonly float[] FloatVec3_4 = [3f, 4f];
+
 	[Test]
 	public void Knn_WithInlineFloatArray_EmitsKnnCall()
 	{
 		var esql = CreateQuery<BookDocument>()
 			.From("books", MetadataField.Score)
-			.Where(b => EsqlFunctions.Knn(b.TitleVec, new float[] { 1f, 2f, 3f }))
+			.Where(b => EsqlFunctions.Knn(b.TitleVec, FloatVec1_2_3))
 			.ToString();
 
 		_ = esql.Should().Be(
@@ -38,7 +42,7 @@ public class KnnTests : EsqlTestBase
 	[Test]
 	public void Knn_WithExplicitReadOnlyMemory_EmitsKnnCall()
 	{
-		var queryVec = new ReadOnlyMemory<float>(new float[] { 1f, 2f, 3f });
+		var queryVec = new ReadOnlyMemory<float>(FloatVec1_2_3);
 
 		var esql = CreateQuery<BookDocument>()
 			.From("books", MetadataField.Score)
@@ -51,7 +55,7 @@ public class KnnTests : EsqlTestBase
 	[Test]
 	public void Knn_WithExplicitDenseVector_EmitsKnnCall()
 	{
-		var queryVec = new DenseVector<float>(new float[] { 1f, 2f, 3f });
+		var queryVec = new DenseVector<float>(FloatVec1_2_3);
 
 		var esql = CreateQuery<BookDocument>()
 			.From("books", MetadataField.Score)
@@ -66,7 +70,7 @@ public class KnnTests : EsqlTestBase
 	{
 		var esql = CreateQuery<BookDocument>()
 			.From("books", MetadataField.Score)
-			.Where(b => EsqlFunctions.Knn(b.TitleVec, new float[] { 1f, 2f }, new KnnOptions { K = 10, MinCandidates = 100 }))
+			.Where(b => EsqlFunctions.Knn(b.TitleVec, FloatVec1_2, new KnnOptions { K = 10, MinCandidates = 100 }))
 			.ToString();
 
 		_ = esql.Should().Be(
@@ -113,7 +117,7 @@ public class KnnTests : EsqlTestBase
 
 		var esql = CreateQuery<BookDocument>()
 			.From("books", MetadataField.Score)
-			.Where(b => EsqlFunctions.Knn(b.TitleVec, new float[] { 1f, 2f }, options))
+			.Where(b => EsqlFunctions.Knn(b.TitleVec, FloatVec1_2, options))
 			.ToString();
 
 		_ = esql.Should().Contain("KNN(titleVec, [1.0, 2.0], { \"k\": 10, \"similarity\": 0.5 })");
@@ -149,8 +153,8 @@ public class KnnTests : EsqlTestBase
 		// translation must still succeed end-to-end).
 		var esql = CreateQuery<BookDocument>()
 			.From("books", MetadataField.Score)
-			.Where(b => EsqlFunctions.Knn(b.TitleVec, new float[] { 1f, 2f })
-				|| EsqlFunctions.Knn(b.TitleVec, new float[] { 3f, 4f }))
+			.Where(b => EsqlFunctions.Knn(b.TitleVec, FloatVec1_2)
+				|| EsqlFunctions.Knn(b.TitleVec, FloatVec3_4))
 			.ToString();
 
 		_ = esql.Should().Contain("KNN(titleVec, [1.0, 2.0])");

@@ -5,7 +5,7 @@
 using System.Text;
 using Elastic.Transport;
 
-namespace Elastic.Clients.Esql.Tests;
+namespace Elastic.Clients.Esql.Tests.Infrastructure;
 
 /// <summary>
 /// An <see cref="IRequestInvoker"/> that performs no IO. Captures the endpoint, the bound

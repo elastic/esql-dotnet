@@ -18,7 +18,8 @@ public class ParameterizedDoubleTests : EsqlTestBase
 		_ = query.ToEsqlString(inlineParameters: false);
 		var parameters = query.GetParameters();
 
-		_ = parameters.Parameters["threshold"].GetRawText().Should().Be("100.0");
+		_ = parameters.Should().NotBeNull();
+		_ = parameters!.Parameters["threshold"].GetRawText().Should().Be("100.0");
 	}
 
 	[Test]
@@ -33,7 +34,8 @@ public class ParameterizedDoubleTests : EsqlTestBase
 		_ = query.ToEsqlString(inlineParameters: false);
 		var parameters = query.GetParameters();
 
-		_ = parameters.Parameters["threshold"].GetRawText().Should().Be("99.5");
+		_ = parameters.Should().NotBeNull();
+		_ = parameters!.Parameters["threshold"].GetRawText().Should().Be("99.5");
 	}
 
 	[Test]
@@ -47,7 +49,8 @@ public class ParameterizedDoubleTests : EsqlTestBase
 		_ = query.ToEsqlString(inlineParameters: false);
 		var parameters = query.GetParameters();
 
-		_ = parameters.Parameters["vals"].GetRawText().Should().Be("[100.0,200.5]");
+		_ = parameters.Should().NotBeNull();
+		_ = parameters!.Parameters["vals"].GetRawText().Should().Be("[100.0,200.5]");
 	}
 
 	[Test]
@@ -61,7 +64,8 @@ public class ParameterizedDoubleTests : EsqlTestBase
 		_ = query.ToEsqlString(inlineParameters: false);
 		var parameters = query.GetParameters();
 
-		_ = parameters.Parameters["vals"].GetRawText().Should().Be("[1.0,2.5]");
+		_ = parameters.Should().NotBeNull();
+		_ = parameters!.Parameters["vals"].GetRawText().Should().Be("[1.0,2.5]");
 	}
 
 	[Test]

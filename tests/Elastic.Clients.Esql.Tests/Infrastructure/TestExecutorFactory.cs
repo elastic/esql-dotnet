@@ -5,7 +5,7 @@
 using Elastic.Clients.Esql.Execution;
 using Elastic.Transport;
 
-namespace Elastic.Clients.Esql.Tests;
+namespace Elastic.Clients.Esql.Tests.Infrastructure;
 
 internal static class TestExecutorFactory
 {

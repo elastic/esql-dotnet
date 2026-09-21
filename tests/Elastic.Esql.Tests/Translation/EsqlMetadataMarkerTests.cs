@@ -53,7 +53,7 @@ public class EsqlMetadataMarkerTests : EsqlTestBase
 	{
 		var esql = CreateQuery<LogEntry>()
 			.From("books", MetadataField.Id | MetadataField.Score)
-			.Select(b => new { Id = EsqlMetadata.Id, MyScore = EsqlMetadata.Score, b.Message })
+			.Select(b => new { EsqlMetadata.Id, MyScore = EsqlMetadata.Score, b.Message })
 			.ToString();
 
 		// _id and _score are consumed by the projection (renamed); auto-retain skips them.

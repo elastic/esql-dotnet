@@ -4,6 +4,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Elastic.Clients.Esql.Tests.Infrastructure;
 using Elastic.Transport;
 
 namespace Elastic.Clients.Esql.Tests;

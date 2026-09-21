@@ -4,6 +4,7 @@
 
 using System.Text.Json;
 using Elastic.Clients.Esql.Execution;
+using Elastic.Clients.Esql.Tests.Infrastructure;
 using Elastic.Esql;
 using Elastic.Esql.Execution;
 using Elastic.Esql.QueryModel;

@@ -44,7 +44,7 @@ public class DenseVectorTests
 		var vector = JsonSerializer.Deserialize<DenseVector<byte>>("[-1, 0, -128, 100]");
 
 		_ = vector.Length.Should().Be(4);
-		_ = vector.ToArray().Should().Equal((byte)255, (byte)0, (byte)128, (byte)100);
+		_ = vector.ToArray().Should().Equal(255, 0, 128, 100);
 	}
 
 	[Test]
@@ -54,7 +54,7 @@ public class DenseVectorTests
 		var vector = JsonSerializer.Deserialize<DenseVector<byte>>("[255, 0, 128, 100]");
 
 		_ = vector.Length.Should().Be(4);
-		_ = vector.ToArray().Should().Equal((byte)255, (byte)0, (byte)128, (byte)100);
+		_ = vector.ToArray().Should().Equal(255, 0, 128, 100);
 	}
 
 	[Test]

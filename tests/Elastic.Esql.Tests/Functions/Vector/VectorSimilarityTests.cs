@@ -6,12 +6,15 @@ namespace Elastic.Esql.Tests.Functions.Vector;
 
 public class VectorSimilarityTests : EsqlTestBase
 {
+	private static readonly float[] Vec0_255_255 = [0f, 255f, 255f];
+	private static readonly float[] Vec1_2 = [1f, 2f];
+
 	[Test]
 	public void VCosine_InWhere_GeneratesCorrectEsql()
 	{
 		var esql = CreateQuery<BookDocument>()
 			.From("books")
-			.Where(b => EsqlFunctions.VCosine(b.TitleVec, new float[] { 0f, 255f, 255f }) > 0.5)
+			.Where(b => EsqlFunctions.VCosine(b.TitleVec, Vec0_255_255) > 0.5)
 			.ToString();
 
 		_ = esql.Should().Be(
@@ -26,7 +29,7 @@ public class VectorSimilarityTests : EsqlTestBase
 	{
 		var esql = CreateQuery<BookDocument>()
 			.From("books")
-			.Where(b => EsqlFunctions.VDotProduct(b.TitleVec, new float[] { 1f, 2f }) > 0)
+			.Where(b => EsqlFunctions.VDotProduct(b.TitleVec, Vec1_2) > 0)
 			.ToString();
 
 		_ = esql.Should().Contain("V_DOT_PRODUCT(titleVec, [1.0, 2.0])");
@@ -48,7 +51,7 @@ public class VectorSimilarityTests : EsqlTestBase
 	{
 		var esql = CreateQuery<BookDocument>()
 			.From("books")
-			.Where(b => EsqlFunctions.VL1Norm(b.TitleVec, new float[] { 1f, 2f }) > 0)
+			.Where(b => EsqlFunctions.VL1Norm(b.TitleVec, Vec1_2) > 0)
 			.ToString();
 
 		_ = esql.Should().Contain("V_L1_NORM(titleVec, [1.0, 2.0])");
@@ -59,7 +62,7 @@ public class VectorSimilarityTests : EsqlTestBase
 	{
 		var esql = CreateQuery<BookDocument>()
 			.From("books")
-			.Where(b => EsqlFunctions.VL2Norm(b.TitleVec, new float[] { 1f, 2f }) > 0)
+			.Where(b => EsqlFunctions.VL2Norm(b.TitleVec, Vec1_2) > 0)
 			.ToString();
 
 		_ = esql.Should().Contain("V_L2_NORM(titleVec, [1.0, 2.0])");

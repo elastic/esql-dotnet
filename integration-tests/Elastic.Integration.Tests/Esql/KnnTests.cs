@@ -153,7 +153,7 @@ public class KnnTests : IntegrationTestBase
 	[Test]
 	public async Task Knn_Byte_WithExplicitDenseVector_ProducesIdenticalResultsAsImplicit()
 	{
-		var query = new DenseVector<byte>(new byte[] { 0, 255, 0 });
+		var query = new DenseVector<byte>([0, 255, 0]);
 
 		var results = await Fixture.EsqlClient
 			.CreateQuery<TestBook>()
