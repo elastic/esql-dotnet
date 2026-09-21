@@ -74,13 +74,6 @@ internal sealed class SyncStreamBuffer(Stream stream, int initialBufferSize = 16
 		_examined = examined.GetInteger();
 	}
 
-	/// <summary>Advances past consumed data (examined = end of buffer).</summary>
-	public void AdvanceTo(SequencePosition consumed)
-	{
-		_offset = consumed.GetInteger();
-		_examined = _filled;
-	}
-
 	public void Dispose()
 	{
 		var buf = _buffer;
