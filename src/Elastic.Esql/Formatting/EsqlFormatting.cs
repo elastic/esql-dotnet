@@ -17,8 +17,8 @@ internal static class EsqlFormatting
 {
 	/// <summary>
 	/// Formats a C# value for use in an ES|QL query literal. Types with ES|QL-specific
-	/// formatting (DateTime, TimeSpan, float/double NaN) are handled explicitly; all other
-	/// types are serialized via <see cref="JsonSerializer"/> using the provided options.
+	/// formatting (DateTime, TimeSpan) are handled explicitly; all other types are serialized
+	/// via <see cref="JsonSerializer"/> using the provided options.
 	/// </summary>
 	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Serialization delegates to the user-provided JsonSerializerOptions/JsonSerializerContext which is expected to include an AOT-safe TypeInfoResolver.")]
 	[UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Serialization delegates to the user-provided JsonSerializerOptions/JsonSerializerContext which is expected to include an AOT-safe TypeInfoResolver.")]
@@ -144,13 +144,18 @@ internal static class EsqlFormatting
 
 	internal static string FormatFloat(float f) =>
 		float.IsNaN(f) || float.IsInfinity(f)
-			? "null"
+			? throw NonFiniteNotSupported(f)
 			: WithExplicitFloatingPoint(f.ToString("G9", InvariantCulture));
 
 	internal static string FormatDouble(double d) =>
 		double.IsNaN(d) || double.IsInfinity(d)
-			? "null"
+			? throw NonFiniteNotSupported(d)
 			: WithExplicitFloatingPoint(d.ToString("G", InvariantCulture));
+
+	// ES|QL has no NaN or Infinity literal; rendering null instead would silently turn the
+	// comparison into a null test that matches no rows.
+	private static NotSupportedException NonFiniteNotSupported(object value) =>
+		new($"{value} cannot be expressed in ES|QL: there is no literal for NaN or Infinity.");
 
 	/// <summary>
 	/// A whole-number double like 100.0 renders as "100" under "G", which ES|QL parses as an

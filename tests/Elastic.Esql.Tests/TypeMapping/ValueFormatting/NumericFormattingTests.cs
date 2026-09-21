@@ -65,18 +65,26 @@ public class NumericFormattingTests : EsqlTestBase
 	}
 
 	[Test]
-	public void FormatValue_DoubleNaN_ReturnsNull()
+	public void FormatValue_DoubleNaN_ThrowsNotSupported()
 	{
-		var result = EsqlFormatting.FormatValue(double.NaN, ReaderOptions);
+		var act = () => EsqlFormatting.FormatValue(double.NaN, ReaderOptions);
 
-		_ = result.Should().Be("null");
+		_ = act.Should().Throw<NotSupportedException>();
 	}
 
 	[Test]
-	public void FormatValue_DoublePositiveInfinity_ReturnsNull()
+	public void FormatValue_DoublePositiveInfinity_ThrowsNotSupported()
 	{
-		var result = EsqlFormatting.FormatValue(double.PositiveInfinity, ReaderOptions);
+		var act = () => EsqlFormatting.FormatValue(double.PositiveInfinity, ReaderOptions);
 
-		_ = result.Should().Be("null");
+		_ = act.Should().Throw<NotSupportedException>();
+	}
+
+	[Test]
+	public void FormatValue_FloatNaN_ThrowsNotSupported()
+	{
+		var act = () => EsqlFormatting.FormatValue(float.NaN, ReaderOptions);
+
+		_ = act.Should().Throw<NotSupportedException>();
 	}
 }

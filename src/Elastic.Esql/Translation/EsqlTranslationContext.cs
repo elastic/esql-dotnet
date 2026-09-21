@@ -164,8 +164,6 @@ internal sealed class EsqlTranslationContext
 	{
 		value = value switch
 		{
-			float f when float.IsNaN(f) || float.IsInfinity(f) => null,
-			double d when double.IsNaN(d) || double.IsInfinity(d) => null,
 			TimeSpan ts => EsqlFormatting.FormatTimeSpanRaw(ts),
 			_ => value
 		};

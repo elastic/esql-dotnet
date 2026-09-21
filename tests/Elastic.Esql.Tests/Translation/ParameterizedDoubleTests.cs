@@ -63,4 +63,26 @@ public class ParameterizedDoubleTests : EsqlTestBase
 
 		_ = parameters.Parameters["vals"].GetRawText().Should().Be("[1.0,2.5]");
 	}
+
+	[Test]
+	public void GetParameters_CapturedPositiveInfinity_ThrowsNotSupported()
+	{
+		var max = double.PositiveInfinity;
+		var query = CreateQuery<LogEntry>().From("logs-*").Where(l => l.Duration < max);
+
+		var act = () => query.GetParameters();
+
+		_ = act.Should().Throw<NotSupportedException>();
+	}
+
+	[Test]
+	public void GetParameters_CapturedDoubleArrayWithNaN_ThrowsNotSupported()
+	{
+		var values = new[] { 1.0, double.NaN };
+		var query = CreateQuery<LogEntry>().From("logs-*").Where(l => values.Contains(l.Duration));
+
+		var act = () => query.GetParameters();
+
+		_ = act.Should().Throw<NotSupportedException>();
+	}
 }
