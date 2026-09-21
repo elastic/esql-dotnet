@@ -91,8 +91,8 @@ public class EsqlClientSettings
 	}
 
 	/// <summary>Resolves the effective <see cref="System.Text.Json.JsonSerializerOptions"/> from context or explicit options.</summary>
-	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "DefaultJsonTypeInfoResolver is a fallback; the user-provided JsonSerializerContext is expected to include an AOT-safe TypeInfoResolver.")]
-	[UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "DefaultJsonTypeInfoResolver is a fallback; the user-provided JsonSerializerContext is expected to include an AOT-safe TypeInfoResolver.")]
+	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "The reflection resolver is kept behind the user context on purpose: under Native AOT it still serves types with explicit JsonConverter attributes, and every other type is expected to be declared in the context.")]
+	[UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "The reflection resolver is kept behind the user context on purpose: under Native AOT it still serves types with explicit JsonConverter attributes, and every other type is expected to be declared in the context.")]
 	internal JsonSerializerOptions ResolveJsonOptions()
 	{
 		if (JsonSerializerContext is not null)
@@ -110,8 +110,8 @@ public class EsqlClientSettings
 		return JsonSerializerOptions ?? CreateDefaultJsonOptions();
 	}
 
-	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Default options are a convenience fallback; Native AOT scenarios should pass explicit JsonSerializerOptions/JsonSerializerContext.")]
-	[UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Default options are a convenience fallback; trimming-safe scenarios should pass explicit JsonSerializerOptions/JsonSerializerContext.")]
+	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Default options are a convenience for non-trimmed apps; Native AOT callers pass a JsonSerializerContext, and the reflection fallback is deliberately retained for converter-attributed types.")]
+	[UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Default options are a convenience for non-trimmed apps; Native AOT callers pass a JsonSerializerContext, and the reflection fallback is deliberately retained for converter-attributed types.")]
 	private static JsonSerializerOptions CreateDefaultJsonOptions() =>
 		new(JsonSerializerOptions.Default)
 		{

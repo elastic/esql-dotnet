@@ -77,6 +77,10 @@ using var client = new EsqlClient(settings);
 
 When `JsonSerializerContext` is set, it takes precedence over `JsonSerializerOptions`. You can also set `JsonSerializerOptions` directly for non-AOT scenarios:
 
+Types that the context does not declare are resolved through the reflection-based default
+resolver. Under Native AOT that fallback still handles types with an explicit `[JsonConverter]`
+attribute; any other type must be declared in the context, or materialization fails at runtime.
+
 ```csharp
 var settings = new EsqlClientSettings(transport)
 {
@@ -322,6 +326,31 @@ await foreach (var entry in query.AsAsyncEnumerable())
     ProcessEntry(entry);
 }
 ```
+
+### How rows are materialized
+
+Flat result types are bound directly from the response reader, property by property, without an
+intermediate JSON document. A type qualifies for this path when all of the following hold:
+
+- it is a class or struct with a parameterless constructor and no `required` members;
+- it has no `OnDeserializing` or `OnDeserialized` callbacks;
+- every result column maps to a settable property;
+- every mapped property is a `string`, `bool`, `int`, `long`, `double`, `float`, `decimal`,
+  `DateTime`, `DateTimeOffset` or `Guid`, or the nullable form of one of these;
+- no mapped property carries a custom `JsonConverter`, and enums are not used.
+
+Anything else, including nested object columns, falls back to assembling each row as a JSON
+object and deserializing it with `System.Text.Json`. The fallback is correct but slower, and
+nothing signals which path is active. If throughput matters, shape the result type to the list
+above. A row whose cell does not match the property type is retried through the fallback, so the
+serializer produces the same value coercion or error either way. Each retried row allocates and
+discards one instance of the type; a constructor with side effects therefore runs more than once
+for such rows.
+
+Nested result types are deserialized in batches of up to 64 rows or 64 KB, so the first row
+becomes available after the first batch rather than immediately. When a row inside a batch is
+malformed or does not match the type, the rows before it are still delivered and the error
+surfaces at the faulty row, the same as for flat types.
 
 ## Raw response formats
 

@@ -87,3 +87,7 @@ var query = new EsqlQueryable<LogEntry>(provider)
     .Where(l => l.Level == "ERROR")
     .ToString();
 ```
+
+Field names for types that the context does not declare are resolved through the reflection-based default
+resolver. Under Native AOT that fallback still handles types with an explicit `[JsonConverter]`
+attribute; any other type must be declared in the context, or field resolution fails at runtime.
