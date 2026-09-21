@@ -682,8 +682,9 @@ internal sealed partial class EsqlResponseReader
 	private static IEnumerable<T> DeserializeBatchElementWise<T>(byte[] batch, RowMaterializationPlan<T> plan)
 	{
 		// Utf8JsonReader is a ref struct and cannot be preserved across a yield, so the read position
-		// and reader state travel between elements and a fresh reader resumes from them.
-		var state = new JsonReaderState();
+		// and reader state travel between elements and a fresh reader resumes from them. The state
+		// also carries the configured depth budget, matching what the span-based overload applies.
+		var state = new JsonReaderState(new JsonReaderOptions { MaxDepth = plan.Options.MaxDepth });
 		var consumed = 0;
 
 		while (TryDeserializeBatchElement(batch, plan, ref consumed, ref state, out var item))
