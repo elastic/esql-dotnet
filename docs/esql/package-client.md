@@ -77,10 +77,6 @@ using var client = new EsqlClient(settings);
 
 When `JsonSerializerContext` is set, it takes precedence over `JsonSerializerOptions`. You can also set `JsonSerializerOptions` directly for non-AOT scenarios:
 
-Types that the context does not declare are resolved through the reflection-based default
-resolver. Under Native AOT that fallback still handles types with an explicit `[JsonConverter]`
-attribute; any other type must be declared in the context, or materialization fails at runtime.
-
 ```csharp
 var settings = new EsqlClientSettings(transport)
 {
@@ -90,6 +86,10 @@ var settings = new EsqlClientSettings(transport)
     }
 };
 ```
+
+Types that the context does not declare are resolved through the reflection-based default
+resolver. Under Native AOT that fallback still handles types with an explicit `[JsonConverter]`
+attribute; any other type must be declared in the context, or materialization fails at runtime.
 
 If neither `JsonSerializerContext` nor `JsonSerializerOptions` is provided, `EsqlClient` defaults to camelCase naming.
 
@@ -337,7 +337,9 @@ intermediate JSON document. A type qualifies for this path when all of the follo
 - every result column maps to a settable property;
 - every mapped property is a `string`, `bool`, `int`, `long`, `double`, `float`, `decimal`,
   `DateTime`, `DateTimeOffset` or `Guid`, or the nullable form of one of these;
-- no mapped property carries a custom `JsonConverter`, and enums are not used.
+- no mapped property uses a custom converter, whether declared with a `JsonConverter` attribute or
+  registered on the `JsonSerializerOptions`; only the framework's built-in converters qualify, and
+  enums are not used.
 
 Anything else, including nested object columns, falls back to assembling each row as a JSON
 object and deserializing it with `System.Text.Json`. The fallback is correct but slower, and
