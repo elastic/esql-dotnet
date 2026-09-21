@@ -51,4 +51,28 @@ public class EsqlParametersTests
 
 		_ = act.Should().Throw<ArgumentNullException>();
 	}
+
+	[Test]
+	[Arguments("  ")]
+	[Arguments("2fast")]
+	[Arguments("my-param")]
+	[Arguments("größe")]
+	public void Add_NameOutsideEsqlGrammar_ThrowsArgumentException(string name)
+	{
+		var parameters = new EsqlParameters();
+
+		var act = () => parameters.Add(name, JsonSerializer.SerializeToElement(1));
+
+		_ = act.Should().Throw<ArgumentException>().WithMessage("*letter or underscore*").WithParameterName("preferredName");
+	}
+
+	[Test]
+	public void Add_UnderscoreLeadingNameWithDigits_IsAccepted()
+	{
+		var parameters = new EsqlParameters();
+
+		var name = parameters.Add("_p2", JsonSerializer.SerializeToElement(1));
+
+		_ = name.Should().Be("_p2");
+	}
 }

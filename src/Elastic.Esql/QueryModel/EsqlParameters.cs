@@ -29,6 +29,11 @@ public sealed class EsqlParameters
 	{
 		Verify.NotNullOrEmpty(preferredName);
 
+		if (!IsValidParameterName(preferredName))
+			throw new ArgumentException(
+				"An ES|QL parameter name must start with a letter or underscore and may contain only ASCII letters, digits, and underscores.",
+				nameof(preferredName));
+
 		if (!_nameCounts.TryGetValue(preferredName, out var count) && !_parameters.ContainsKey(preferredName))
 		{
 			_nameCounts[preferredName] = 1;
@@ -50,6 +55,25 @@ public sealed class EsqlParameters
 		_parameters.Add(uniqueName, value);
 		return uniqueName;
 	}
+
+	// Mirrors the ES|QL lexer rule for named parameters (a letter or underscore, then letters, digits, or
+	// underscores, all ASCII) so a bad name fails here instead of as a server-side parse error.
+	private static bool IsValidParameterName(string name)
+	{
+		if (!IsAsciiLetterOrUnderscore(name[0]))
+			return false;
+
+		for (var i = 1; i < name.Length; i++)
+		{
+			if (!IsAsciiLetterOrUnderscore(name[i]) && name[i] is not (>= '0' and <= '9'))
+				return false;
+		}
+
+		return true;
+	}
+
+	private static bool IsAsciiLetterOrUnderscore(char c) =>
+		c is (>= 'a' and <= 'z') or (>= 'A' and <= 'Z') or '_';
 
 	/// <summary>All collected parameters keyed by name.</summary>
 	public IReadOnlyDictionary<string, JsonElement> Parameters => _parameters;
