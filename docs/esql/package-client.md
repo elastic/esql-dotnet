@@ -345,9 +345,10 @@ Anything else, including nested object columns, falls back to assembling each ro
 object and deserializing it with `System.Text.Json`. The fallback is correct but slower, and
 nothing signals which path is active. If throughput matters, shape the result type to the list
 above. A row whose cell does not match the property type is retried through the fallback, so the
-serializer produces the same value coercion or error either way. Each retried row allocates and
-discards one instance of the type; a constructor with side effects therefore runs more than once
-for such rows.
+serializer produces the same value coercion or error either way. The same retry happens when a
+streamed row is cut by a chunk boundary and completes on the next read. Each retried row allocates
+and discards one partially bound instance of the type; a constructor or property setter with side
+effects therefore runs more than once for such rows.
 
 Nested result types are deserialized in batches of up to 64 rows or 64 KB, so the first row
 becomes available after the first batch rather than immediately. Batching also requires the
