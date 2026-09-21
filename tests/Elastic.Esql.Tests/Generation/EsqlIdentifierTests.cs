@@ -117,6 +117,10 @@ public class EsqlIdentifierTests
 	}
 
 	[Test]
+	public void EscapeColumnName_ReservedKeywordSegmentInDottedPath_QuotesOnlyThatSegment() =>
+		_ = EsqlIdentifier.EscapeColumnName("a.from.b").Should().Be("a.`from`.b");
+
+	[Test]
 	public void FormatIndexPattern_WildcardPattern_ReturnsUnchanged() =>
 		_ = EsqlIdentifier.FormatIndexPattern("logs-*").Should().Be("logs-*");
 

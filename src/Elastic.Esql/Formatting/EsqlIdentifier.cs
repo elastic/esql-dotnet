@@ -15,17 +15,15 @@ namespace Elastic.Esql.Formatting;
 /// </remarks>
 public static class EsqlIdentifier
 {
-	private static readonly HashSet<string> ReservedKeywords = new(
-		[
-			"FROM", "WHERE", "EVAL", "STATS", "SORT", "LIMIT", "KEEP", "DROP",
-			"BY", "AS", "AND", "OR", "NOT", "IN", "LIKE", "RLIKE", "IS", "NULL",
-			"TRUE", "FALSE", "ASC", "DESC", "NULLS", "FIRST", "LAST",
-			"ROW", "SHOW", "META", "METADATA", "MV_EXPAND", "RENAME", "DISSECT", "GROK", "ENRICH",
-			"COMPLETION", "JOIN", "LOOKUP",
-			"ON", "WITH", "USING", "FORK", "FUSE", "INLINESTATS", "CHANGE_POINT", "SAMPLE", "RERANK"
-		],
-		StringComparer.OrdinalIgnoreCase
-	);
+	private static readonly string[] ReservedKeywords =
+	[
+		"FROM", "WHERE", "EVAL", "STATS", "SORT", "LIMIT", "KEEP", "DROP",
+		"BY", "AS", "AND", "OR", "NOT", "IN", "LIKE", "RLIKE", "IS", "NULL",
+		"TRUE", "FALSE", "ASC", "DESC", "NULLS", "FIRST", "LAST",
+		"ROW", "SHOW", "META", "METADATA", "MV_EXPAND", "RENAME", "DISSECT", "GROK", "ENRICH",
+		"COMPLETION", "JOIN", "LOOKUP",
+		"ON", "WITH", "USING", "FORK", "FUSE", "INLINESTATS", "CHANGE_POINT", "SAMPLE", "RERANK"
+	];
 
 	/// <summary>
 	/// Escapes a dotted column path for ES|QL, backtick-quoting each segment that is not a
@@ -37,25 +35,25 @@ public static class EsqlIdentifier
 		if (string.IsNullOrEmpty(path))
 			return path;
 
+		// Single-segment fast path: no dot means we can escape or return directly.
 		if (path.IndexOf('.') < 0)
 			return EscapeColumnSegment(path);
 
-		var segments = path.Split('.');
-		var needsEscaping = false;
-
-		foreach (var segment in segments)
+		// Every field reference passes through here and almost none need quoting, so scan
+		// segments using spans to avoid allocating a string array before we know it is needed.
+		var start = 0;
+		while (true)
 		{
-			if (IsValidUnquotedColumnSegment(segment))
-				continue;
-
-			needsEscaping = true;
-			break;
+			var dot = path.IndexOf('.', start);
+			var end = dot < 0 ? path.Length : dot;
+			if (!IsValidUnquotedColumnSegment(path.AsSpan(start, end - start)))
+				break;
+			if (dot < 0)
+				return path;
+			start = dot + 1;
 		}
 
-		// Every field reference passes through here, and almost none need quoting.
-		if (!needsEscaping)
-			return path;
-
+		var segments = path.Split('.');
 		for (var i = 0; i < segments.Length; i++)
 			segments[i] = EscapeColumnSegment(segments[i]);
 
@@ -67,7 +65,11 @@ public static class EsqlIdentifier
 			? segment
 			: $"`{segment.Replace("`", "``")}`";
 
-	private static bool IsValidUnquotedColumnSegment(string segment)
+	// String overload forwards to the span version so EscapeColumnSegment stays unchanged.
+	private static bool IsValidUnquotedColumnSegment(string segment) =>
+		IsValidUnquotedColumnSegment(segment.AsSpan());
+
+	private static bool IsValidUnquotedColumnSegment(ReadOnlySpan<char> segment)
 	{
 		if (segment.Length == 0)
 			return false;
@@ -90,7 +92,20 @@ public static class EsqlIdentifier
 				return false;
 		}
 
-		return !ReservedKeywords.Contains(segment);
+		return !IsReservedKeyword(segment);
+	}
+
+	private static bool IsReservedKeyword(ReadOnlySpan<char> segment)
+	{
+		foreach (var keyword in ReservedKeywords)
+		{
+			if (keyword.Length != segment.Length)
+				continue;
+			if (segment.Equals(keyword.AsSpan(), StringComparison.OrdinalIgnoreCase))
+				return true;
+		}
+
+		return false;
 	}
 
 	/// <summary>
