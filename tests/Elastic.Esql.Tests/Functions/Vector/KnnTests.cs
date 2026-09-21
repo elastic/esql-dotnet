@@ -8,15 +8,17 @@ public class KnnTests : EsqlTestBase
 {
 	private static readonly float[] FloatVec1_2 = [1f, 2f];
 	private static readonly float[] FloatVec1_2_3 = [1f, 2f, 3f];
-	private static readonly float[] FloatVec3_4 = [3f, 4f];
 
 	[Test]
 	public void Knn_WithInlineFloatArray_EmitsKnnCall()
 	{
+		// The inline array is the expression under test.
+#pragma warning disable CA1861
 		var esql = CreateQuery<BookDocument>()
 			.From("books", MetadataField.Score)
-			.Where(b => EsqlFunctions.Knn(b.TitleVec, FloatVec1_2_3))
+			.Where(b => EsqlFunctions.Knn(b.TitleVec, new float[] { 1f, 2f, 3f }))
 			.ToString();
+#pragma warning restore CA1861
 
 		_ = esql.Should().Be(
 			"""
@@ -151,11 +153,14 @@ public class KnnTests : EsqlTestBase
 		// Two inline vector literals in a single Where clause should not produce parameter
 		// name clashes (in inline mode they go through FormatValue directly, but the
 		// translation must still succeed end-to-end).
+		// The inline arrays are the expressions under test.
+#pragma warning disable CA1861
 		var esql = CreateQuery<BookDocument>()
 			.From("books", MetadataField.Score)
-			.Where(b => EsqlFunctions.Knn(b.TitleVec, FloatVec1_2)
-				|| EsqlFunctions.Knn(b.TitleVec, FloatVec3_4))
+			.Where(b => EsqlFunctions.Knn(b.TitleVec, new float[] { 1f, 2f })
+				|| EsqlFunctions.Knn(b.TitleVec, new float[] { 3f, 4f }))
 			.ToString();
+#pragma warning restore CA1861
 
 		_ = esql.Should().Contain("KNN(titleVec, [1.0, 2.0])");
 		_ = esql.Should().Contain("KNN(titleVec, [3.0, 4.0])");
