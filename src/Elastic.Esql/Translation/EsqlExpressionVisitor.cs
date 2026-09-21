@@ -501,12 +501,18 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 			if (extraLambda.Parameters.Count != 1)
 				throw ResultSelectorNotSupported();
 
-			if (extraLambda.Body.UnwrapConvertExpressions() is not MemberExpression)
-				throw new NotSupportedException(
-					"GroupBy element selectors are limited to a single field access (e.g. '.GroupBy(x => x.Key, x => x.Field)'); " +
-					"project composite values in a subsequent Select instead.");
+			var elementBody = extraLambda.Body.UnwrapConvertExpressions();
 
-			elementSelector = extraLambda;
+			// x => x selects the group element itself, which is what a missing element selector means.
+			if (elementBody is not ParameterExpression)
+			{
+				if (elementBody is not MemberExpression)
+					throw new NotSupportedException(
+						"GroupBy element selectors are limited to a single field access (e.g. '.GroupBy(x => x.Key, x => x.Field)'); " +
+						"project composite values in a subsequent Select instead.");
+
+				elementSelector = extraLambda;
+			}
 		}
 
 		// Store the selectors for combining with the subsequent Select into STATS...BY.

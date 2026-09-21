@@ -109,4 +109,22 @@ public class GroupByElementSelectorTests : EsqlTestBase
 		_ = act.Should().Throw<NotSupportedException>()
 			.WithMessage("*IEqualityComparer*");
 	}
+
+	[Test]
+	public void GroupBy_IdentityElementSelector_TranslatesLikeNoElementSelector()
+	{
+		var withoutSelector = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.GroupBy(l => l.Level)
+			.Select(g => new { g.Key, C = g.Count() })
+			.ToString();
+
+		var withIdentity = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.GroupBy(l => l.Level, l => l)
+			.Select(g => new { g.Key, C = g.Count() })
+			.ToString();
+
+		_ = withIdentity.Should().Be(withoutSelector);
+	}
 }
