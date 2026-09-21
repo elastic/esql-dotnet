@@ -150,6 +150,34 @@ public class ForkFuseTests : EsqlTestBase
 	}
 
 	[Test]
+	public void Fuse_WithTabSeparatedRawLimitInBranch_AcceptsTheBranch()
+	{
+		var esql = CreateQuery<BookDocument>()
+			.From("books", MetadataField.Id | MetadataField.Index | MetadataField.Score)
+			.Fork(
+				b => b.Where(x => EsqlFunctions.Match(x.Title, "x")).RawEsql("LIMIT\t10"),
+				b => b.Where(x => EsqlFunctions.Knn(x.TitleVec, FloatVec1)).Take(50))
+			.Fuse()
+			.ToString();
+
+		_ = esql.Should().Contain("| LIMIT\t10)").And.EndWith("| FUSE");
+	}
+
+	[Test]
+	public void Fuse_WithRawLimitLikePrefixInBranch_StillRequiresLimit()
+	{
+		var act = () => CreateQuery<BookDocument>()
+			.From("books", MetadataField.Id | MetadataField.Index | MetadataField.Score)
+			.Fork(
+				b => b.Where(x => EsqlFunctions.Match(x.Title, "x")).RawEsql("LIMITS 10"),
+				b => b.Where(x => EsqlFunctions.Knn(x.TitleVec, FloatVec1)).Take(50))
+			.Fuse()
+			.ToString();
+
+		_ = act.Should().Throw<InvalidOperationException>().WithMessage("*Fork branch 1*LIMIT*");
+	}
+
+	[Test]
 	public void Fuse_AfterFork_ClearsForkActiveSoSelectDoesNotRetainFork()
 	{
 		var esql = CreateQuery<BookDocument>()
