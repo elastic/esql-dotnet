@@ -97,7 +97,8 @@ public class EsqlClientSettings
 	{
 		if (JsonSerializerContext is not null)
 		{
-			return new JsonSerializerOptions
+			// Copying the context's options keeps its converters, number handling and other serializer settings; only the resolver chain changes.
+			return new JsonSerializerOptions(JsonSerializerContext.Options)
 			{
 				TypeInfoResolver = JsonTypeInfoResolver.Combine(
 					JsonSerializerContext,

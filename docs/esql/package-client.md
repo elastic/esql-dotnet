@@ -75,7 +75,7 @@ var settings = new EsqlClientSettings(transport)
 using var client = new EsqlClient(settings);
 ```
 
-When `JsonSerializerContext` is set, it takes precedence over `JsonSerializerOptions`. You can also set `JsonSerializerOptions` directly for non-AOT scenarios:
+When `JsonSerializerContext` is set, it takes precedence over `JsonSerializerOptions`, and the serializer settings of the context's own options (converters, number handling, case sensitivity, and so on) carry over to materialization. You can also set `JsonSerializerOptions` directly for non-AOT scenarios:
 
 ```csharp
 var settings = new EsqlClientSettings(transport)

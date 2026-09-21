@@ -84,6 +84,24 @@ public class EsqlClientSettingsTests
 	}
 
 	[Test]
+	public void ResolveJsonOptions_ContextWithSerializerSettings_PreservesThem()
+	{
+		var contextOptions = new JsonSerializerOptions
+		{
+			NumberHandling = JsonNumberHandling.AllowReadingFromString,
+			PropertyNameCaseInsensitive = true,
+			Converters = { new JsonStringEnumConverter<DayOfWeek>() }
+		};
+
+		var resolved = CreateSettings(context: new ClientTestJsonContext(contextOptions)).ResolveJsonOptions();
+
+		_ = resolved.NumberHandling.Should().Be(JsonNumberHandling.AllowReadingFromString);
+		_ = resolved.PropertyNameCaseInsensitive.Should().BeTrue();
+		_ = resolved.Converters.Should().ContainSingle().Which.Should().BeOfType<JsonStringEnumConverter<DayOfWeek>>();
+		_ = resolved.GetTypeInfo(typeof(UnregisteredDocument)).Should().NotBeNull();
+	}
+
+	[Test]
 	public void ResolveJsonOptions_ContextAndOptions_ContextTakesPrecedence()
 	{
 		var custom = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
