@@ -73,4 +73,31 @@ public class NullCaptureTests : EsqlTestBase
 			| WHERE (duration > 1.0) IS NULL
 			""".NativeLineEndings());
 	}
+
+	[Test]
+	public void Where_CapturedMemberChain_EvaluatesGetterOnce()
+	{
+		var holder = new CountingHolder("x");
+
+		_ = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Message == holder.Value)
+			.ToString();
+
+		_ = holder.Reads.Should().Be(1);
+	}
+
+	private sealed class CountingHolder(string? value)
+	{
+		public int Reads { get; private set; }
+
+		public string? Value
+		{
+			get
+			{
+				Reads++;
+				return value;
+			}
+		}
+	}
 }

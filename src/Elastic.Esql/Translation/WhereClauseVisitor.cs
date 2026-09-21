@@ -23,12 +23,17 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 	private readonly StringBuilder _builder = new();
 	private MemberInfo? _comparisonPropertyContext;
 
+	// Values resolved by the IS NULL rewrite, keyed by the member node so VisitMember can reuse
+	// them instead of evaluating the same closure chain (and its getters) a second time.
+	private readonly Dictionary<Expression, object?> _resolvedCaptures = [];
+
 	/// <summary>
 	/// Translates a predicate expression to an ES|QL condition string.
 	/// </summary>
 	public string Translate(Expression expression)
 	{
 		_ = _builder.Clear();
+		_resolvedCaptures.Clear();
 		_ = Visit(expression);
 		return _builder.ToString();
 	}
@@ -258,7 +263,10 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		// captured objects) resolve to a constant value and emit as a parameter or inline literal.
 		if (node.Expression.IsClosureRooted())
 		{
-			var value = ExpressionConstantResolver.Resolve(node);
+			if (!_resolvedCaptures.TryGetValue(node, out var value))
+				value = ExpressionConstantResolver.Resolve(node);
+			else
+				_ = _resolvedCaptures.Remove(node);
 			_ = _builder.Append(_context.GetValueOrParameterName(node.Member.Name, value, _comparisonPropertyContext));
 			_comparisonPropertyContext = null;
 			return node;
@@ -772,7 +780,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 	/// runtime value is null. Rendering such a value inline would emit a dead <c>== null</c>
 	/// comparison (always null in ES|QL) instead of the intended <c>IS NULL</c>.
 	/// </summary>
-	private static bool ResolvesToNull(Expression expression)
+	private bool ResolvesToNull(Expression expression)
 	{
 		if (IsNullConstant(expression))
 			return true;
@@ -782,7 +790,10 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 		try
 		{
-			return ExpressionConstantResolver.Resolve(expression) is null;
+			var target = expression.UnwrapConvertExpressions();
+			var value = ExpressionConstantResolver.Resolve(target);
+			_resolvedCaptures[target] = value;
+			return value is null;
 		}
 		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException or TargetInvocationException)
 		{
