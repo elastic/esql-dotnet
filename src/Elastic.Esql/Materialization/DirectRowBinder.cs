@@ -121,8 +121,11 @@ internal sealed class DirectRowBinder
 	}
 
 	/// <summary>Classifies a scalar read target the same way a flat column is classified, including the converter check.</summary>
-	internal static bool TryClassifyScalar(Type type, JsonSerializerOptions options, out DirectBinderKind kind) =>
-		TryClassify(type, out kind) && UsesBuiltInConverter(type, options);
+	internal static bool TryClassifyScalar(Type type, JsonTypeInfo? typeInfo, JsonSerializerOptions options, out DirectBinderKind kind)
+	{
+		kind = default;
+		return typeInfo is not null && TryClassify(type, out kind) && UsesBuiltInConverter(type, options);
+	}
 
 	private static bool TryClassify(Type propertyType, out DirectBinderKind kind)
 	{
