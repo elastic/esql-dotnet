@@ -170,19 +170,33 @@ internal sealed class EsqlTranslationContext
 			value = EsqlFormatting.FormatTimeSpanRaw(ts);
 
 		// STJ renders whole doubles without a decimal point (100.0 -> 100), which ES types as an
-		// integer parameter and integer division truncates. Parse the explicit literal instead.
-		if (value is double doubleValue)
+		// integer parameter and integer division truncates. Parse the explicit literal instead, unless
+		// a converter registered on the options claims the type: its output must win.
+		if (value is double doubleValue && !HasRegisteredConverter(typeof(double)))
 			return ParseRawJson(EsqlFormatting.FormatDouble(doubleValue));
-		if (value is float floatValue)
+		if (value is float floatValue && !HasRegisteredConverter(typeof(float)))
 			return ParseRawJson(EsqlFormatting.FormatFloat(floatValue));
 
 		// The same integer-typing hazard applies element-wise to captured numeric collections.
-		if (value is IEnumerable<double> doubles)
+		if (value is IEnumerable<double> doubles && !HasRegisteredConverter(typeof(double)) && !HasRegisteredConverter(value.GetType()))
 			return ParseRawJson($"[{string.Join(",", doubles.Select(EsqlFormatting.FormatDouble))}]");
-		if (value is IEnumerable<float> floats)
+		if (value is IEnumerable<float> floats && !HasRegisteredConverter(typeof(float)) && !HasRegisteredConverter(value.GetType()))
 			return ParseRawJson($"[{string.Join(",", floats.Select(EsqlFormatting.FormatFloat))}]");
 
 		return JsonSerializer.SerializeToElement(value, value?.GetType() ?? typeof(object), SerializerOptions);
+	}
+
+	// Only converters the user registered on the options count; the resolver's built-in converters are
+	// exactly what the explicit-decimal fast path stands in for.
+	private bool HasRegisteredConverter(Type type)
+	{
+		foreach (var converter in SerializerOptions.Converters)
+		{
+			if (converter.CanConvert(type))
+				return true;
+		}
+
+		return false;
 	}
 
 	private static JsonElement ParseRawJson(string json)
