@@ -10,7 +10,7 @@ public class NullSearchValueTests : EsqlTestBase
 	[Test]
 	public void Where_ContainsNullCapture_ThrowsNotSupported()
 	{
-		string? term = null;
+		var term = (string?)null;
 
 		var act = () => CreateQuery<LogEntry>()
 			.From("logs-*")
@@ -23,7 +23,7 @@ public class NullSearchValueTests : EsqlTestBase
 	[Test]
 	public void Where_StartsWithNullCapture_ThrowsNotSupported()
 	{
-		string? prefix = null;
+		var prefix = (string?)null;
 
 		var act = () => CreateQuery<LogEntry>()
 			.From("logs-*")
@@ -36,7 +36,7 @@ public class NullSearchValueTests : EsqlTestBase
 	[Test]
 	public void Where_EndsWithNullCapture_ThrowsNotSupported()
 	{
-		string? suffix = null;
+		var suffix = (string?)null;
 
 		var act = () => CreateQuery<LogEntry>()
 			.From("logs-*")
