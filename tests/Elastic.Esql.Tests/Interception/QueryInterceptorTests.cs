@@ -205,6 +205,27 @@ public class QueryInterceptorTests
 		_ = query.GetQueryOptions()!.TimeZone.Should().Be("UTC");
 	}
 
+	[Test]
+	public void Interceptor_OnOptionInspection_SeesTheParameterizedModel()
+	{
+		var threshold = 500;
+		var seen = new List<EsqlParameters?>();
+
+		var query = CreateQuery<LogEntry>(new ParametersCapturingInterceptor(seen.Add))
+			.Where(l => l.StatusCode >= threshold)
+			.AsEsqlQueryable();
+
+		_ = query.GetQueryOptions();
+		_ = query.GetExecutorOptions();
+
+		_ = seen.Should().HaveCount(2);
+		foreach (var parameters in seen)
+		{
+			_ = parameters.Should().NotBeNull();
+			_ = parameters.Parameters.Should().ContainKey("threshold");
+		}
+	}
+
 	private sealed class TimeZoneInterceptor : IEsqlQueryInterceptor
 	{
 		public EsqlQuery Intercept(EsqlQuery query) =>
@@ -270,6 +291,15 @@ public class QueryInterceptorTests
 		public EsqlQuery Intercept(EsqlQuery query)
 		{
 			capture(query.ElementType);
+			return query;
+		}
+	}
+
+	private sealed class ParametersCapturingInterceptor(Action<EsqlParameters?> capture) : IEsqlQueryInterceptor
+	{
+		public EsqlQuery Intercept(EsqlQuery query)
+		{
+			capture(query.Parameters);
 			return query;
 		}
 	}
