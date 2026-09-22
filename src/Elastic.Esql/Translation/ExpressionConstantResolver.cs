@@ -96,11 +96,17 @@ internal static class ExpressionConstantResolver
 			? Resolve(member.Expression)
 			: null;
 
-		// Reflection would otherwise surface a raw TargetException that names neither the
-		// member nor the null intermediate in the captured chain.
 		if (instance is null && member.Expression is not null)
+		{
+			// A null Nullable<T> boxes to null, yet reading HasValue on it is legal C# and yields false.
+			if (IsNullableHasValue(member))
+				return false;
+
+			// Reflection would otherwise surface a raw TargetException that names neither the
+			// member nor the null intermediate in the captured chain.
 			throw new InvalidOperationException(
 				$"Cannot resolve member '{member.Member.Name}': the target expression '{member.Expression}' evaluated to null.");
+		}
 
 		return member.Member switch
 		{
@@ -110,6 +116,11 @@ internal static class ExpressionConstantResolver
 				$"Member type '{member.Member.GetType().Name}' for member '{member.Member.Name}' is not supported.")
 		};
 	}
+
+	private static bool IsNullableHasValue(MemberExpression member) =>
+		member.Member is PropertyInfo { Name: nameof(Nullable<>.HasValue) }
+		&& member.Expression is { Type: var targetType }
+		&& Nullable.GetUnderlyingType(targetType) is not null;
 
 	private static object? ResolveUnary(UnaryExpression unary)
 	{
