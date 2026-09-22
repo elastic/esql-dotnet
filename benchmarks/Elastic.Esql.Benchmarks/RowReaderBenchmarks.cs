@@ -26,6 +26,8 @@ public class RowReaderBenchmarks
 	private byte[] _rawJsonWidePayload = null!;
 	private byte[] _esqlMixedPayload = null!;
 	private byte[] _rawJsonMixedPayload = null!;
+	private byte[] _esqlRichPayload = null!;
+	private byte[] _rawJsonRichPayload = null!;
 	private byte[] _esqlScalarStringPayload = null!;
 	private byte[] _esqlScalarIntPayload = null!;
 
@@ -56,6 +58,9 @@ public class RowReaderBenchmarks
 
 		_esqlMixedPayload = BuildEsqlMixedPayload();
 		_rawJsonMixedPayload = BuildRawJsonMixedPayload();
+
+		_esqlRichPayload = BuildEsqlRichPayload();
+		_rawJsonRichPayload = BuildRawJsonRichPayload();
 
 		_esqlScalarStringPayload = BuildEsqlPayload(["name:keyword"], (w, i) => w.WriteStringValue($"item-{i}"));
 		_esqlScalarIntPayload = BuildEsqlPayload(["count:integer"], (w, i) => w.WriteNumberValue(i));
@@ -140,6 +145,22 @@ public class RowReaderBenchmarks
 	[Benchmark]
 	public List<MixedDocument> RawJson_MixedFlatAndNested() =>
 		JsonSerializer.Deserialize<List<MixedDocument>>(_rawJsonMixedPayload, _options)!;
+
+	// =========================================================================
+	// Rich (flat scalars plus an enum and a multi-value list column)
+	// =========================================================================
+
+	[Benchmark]
+	public List<RichDocument> Esql_FlatWithEnumAndList()
+	{
+		using var stream = new MemoryStream(_esqlRichPayload, writable: false);
+		using var result = _reader.ReadRows<RichDocument>(stream);
+		return result.Rows.ToList();
+	}
+
+	[Benchmark]
+	public List<RichDocument> RawJson_FlatWithEnumAndList() =>
+		JsonSerializer.Deserialize<List<RichDocument>>(_rawJsonRichPayload, _options)!;
 
 	// =========================================================================
 	// Scalar (single column)
@@ -336,5 +357,29 @@ public class RowReaderBenchmarks
 			Age = 25 + (i % 40),
 			Address = new NestedAddress { Street = $"street-{i}", City = $"city-{i % 10}" },
 			Contact = new MixedContact { Email = $"user{i}@test.com", Phone = $"555-{i:D4}" }
+		}, _options);
+
+	private static byte[] BuildEsqlRichPayload() =>
+		BuildEsqlPayload(
+			["name:keyword", "count:integer", "level:integer", "tags:keyword"],
+			(w, i) =>
+			{
+				w.WriteStringValue($"item-{i}");
+				w.WriteNumberValue(i);
+				w.WriteNumberValue(i % 3);
+				w.WriteStartArray();
+				w.WriteStringValue($"t{i}");
+				w.WriteStringValue("shared");
+				w.WriteEndArray();
+			}
+		);
+
+	private byte[] BuildRawJsonRichPayload() =>
+		BuildRawJsonPayload(i => new RichDocument
+		{
+			Name = $"item-{i}",
+			Count = i,
+			Level = (Priority)(i % 3),
+			Tags = [$"t{i}", "shared"]
 		}, _options);
 }
