@@ -2,7 +2,6 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 #if NET10_0_OR_GREATER
 using System.IO.Pipelines;
@@ -336,7 +335,7 @@ internal sealed partial class EsqlResponseReader
 			yield break;
 		}
 
-		var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, plan.IsScalar, needsValueBuffer: layout.BranchNodeCount > 0);
+		using var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, plan.IsScalar, needsValueBuffer: layout.BranchNodeCount > 0);
 
 		try
 		{
@@ -401,7 +400,7 @@ internal sealed partial class EsqlResponseReader
 			yield break;
 		}
 
-		var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, plan.IsScalar, needsValueBuffer: layout.BranchNodeCount > 0);
+		using var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, plan.IsScalar, needsValueBuffer: layout.BranchNodeCount > 0);
 
 		try
 		{
@@ -463,8 +462,8 @@ internal sealed partial class EsqlResponseReader
 		[EnumeratorCancellation] CancellationToken cancellationToken,
 		ReaderStateTracker? readerStateTracker = null)
 	{
-		var batchBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize * 8);
-		var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, isScalar: false, needsValueBuffer: true);
+		using var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, isScalar: false, needsValueBuffer: true);
+		using var batchBuffer = new PooledBufferWriter(MaxBatchBufferBytes);
 		var batchRowCount = 0;
 
 		try
@@ -555,8 +554,8 @@ internal sealed partial class EsqlResponseReader
 		JsonTypeInfo<List<T>> listTypeInfo,
 		ReaderStateTracker? readerStateTracker = null)
 	{
-		var batchBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize * 8);
-		var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, isScalar: false, needsValueBuffer: true);
+		using var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, isScalar: false, needsValueBuffer: true);
+		using var batchBuffer = new PooledBufferWriter(MaxBatchBufferBytes);
 		var batchRowCount = 0;
 
 		try
@@ -634,7 +633,7 @@ internal sealed partial class EsqlResponseReader
 		}
 	}
 
-	private static void AppendRowToBatch(ArrayBufferWriter<byte> batchBuffer, ArrayBufferWriter<byte> rowBuffer, int batchRowCount)
+	private static void AppendRowToBatch(PooledBufferWriter batchBuffer, PooledBufferWriter rowBuffer, int batchRowCount)
 	{
 		WriteRawByte(batchBuffer, batchRowCount == 0 ? (byte)'[' : (byte)',');
 		WriteRawBytes(batchBuffer, rowBuffer.WrittenSpan);
@@ -645,7 +644,7 @@ internal sealed partial class EsqlResponseReader
 	/// by one so every row before the faulty one still reaches the consumer, matching the per-row
 	/// path's partial-result behavior; the faulty row then rethrows.
 	/// </summary>
-	private static IEnumerable<T> DeserializeBatch<T>(ArrayBufferWriter<byte> batchBuffer, JsonTypeInfo<List<T>> listTypeInfo, RowMaterializationPlan<T> plan)
+	private static IEnumerable<T> DeserializeBatch<T>(PooledBufferWriter batchBuffer, JsonTypeInfo<List<T>> listTypeInfo, RowMaterializationPlan<T> plan)
 	{
 		WriteRawByte(batchBuffer, (byte)']');
 

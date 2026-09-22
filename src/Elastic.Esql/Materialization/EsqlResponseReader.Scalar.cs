@@ -70,7 +70,7 @@ internal sealed partial class EsqlResponseReader
 		var (columns, readerState, layout) = (prepared.Columns, prepared.ReaderState, prepared.Layout);
 		var plan = CreateRowMaterializationPlan<T>(columns, Options);
 
-		var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, plan.IsScalar, needsValueBuffer: layout.BranchNodeCount > 0);
+		using var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, plan.IsScalar, needsValueBuffer: layout.BranchNodeCount > 0);
 
 		T? value = default;
 		var rowCount = 0;
@@ -113,7 +113,7 @@ internal sealed partial class EsqlResponseReader
 		var (columns, readerState, layout) = (prepared.Columns, prepared.ReaderState, prepared.Layout);
 		var plan = CreateRowMaterializationPlan<T>(columns, Options);
 
-		var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, plan.IsScalar, needsValueBuffer: layout.BranchNodeCount > 0);
+		using var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, plan.IsScalar, needsValueBuffer: layout.BranchNodeCount > 0);
 
 		T? value = default;
 		var rowCount = 0;

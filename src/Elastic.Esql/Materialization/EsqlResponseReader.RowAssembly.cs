@@ -299,7 +299,7 @@ internal sealed partial class EsqlResponseReader
 		ref Utf8JsonReader reader,
 		in ReadOnlySequence<byte> source,
 		ColumnLayout layout,
-		ArrayBufferWriter<byte> rowBuffer)
+		PooledBufferWriter rowBuffer)
 	{
 		var columnCount = layout.ColumnCount;
 		rowBuffer.ResetWrittenCount();
@@ -358,8 +358,8 @@ internal sealed partial class EsqlResponseReader
 		ref Utf8JsonReader reader,
 		in ReadOnlySequence<byte> source,
 		ColumnLayout layout,
-		ArrayBufferWriter<byte> rowBuffer,
-		ArrayBufferWriter<byte> valueBuffer)
+		PooledBufferWriter rowBuffer,
+		PooledBufferWriter valueBuffer)
 	{
 		valueBuffer.ResetWrittenCount();
 
@@ -447,7 +447,7 @@ internal sealed partial class EsqlResponseReader
 
 	private static void AssembleChildren(
 		List<ColumnNode> children,
-		ArrayBufferWriter<byte> buffer,
+		PooledBufferWriter buffer,
 		ReadOnlySpan<byte> values,
 		ReadOnlySpan<ValueSlice> slices,
 		ReadOnlySpan<bool> activeBranches)
@@ -499,20 +499,20 @@ internal sealed partial class EsqlResponseReader
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private static void WriteRawByte(ArrayBufferWriter<byte> buffer, byte value)
+	private static void WriteRawByte(PooledBufferWriter buffer, byte value)
 	{
 		buffer.GetSpan(1)[0] = value;
 		buffer.Advance(1);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private static void WriteRawBytes(ArrayBufferWriter<byte> buffer, ReadOnlySpan<byte> value)
+	private static void WriteRawBytes(PooledBufferWriter buffer, ReadOnlySpan<byte> value)
 	{
 		value.CopyTo(buffer.GetSpan(value.Length));
 		buffer.Advance(value.Length);
 	}
 
-	private static bool TryCopyScalarValue(ref Utf8JsonReader reader, in ReadOnlySequence<byte> source, ArrayBufferWriter<byte> rowBuffer)
+	private static bool TryCopyScalarValue(ref Utf8JsonReader reader, in ReadOnlySequence<byte> source, PooledBufferWriter rowBuffer)
 	{
 		rowBuffer.ResetWrittenCount();
 
@@ -529,7 +529,7 @@ internal sealed partial class EsqlResponseReader
 	/// Copies the current token's JSON text verbatim. The bytes already passed the reader's validation, so
 	/// re-encoding them through a writer would only add a decode, a string allocation, and a second escape pass.
 	/// </summary>
-	private static bool TryCopyCurrentValue(ref Utf8JsonReader reader, in ReadOnlySequence<byte> source, ArrayBufferWriter<byte> destination)
+	private static bool TryCopyCurrentValue(ref Utf8JsonReader reader, in ReadOnlySequence<byte> source, PooledBufferWriter destination)
 	{
 		switch (reader.TokenType)
 		{
@@ -564,7 +564,7 @@ internal sealed partial class EsqlResponseReader
 		}
 	}
 
-	private static void CopyTokenValue(ref Utf8JsonReader reader, ArrayBufferWriter<byte> destination)
+	private static void CopyTokenValue(ref Utf8JsonReader reader, PooledBufferWriter destination)
 	{
 		if (!reader.HasValueSequence)
 		{
@@ -582,7 +582,7 @@ internal sealed partial class EsqlResponseReader
 	/// Skips the array or object and copies its source bytes, whitespace included, in one block. Returns false when
 	/// the buffer ends inside the value; the caller then retries with more data.
 	/// </summary>
-	private static bool TryCopyComplexValue(ref Utf8JsonReader reader, in ReadOnlySequence<byte> source, ArrayBufferWriter<byte> destination)
+	private static bool TryCopyComplexValue(ref Utf8JsonReader reader, in ReadOnlySequence<byte> source, PooledBufferWriter destination)
 	{
 		var start = reader.TokenStartIndex;
 		if (!reader.TrySkip())
