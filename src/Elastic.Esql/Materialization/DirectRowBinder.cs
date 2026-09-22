@@ -29,15 +29,17 @@ internal enum DirectBinderKind
 /// cached on the <see cref="ColumnLayout"/>; immutable after construction because layouts are
 /// shared across threads.
 /// </summary>
-/// <remarks>
-/// <see cref="JsonPropertyInfo.Set"/> is object-typed, so value-type cells box once per cell. For the
-/// primary flat-DTO case this is still a large net win over tokenizing, re-writing, and re-parsing
-/// every cell. No Expression.Compile or MakeGenericType is involved, keeping the path AOT-safe.
-/// </remarks>
 internal sealed class DirectRowBinder
 {
 	public required DirectBinderKind[] Kinds { get; init; }
 	public required JsonPropertyInfo[] Properties { get; init; }
+
+	/// <summary>
+	/// Per-column <c>Action&lt;object, TValue&gt;</c> compiled for the exact cell type, or null where the column
+	/// assigns through the boxing <see cref="JsonPropertyInfo.Set"/> (Native AOT, struct targets, unresolvable members).
+	/// </summary>
+	public required Delegate?[] TypedSetters { get; init; }
+
 	public required Func<object> CreateObject { get; init; }
 
 	/// <summary>
@@ -66,6 +68,7 @@ internal sealed class DirectRowBinder
 
 		var kinds = new DirectBinderKind[leafNodes.Length];
 		var properties = new JsonPropertyInfo[leafNodes.Length];
+		var typedSetters = new Delegate?[leafNodes.Length];
 
 		for (var i = 0; i < leafNodes.Length; i++)
 		{
@@ -78,12 +81,14 @@ internal sealed class DirectRowBinder
 
 			kinds[i] = kind;
 			properties[i] = property;
+			typedSetters[i] = DirectSetterCompiler.TryCreate(property, kind, typeInfo.Type);
 		}
 
 		return new DirectRowBinder
 		{
 			Kinds = kinds,
 			Properties = properties,
+			TypedSetters = typedSetters,
 			CreateObject = typeInfo.CreateObject
 		};
 	}
