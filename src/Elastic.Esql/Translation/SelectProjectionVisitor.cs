@@ -18,6 +18,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 {
 	private readonly EsqlTranslationContext _context = context ?? throw new ArgumentNullException(nameof(context));
 	private readonly List<ProjectionEntry> _projections = [];
+	private readonly HashSet<string> _referencedFields = [];
 	private Dictionary<string, string> _activeRenames = [];
 
 	private ParameterExpression? _outerParameter;
@@ -71,25 +72,13 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 	{
 		_projections.Clear();
 		_activeRenames = [];
+		_referencedFields.Clear();
 
 		// Pass 1: classify all projection members
 		_ = Visit(lambda.Body);
 
-		// Build rename map so Pass 2 resolves renamed fields correctly. A source aliased more than once
-		// resolves to its first alias; the emitter turns repeated aliases into EVAL copies so the
-		// source column itself also survives.
-		_activeRenames = [];
-		foreach (var projection in _projections)
-		{
-			if (projection.Kind == ProjectionKind.Rename && !_activeRenames.ContainsKey(projection.SourceField!))
-				_activeRenames[projection.SourceField!] = projection.ResultField;
-		}
-
-		// Pass 2: translate eval expressions to strings (now rename-aware)
 		var keepFields = new List<string>();
-		var renameFields = new List<(string, string)>();
-		var evalExpressions = new List<(string, string)>();
-
+		var aliases = new List<(string Source, string Target)>();
 		foreach (var entry in _projections)
 		{
 			switch (entry.Kind)
@@ -98,14 +87,45 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 					keepFields.Add(entry.SourceField!);
 					break;
 				case ProjectionKind.Rename:
-					renameFields.Add((entry.SourceField!, entry.ResultField));
-					break;
-				case ProjectionKind.Eval:
-					var expr = TranslateExpression(entry.SourceExpression!);
-					evalExpressions.Add((entry.ResultField, expr));
+					aliases.Add((entry.SourceField!, entry.ResultField));
 					break;
 			}
 		}
+
+		// Pass 2: translate computed fields against the original column names, which also records
+		// every column they read.
+		var evalExpressions = TranslateEvalExpressions();
+
+		// An alias stays a RENAME only when its source may disappear: the source is not kept, not
+		// aliased again, and the target is not a column a computed field reads (RENAME runs before
+		// EVAL and would overwrite it). Every other alias becomes an EVAL copy placed after the
+		// computed fields, so the source column stays readable under its own name.
+		var keptSources = new HashSet<string>(keepFields, StringComparer.Ordinal);
+		var sourceUses = new Dictionary<string, int>(StringComparer.Ordinal);
+		foreach (var (source, _) in aliases)
+			sourceUses[source] = sourceUses.TryGetValue(source, out var uses) ? uses + 1 : 1;
+
+		var renameFields = new List<(string, string)>();
+		var aliasCopies = new List<(string, string)>();
+		foreach (var (source, target) in aliases)
+		{
+			if (keptSources.Contains(source) || sourceUses[source] > 1 || _referencedFields.Contains(target))
+				aliasCopies.Add((target, source));
+			else
+				renameFields.Add((source, target));
+		}
+
+		// Pass 3, only when a computed field reads a renamed source: the RENAME has removed that
+		// column by the time the EVAL runs, so the computation must read the alias instead.
+		if (renameFields.Any(rename => _referencedFields.Contains(rename.Item1)))
+		{
+			foreach (var (source, target) in renameFields)
+				_activeRenames[source] = target;
+
+			evalExpressions = TranslateEvalExpressions();
+		}
+
+		evalExpressions.AddRange(aliasCopies);
 
 		return new ProjectionResult
 		{
@@ -113,6 +133,18 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 			RenameFields = renameFields,
 			EvalExpressions = evalExpressions
 		};
+	}
+
+	private List<(string, string)> TranslateEvalExpressions()
+	{
+		var evalExpressions = new List<(string, string)>();
+		foreach (var entry in _projections)
+		{
+			if (entry.Kind == ProjectionKind.Eval)
+				evalExpressions.Add((entry.ResultField, TranslateExpression(entry.SourceExpression!)));
+		}
+
+		return evalExpressions;
 	}
 
 	protected override Expression VisitNew(NewExpression node)
@@ -506,6 +538,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 
 		var fieldName = member.ResolveFieldName(_context.Metadata);
 		fieldName = ApplyOuterRemapping(member, fieldName);
+		_ = _referencedFields.Add(fieldName);
 		return _activeRenames.TryGetValue(fieldName, out var renamed) ? renamed : fieldName;
 	}
 

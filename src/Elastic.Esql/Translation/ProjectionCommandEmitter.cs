@@ -20,27 +20,19 @@ internal sealed class ProjectionCommandEmitter(EsqlTranslationContext context)
 	/// KEEP is always emitted to reduce the result set to only the projected fields.
 	/// Active metadata fields requested on the source <c>FROM</c> are auto-retained unless
 	/// the projection itself consumes them (e.g. via <c>EsqlMetadata.X</c> as a rename source).
-	/// A rename becomes an EVAL copy when its source must survive: when the projection also keeps the
-	/// source or aliases it a second time (RENAME removes its source), or, for join projections, when
-	/// <paramref name="renameCollisionFields"/> says the target still exists post-join (RENAME fails if
-	/// the target column already exists while EVAL overwrites it).
+	/// The projection visitor has already turned aliases whose source must survive into EVAL copies.
+	/// For join projections, <paramref name="renameCollisionFields"/> additionally converts renames
+	/// whose target still exists post-join, because ES|QL's RENAME fails if the target column already
+	/// exists while EVAL overwrites it.
 	/// </summary>
 	public void Emit(SelectProjectionVisitor.ProjectionResult result, HashSet<string>? renameCollisionFields = null)
 	{
 		var safeRenames = new List<(string Source, string Target)>();
 		var evalExpressions = new List<(string Field, string Expression)>(result.EvalExpressions);
 
-		var keptSources = new HashSet<string>(result.KeepFields, StringComparer.Ordinal);
-		var renameSourceUses = new Dictionary<string, int>(StringComparer.Ordinal);
-		foreach (var (source, _) in result.RenameFields)
-			renameSourceUses[source] = renameSourceUses.TryGetValue(source, out var uses) ? uses + 1 : 1;
-
 		foreach (var (source, target) in result.RenameFields)
 		{
-			var targetCollides = renameCollisionFields is not null && renameCollisionFields.Contains(target);
-			var sourceReused = keptSources.Contains(source) || renameSourceUses[source] > 1;
-
-			if (targetCollides || sourceReused)
+			if (renameCollisionFields is not null && renameCollisionFields.Contains(target))
 				evalExpressions.Add((target, source));
 			else
 				safeRenames.Add((source, target));

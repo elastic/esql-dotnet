@@ -56,6 +56,55 @@ public class ProjectionAliasTests : EsqlTestBase
 	}
 
 	[Test]
+	public void Select_AliasTargetReadByComputedField_ComputesBeforeTheCopy()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Select(l => new { StatusCode = l.Message, Increased = l.StatusCode + 1 })
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| EVAL increased = (statusCode + 1), statusCode = message
+			| KEEP increased, statusCode
+			""".NativeLineEndings());
+	}
+
+	[Test]
+	public void Select_ComputedFieldReadsRenamedSource_UsesTheAlias()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Select(l => new { Msg = l.Message, Len = l.Message.Length })
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| RENAME message AS msg
+			| EVAL len = LENGTH(msg)
+			| KEEP msg, len
+			""".NativeLineEndings());
+	}
+
+	[Test]
+	public void Select_KeptSourceWithAliasAndComputedField_ReadsTheOriginal()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Select(l => new { l.Message, Msg = l.Message, Len = l.Message.Length })
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| EVAL len = LENGTH(message), msg = message
+			| KEEP message, len, msg
+			""".NativeLineEndings());
+	}
+
+	[Test]
 	public void Select_AliasNextToUnrelatedField_KeepsRename()
 	{
 		var esql = CreateQuery<LogEntry>()
