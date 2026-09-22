@@ -2,6 +2,7 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
@@ -81,39 +82,51 @@ public class DirectRowBinderEligibilityTests
 	}
 
 	[Test]
-	public void Build_CollectionProperty_DoesNotCreateDirectBinder()
+	public void Build_CollectionProperty_UsesConverterKind()
 	{
 		var layout = BuildLayout<ArrayStringPropertyModel>(("name", "keyword"), ("tags", "keyword"));
 
-		layout.DirectBinder.Should().BeNull();
+		layout.DirectBinder.Should().NotBeNull();
+		layout.DirectBinder.Kinds.Should().Equal([DirectBinderKind.String, DirectBinderKind.Converter]);
 	}
 
 	[Test]
-	public void Build_PropertyLevelConverter_DoesNotCreateDirectBinder()
+	public void Build_PropertyLevelConverter_UsesConverterKind()
 	{
 		var layout = BuildLayout<CustomConverterDocument>(("customId", "keyword"), ("name", "keyword"));
 
-		layout.DirectBinder.Should().BeNull();
+		layout.DirectBinder.Should().NotBeNull();
+		layout.DirectBinder.Kinds.Should().Equal([DirectBinderKind.Converter, DirectBinderKind.String]);
 	}
 
 	[Test]
-	public void Build_GlobalConverterForPropertyType_DoesNotCreateDirectBinder()
+	public void Build_GlobalConverterForPropertyType_UsesConverterKind()
 	{
 		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 		options.Converters.Add(new UnixEpochDateTimeConverter());
 		var layout = BuildLayout<TimestampedModel>(options, ("name", "keyword"), ("createdAt", "date"));
 
-		layout.DirectBinder.Should().BeNull();
+		layout.DirectBinder.Should().NotBeNull();
+		layout.DirectBinder.Kinds.Should().Equal([DirectBinderKind.String, DirectBinderKind.Converter]);
 	}
 
 	[Test]
-	public void Build_GlobalConverterForUnderlyingType_DoesNotCreateDirectBinderForNullable()
+	public void Build_GlobalConverterForUnderlyingType_BindsNullableThroughConverter()
 	{
+		// GetTypeInfo(DateTime?) yields the built-in nullable converter wrapping the user's DateTime
+		// converter, so the cell contract applies it exactly as the serializer would.
 		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 		options.Converters.Add(new UnixEpochDateTimeConverter());
 		var layout = BuildLayout<NullableDateModel>(options, ("name", "keyword"), ("when", "date"));
 
-		layout.DirectBinder.Should().BeNull();
+		layout.DirectBinder.Should().NotBeNull();
+		layout.DirectBinder.Kinds.Should().Equal([DirectBinderKind.String, DirectBinderKind.Converter]);
+
+		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"when","type":"date"}],"values":[["a",86400]]}""";
+		var row = ReadRows<NullableDateModel>(json, options)[0];
+
+		row.When.Should().Be(DateTime.UnixEpoch.AddSeconds(86400));
+		row.When!.Value.Kind.Should().Be(DateTimeKind.Utc);
 	}
 
 	[Test]
@@ -125,9 +138,17 @@ public class DirectRowBinderEligibilityTests
 	}
 
 	[Test]
-	public void Build_RequiredProperty_DoesNotCreateDirectBinder()
+	public void Build_RequiredPropertyWithColumn_CreatesDirectBinder()
 	{
 		var layout = BuildLayout<RequiredPropertyModel>(("name", "keyword"), ("count", "integer"));
+
+		layout.DirectBinder.Should().NotBeNull();
+	}
+
+	[Test]
+	public void Build_RequiredPropertyWithoutColumn_DoesNotCreateDirectBinder()
+	{
+		var layout = BuildLayout<RequiredPropertyModel>(("count", "integer"));
 
 		layout.DirectBinder.Should().BeNull();
 	}
@@ -157,19 +178,21 @@ public class DirectRowBinderEligibilityTests
 	}
 
 	[Test]
-	public void Build_EnumProperty_DoesNotCreateDirectBinder()
+	public void Build_EnumProperty_UsesConverterKind()
 	{
 		var layout = BuildLayout<OrdinalEnumDocument>(("priority", "integer"), ("name", "keyword"));
 
-		layout.DirectBinder.Should().BeNull();
+		layout.DirectBinder.Should().NotBeNull();
+		layout.DirectBinder.Kinds.Should().Equal([DirectBinderKind.Converter, DirectBinderKind.String]);
 	}
 
 	[Test]
-	public void Build_DenseVectorProperty_DoesNotCreateDirectBinder()
+	public void Build_DenseVectorProperty_UsesConverterKind()
 	{
 		var layout = BuildLayout<BookDocument>(("title", "keyword"), ("titleVec", "dense_vector"));
 
-		layout.DirectBinder.Should().BeNull();
+		layout.DirectBinder.Should().NotBeNull();
+		layout.DirectBinder.Kinds[1].Should().Be(DirectBinderKind.Converter);
 	}
 
 	private static ColumnLayout BuildLayout<T>(params (string Name, string Type)[] columns) =>
@@ -187,6 +210,13 @@ public class DirectRowBinderEligibilityTests
 			columnInfos[i] = new EsqlResponseReader.ColumnInfo(columns[i].Name, columns[i].Type);
 
 		return ColumnLayout.Build(columnInfos, typeof(T), new JsonMetadataManager(options));
+	}
+
+	private static List<T> ReadRows<T>(string json, JsonSerializerOptions options)
+	{
+		using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+		using var results = new EsqlResponseReader(new JsonMetadataManager(options)).ReadRows<T>(stream);
+		return results.Rows.ToList();
 	}
 
 	private sealed class AllScalarKindsModel

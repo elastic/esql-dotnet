@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information
 
 using System.Buffers;
+using System.Collections;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
@@ -123,10 +124,21 @@ internal sealed partial class EsqlResponseReader
 			if (tokenType == JsonTokenType.EndArray)
 				return false;
 
-			// Null cells leave the property at its initializer value, matching the assembled-row
-			// path which omits null cells from the row JSON entirely.
 			if (tokenType == JsonTokenType.Null)
+			{
+				// A null cell leaves the property at its initializer, as the assembled row omits it. For a
+				// required member that omission is the serializer's error to raise.
+				if (binder.IsRequired[i])
+					return false;
 				continue;
+			}
+
+			if (kinds[i] == DirectBinderKind.Converter)
+			{
+				if (!TryBindConverterCell(ref reader, tokenType, binder, i, instance, out incomplete))
+					return false;
+				continue;
+			}
 
 			if (!TryBindDirectValue(ref reader, kinds[i], tokenType, properties[i], typedSetters[i], instance))
 				return false;
@@ -143,6 +155,50 @@ internal sealed partial class EsqlResponseReader
 			return false;
 
 		item = (T)instance;
+		return true;
+	}
+
+	/// <summary>
+	/// Deserializes one cell through its own contract and assigns it. A truncated cell reports incomplete; a cell
+	/// the contract rejects returns false so the slow path re-reads the row and raises the canonical error.
+	/// </summary>
+	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Serialization delegates to the user-provided JsonSerializerOptions/JsonSerializerContext which is expected to include an AOT-safe TypeInfoResolver.")]
+	[UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Serialization delegates to the user-provided JsonSerializerOptions/JsonSerializerContext which is expected to include an AOT-safe TypeInfoResolver.")]
+	private static bool TryBindConverterCell(ref Utf8JsonReader reader, JsonTokenType tokenType, DirectRowBinder binder, int index, object instance, out bool incomplete)
+	{
+		incomplete = false;
+
+		// The serializer cannot tell a truncated value from an invalid one, so probe the extent first.
+		var probe = reader;
+		if (!probe.TrySkip())
+		{
+			incomplete = true;
+			return false;
+		}
+
+		var cellTypeInfo = binder.CellTypeInfos[index]!;
+		object? value;
+
+		try
+		{
+			if (binder.ElementTypeInfos[index] is { } elementTypeInfo && tokenType != JsonTokenType.StartArray)
+			{
+				// ES|QL returns a single-valued multi-value field as a bare scalar; wrap it like the row path does.
+				var list = (IList)cellTypeInfo.CreateObject!();
+				_ = list.Add(JsonSerializer.Deserialize(ref reader, elementTypeInfo));
+				value = list;
+			}
+			else
+			{
+				value = JsonSerializer.Deserialize(ref reader, cellTypeInfo);
+			}
+		}
+		catch (JsonException)
+		{
+			return false;
+		}
+
+		binder.Properties[index].Set!(instance, value);
 		return true;
 	}
 

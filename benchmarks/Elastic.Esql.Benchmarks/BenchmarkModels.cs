@@ -11,11 +11,13 @@ namespace Elastic.Esql.Benchmarks;
 [JsonSerializable(typeof(DeepDocument))]
 [JsonSerializable(typeof(WideDocument))]
 [JsonSerializable(typeof(MixedDocument))]
+[JsonSerializable(typeof(RichDocument))]
 [JsonSerializable(typeof(List<FlatDocument>))]
 [JsonSerializable(typeof(List<NestedDocument>))]
 [JsonSerializable(typeof(List<DeepDocument>))]
 [JsonSerializable(typeof(List<WideDocument>))]
 [JsonSerializable(typeof(List<MixedDocument>))]
+[JsonSerializable(typeof(List<RichDocument>))]
 [JsonSerializable(typeof(int))]
 [JsonSerializable(typeof(List<int>))]
 [JsonSerializable(typeof(string))]
@@ -93,4 +95,19 @@ public class MixedDocument
 	public int Age { get; set; }
 	public NestedAddress? Address { get; set; }
 	public MixedContact? Contact { get; set; }
+}
+
+public enum Priority
+{
+	Low,
+	Medium,
+	High
+}
+
+public class RichDocument
+{
+	public string Name { get; set; } = string.Empty;
+	public int Count { get; set; }
+	public Priority Level { get; set; }
+	public List<string> Tags { get; set; } = [];
 }
