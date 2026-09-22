@@ -96,6 +96,21 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 
 		var members = ExtractResultMembers(resultSelector.Body);
 
+		if (members.Count == 0)
+		{
+			// A scalar selector such as g => g.Sum(x => x.Duration) is one aggregation named after its
+			// method. Any other member-less shape (g => g.Key, arbitrary expressions) has no STATS
+			// equivalent and must not fall through to the default count.
+			var body = resultSelector.Body.UnwrapConvertExpressions();
+			var scalarAggregation = (body is MethodCallExpression call ? TryExtractAggregation(body, call.Method.Name.ToLowerInvariant()) : null)
+				?? throw new NotSupportedException(
+					"The GroupBy result selector must be an object initializer of aggregations and 'g.Key' accesses, " +
+					$"or a single aggregation call such as g => g.Count(); '{resultSelector.Body}' is neither.");
+
+			aggregations.Add(scalarAggregation);
+			return (aggregations, keyAliasMap);
+		}
+
 		foreach (var (memberName, arg) in members)
 		{
 			var agg = TryExtractAggregation(arg, memberName);
