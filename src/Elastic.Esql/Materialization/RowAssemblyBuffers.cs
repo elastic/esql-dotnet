@@ -2,28 +2,34 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-using System.Buffers;
-
 namespace Elastic.Esql.Materialization;
 
 /// <summary>
 /// Scratch space one response enumeration reuses for every row that goes through JSON assembly. Buffers are
 /// created on first use, so an enumeration whose rows all bind directly never allocates them.
 /// </summary>
-internal sealed class RowAssemblyBuffers(int estimatedRowSize, bool isScalar, bool needsValueBuffer)
+internal sealed class RowAssemblyBuffers(int estimatedRowSize, bool isScalar, bool needsValueBuffer) : IDisposable
 {
 	// IDE0032 suggests auto-properties, but the fields exist to defer allocation until a row needs assembly.
 #pragma warning disable IDE0032
-	private ArrayBufferWriter<byte>? _rowBuffer;
-	private ArrayBufferWriter<byte>? _valueBuffer;
+	private PooledBufferWriter? _rowBuffer;
+	private PooledBufferWriter? _valueBuffer;
 #pragma warning restore IDE0032
 
 	/// <summary>The assembled row object, or the bare cell for scalar reads.</summary>
-	public ArrayBufferWriter<byte> RowBuffer => _rowBuffer ??= new ArrayBufferWriter<byte>(estimatedRowSize);
+	public PooledBufferWriter RowBuffer => _rowBuffer ??= new PooledBufferWriter(estimatedRowSize);
 
 	/// <summary>Per-cell scratch for nested layouts, whose cells are regrouped before assembly; null for flat and scalar reads.</summary>
-	public ArrayBufferWriter<byte>? ValueBuffer => needsValueBuffer ? _valueBuffer ??= new ArrayBufferWriter<byte>(estimatedRowSize) : null;
+	public PooledBufferWriter? ValueBuffer => needsValueBuffer ? _valueBuffer ??= new PooledBufferWriter(estimatedRowSize) : null;
 
 	/// <summary>Whether rows are a single bare cell rather than an assembled JSON object.</summary>
 	public bool IsScalar { get; } = isScalar;
+
+	public void Dispose()
+	{
+		_rowBuffer?.Dispose();
+		_valueBuffer?.Dispose();
+		_rowBuffer = null;
+		_valueBuffer = null;
+	}
 }
