@@ -142,25 +142,19 @@ internal sealed partial class EsqlResponseReader
 		}
 	}
 
-	private async IAsyncEnumerable<T> BuildAsyncRows<T>(
+	private IAsyncEnumerable<T> BuildAsyncRows<T>(
 		IAsyncBufferCursor cursor,
 		PrepareRowsResult prepared,
 		EsqlAsyncResults<T> result,
-		[EnumeratorCancellation] CancellationToken cancellationToken)
+		CancellationToken cancellationToken)
 	{
 		if (prepared.IsRunning == true)
-			yield break;
+			return EmptyAsyncEnumerable<T>.Instance;
 
 		if (prepared.ValuesFirst)
-		{
-			await foreach (var item in ReadFromBufferedResponseAsync<T>(cursor, result, cancellationToken).ConfigureAwait(false))
-				yield return item;
-			yield break;
-		}
+			return ReadFromBufferedResponseAsync<T>(cursor, result, cancellationToken);
 
-		await foreach (var item in StreamRowsAsync<T>(cursor, prepared.ReaderState, prepared.Columns, prepared.Layout, Options, cancellationToken: cancellationToken)
-			.ConfigureAwait(false))
-			yield return item;
+		return StreamRowsAsync<T>(cursor, prepared.ReaderState, prepared.Columns, prepared.Layout, Options, cancellationToken: cancellationToken);
 	}
 
 #if NET10_0_OR_GREATER
@@ -189,17 +183,12 @@ internal sealed partial class EsqlResponseReader
 		EsqlResults<T> result)
 	{
 		if (prepared.IsRunning == true)
-			yield break;
+			return [];
 
 		if (prepared.ValuesFirst)
-		{
-			foreach (var item in ReadFromBufferedResponse<T>(cursor, result))
-				yield return item;
-			yield break;
-		}
+			return ReadFromBufferedResponse<T>(cursor, result);
 
-		foreach (var item in StreamRows<T>(cursor, prepared.ReaderState, prepared.Columns, prepared.Layout, Options))
-			yield return item;
+		return StreamRows<T>(cursor, prepared.ReaderState, prepared.Columns, prepared.Layout, Options);
 	}
 
 	private async IAsyncEnumerable<T> StreamRowsThenScanForIdAsync<T>(
