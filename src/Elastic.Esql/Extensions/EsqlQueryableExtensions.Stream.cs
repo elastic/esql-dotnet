@@ -250,18 +250,50 @@ internal sealed class OwnedAsyncResponsePipeReader(IEsqlAsyncResponse response) 
 
 	public override void Complete(Exception? exception = null)
 	{
-		_inner.Complete(exception);
+		try
+		{
+			_inner.Complete(exception);
+		}
+		catch
+		{
+			// The completion failure is the one to surface; a second failure while releasing the response must not mask it.
+			try
+			{
+				DisposeResponse();
+			}
+			catch (Exception)
+			{
+				// Best-effort cleanup on the failure path.
+			}
+
+			throw;
+		}
+
 		DisposeResponse();
 	}
 
 	public override async ValueTask CompleteAsync(Exception? exception = null)
 	{
-		await _inner.CompleteAsync(exception).ConfigureAwait(false);
+		try
+		{
+			await _inner.CompleteAsync(exception).ConfigureAwait(false);
+		}
+		catch
+		{
+			// The completion failure is the one to surface; a second failure while releasing the response must not mask it.
+			try
+			{
+				await DisposeResponseAsync().ConfigureAwait(false);
+			}
+			catch (Exception)
+			{
+				// Best-effort cleanup on the failure path.
+			}
 
-		if (Interlocked.Exchange(ref _disposed, 1) != 0)
-			return;
+			throw;
+		}
 
-		await _response.DisposeAsync().ConfigureAwait(false);
+		await DisposeResponseAsync().ConfigureAwait(false);
 	}
 
 	public override ValueTask<ReadResult> ReadAsync(CancellationToken cancellationToken = default) =>
@@ -277,6 +309,14 @@ internal sealed class OwnedAsyncResponsePipeReader(IEsqlAsyncResponse response) 
 
 		// Task.Run keeps the async disposal off the caller's SynchronizationContext so this blocking wait cannot deadlock.
 		Task.Run(() => _response.DisposeAsync().AsTask()).GetAwaiter().GetResult();
+	}
+
+	private async ValueTask DisposeResponseAsync()
+	{
+		if (Interlocked.Exchange(ref _disposed, 1) != 0)
+			return;
+
+		await _response.DisposeAsync().ConfigureAwait(false);
 	}
 }
 #endif
