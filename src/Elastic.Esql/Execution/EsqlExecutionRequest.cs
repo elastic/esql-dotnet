@@ -24,7 +24,12 @@ public sealed record EsqlExecutionRequest
 	/// <summary>Opaque executor-specific options (e.g. transport request configuration), or <c>null</c>.</summary>
 	public object? ExecutorOptions { get; init; }
 
-	/// <summary>Async submission behavior. Only used by <see cref="IEsqlQueryExecutor.SubmitAsyncQuery"/> and <see cref="IEsqlQueryExecutor.SubmitAsyncQueryAsync"/>.</summary>
+	/// <summary>
+	/// Async query behavior. Submission (<see cref="IEsqlQueryExecutor.SubmitAsyncQuery"/> and
+	/// <see cref="IEsqlQueryExecutor.SubmitAsyncQueryAsync"/>) uses every option; poll calls re-send
+	/// <see cref="EsqlAsyncQueryOptions.KeepAlive"/> so each poll extends the query's retention, while the
+	/// wait timeout and <c>keep_on_completion</c> apply to submission only. Delete calls ignore it.
+	/// </summary>
 	public EsqlAsyncQueryOptions? AsyncOptions { get; init; }
 
 	/// <summary>The wire-level response format. <c>null</c> means the default JSON path with typed materialization.</summary>
