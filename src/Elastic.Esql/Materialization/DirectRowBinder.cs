@@ -23,7 +23,7 @@ internal enum DirectBinderKind
 	DateTimeOffset,
 	Guid,
 
-	/// <summary>Cell deserialized through its own contract (enums, dates without a built-in kind, collections, dictionaries, property converters).</summary>
+	/// <summary>Cell deserialized through its own contract (enums, dates without a built-in kind, collections, dictionaries, nested objects).</summary>
 	Converter
 }
 
@@ -65,8 +65,9 @@ internal sealed class DirectRowBinder
 	/// <summary>
 	/// Builds a binder for a flat layout, or returns null when the type itself cannot be bound with exact serializer
 	/// fidelity: parameterized constructors, serialization callbacks, extension data, per-property number handling,
-	/// populate-style object creation, a required member without a column, or two columns for one property.
-	/// Cells that are not one of the built-in scalar kinds deserialize through their own contract instead.
+	/// a property-level converter, populate-style object creation, a required member without a column, or two
+	/// columns for one property. Cells that are not one of the built-in scalar kinds deserialize through their own
+	/// contract instead.
 	/// </summary>
 	public static DirectRowBinder? TryCreate(ColumnNode[] leafNodes, JsonTypeInfo typeInfo, JsonSerializerOptions options)
 	{
@@ -93,14 +94,19 @@ internal sealed class DirectRowBinder
 			if (property is null || property.Set is null || property.IsExtensionData || property.NumberHandling is not null)
 				return null;
 
+			// A property-level converter must see the root options, which JsonSerializer.Deserialize(ref reader,
+			// JsonTypeInfo) cannot provide for a single cell.
+			if (property.CustomConverter is not null)
+				return null;
+
 			// Two columns for one property, or populate-style creation, are the serializer's business.
-			if (!bound.Add(property) || (property.ObjectCreationHandling ?? options.PreferredObjectCreationHandling) == JsonObjectCreationHandling.Populate)
+			if (!bound.Add(property) || EffectiveCreationHandling(property, typeInfo, options) == JsonObjectCreationHandling.Populate)
 				return null;
 
 			properties[i] = property;
 			isRequired[i] = property.IsRequired;
 
-			if (property.CustomConverter is null && TryClassify(property.PropertyType, out var kind) && UsesBuiltInConverter(property.PropertyType, options))
+			if (TryClassify(property.PropertyType, out var kind) && UsesBuiltInConverter(property.PropertyType, options))
 			{
 				kinds[i] = kind;
 				typedSetters[i] = DirectSetterCompiler.TryCreate(property, kind, typeInfo.Type);
@@ -135,21 +141,16 @@ internal sealed class DirectRowBinder
 		};
 	}
 
+	/// <summary>Resolves the creation handling the serializer would apply to a property: property, then type, then options.</summary>
+	private static JsonObjectCreationHandling EffectiveCreationHandling(JsonPropertyInfo property, JsonTypeInfo typeInfo, JsonSerializerOptions options) =>
+		property.ObjectCreationHandling ?? typeInfo.PreferredPropertyObjectCreationHandling ?? options.PreferredObjectCreationHandling;
+
 	/// <summary>Resolves the contract a converter cell deserializes through, or null when the type has none usable.</summary>
 	private static JsonTypeInfo? ResolveCellTypeInfo(JsonPropertyInfo property, JsonSerializerOptions options)
 	{
 		try
 		{
-			if (property.CustomConverter is not { } converter)
-				return options.GetTypeInfo(property.PropertyType);
-
-			// A property-level converter is not part of the property type's contract; a private options copy
-			// carrying it at highest priority yields a contract that applies it exactly as the serializer would.
-			// Frozen before use so the contract is configured and cached once instead of per resolution.
-			var withConverter = new JsonSerializerOptions(options);
-			withConverter.Converters.Insert(0, converter);
-			withConverter.MakeReadOnly();
-			return withConverter.GetTypeInfo(property.PropertyType);
+			return options.GetTypeInfo(property.PropertyType);
 		}
 		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
 		{
@@ -164,12 +165,13 @@ internal sealed class DirectRowBinder
 		if (collectionTypeInfo.Kind != JsonTypeInfoKind.Enumerable || collectionTypeInfo.ElementType is null || collectionTypeInfo.CreateObject is null)
 			return null;
 
-		// Only list-shaped contracts can take a wrapped single value; arrays and sets fall back per row.
-		if (collectionTypeInfo.CreateObject() is not IList)
-			return null;
-
 		try
 		{
+			// Only list-shaped contracts can take a wrapped single value; arrays and sets fall back per row.
+			// The probe runs the collection's own constructor, so a failure there also keeps the slow path.
+			if (collectionTypeInfo.CreateObject() is not IList)
+				return null;
+
 			return collectionTypeInfo.Options.GetTypeInfo(collectionTypeInfo.ElementType);
 		}
 		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)

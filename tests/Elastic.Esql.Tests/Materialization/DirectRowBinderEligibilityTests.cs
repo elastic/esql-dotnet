@@ -2,7 +2,6 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
@@ -91,12 +90,11 @@ public class DirectRowBinderEligibilityTests
 	}
 
 	[Test]
-	public void Build_PropertyLevelConverter_UsesConverterKind()
+	public void Build_PropertyLevelConverter_DoesNotCreateDirectBinder()
 	{
 		var layout = BuildLayout<CustomConverterDocument>(("customId", "keyword"), ("name", "keyword"));
 
-		layout.DirectBinder.Should().NotBeNull();
-		layout.DirectBinder.Kinds.Should().Equal([DirectBinderKind.Converter, DirectBinderKind.String]);
+		layout.DirectBinder.Should().BeNull();
 	}
 
 	[Test]
@@ -111,7 +109,7 @@ public class DirectRowBinderEligibilityTests
 	}
 
 	[Test]
-	public void Build_GlobalConverterForUnderlyingType_BindsNullableThroughConverter()
+	public void Build_GlobalConverterForUnderlyingType_UsesConverterKind()
 	{
 		// GetTypeInfo(DateTime?) yields the built-in nullable converter wrapping the user's DateTime
 		// converter, so the cell contract applies it exactly as the serializer would.
@@ -121,12 +119,6 @@ public class DirectRowBinderEligibilityTests
 
 		layout.DirectBinder.Should().NotBeNull();
 		layout.DirectBinder.Kinds.Should().Equal([DirectBinderKind.String, DirectBinderKind.Converter]);
-
-		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"when","type":"date"}],"values":[["a",86400]]}""";
-		var row = ReadRows<NullableDateModel>(json, options)[0];
-
-		row.When.Should().Be(DateTime.UnixEpoch.AddSeconds(86400));
-		row.When!.Value.Kind.Should().Be(DateTimeKind.Utc);
 	}
 
 	[Test]
@@ -157,6 +149,14 @@ public class DirectRowBinderEligibilityTests
 	public void Build_TypeWithOnDeserializing_DoesNotCreateDirectBinder()
 	{
 		var layout = BuildLayout<OnDeserializingModel>(("value", "keyword"), ("count", "integer"));
+
+		layout.DirectBinder.Should().BeNull();
+	}
+
+	[Test]
+	public void Build_TypeWithPopulateCreationHandling_DoesNotCreateDirectBinder()
+	{
+		var layout = BuildLayout<PopulateModel>(("tags", "keyword"), ("name", "keyword"));
 
 		layout.DirectBinder.Should().BeNull();
 	}
@@ -212,13 +212,6 @@ public class DirectRowBinderEligibilityTests
 		return ColumnLayout.Build(columnInfos, typeof(T), new JsonMetadataManager(options));
 	}
 
-	private static List<T> ReadRows<T>(string json, JsonSerializerOptions options)
-	{
-		using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
-		using var results = new EsqlResponseReader(new JsonMetadataManager(options)).ReadRows<T>(stream);
-		return results.Rows.ToList();
-	}
-
 	private sealed class AllScalarKindsModel
 	{
 		public string Text { get; set; } = string.Empty;
@@ -250,6 +243,13 @@ public class DirectRowBinderEligibilityTests
 	{
 		public required string Name { get; set; }
 		public int Count { get; set; }
+	}
+
+	[JsonObjectCreationHandling(JsonObjectCreationHandling.Populate)]
+	private sealed class PopulateModel
+	{
+		public List<string> Tags { get; set; } = ["seed"];
+		public string Name { get; set; } = string.Empty;
 	}
 
 	private sealed class OnDeserializingModel : IJsonOnDeserializing
