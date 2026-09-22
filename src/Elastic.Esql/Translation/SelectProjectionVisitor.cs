@@ -75,10 +75,15 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		// Pass 1: classify all projection members
 		_ = Visit(lambda.Body);
 
-		// Build rename map so Pass 2 resolves renamed fields correctly
-		_activeRenames = _projections
-			.Where(p => p.Kind == ProjectionKind.Rename)
-			.ToDictionary(p => p.SourceField!, p => p.ResultField);
+		// Build rename map so Pass 2 resolves renamed fields correctly. A source aliased more than once
+		// resolves to its first alias; the emitter turns repeated aliases into EVAL copies so the
+		// source column itself also survives.
+		_activeRenames = [];
+		foreach (var projection in _projections)
+		{
+			if (projection.Kind == ProjectionKind.Rename && !_activeRenames.ContainsKey(projection.SourceField!))
+				_activeRenames[projection.SourceField!] = projection.ResultField;
+		}
 
 		// Pass 2: translate eval expressions to strings (now rename-aware)
 		var keepFields = new List<string>();
