@@ -360,14 +360,19 @@ internal static class EsqlFunctionTranslator
 		var leftIsDayOfWeek = IsDayOfWeekMember(left);
 		var rightIsDayOfWeek = IsDayOfWeekMember(right);
 
-		if (leftIsDayOfWeek == rightIsDayOfWeek)
+		if (!leftIsDayOfWeek && !rightIsDayOfWeek)
 			return null;
 
+		// Two extracted ISO numbers compare equal exactly when the .NET values do, but their order differs
+		// (Sunday is 0 in .NET and 7 in ES|QL), so relational operators are rejected on every DayOfWeek shape.
 		if (node.NodeType is not (ExpressionType.Equal or ExpressionType.NotEqual))
 			throw new NotSupportedException(
 				"Relational comparisons on DayOfWeek are not supported: C# numbers the week Sunday = 0 to Saturday = 6 " +
 				"while ES|QL day_of_week uses ISO numbering Monday = 1 to Sunday = 7, so range semantics differ. " +
 				"Compare against specific days with == or != instead.");
+
+		if (leftIsDayOfWeek && rightIsDayOfWeek)
+			return null;
 
 		var (memberSide, constantSide) = leftIsDayOfWeek ? (left, right) : (right, left);
 

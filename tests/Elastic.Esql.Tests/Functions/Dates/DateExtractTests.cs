@@ -250,6 +250,30 @@ public class DateExtractTests : EsqlTestBase
 	}
 
 	[Test]
+	public void DateTime_DayOfWeekRelationalBetweenMembers_InWhere_ThrowsNotSupported()
+	{
+		var query = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Timestamp.DayOfWeek < DateTime.UtcNow.DayOfWeek);
+
+		var act = () => query.ToString();
+
+		_ = act.Should().Throw<NotSupportedException>()
+			.WithMessage("*day_of_week*");
+	}
+
+	[Test]
+	public void DateTime_DayOfWeekEqualityBetweenMembers_InWhere_ExtractsBothSides()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Timestamp.DayOfWeek == DateTime.UtcNow.DayOfWeek)
+			.ToString();
+
+		_ = esql.Should().Contain("DATE_EXTRACT(\"day_of_week\", @timestamp) == DATE_EXTRACT(\"day_of_week\", NOW())");
+	}
+
+	[Test]
 	public void DateTime_DayOfWeekComparison_InSelect_GeneratesIsoDayNumber()
 	{
 		var esql = CreateQuery<LogEntry>()
