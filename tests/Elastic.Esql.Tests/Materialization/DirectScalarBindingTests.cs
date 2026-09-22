@@ -81,6 +81,15 @@ public class DirectScalarBindingTests
 	}
 
 	[Test]
+	public void ReadRows_NullableDateTimeWithRegisteredConverter_UsesConverter()
+	{
+		var options = CreateOptions();
+		options.Converters.Add(new UnixEpochDateTimeConverter());
+
+		ReadRows<DateTime?>(EpochJson, options).Should().Equal(DateTime.UnixEpoch.AddDays(1));
+	}
+
+	[Test]
 	public void ReadRows_OneByteReads_BindsEveryRow()
 	{
 		using var stream = new ChunkedReadStream(Encoding.UTF8.GetBytes(IntsJson), maxBytesPerRead: 1);

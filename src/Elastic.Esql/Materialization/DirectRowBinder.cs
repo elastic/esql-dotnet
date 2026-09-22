@@ -166,8 +166,18 @@ internal sealed class DirectRowBinder
 	{
 		try
 		{
-			return options.TryGetTypeInfo(propertyType, out var propertyTypeInfo)
-				&& propertyTypeInfo.Converter.GetType().Assembly == typeof(JsonSerializerOptions).Assembly;
+			if (!options.TryGetTypeInfo(propertyType, out var propertyTypeInfo)
+				|| propertyTypeInfo.Converter.GetType().Assembly != typeof(JsonSerializerOptions).Assembly)
+				return false;
+
+			// For nullable value types the wrapper converter is always a built-in NullableConverter<T>;
+			// also check the underlying type so a user converter for T disqualifies T? as well.
+			var underlying = Nullable.GetUnderlyingType(propertyType);
+			if (underlying is null)
+				return true;
+
+			return options.TryGetTypeInfo(underlying, out var underlyingTypeInfo)
+				&& underlyingTypeInfo.Converter.GetType().Assembly == typeof(JsonSerializerOptions).Assembly;
 		}
 		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
 		{
