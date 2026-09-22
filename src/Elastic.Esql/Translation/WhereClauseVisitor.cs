@@ -530,24 +530,24 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 				// string.Contains("x") → LIKE "*x*"
 				_ = Visit(node.Object);
 				_ = _builder.Append(" LIKE ");
-				var containsValue = GetConstantValue(node.Arguments[0]);
-				_ = _builder.Append(EsqlFormatting.FormatString($"*{EscapeLikePattern(containsValue?.ToString() ?? "")}*"));
+				var containsValue = RequireSearchValue(node, methodName);
+				_ = _builder.Append(EsqlFormatting.FormatString($"*{EscapeLikePattern(containsValue)}*"));
 				break;
 
 			case "StartsWith":
 				// string.StartsWith("x") → LIKE "x*"
 				_ = Visit(node.Object);
 				_ = _builder.Append(" LIKE ");
-				var startsValue = GetConstantValue(node.Arguments[0]);
-				_ = _builder.Append(EsqlFormatting.FormatString($"{EscapeLikePattern(startsValue?.ToString() ?? "")}*"));
+				var startsValue = RequireSearchValue(node, methodName);
+				_ = _builder.Append(EsqlFormatting.FormatString($"{EscapeLikePattern(startsValue)}*"));
 				break;
 
 			case "EndsWith":
 				// string.EndsWith("x") → LIKE "*x"
 				_ = Visit(node.Object);
 				_ = _builder.Append(" LIKE ");
-				var endsValue = GetConstantValue(node.Arguments[0]);
-				_ = _builder.Append(EsqlFormatting.FormatString($"*{EscapeLikePattern(endsValue?.ToString() ?? "")}"));
+				var endsValue = RequireSearchValue(node, methodName);
+				_ = _builder.Append(EsqlFormatting.FormatString($"*{EscapeLikePattern(endsValue)}"));
 				break;
 
 			case "IsNullOrEmpty":
@@ -810,6 +810,12 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 			return false;
 		}
 	}
+
+	// C# throws for a null search value; rendering it as an empty pattern would silently turn the
+	// predicate into a match-all LIKE.
+	private static string RequireSearchValue(MethodCallExpression node, string methodName) =>
+		GetConstantValue(node.Arguments[0])?.ToString()
+			?? throw new NotSupportedException($"The search value passed to '{methodName}' must not be null; the LIKE pattern would match everything.");
 
 	private static string EscapeLikePattern(string value) =>
 		// Pattern-level escaping only: a backslash escapes LIKE wildcards. String-literal
