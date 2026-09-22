@@ -27,11 +27,11 @@ internal sealed partial class EsqlResponseReader
 		item = default;
 		reachedEnd = false;
 
-		// Fast path: for eligible flat layouts, bind cells directly off the reader and skip both the
-		// row assembly and the second parse. Only attempt when a binder exists and this is not the
-		// scalar path. Any row whose token shapes need serializer semantics falls through per-row to
-		// the assemble-and-deserialize path below, which re-reads nothing outside this row.
-		if (!buffers.IsScalar && layout.DirectBinder is { } directBinder)
+		// Fast paths: eligible flat layouts bind cells straight off the reader, and scalar reads of the built-in
+		// kinds read the one cell the same way. A row whose token shapes need the serializer's coercion or error
+		// semantics falls through, per row, to assemble-and-deserialize below.
+		var bindsDirect = buffers.IsScalar ? plan.ScalarKind is not null : layout.DirectBinder is not null;
+		if (bindsDirect)
 		{
 			var savedState = state;
 			var savedBuffer = buffer;
@@ -51,14 +51,14 @@ internal sealed partial class EsqlResponseReader
 
 			if (reader.TokenType == JsonTokenType.StartArray)
 			{
-				// Bind on a copy so the assemble-and-deserialize fallback can resume from the original
-				// reader state, which still sits on this row's StartArray token.
-				var directReader = reader;
+				var bound = buffers.IsScalar
+					? TryBindScalarDirect(ref reader, plan.ScalarKind!.Value, out item, out var incomplete)
+					: TryBindRowDirect(ref reader, layout.DirectBinder!, out item, out incomplete);
 
-				if (TryBindRowDirect(ref directReader, directBinder, out item, out var incomplete))
+				if (bound)
 				{
-					state = directReader.CurrentState;
-					buffer = buffer.Slice(directReader.Position);
+					state = reader.CurrentState;
+					buffer = buffer.Slice(reader.Position);
 					return true;
 				}
 
@@ -69,9 +69,7 @@ internal sealed partial class EsqlResponseReader
 					return false;
 				}
 
-				// Token shape needs the serializer's coercion or error semantics - fall through to the
-				// slow path for this row only. state/buffer are unchanged (savedState/savedBuffer), so
-				// TryAssembleNextRow below re-reads this row from its StartArray.
+				// state and buffer still hold the saved values, so TryAssembleNextRow re-reads this row from its StartArray.
 			}
 		}
 
@@ -145,6 +143,120 @@ internal sealed partial class EsqlResponseReader
 
 		item = (T)instance;
 		return true;
+	}
+
+	/// <summary>
+	/// Reads the single cell of a scalar row. Null cells and unexpected token shapes return false so the serializer
+	/// keeps its own semantics for them (null into a non-nullable value type is its error, not ours).
+	/// </summary>
+	private static bool TryBindScalarDirect<T>(ref Utf8JsonReader reader, DirectBinderKind kind, out T? item, out bool incomplete)
+	{
+		item = default;
+		incomplete = false;
+
+		if (!reader.Read())
+		{
+			incomplete = true;
+			return false;
+		}
+
+		var tokenType = reader.TokenType;
+		if (tokenType is JsonTokenType.Null or JsonTokenType.EndArray || !TryReadScalar(ref reader, kind, tokenType, out item))
+			return false;
+
+		if (!reader.Read())
+		{
+			item = default;
+			incomplete = true;
+			return false;
+		}
+
+		if (reader.TokenType == JsonTokenType.EndArray)
+			return true;
+
+		item = default;
+		return false;
+	}
+
+	private static bool TryReadScalar<T>(ref Utf8JsonReader reader, DirectBinderKind kind, JsonTokenType tokenType, out T? item)
+	{
+		item = default;
+
+		switch (kind)
+		{
+			case DirectBinderKind.String:
+				if (tokenType != JsonTokenType.String)
+					return false;
+				item = (T)(object)reader.GetString()!;
+				return true;
+
+			case DirectBinderKind.Bool:
+				if (tokenType is not (JsonTokenType.True or JsonTokenType.False))
+					return false;
+				item = Lift<bool, T>(reader.GetBoolean());
+				return true;
+
+			case DirectBinderKind.Int32:
+				if (tokenType != JsonTokenType.Number || !reader.TryGetInt32(out var int32Value))
+					return false;
+				item = Lift<int, T>(int32Value);
+				return true;
+
+			case DirectBinderKind.Int64:
+				if (tokenType != JsonTokenType.Number || !reader.TryGetInt64(out var int64Value))
+					return false;
+				item = Lift<long, T>(int64Value);
+				return true;
+
+			case DirectBinderKind.Double:
+				if (tokenType != JsonTokenType.Number || !reader.TryGetDouble(out var doubleValue))
+					return false;
+				item = Lift<double, T>(doubleValue);
+				return true;
+
+			case DirectBinderKind.Single:
+				if (tokenType != JsonTokenType.Number || !reader.TryGetSingle(out var singleValue))
+					return false;
+				item = Lift<float, T>(singleValue);
+				return true;
+
+			case DirectBinderKind.Decimal:
+				if (tokenType != JsonTokenType.Number || !reader.TryGetDecimal(out var decimalValue))
+					return false;
+				item = Lift<decimal, T>(decimalValue);
+				return true;
+
+			case DirectBinderKind.DateTime:
+				if (tokenType != JsonTokenType.String || !reader.TryGetDateTime(out var dateTimeValue))
+					return false;
+				item = Lift<DateTime, T>(dateTimeValue);
+				return true;
+
+			case DirectBinderKind.DateTimeOffset:
+				if (tokenType != JsonTokenType.String || !reader.TryGetDateTimeOffset(out var dateTimeOffsetValue))
+					return false;
+				item = Lift<DateTimeOffset, T>(dateTimeOffsetValue);
+				return true;
+
+			case DirectBinderKind.Guid:
+				if (tokenType != JsonTokenType.String || !reader.TryGetGuid(out var guidValue))
+					return false;
+				item = Lift<Guid, T>(guidValue);
+				return true;
+
+			default:
+				return false;
+		}
+	}
+
+	/// <summary>Converts a parsed cell to <c>T</c>, which the classification guarantees is <c>TValue</c> or <c>TValue?</c>, without boxing.</summary>
+	private static T Lift<TValue, T>(TValue value) where TValue : struct
+	{
+		if (typeof(T) == typeof(TValue))
+			return Unsafe.As<TValue, T>(ref value);
+
+		TValue? nullable = value;
+		return Unsafe.As<TValue?, T>(ref nullable);
 	}
 
 	private static bool TryBindDirectValue(
