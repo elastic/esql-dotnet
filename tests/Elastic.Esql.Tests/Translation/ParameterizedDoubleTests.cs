@@ -74,6 +74,47 @@ public class ParameterizedDoubleTests : EsqlTestBase
 	}
 
 	[Test]
+	public void Row_CapturedNullableDoubleArray_ParameterKeepsDecimalPointsAndNulls()
+	{
+		var values = new double?[] { 100.0, null, 2.5 };
+
+		var query = CreateQuery<LogEntry>()
+			.Row(() => new { vals = values });
+
+		_ = query.ToEsqlString(inlineParameters: false);
+		var parameters = query.GetParameters();
+
+		_ = parameters.Should().NotBeNull();
+		_ = parameters.Parameters["vals"].GetRawText().Should().Be("[100.0,null,2.5]");
+	}
+
+	[Test]
+	public void Row_CapturedNullableFloatList_ParameterKeepsDecimalPointsAndNulls()
+	{
+		var values = new List<float?> { 1f, null };
+
+		var query = CreateQuery<LogEntry>()
+			.Row(() => new { vals = values });
+
+		_ = query.ToEsqlString(inlineParameters: false);
+		var parameters = query.GetParameters();
+
+		_ = parameters.Should().NotBeNull();
+		_ = parameters.Parameters["vals"].GetRawText().Should().Be("[1.0,null]");
+	}
+
+	[Test]
+	public void GetParameters_CapturedNullableDoubleArrayWithNaN_ThrowsNotSupported()
+	{
+		var values = new double?[] { 1.0, double.NaN };
+		var query = CreateQuery<LogEntry>().Row(() => new { vals = values });
+
+		var act = () => query.GetParameters();
+
+		_ = act.Should().Throw<NotSupportedException>();
+	}
+
+	[Test]
 	public void GetParameters_DoubleWithRegisteredConverter_UsesConverterOutput()
 	{
 		var provider = new EsqlQueryProvider(new JsonSerializerOptions

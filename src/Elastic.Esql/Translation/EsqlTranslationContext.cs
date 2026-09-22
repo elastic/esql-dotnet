@@ -177,14 +177,24 @@ internal sealed class EsqlTranslationContext
 		if (value is float floatValue && !HasRegisteredConverter(typeof(float)))
 			return ParseRawJson(EsqlFormatting.FormatFloat(floatValue));
 
-		// The same integer-typing hazard applies element-wise to captured numeric collections.
-		if (value is IEnumerable<double> doubles && !HasRegisteredConverter(typeof(double)) && !HasRegisteredConverter(value.GetType()))
+		// The same integer-typing hazard applies element-wise to captured numeric collections; nullable
+		// element types are separate interfaces and keep their null entries.
+		if (value is IEnumerable<double> doubles && UsesDefaultNumericSerialization(typeof(double), value))
 			return ParseRawJson($"[{string.Join(",", doubles.Select(EsqlFormatting.FormatDouble))}]");
-		if (value is IEnumerable<float> floats && !HasRegisteredConverter(typeof(float)) && !HasRegisteredConverter(value.GetType()))
+		if (value is IEnumerable<float> floats && UsesDefaultNumericSerialization(typeof(float), value))
 			return ParseRawJson($"[{string.Join(",", floats.Select(EsqlFormatting.FormatFloat))}]");
+		if (value is IEnumerable<double?> nullableDoubles && UsesDefaultNumericSerialization(typeof(double?), value))
+			return ParseRawJson($"[{string.Join(",", nullableDoubles.Select(d => d is { } present ? EsqlFormatting.FormatDouble(present) : "null"))}]");
+		if (value is IEnumerable<float?> nullableFloats && UsesDefaultNumericSerialization(typeof(float?), value))
+			return ParseRawJson($"[{string.Join(",", nullableFloats.Select(f => f is { } present ? EsqlFormatting.FormatFloat(present) : "null"))}]");
 
 		return JsonSerializer.SerializeToElement(value, value?.GetType() ?? typeof(object), SerializerOptions);
 	}
+
+	private bool UsesDefaultNumericSerialization(Type elementType, object collection) =>
+		!HasRegisteredConverter(elementType)
+		&& (Nullable.GetUnderlyingType(elementType) is not { } underlying || !HasRegisteredConverter(underlying))
+		&& !HasRegisteredConverter(collection.GetType());
 
 	// Only converters the user registered on the options count; the resolver's built-in converters are
 	// exactly what the explicit-decimal fast path stands in for.
