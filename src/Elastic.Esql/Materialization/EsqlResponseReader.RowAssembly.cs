@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information
 
 using System.Buffers;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -178,6 +179,7 @@ internal sealed partial class EsqlResponseReader
 		return false;
 	}
 
+	// Mirrors TryBindDirectValue; keep both switches in sync when adding a new DirectBinderKind.
 	private static bool TryReadScalar<T>(ref Utf8JsonReader reader, DirectBinderKind kind, JsonTokenType tokenType, out T? item)
 	{
 		item = default;
@@ -255,10 +257,13 @@ internal sealed partial class EsqlResponseReader
 		if (typeof(T) == typeof(TValue))
 			return Unsafe.As<TValue, T>(ref value);
 
+		// TryClassifyScalar guarantees T is TValue or TValue?; anything else is a classification bug.
+		Debug.Assert(typeof(T) == typeof(TValue?), $"Expected T to be {typeof(TValue)} or {typeof(TValue?)}, but got {typeof(T)}.");
 		TValue? nullable = value;
 		return Unsafe.As<TValue?, T>(ref nullable);
 	}
 
+	// Mirrors TryReadScalar; keep both switches in sync when adding a new DirectBinderKind.
 	private static bool TryBindDirectValue(
 		ref Utf8JsonReader reader,
 		DirectBinderKind kind,
@@ -634,7 +639,13 @@ internal sealed partial class EsqlResponseReader
 		if (!TryCopyCurrentValue(ref reader, source, rowBuffer))
 			return false;
 
-		return reader.Read() && reader.TokenType == JsonTokenType.EndArray;
+		if (!reader.Read())
+			return false;
+
+		if (reader.TokenType != JsonTokenType.EndArray)
+			throw new JsonException("ES|QL row contains more values than declared columns (1).");
+
+		return true;
 	}
 
 	/// <summary>

@@ -1,4 +1,4 @@
-﻿// Licensed to Elasticsearch B.V under one or more agreements.
+// Licensed to Elasticsearch B.V under one or more agreements.
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
@@ -12,12 +12,38 @@ namespace Elastic.Esql.Tests.Materialization;
 
 public class DirectScalarBindingTests
 {
-	private const string IntsJson = """{"columns":[{"name":"n","type":"integer"}],"values":[[1],[2],[3]]}""";
-	private const string IntWithNullJson = """{"columns":[{"name":"n","type":"integer"}],"values":[[1],[null]]}""";
-	private const string FractionJson = """{"columns":[{"name":"n","type":"double"}],"values":[[1.5]]}""";
-	private const string QuotedIntJson = """{"columns":[{"name":"n","type":"long"}],"values":[["12"]]}""";
-	private const string EscapedStringJson = """{"columns":[{"name":"s","type":"keyword"}],"values":[["a\"b\\c"]]}""";
-	private const string EpochJson = """{"columns":[{"name":"d","type":"long"}],"values":[[86400]]}""";
+	private const string BoolsJson = /*lang=json,strict*/ """{"columns":[{"name":"b","type":"boolean"}],"values":[[true],[false]]}""";
+	private const string DateTimeOffsetJson = /*lang=json,strict*/ """{"columns":[{"name":"d","type":"date"}],"values":[["2024-01-01T00:00:00+00:00"]]}""";
+	private const string DecimalsJson = /*lang=json,strict*/ """{"columns":[{"name":"d","type":"scaled_float"}],"values":[[1.5],[2.5]]}""";
+	private const string EpochJson = /*lang=json,strict*/ """{"columns":[{"name":"d","type":"long"}],"values":[[86400]]}""";
+	private const string EscapedStringJson = /*lang=json,strict*/ """{"columns":[{"name":"s","type":"keyword"}],"values":[["a\"b\\c"]]}""";
+	private const string ExtraCellJson = /*lang=json,strict*/ """{"columns":[{"name":"n","type":"integer"}],"values":[[1,2]]}""";
+	private const string FloatsJson = /*lang=json,strict*/ """{"columns":[{"name":"f","type":"float"}],"values":[[1.5],[2.5]]}""";
+	private const string FractionJson = /*lang=json,strict*/ """{"columns":[{"name":"n","type":"double"}],"values":[[1.5]]}""";
+	private const string GuidJson = /*lang=json,strict*/ """{"columns":[{"name":"g","type":"keyword"}],"values":[["550e8400-e29b-41d4-a716-446655440000"]]}""";
+	private const string IntWithNullJson = /*lang=json,strict*/ """{"columns":[{"name":"n","type":"integer"}],"values":[[1],[null]]}""";
+	private const string IntsJson = /*lang=json,strict*/ """{"columns":[{"name":"n","type":"integer"}],"values":[[1],[2],[3]]}""";
+	private const string QuotedIntJson = /*lang=json,strict*/ """{"columns":[{"name":"n","type":"long"}],"values":[["12"]]}""";
+
+	[Test]
+	public void ReadRows_BoolColumn_BindsEveryRow() =>
+		ReadRows<bool>(BoolsJson).Should().Equal(true, false);
+
+	[Test]
+	public void ReadRows_DateTimeOffsetColumn_BindsEveryRow() =>
+		ReadRows<DateTimeOffset>(DateTimeOffsetJson).Should().Equal(new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero));
+
+	[Test]
+	public void ReadRows_DecimalColumn_BindsEveryRow() =>
+		ReadRows<decimal>(DecimalsJson).Should().Equal(1.5m, 2.5m);
+
+	[Test]
+	public void ReadRows_FloatColumn_BindsEveryRow() =>
+		ReadRows<float>(FloatsJson).Should().Equal(1.5f, 2.5f);
+
+	[Test]
+	public void ReadRows_GuidColumn_BindsEveryRow() =>
+		ReadRows<Guid>(GuidJson).Should().Equal(new Guid("550e8400-e29b-41d4-a716-446655440000"));
 
 	[Test]
 	public void ReadRows_IntColumn_BindsEveryRow() =>
@@ -87,6 +113,14 @@ public class DirectScalarBindingTests
 		options.Converters.Add(new UnixEpochDateTimeConverter());
 
 		ReadRows<DateTime?>(EpochJson, options).Should().Equal(DateTime.UnixEpoch.AddDays(1));
+	}
+
+	[Test]
+	public void ReadRows_ScalarRowWithExtraCell_Throws()
+	{
+		var act = () => ReadRows<int>(ExtraCellJson);
+
+		act.Should().Throw<JsonException>();
 	}
 
 	[Test]
