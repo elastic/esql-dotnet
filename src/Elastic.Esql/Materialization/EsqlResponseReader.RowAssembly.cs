@@ -106,6 +106,7 @@ internal sealed partial class EsqlResponseReader
 
 		var kinds = binder.Kinds;
 		var properties = binder.Properties;
+		var typedSetters = binder.TypedSetters;
 
 		var instance = binder.CreateObject();
 
@@ -128,7 +129,7 @@ internal sealed partial class EsqlResponseReader
 			if (tokenType == JsonTokenType.Null)
 				continue;
 
-			if (!TryBindDirectValue(ref reader, kinds[i], tokenType, properties[i], instance))
+			if (!TryBindDirectValue(ref reader, kinds[i], tokenType, properties[i], typedSetters[i], instance))
 				return false;
 		}
 
@@ -151,6 +152,7 @@ internal sealed partial class EsqlResponseReader
 		DirectBinderKind kind,
 		JsonTokenType tokenType,
 		JsonPropertyInfo property,
+		Delegate? typedSetter,
 		object instance)
 	{
 		switch (kind)
@@ -158,66 +160,75 @@ internal sealed partial class EsqlResponseReader
 			case DirectBinderKind.String:
 				if (tokenType != JsonTokenType.String)
 					return false;
-				property.Set!(instance, reader.GetString());
+				Assign<string?>(typedSetter, property, instance, reader.GetString());
 				return true;
 
 			case DirectBinderKind.Bool:
 				if (tokenType is not (JsonTokenType.True or JsonTokenType.False))
 					return false;
-				property.Set!(instance, reader.GetBoolean());
+				Assign(typedSetter, property, instance, reader.GetBoolean());
 				return true;
 
 			case DirectBinderKind.Int32:
 				if (tokenType != JsonTokenType.Number || !reader.TryGetInt32(out var int32Value))
 					return false;
-				property.Set!(instance, int32Value);
+				Assign(typedSetter, property, instance, int32Value);
 				return true;
 
 			case DirectBinderKind.Int64:
 				if (tokenType != JsonTokenType.Number || !reader.TryGetInt64(out var int64Value))
 					return false;
-				property.Set!(instance, int64Value);
+				Assign(typedSetter, property, instance, int64Value);
 				return true;
 
 			case DirectBinderKind.Double:
 				if (tokenType != JsonTokenType.Number || !reader.TryGetDouble(out var doubleValue))
 					return false;
-				property.Set!(instance, doubleValue);
+				Assign(typedSetter, property, instance, doubleValue);
 				return true;
 
 			case DirectBinderKind.Single:
 				if (tokenType != JsonTokenType.Number || !reader.TryGetSingle(out var singleValue))
 					return false;
-				property.Set!(instance, singleValue);
+				Assign(typedSetter, property, instance, singleValue);
 				return true;
 
 			case DirectBinderKind.Decimal:
 				if (tokenType != JsonTokenType.Number || !reader.TryGetDecimal(out var decimalValue))
 					return false;
-				property.Set!(instance, decimalValue);
+				Assign(typedSetter, property, instance, decimalValue);
 				return true;
 
 			case DirectBinderKind.DateTime:
 				if (tokenType != JsonTokenType.String || !reader.TryGetDateTime(out var dateTimeValue))
 					return false;
-				property.Set!(instance, dateTimeValue);
+				Assign(typedSetter, property, instance, dateTimeValue);
 				return true;
 
 			case DirectBinderKind.DateTimeOffset:
 				if (tokenType != JsonTokenType.String || !reader.TryGetDateTimeOffset(out var dateTimeOffsetValue))
 					return false;
-				property.Set!(instance, dateTimeOffsetValue);
+				Assign(typedSetter, property, instance, dateTimeOffsetValue);
 				return true;
 
 			case DirectBinderKind.Guid:
 				if (tokenType != JsonTokenType.String || !reader.TryGetGuid(out var guidValue))
 					return false;
-				property.Set!(instance, guidValue);
+				Assign(typedSetter, property, instance, guidValue);
 				return true;
 
 			default:
 				return false;
 		}
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private static void Assign<TValue>(Delegate? typedSetter, JsonPropertyInfo property, object instance, TValue value)
+	{
+		if (typedSetter is Action<object, TValue> typed)
+			typed(instance, value);
+		else
+			property.Set!(instance, value);
 	}
 
 	/// <summary>

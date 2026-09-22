@@ -386,6 +386,8 @@ public record SpecialCharacterProjection([property: JsonPropertyName("user-agent
 [JsonSerializable(typeof(NullableNestedModel))]
 [JsonSerializable(typeof(FlatDotFallbackModel))]
 [JsonSerializable(typeof(Level1Root))]
+[JsonSerializable(typeof(TypedSetterDerivedModel))]
+[JsonSerializable(typeof(TypedSetterStructModel))]
 [JsonSerializable(typeof(int))]
 [JsonSerializable(typeof(int?))]
 [JsonSerializable(typeof(long))]
@@ -421,6 +423,23 @@ public class ScalarIntModel
 {
 	public int Value { get; set; }
 	public string Name { get; set; } = string.Empty;
+}
+
+public class TypedSetterBaseModel
+{
+	public string Name { get; set; } = string.Empty;
+}
+
+public class TypedSetterDerivedModel : TypedSetterBaseModel
+{
+	public int? Count { get; set; }
+	public DateTime? When { get; set; }
+}
+
+public struct TypedSetterStructModel
+{
+	public int X { get; set; }
+	public string Y { get; set; }
 }
 
 public class ScalarDoubleModel
