@@ -3,14 +3,16 @@
 // See the LICENSE file in the project root for more information
 
 using System.Buffers;
+using System.Runtime.CompilerServices;
 
 namespace Elastic.Esql.Materialization;
 
+// The fill loop needs MinimumReadSize free bytes; a 16 KB rent regrew to 32 KB on the second read whenever a partial row remained, so start there.
 /// <summary>
 /// Lightweight asynchronous buffer manager that wraps a <see cref="Stream"/> and provides
 /// a read-advance pattern analogous to <c>PipeReader</c> while remaining stream based.
 /// </summary>
-internal sealed class AsyncStreamBuffer(Stream stream, int initialBufferSize = 16384) : IAsyncBufferCursor, IDisposable
+internal sealed class AsyncStreamBuffer(Stream stream, int initialBufferSize = 32768) : IAsyncBufferCursor, IDisposable
 {
 	private const int MinimumReadSize = 16384;
 
@@ -37,6 +39,9 @@ internal sealed class AsyncStreamBuffer(Stream stream, int initialBufferSize = 1
 	/// Reads more data from the underlying stream into the buffer.
 	/// Returns <see langword="false"/> when the stream is exhausted and no unconsumed data remains.
 	/// </summary>
+#if !NETSTANDARD2_0
+	[AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder<>))]
+#endif
 	public async ValueTask<bool> ReadAsync(CancellationToken cancellationToken)
 	{
 		// Unexamined buffered data satisfies the caller without touching the stream, mirroring

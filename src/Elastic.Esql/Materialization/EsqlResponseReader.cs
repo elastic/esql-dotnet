@@ -7,6 +7,7 @@ using System.Collections.Concurrent;
 #if NET10_0_OR_GREATER
 using System.IO.Pipelines;
 #endif
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Elastic.Esql.Core;
@@ -98,6 +99,7 @@ internal sealed partial class EsqlResponseReader
 		// For a pipe, a completed read result already means no more data will arrive.
 		public bool IsEofReached => _result.IsCompleted;
 
+		[AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder<>))]
 		public async ValueTask<bool> ReadAsync(CancellationToken cancellationToken)
 		{
 			_result = await pipeReader.ReadAsync(cancellationToken).ConfigureAwait(false);
