@@ -279,8 +279,15 @@ internal static class EsqlFunctionTranslator
 	/// </summary>
 	private static string TranslateOneBasedStart(Func<Expression, string> translate, Expression expression) =>
 		expression.SupportsEvaluation() && ExpressionConstantResolver.Resolve(expression) is int index
-			? (index + 1).ToString(CultureInfo.InvariantCulture)
+			? ToOneBasedLiteral(index)
 			: $"({translate(expression)}) + 1";
+
+	// int.MaxValue + 1 would wrap to a negative position, so the one index ES|QL cannot represent fails
+	// at translation like other unrepresentable values.
+	internal static string ToOneBasedLiteral(int index) =>
+		index == int.MaxValue
+			? throw new NotSupportedException("A start index of int.MaxValue cannot be shifted to the 1-based position ES|QL expects.")
+			: (index + 1).ToString(CultureInfo.InvariantCulture);
 
 	/// <summary>
 	/// ES|QL string matching is ordinal and case-sensitive, so only <see cref="StringComparison.Ordinal"/>
@@ -418,7 +425,7 @@ internal static class EsqlFunctionTranslator
 	public static string TranslateStringIndexer(string target, Expression indexExpression, Func<Expression, string> translate)
 	{
 		if (indexExpression.SupportsEvaluation() && ExpressionConstantResolver.Resolve(indexExpression) is int index)
-			return $"SUBSTRING({target}, {index + 1}, 1)";
+			return $"SUBSTRING({target}, {ToOneBasedLiteral(index)}, 1)";
 
 		return $"SUBSTRING({target}, ({translate(indexExpression)}) + 1, 1)";
 	}

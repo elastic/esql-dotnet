@@ -23,6 +23,30 @@ public class StringIndexTests : EsqlTestBase
 	}
 
 	[Test]
+	public void String_Substring_MaxValueStartIndex_ThrowsNotSupported()
+	{
+		var act = () => CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Select(l => new { Sub = l.Message.Substring(int.MaxValue) })
+			.ToString();
+
+		_ = act.Should().Throw<NotSupportedException>().WithMessage("*int.MaxValue*");
+	}
+
+	[Test]
+	public void String_Indexer_CapturedMaxValueIndex_ThrowsNotSupported()
+	{
+		var index = int.MaxValue;
+
+		var act = () => CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Select(l => new { Ch = l.Message[index] })
+			.ToString();
+
+		_ = act.Should().Throw<NotSupportedException>().WithMessage("*int.MaxValue*");
+	}
+
+	[Test]
 	public void String_Substring_StartAndLength_InSelect_GeneratesSubstring()
 	{
 		var esql = CreateQuery<LogEntry>()
