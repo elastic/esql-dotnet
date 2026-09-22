@@ -47,6 +47,19 @@ public class StringIndexTests : EsqlTestBase
 	}
 
 	[Test]
+	public void String_Substring_CapturedNegativeStartIndex_ThrowsNotSupported()
+	{
+		var start = -1;
+
+		var act = () => CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Select(l => new { Sub = l.Message.Substring(start) })
+			.ToString();
+
+		_ = act.Should().Throw<NotSupportedException>().WithMessage("*-1*non-negative*");
+	}
+
+	[Test]
 	public void String_Substring_StartAndLength_InSelect_GeneratesSubstring()
 	{
 		var esql = CreateQuery<LogEntry>()

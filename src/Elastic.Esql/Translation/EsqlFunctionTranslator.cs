@@ -282,11 +282,12 @@ internal static class EsqlFunctionTranslator
 			? ToOneBasedLiteral(index)
 			: $"({translate(expression)}) + 1";
 
-	// int.MaxValue + 1 would wrap to a negative position, so the one index ES|QL cannot represent fails
-	// at translation like other unrepresentable values.
+	// A negative index throws in C#, and int.MaxValue + 1 would wrap to a negative position, so both fail
+	// at translation instead of emitting a non-positive ES|QL position that silently returns data.
 	internal static string ToOneBasedLiteral(int index) =>
-		index == int.MaxValue
-			? throw new NotSupportedException("A start index of int.MaxValue cannot be shifted to the 1-based position ES|QL expects.")
+		index is < 0 or int.MaxValue
+			? throw new NotSupportedException(
+				$"A start index of {index.ToString(CultureInfo.InvariantCulture)} cannot be shifted to the 1-based position ES|QL expects; it must be non-negative and below int.MaxValue.")
 			: (index + 1).ToString(CultureInfo.InvariantCulture);
 
 	/// <summary>
