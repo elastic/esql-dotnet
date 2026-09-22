@@ -62,53 +62,6 @@ internal sealed partial class EsqlResponseReader
 		}
 	}
 
-	private interface IBufferCursor
-	{
-		ReadOnlySequence<byte> Buffer { get; }
-		bool IsCompleted { get; }
-		bool IsEofReached { get; }
-		void AdvanceTo(SequencePosition consumed, SequencePosition examined);
-	}
-
-	private interface IAsyncBufferCursor : IBufferCursor
-	{
-		ValueTask<bool> ReadAsync(CancellationToken cancellationToken);
-	}
-
-	private interface ISyncBufferCursor : IBufferCursor
-	{
-		bool Read();
-	}
-
-	private sealed class AsyncStreamBufferCursor(AsyncStreamBuffer asyncBuffer) : IAsyncBufferCursor
-	{
-		public ReadOnlySequence<byte> Buffer => asyncBuffer.Buffer;
-
-		public bool IsCompleted => asyncBuffer.IsCompleted;
-
-		public bool IsEofReached => asyncBuffer.IsEofReached;
-
-		public ValueTask<bool> ReadAsync(CancellationToken cancellationToken) =>
-			asyncBuffer.ReadAsync(cancellationToken);
-
-		public void AdvanceTo(SequencePosition consumed, SequencePosition examined) =>
-			asyncBuffer.AdvanceTo(consumed, examined);
-	}
-
-	private sealed class SyncStreamBufferCursor(SyncStreamBuffer syncBuffer) : ISyncBufferCursor
-	{
-		public ReadOnlySequence<byte> Buffer => syncBuffer.Buffer;
-
-		public bool IsCompleted => syncBuffer.IsCompleted;
-
-		public bool IsEofReached => syncBuffer.IsEofReached;
-
-		public bool Read() => syncBuffer.Read();
-
-		public void AdvanceTo(SequencePosition consumed, SequencePosition examined) =>
-			syncBuffer.AdvanceTo(consumed, examined);
-	}
-
 	/// <summary>
 	/// Cursor over an already-drained response region. Exposes the remaining bytes directly instead of
 	/// re-copying them through a stream and a second pooled buffer.

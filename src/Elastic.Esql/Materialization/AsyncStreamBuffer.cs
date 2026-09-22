@@ -10,7 +10,7 @@ namespace Elastic.Esql.Materialization;
 /// Lightweight asynchronous buffer manager that wraps a <see cref="Stream"/> and provides
 /// a read-advance pattern analogous to <c>PipeReader</c> while remaining stream based.
 /// </summary>
-internal sealed class AsyncStreamBuffer(Stream stream, int initialBufferSize = 16384) : IDisposable
+internal sealed class AsyncStreamBuffer(Stream stream, int initialBufferSize = 16384) : IAsyncBufferCursor, IDisposable
 {
 	private const int MinimumReadSize = 16384;
 

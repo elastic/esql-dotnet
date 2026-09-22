@@ -26,8 +26,7 @@ internal sealed partial class EsqlResponseReader
 		CancellationToken cancellationToken = default)
 	{
 		using var asyncBuffer = new AsyncStreamBuffer(stream);
-		var cursor = new AsyncStreamBufferCursor(asyncBuffer);
-		return await ReadScalarAsync<T>(cursor, cancellationToken).ConfigureAwait(false);
+		return await ReadScalarAsync<T>(asyncBuffer, cancellationToken).ConfigureAwait(false);
 	}
 
 #if NET10_0_OR_GREATER
@@ -51,8 +50,7 @@ internal sealed partial class EsqlResponseReader
 	public ScalarResult<T> ReadScalar<T>(Stream stream)
 	{
 		using var syncBuffer = new SyncStreamBuffer(stream);
-		var cursor = new SyncStreamBufferCursor(syncBuffer);
-		return ReadScalar<T>(cursor);
+		return ReadScalar<T>(syncBuffer);
 	}
 
 	private async Task<ScalarResult<T>> ReadScalarAsync<T>(
