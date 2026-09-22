@@ -94,6 +94,39 @@ public class BatchDeserializationTests
 	}
 
 	[Test]
+	public void ReadRows_NestedType_CustomListConverter_FallsBackToPerRow_AllRowsInOrder()
+	{
+		using var stream = CreateStream(BuildPayload(100, DefaultRow));
+		var converter = new RecordingListConverter();
+		var reader = new EsqlResponseReader(new JsonMetadataManager(new JsonSerializerOptions(JsonSerializerDefaults.Web)
+		{
+			TypeInfoResolver = new DefaultJsonTypeInfoResolver(),
+			Converters = { converter }
+		}));
+
+		using var response = reader.ReadRows<BatchPerson>(stream);
+		var results = response.Rows.ToList();
+
+		AssertNestedRows(results, 100);
+		converter.Invocations.Should().Be(0);
+	}
+
+	/// <summary>A user converter for the list type must never see the internal batch wrapper.</summary>
+	private sealed class RecordingListConverter : JsonConverter<List<BatchPerson>>
+	{
+		public int Invocations { get; private set; }
+
+		public override List<BatchPerson>? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+		{
+			Invocations++;
+			throw new JsonException("The batch wrapper reached a user list converter.");
+		}
+
+		public override void Write(Utf8JsonWriter writer, List<BatchPerson> value, JsonSerializerOptions options) =>
+			throw new NotSupportedException();
+	}
+
+	[Test]
 	public void ReadRows_NestedType_MaxDepthEqualsLayoutDepth_FallsBackToPerRow_AllRowsInOrder()
 	{
 		// BatchPerson's layout depth is 2. At MaxDepth = 2 the per-row object deserialize

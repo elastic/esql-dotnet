@@ -210,8 +210,13 @@ internal sealed partial class EsqlResponseReader
 		try
 		{
 			// TryGetTypeInfo answers "not registered" without an exception, which matters for
-			// source-generated contexts that omit List<T>: this runs once per enumeration.
-			return options.TryGetTypeInfo(typeof(List<T>), out var typeInfo) ? typeInfo as JsonTypeInfo<List<T>> : null;
+			// source-generated contexts that omit List<T>: this runs once per enumeration. A user
+			// converter for List<T> would see the internal batch wrapper instead of the caller's
+			// rows, so only the framework's own list converter keeps batching transparent.
+			return options.TryGetTypeInfo(typeof(List<T>), out var typeInfo)
+				&& typeInfo.Converter.GetType().Assembly == typeof(JsonSerializerOptions).Assembly
+				? typeInfo as JsonTypeInfo<List<T>>
+				: null;
 		}
 		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
 		{

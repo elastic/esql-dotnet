@@ -352,8 +352,9 @@ effects therefore runs more than once for such rows.
 
 Nested result types are deserialized in batches of up to 64 rows or 64 KB, so the first row
 becomes available after the first batch rather than immediately. Batching also requires the
-serializer to resolve type metadata for `List<T>`; a source-generated context that does not
-declare `List<T>` for the result type streams rows one at a time instead. When a row inside a
+serializer to resolve type metadata for `List<T>` through the framework's own list converter; a
+source-generated context that does not declare `List<T>` for the result type, or options that
+register a custom converter for `List<T>`, stream rows one at a time instead. When a row inside a
 batch is malformed or does not match the type, the rows before it are still delivered and the
 error surfaces at the faulty row, the same as for flat types.
 
