@@ -230,9 +230,27 @@ internal sealed partial class EsqlResponseReader
 	private static RowMaterializationPlan<T> CreateRowMaterializationPlan<T>(ColumnInfo[] columns, JsonSerializerOptions options)
 	{
 		var estimatedRowSize = Math.Max(256, columns.Length * 32);
-		var isScalar = columns.Length == 1 && IsPrimitiveJsonType(typeof(T));
+		var isScalar = columns.Length == 1 && IsScalarTarget(typeof(T), options);
 		var typeInfo = TryResolveTypeInfo<T>(options);
 		return new RowMaterializationPlan<T>(estimatedRowSize, isScalar, typeInfo, options);
+	}
+
+	/// <summary>
+	/// A single-column response binds the cell itself to <c>T</c>, unless <c>T</c> is an object or dictionary
+	/// contract whose one property (or key) is what the column maps to.
+	/// </summary>
+	private static bool IsScalarTarget(Type type, JsonSerializerOptions options)
+	{
+		try
+		{
+			return options.GetTypeInfo(type).Kind is JsonTypeInfoKind.None or JsonTypeInfoKind.Enumerable;
+		}
+		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
+		{
+			// No contract for T (for example a type the source-generated resolver does not know): the
+			// primitive heuristic is the only remaining signal.
+			return IsPrimitiveJsonType(type);
+		}
 	}
 
 	private static bool IsPrimitiveJsonType(Type type)
