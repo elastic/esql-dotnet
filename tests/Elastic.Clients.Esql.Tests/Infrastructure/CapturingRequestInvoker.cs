@@ -30,7 +30,11 @@ internal sealed class CapturingRequestInvoker(byte[] responseBody, int statusCod
 		return _inner.BuildResponse<TResponse>(endpoint, boundConfiguration, postData, contentType: boundConfiguration.Accept);
 	}
 
-	public Task<TResponse> RequestAsync<TResponse>(Endpoint endpoint, BoundConfiguration boundConfiguration, PostData? postData, CancellationToken cancellationToken)
+	public Task<TResponse> RequestAsync<TResponse>(
+		Endpoint endpoint,
+		BoundConfiguration boundConfiguration,
+		PostData? postData,
+		CancellationToken cancellationToken)
 		where TResponse : TransportResponse, new()
 	{
 		Capture(endpoint, boundConfiguration, postData);
