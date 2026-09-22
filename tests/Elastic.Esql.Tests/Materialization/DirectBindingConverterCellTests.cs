@@ -57,10 +57,42 @@ public class DirectBindingConverterCellTests
 	{
 		const string json = """{"columns":[{"name":"tags","type":"keyword"}],"values":[[["a"]],["solo"]]}""";
 
+		// Eligible, but an array contract cannot take a wrapped single value, so the bare cell falls back per row.
+		var layout = BuildLayout<ArrayTagsModel>(("tags", "keyword"));
+		layout.DirectBinder.Should().NotBeNull();
+		layout.DirectBinder!.ElementTypeInfos[0].Should().BeNull();
+
 		var rows = ReadRows<ArrayTagsModel>(json, CreateOptions());
 
 		rows[0].Tags.Should().Equal("a");
 		rows[1].Tags.Should().Equal("solo");
+	}
+
+	[Test]
+	public void ReadRows_ListPropertyWithUnparsableScalarCell_ThrowsJsonException()
+	{
+		const string json = """{"columns":[{"name":"numbers","type":"integer"}],"values":[["oops"]]}""";
+
+		BuildLayout<NumbersModel>(("numbers", "integer")).DirectBinder.Should().NotBeNull();
+
+		var act = () => ReadRows<NumbersModel>(json, CreateOptions());
+
+		act.Should().Throw<JsonException>();
+	}
+
+	[Test]
+	public void ReadRows_NestedObjectProperty_BindsObjectCell()
+	{
+		const string json = """{"columns":[{"name":"owner","type":"object"},{"name":"name","type":"keyword"}],"values":[[{"name":"ada"},"doc"]]}""";
+
+		var layout = BuildLayout<NestedOwnerModel>(("owner", "object"), ("name", "keyword"));
+		layout.DirectBinder.Should().NotBeNull();
+		layout.DirectBinder!.Kinds.Should().Equal([DirectBinderKind.Converter, DirectBinderKind.String]);
+
+		var row = ReadRows<NestedOwnerModel>(json, CreateOptions())[0];
+
+		row.Owner!.Name.Should().Be("ada");
+		row.Name.Should().Be("doc");
 	}
 
 	[Test]
@@ -94,7 +126,8 @@ public class DirectBindingConverterCellTests
 	{
 		const string json = """{"columns":[{"name":"enabled","type":"keyword"},{"name":"name","type":"keyword"}],"values":[["yes","a"],["no","b"]]}""";
 
-		BuildLayout<YesNoModel>(("enabled", "keyword"), ("name", "keyword")).DirectBinder.Should().NotBeNull();
+		// The converter has to see the root options, so the whole type stays on the slow path.
+		BuildLayout<YesNoModel>(("enabled", "keyword"), ("name", "keyword")).DirectBinder.Should().BeNull();
 		var rows = ReadRows<YesNoModel>(json, CreateOptions());
 
 		rows[0].Enabled.Should().BeTrue();
@@ -108,6 +141,19 @@ public class DirectBindingConverterCellTests
 
 		BuildLayout<DateOnlyModel>(("day", "date")).DirectBinder.Should().NotBeNull();
 		ReadRows<DateOnlyModel>(json, CreateOptions())[0].Day.Should().Be(new DateOnly(2024, 1, 2));
+	}
+
+	[Test]
+	public void ReadRows_NullableDateTimeWithGlobalConverter_AppliesConverter()
+	{
+		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"when","type":"date"}],"values":[["a",86400]]}""";
+		var options = CreateOptions();
+		options.Converters.Add(new UnixEpochDateTimeConverter());
+
+		var row = ReadRows<NullableDateModel>(json, options)[0];
+
+		row.When.Should().Be(DateTime.UnixEpoch.AddSeconds(86400));
+		row.When!.Value.Kind.Should().Be(DateTimeKind.Utc);
 	}
 
 	[Test]
@@ -162,6 +208,22 @@ public class DirectBindingConverterCellTests
 		public string[] Tags { get; set; } = [];
 	}
 
+	private sealed class NumbersModel
+	{
+		public List<int> Numbers { get; set; } = [];
+	}
+
+	private sealed class NestedOwnerModel
+	{
+		public Owner? Owner { get; set; }
+		public string Name { get; set; } = string.Empty;
+	}
+
+	private sealed class Owner
+	{
+		public string Name { get; set; } = string.Empty;
+	}
+
 	private sealed class AttributesModel
 	{
 		public Dictionary<string, string>? Attributes { get; set; }
@@ -186,6 +248,12 @@ public class DirectBindingConverterCellTests
 		public DateOnly Day { get; set; }
 	}
 
+	private sealed class NullableDateModel
+	{
+		public string Name { get; set; } = string.Empty;
+		public DateTime? When { get; set; }
+	}
+
 	private sealed class YesNoBoolConverter : JsonConverter<bool>
 	{
 		public override bool Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
@@ -193,5 +261,14 @@ public class DirectBindingConverterCellTests
 
 		public override void Write(Utf8JsonWriter writer, bool value, JsonSerializerOptions options) =>
 			writer.WriteStringValue(value ? "yes" : "no");
+	}
+
+	private sealed class UnixEpochDateTimeConverter : JsonConverter<DateTime>
+	{
+		public override DateTime Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+			DateTime.UnixEpoch.AddSeconds(reader.GetInt64());
+
+		public override void Write(Utf8JsonWriter writer, DateTime value, JsonSerializerOptions options) =>
+			writer.WriteNumberValue((long)(value - DateTime.UnixEpoch).TotalSeconds);
 	}
 }

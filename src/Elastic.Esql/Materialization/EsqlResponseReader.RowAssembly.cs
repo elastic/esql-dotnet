@@ -107,6 +107,7 @@ internal sealed partial class EsqlResponseReader
 		var kinds = binder.Kinds;
 		var properties = binder.Properties;
 		var typedSetters = binder.TypedSetters;
+		var isRequired = binder.IsRequired;
 
 		var instance = binder.CreateObject();
 
@@ -128,7 +129,7 @@ internal sealed partial class EsqlResponseReader
 			{
 				// A null cell leaves the property at its initializer, as the assembled row omits it. For a
 				// required member that omission is the serializer's error to raise.
-				if (binder.IsRequired[i])
+				if (isRequired[i])
 					return false;
 				continue;
 			}
@@ -164,7 +165,13 @@ internal sealed partial class EsqlResponseReader
 	/// </summary>
 	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Serialization delegates to the user-provided JsonSerializerOptions/JsonSerializerContext which is expected to include an AOT-safe TypeInfoResolver.")]
 	[UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Serialization delegates to the user-provided JsonSerializerOptions/JsonSerializerContext which is expected to include an AOT-safe TypeInfoResolver.")]
-	private static bool TryBindConverterCell(ref Utf8JsonReader reader, JsonTokenType tokenType, DirectRowBinder binder, int index, object instance, out bool incomplete)
+	private static bool TryBindConverterCell(
+		ref Utf8JsonReader reader,
+		JsonTokenType tokenType,
+		DirectRowBinder binder,
+		int index,
+		object instance,
+		out bool incomplete)
 	{
 		incomplete = false;
 
@@ -177,11 +184,12 @@ internal sealed partial class EsqlResponseReader
 		}
 
 		var cellTypeInfo = binder.CellTypeInfos[index]!;
+		var elementTypeInfo = binder.ElementTypeInfos[index];
 		object? value;
 
 		try
 		{
-			if (binder.ElementTypeInfos[index] is { } elementTypeInfo && tokenType != JsonTokenType.StartArray)
+			if (elementTypeInfo is not null && tokenType != JsonTokenType.StartArray)
 			{
 				// ES|QL returns a single-valued multi-value field as a bare scalar; wrap it like the row path does.
 				var list = (IList)cellTypeInfo.CreateObject!();
