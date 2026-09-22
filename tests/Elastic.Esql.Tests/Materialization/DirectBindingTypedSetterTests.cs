@@ -75,19 +75,48 @@ public class DirectBindingTypedSetterTests
 		rows[0].Y.Should().Be("s");
 	}
 
-	private static ColumnLayout BuildLayout<T>(params (string Name, string Type)[] columns)
+	[Test]
+	public void Build_InitOnlyModelUnderReflection_CompilesTypedSetters()
+	{
+		if (!RuntimeFeature.IsDynamicCodeSupported)
+			return;
+
+		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web) { TypeInfoResolver = new DefaultJsonTypeInfoResolver() };
+		var layout = BuildLayout<InitOnlyModel>(options, ("name", "keyword"), ("count", "integer"));
+
+		layout.DirectBinder.Should().NotBeNull();
+		layout.DirectBinder!.TypedSetters.Should().AllSatisfy(setter => setter.Should().NotBeNull());
+	}
+
+	[Test]
+	public void ReadRows_InitOnlyModelUnderReflection_Binds()
+	{
+		var json = """{"columns":[{"name":"name","type":"keyword"},{"name":"count","type":"integer"}],"values":[["a",1]]}""";
+		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web) { TypeInfoResolver = new DefaultJsonTypeInfoResolver() };
+
+		var rows = ReadRows<InitOnlyModel>(json, options);
+
+		rows.Should().ContainSingle();
+		rows[0].Name.Should().Be("a");
+		rows[0].Count.Should().Be(1);
+	}
+
+	private static ColumnLayout BuildLayout<T>(params (string Name, string Type)[] columns) =>
+		BuildLayout<T>(null, columns);
+
+	private static ColumnLayout BuildLayout<T>(JsonSerializerOptions? options, params (string Name, string Type)[] columns)
 	{
 		var columnInfos = new EsqlResponseReader.ColumnInfo[columns.Length];
 		for (var i = 0; i < columns.Length; i++)
 			columnInfos[i] = new EsqlResponseReader.ColumnInfo(columns[i].Name, columns[i].Type);
 
-		return ColumnLayout.Build(columnInfos, typeof(T), new JsonMetadataManager(CreateOptions()));
+		return ColumnLayout.Build(columnInfos, typeof(T), new JsonMetadataManager(options ?? CreateOptions()));
 	}
 
-	private static List<T> ReadRows<T>(string json)
+	private static List<T> ReadRows<T>(string json, JsonSerializerOptions? options = null)
 	{
 		using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
-		using var results = new EsqlResponseReader(new JsonMetadataManager(CreateOptions())).ReadRows<T>(stream);
+		using var results = new EsqlResponseReader(new JsonMetadataManager(options ?? CreateOptions())).ReadRows<T>(stream);
 		return results.Rows.ToList();
 	}
 
@@ -96,4 +125,10 @@ public class DirectBindingTypedSetterTests
 		{
 			TypeInfoResolver = JsonTypeInfoResolver.Combine(MaterializationTestJsonContext.Default, EsqlTestMappingContext.Default)
 		};
+
+	private class InitOnlyModel
+	{
+		public string Name { get; init; } = string.Empty;
+		public int Count { get; init; }
+	}
 }
