@@ -26,6 +26,8 @@ public class RowReaderBenchmarks
 	private byte[] _rawJsonWidePayload = null!;
 	private byte[] _esqlMixedPayload = null!;
 	private byte[] _rawJsonMixedPayload = null!;
+	private byte[] _esqlScalarStringPayload = null!;
+	private byte[] _esqlScalarIntPayload = null!;
 
 	private EsqlResponseReader _reader = null!;
 	private JsonSerializerOptions _options = null!;
@@ -54,6 +56,9 @@ public class RowReaderBenchmarks
 
 		_esqlMixedPayload = BuildEsqlMixedPayload();
 		_rawJsonMixedPayload = BuildRawJsonMixedPayload();
+
+		_esqlScalarStringPayload = BuildEsqlPayload(["name:keyword"], (w, i) => w.WriteStringValue($"item-{i}"));
+		_esqlScalarIntPayload = BuildEsqlPayload(["count:integer"], (w, i) => w.WriteNumberValue(i));
 	}
 
 	// =========================================================================
@@ -135,6 +140,26 @@ public class RowReaderBenchmarks
 	[Benchmark]
 	public List<MixedDocument> RawJson_MixedFlatAndNested() =>
 		JsonSerializer.Deserialize<List<MixedDocument>>(_rawJsonMixedPayload, _options)!;
+
+	// =========================================================================
+	// Scalar (single column)
+	// =========================================================================
+
+	[Benchmark]
+	public List<string> Esql_ScalarStrings()
+	{
+		using var stream = new MemoryStream(_esqlScalarStringPayload, writable: false);
+		using var result = _reader.ReadRows<string>(stream);
+		return result.Rows.ToList();
+	}
+
+	[Benchmark]
+	public List<int> Esql_ScalarInts()
+	{
+		using var stream = new MemoryStream(_esqlScalarIntPayload, writable: false);
+		using var result = _reader.ReadRows<int>(stream);
+		return result.Rows.ToList();
+	}
 
 	// =========================================================================
 	// Payload generators — ES|QL format

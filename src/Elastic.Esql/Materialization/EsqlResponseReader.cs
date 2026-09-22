@@ -224,14 +224,20 @@ internal sealed partial class EsqlResponseReader
 		}
 	}
 
-	private readonly record struct RowMaterializationPlan<T>(int EstimatedRowSize, bool IsScalar, JsonTypeInfo<T>? TypeInfo, JsonSerializerOptions Options);
+	private readonly record struct RowMaterializationPlan<T>(
+		int EstimatedRowSize,
+		bool IsScalar,
+		JsonTypeInfo<T>? TypeInfo,
+		JsonSerializerOptions Options,
+		DirectBinderKind? ScalarKind);
 
 	private static RowMaterializationPlan<T> CreateRowMaterializationPlan<T>(ColumnInfo[] columns, JsonSerializerOptions options)
 	{
 		var estimatedRowSize = Math.Max(256, columns.Length * 32);
 		var isScalar = columns.Length == 1 && IsScalarTarget(typeof(T), options);
 		var typeInfo = TryResolveTypeInfo<T>(options);
-		return new RowMaterializationPlan<T>(estimatedRowSize, isScalar, typeInfo, options);
+		var scalarKind = isScalar && DirectRowBinder.TryClassifyScalar(typeof(T), options, out var kind) ? kind : (DirectBinderKind?)null;
+		return new RowMaterializationPlan<T>(estimatedRowSize, isScalar, typeInfo, options, scalarKind);
 	}
 
 	/// <summary>
