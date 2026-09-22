@@ -3,25 +3,27 @@
 // See the LICENSE file in the project root for more information
 
 using System.Buffers;
-using System.Text.Json;
 
 namespace Elastic.Esql.Materialization;
 
 /// <summary>
-/// The scratch writers one response enumeration reuses for every row: the assembled row JSON,
-/// the per-cell value scratch, and the optional scalar writer for single-column reads.
+/// Scratch space one response enumeration reuses for every row that goes through JSON assembly. Buffers are
+/// created on first use, so an enumeration whose rows all bind directly never allocates them.
 /// </summary>
-internal sealed class RowAssemblyBuffers(
-	ArrayBufferWriter<byte> rowBuffer,
-	ArrayBufferWriter<byte>? valueBuffer,
-	Utf8JsonWriter? valueWriter,
-	Utf8JsonWriter? scalarWriter)
+internal sealed class RowAssemblyBuffers(int estimatedRowSize, bool isScalar, bool needsValueBuffer)
 {
-	public ArrayBufferWriter<byte> RowBuffer { get; } = rowBuffer;
+	// IDE0032 suggests auto-properties, but the fields exist to defer allocation until a row needs assembly.
+#pragma warning disable IDE0032
+	private ArrayBufferWriter<byte>? _rowBuffer;
+	private ArrayBufferWriter<byte>? _valueBuffer;
+#pragma warning restore IDE0032
 
-	public ArrayBufferWriter<byte>? ValueBuffer { get; } = valueBuffer;
+	/// <summary>The assembled row object, or the bare cell for scalar reads.</summary>
+	public ArrayBufferWriter<byte> RowBuffer => _rowBuffer ??= new ArrayBufferWriter<byte>(estimatedRowSize);
 
-	public Utf8JsonWriter? ValueWriter { get; } = valueWriter;
+	/// <summary>Per-cell scratch for nested layouts, whose cells are regrouped before assembly; null for flat and scalar reads.</summary>
+	public ArrayBufferWriter<byte>? ValueBuffer => needsValueBuffer ? _valueBuffer ??= new ArrayBufferWriter<byte>(estimatedRowSize) : null;
 
-	public Utf8JsonWriter? ScalarWriter { get; } = scalarWriter;
+	/// <summary>Whether rows are a single bare cell rather than an assembled JSON object.</summary>
+	public bool IsScalar { get; } = isScalar;
 }

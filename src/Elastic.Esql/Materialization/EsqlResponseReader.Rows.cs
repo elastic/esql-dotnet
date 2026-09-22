@@ -336,11 +336,7 @@ internal sealed partial class EsqlResponseReader
 			yield break;
 		}
 
-		var rowBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
-		var valueBuffer = plan.IsScalar ? null : new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
-		await using var valueWriter = plan.IsScalar ? null : new Utf8JsonWriter(valueBuffer!, SkipValidationWriterOptions);
-		await using var scalarWriter = plan.IsScalar ? new Utf8JsonWriter(rowBuffer, SkipValidationWriterOptions) : null;
-		var buffers = new RowAssemblyBuffers(rowBuffer, valueBuffer, valueWriter, scalarWriter);
+		var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, plan.IsScalar, needsValueBuffer: layout.BranchNodeCount > 0);
 
 		try
 		{
@@ -405,11 +401,7 @@ internal sealed partial class EsqlResponseReader
 			yield break;
 		}
 
-		var rowBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
-		var valueBuffer = plan.IsScalar ? null : new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
-		using var valueWriter = plan.IsScalar ? null : new Utf8JsonWriter(valueBuffer!, SkipValidationWriterOptions);
-		using var scalarWriter = plan.IsScalar ? new Utf8JsonWriter(rowBuffer, SkipValidationWriterOptions) : null;
-		var buffers = new RowAssemblyBuffers(rowBuffer, valueBuffer, valueWriter, scalarWriter);
+		var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, plan.IsScalar, needsValueBuffer: layout.BranchNodeCount > 0);
 
 		try
 		{
@@ -471,11 +463,8 @@ internal sealed partial class EsqlResponseReader
 		[EnumeratorCancellation] CancellationToken cancellationToken,
 		ReaderStateTracker? readerStateTracker = null)
 	{
-		var rowBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
-		var valueBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
 		var batchBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize * 8);
-		await using var valueWriter = new Utf8JsonWriter(valueBuffer, SkipValidationWriterOptions);
-		var buffers = new RowAssemblyBuffers(rowBuffer, valueBuffer, valueWriter, scalarWriter: null);
+		var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, isScalar: false, needsValueBuffer: true);
 		var batchRowCount = 0;
 
 		try
@@ -520,7 +509,7 @@ internal sealed partial class EsqlResponseReader
 					if (!assembled || reachedEnd)
 						break;
 
-					AppendRowToBatch(batchBuffer, rowBuffer, batchRowCount);
+					AppendRowToBatch(batchBuffer, buffers.RowBuffer, batchRowCount);
 					batchRowCount++;
 
 					if (batchRowCount < MaxBatchRowCount && batchBuffer.WrittenCount < MaxBatchBufferBytes)
@@ -566,11 +555,8 @@ internal sealed partial class EsqlResponseReader
 		JsonTypeInfo<List<T>> listTypeInfo,
 		ReaderStateTracker? readerStateTracker = null)
 	{
-		var rowBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
-		var valueBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
 		var batchBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize * 8);
-		using var valueWriter = new Utf8JsonWriter(valueBuffer, SkipValidationWriterOptions);
-		var buffers = new RowAssemblyBuffers(rowBuffer, valueBuffer, valueWriter, scalarWriter: null);
+		var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, isScalar: false, needsValueBuffer: true);
 		var batchRowCount = 0;
 
 		try
@@ -615,7 +601,7 @@ internal sealed partial class EsqlResponseReader
 					if (!assembled || reachedEnd)
 						break;
 
-					AppendRowToBatch(batchBuffer, rowBuffer, batchRowCount);
+					AppendRowToBatch(batchBuffer, buffers.RowBuffer, batchRowCount);
 					batchRowCount++;
 
 					if (batchRowCount < MaxBatchRowCount && batchBuffer.WrittenCount < MaxBatchBufferBytes)

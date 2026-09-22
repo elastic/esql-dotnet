@@ -388,6 +388,8 @@ public record SpecialCharacterProjection([property: JsonPropertyName("user-agent
 [JsonSerializable(typeof(Level1Root))]
 [JsonSerializable(typeof(TypedSetterDerivedModel))]
 [JsonSerializable(typeof(TypedSetterStructModel))]
+[JsonSerializable(typeof(EscapedCellsRecord))]
+[JsonSerializable(typeof(NullableCellsRecord))]
 [JsonSerializable(typeof(int))]
 [JsonSerializable(typeof(int?))]
 [JsonSerializable(typeof(long))]
@@ -424,6 +426,12 @@ public class ScalarIntModel
 	public int Value { get; set; }
 	public string Name { get; set; } = string.Empty;
 }
+
+/// <summary>Positional record whose parameterized constructor forces rows through the JSON assembly path.</summary>
+public record EscapedCellsRecord(string Text, int Count, Dictionary<string, string>? Attributes, List<int>? Numbers);
+
+/// <summary>Positional record with all-nullable cells, forcing null cells through the JSON assembly path.</summary>
+public record NullableCellsRecord(string? First, int? Middle, string? Last);
 
 public class TypedSetterBaseModel
 {
