@@ -67,6 +67,17 @@ public class EsqlParametersTests
 	}
 
 	[Test]
+	public void Add_ElementFromDisposedDocument_RemainsReadable()
+	{
+		var parameters = new EsqlParameters();
+
+		using (var document = JsonDocument.Parse("42"))
+			_ = parameters.Add("answer", document.RootElement);
+
+		_ = parameters.Parameters["answer"].GetInt32().Should().Be(42);
+	}
+
+	[Test]
 	public void Add_UnderscoreLeadingNameWithDigits_IsAccepted()
 	{
 		var parameters = new EsqlParameters();

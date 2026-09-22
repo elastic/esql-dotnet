@@ -34,6 +34,10 @@ public sealed class EsqlParameters
 				"An ES|QL parameter name must start with a letter or underscore and may contain only ASCII letters, digits, and underscores.",
 				nameof(preferredName));
 
+		// A caller's element may belong to a JsonDocument that is disposed before the query executes; the
+		// clone is independent of it, and cloning an already independent element allocates nothing.
+		value = value.Clone();
+
 		if (!_nameCounts.TryGetValue(preferredName, out var count) && !_parameters.ContainsKey(preferredName))
 		{
 			_nameCounts[preferredName] = 1;
