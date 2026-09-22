@@ -460,24 +460,25 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 	private Expression VisitTimeSpanMethod(MethodCallExpression node)
 	{
 		var methodName = node.Method.Name;
-		var arg = GetConstantValue(node.Arguments[0]);
+		var count = Convert.ToDouble(GetConstantValue(node.Arguments[0]), CultureInfo.InvariantCulture);
 
-		// Convert the numeric value to appropriate ES|QL time interval
-		return methodName switch
+		var (interval, unit) = methodName switch
 		{
-			"FromDays" => AppendTimeInterval(arg, "days"),
-			"FromHours" => AppendTimeInterval(arg, "hours"),
-			"FromMinutes" => AppendTimeInterval(arg, "minutes"),
-			"FromSeconds" => AppendTimeInterval(arg, "seconds"),
-			"FromMilliseconds" => AppendTimeInterval(arg, "milliseconds"),
+			"FromDays" => (TimeSpan.FromDays(count), "days"),
+			"FromHours" => (TimeSpan.FromHours(count), "hours"),
+			"FromMinutes" => (TimeSpan.FromMinutes(count), "minutes"),
+			"FromSeconds" => (TimeSpan.FromSeconds(count), "seconds"),
+			"FromMilliseconds" => (TimeSpan.FromMilliseconds(count), "milliseconds"),
 			_ => throw new NotSupportedException($"TimeSpan method {methodName} is not supported.")
 		};
-	}
 
-	private Expression AppendTimeInterval(object? value, string unit)
-	{
-		// Format as ES|QL time interval (e.g., "1 hour", "30 minutes")
-		_ = _builder.AppendFormat(CultureInfo.InvariantCulture, "{0} {1}", value, unit);
+		// ES|QL duration counts are integers. An integral argument keeps the unit the caller wrote; a
+		// fractional one is re-expressed in whole milliseconds or rejected, exactly like a captured TimeSpan.
+		var literal = Math.Floor(count) == count
+			? string.Format(CultureInfo.InvariantCulture, "{0} {1}", count, unit)
+			: EsqlFormatting.FormatTimeSpanRaw(interval);
+		_ = _builder.Append(literal);
+
 		return Expression.Empty();
 	}
 

@@ -157,4 +157,30 @@ public class TimeSpanTests : EsqlTestBase
 
 		_ = act.Should().Throw<NotSupportedException>().WithMessage("*milliseconds*");
 	}
+
+	[Test]
+	public void Where_InlineFractionalMillisecondsFactory_ThrowsNotSupported()
+	{
+		var act = () => CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Timestamp > EsqlFunctions.Now() - TimeSpan.FromMilliseconds(0.5))
+			.ToString();
+
+		_ = act.Should().Throw<NotSupportedException>().WithMessage("*milliseconds*");
+	}
+
+	[Test]
+	public void Where_InlineFractionalSecondsFactory_EmitsWholeMilliseconds()
+	{
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => l.Timestamp > EsqlFunctions.Now() - TimeSpan.FromSeconds(1.5))
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| WHERE @timestamp > (NOW() - 1500 milliseconds)
+			""".NativeLineEndings());
+	}
 }
