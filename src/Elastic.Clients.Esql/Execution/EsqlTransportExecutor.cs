@@ -42,20 +42,11 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 		var postData = BuildPostData(request);
 		var endpoint = BuildEndpoint(QueryEndpoint, request.QueryOptions, request.Format);
 		var requestConfig = ApplyAcceptForFormat(transportOptions?.RequestConfiguration, request.Format);
-
-#if NET10_0_OR_GREATER
-		var response = await _settings.Transport
-			.RequestAsync<ElasticsearchPipeResponse>(in endpoint, postData, null, requestConfig, cancellationToken)
-			.ConfigureAwait(false);
-		await ThrowIfErrorAsync(response, "ES|QL query failed").ConfigureAwait(false);
-		return new TransportEsqlAsyncResponse(response);
-#else
 		var response = await _settings.Transport
 			.RequestAsync<ElasticsearchStreamResponse>(in endpoint, postData, null, requestConfig, cancellationToken)
 			.ConfigureAwait(false);
 		ThrowIfError(response, "ES|QL query failed");
 		return new TransportEsqlAsyncResponse(response);
-#endif
 	}
 
 	public IEsqlResponse SubmitAsyncQuery(EsqlExecutionRequest request)
@@ -73,20 +64,11 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 		var transportOptions = ResolveOptions(request.ExecutorOptions);
 		var (postData, endpoint) = BuildAsyncPostData(request);
 		var requestConfig = EnsureAsyncHeaders(ApplyAcceptForFormat(transportOptions?.RequestConfiguration, request.Format));
-
-#if NET10_0_OR_GREATER
-		var response = await _settings.Transport
-			.RequestAsync<ElasticsearchPipeResponse>(in endpoint, postData, null, requestConfig, cancellationToken)
-			.ConfigureAwait(false);
-		await ThrowIfErrorAsync(response, "ES|QL async query failed").ConfigureAwait(false);
-		return new TransportEsqlAsyncResponse(response);
-#else
 		var response = await _settings.Transport
 			.RequestAsync<ElasticsearchStreamResponse>(in endpoint, postData, null, requestConfig, cancellationToken)
 			.ConfigureAwait(false);
 		ThrowIfError(response, "ES|QL async query failed");
 		return new TransportEsqlAsyncResponse(response);
-#endif
 	}
 
 	public IEsqlResponse PollAsyncQuery(string queryId, EsqlExecutionRequest request)
@@ -104,20 +86,11 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 		var transportOptions = ResolveOptions(request.ExecutorOptions);
 		var endpointPath = BuildAsyncQueryEndpoint(HttpMethod.GET, queryId, request);
 		var requestConfig = EnsureAsyncHeaders(ApplyAcceptForFormat(transportOptions?.RequestConfiguration, request.Format));
-
-#if NET10_0_OR_GREATER
-		var response = await _settings.Transport
-			.RequestAsync<ElasticsearchPipeResponse>(in endpointPath, null, null, requestConfig, cancellationToken)
-			.ConfigureAwait(false);
-		await ThrowIfErrorAsync(response, "Failed to get async query status").ConfigureAwait(false);
-		return new TransportEsqlAsyncResponse(response);
-#else
 		var response = await _settings.Transport
 			.RequestAsync<ElasticsearchStreamResponse>(in endpointPath, null, null, requestConfig, cancellationToken)
 			.ConfigureAwait(false);
 		ThrowIfError(response, "Failed to get async query status");
 		return new TransportEsqlAsyncResponse(response);
-#endif
 	}
 
 	public void DeleteAsyncQuery(string queryId, EsqlExecutionRequest request)
@@ -193,23 +166,6 @@ internal sealed class EsqlTransportExecutor(EsqlClientSettings settings) : IEsql
 		response.Dispose();
 		throw new EsqlExecutionException(message, apiCallDetails, serverError);
 	}
-
-#if NET10_0_OR_GREATER
-	private static async Task ThrowIfErrorAsync(ElasticsearchPipeResponse response, string operation)
-	{
-		if (response.IsValidResponse)
-			return;
-
-		var apiCallDetails = response.ApiCallDetails;
-		var serverError = response.ElasticsearchServerError;
-		var message = serverError?.Error is { } error
-			? $"{operation}: {error}"
-			: $"{operation}: {apiCallDetails?.HttpStatusCode}";
-
-		await response.DisposeAsync().ConfigureAwait(false);
-		throw new EsqlExecutionException(message, apiCallDetails, serverError);
-	}
-#endif
 
 	private PostData BuildPostData(EsqlExecutionRequest request)
 	{
@@ -379,10 +335,16 @@ internal sealed class TransportEsqlResponse(ElasticsearchStreamResponse response
 }
 
 #if NET10_0_OR_GREATER
-/// <summary>Wraps an <see cref="ElasticsearchPipeResponse"/> as an <see cref="IEsqlAsyncResponse"/>, using its native <see cref="PipeReader"/>.</summary>
-internal sealed class TransportEsqlAsyncResponse(ElasticsearchPipeResponse response) : IEsqlAsyncResponse
+/// <summary>
+/// Wraps an <see cref="ElasticsearchStreamResponse"/> as an <see cref="IEsqlAsyncResponse"/>. The body is exposed
+/// through a <see cref="PipeReader"/> with 64 KB segments: the transport's own pipe response reads 4 KB at a time,
+/// which keeps the JSON reader in its slower multi-segment mode for most rows.
+/// </summary>
+internal sealed class TransportEsqlAsyncResponse(ElasticsearchStreamResponse response) : IEsqlAsyncResponse
 {
-	public PipeReader Body => response.Body;
+	private static readonly StreamPipeReaderOptions PipeOptions = new(bufferSize: 64 * 1024, minimumReadSize: 16 * 1024, leaveOpen: true);
+
+	public PipeReader Body { get; } = PipeReader.Create(response.Body, PipeOptions);
 
 	public bool TryGetHeader(string name, out IEnumerable<string> values)
 	{
@@ -396,8 +358,12 @@ internal sealed class TransportEsqlAsyncResponse(ElasticsearchPipeResponse respo
 		return false;
 	}
 
-	public async ValueTask DisposeAsync() =>
-		await response.DisposeAsync().ConfigureAwait(false);
+	public async ValueTask DisposeAsync()
+	{
+		// The pipe leaves the stream open; the response owns the connection and releases it.
+		await Body.CompleteAsync().ConfigureAwait(false);
+		response.Dispose();
+	}
 }
 #else
 /// <summary>Wraps an <see cref="ElasticsearchStreamResponse"/> as an <see cref="IEsqlAsyncResponse"/>.</summary>
