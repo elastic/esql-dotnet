@@ -48,9 +48,12 @@ public class DirectScalarBindingTests
 	}
 
 	[Test]
-	public void ReadRows_LongFromQuotedNumber_ThrowsByDefault()
+	public void ReadRows_LongFromQuotedNumber_ThrowsUnderStrictNumberHandling()
 	{
-		var act = () => ReadRows<long>(QuotedIntJson);
+		var options = CreateOptions();
+		options.NumberHandling = JsonNumberHandling.Strict;
+
+		var act = () => ReadRows<long>(QuotedIntJson, options);
 
 		act.Should().Throw<JsonException>();
 	}
