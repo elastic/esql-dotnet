@@ -70,11 +70,7 @@ internal sealed partial class EsqlResponseReader
 		var (columns, readerState, layout) = (prepared.Columns, prepared.ReaderState, prepared.Layout);
 		var plan = CreateRowMaterializationPlan<T>(columns, Options);
 
-		var rowBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
-		var valueBuffer = plan.IsScalar ? null : new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
-		await using var valueWriter = plan.IsScalar ? null : new Utf8JsonWriter(valueBuffer!, SkipValidationWriterOptions);
-		await using var scalarWriter = plan.IsScalar ? new Utf8JsonWriter(rowBuffer, SkipValidationWriterOptions) : null;
-		var buffers = new RowAssemblyBuffers(rowBuffer, valueBuffer, valueWriter, scalarWriter);
+		var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, plan.IsScalar, needsValueBuffer: layout.BranchNodeCount > 0);
 
 		T? value = default;
 		var rowCount = 0;
@@ -117,11 +113,7 @@ internal sealed partial class EsqlResponseReader
 		var (columns, readerState, layout) = (prepared.Columns, prepared.ReaderState, prepared.Layout);
 		var plan = CreateRowMaterializationPlan<T>(columns, Options);
 
-		var rowBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
-		var valueBuffer = plan.IsScalar ? null : new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
-		using var valueWriter = plan.IsScalar ? null : new Utf8JsonWriter(valueBuffer!, SkipValidationWriterOptions);
-		using var scalarWriter = plan.IsScalar ? new Utf8JsonWriter(rowBuffer, SkipValidationWriterOptions) : null;
-		var buffers = new RowAssemblyBuffers(rowBuffer, valueBuffer, valueWriter, scalarWriter);
+		var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, plan.IsScalar, needsValueBuffer: layout.BranchNodeCount > 0);
 
 		T? value = default;
 		var rowCount = 0;

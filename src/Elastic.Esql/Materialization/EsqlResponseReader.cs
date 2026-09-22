@@ -18,7 +18,6 @@ namespace Elastic.Esql.Materialization;
 /// </summary>
 internal sealed partial class EsqlResponseReader
 {
-	private static readonly JsonWriterOptions SkipValidationWriterOptions = new() { SkipValidation = true };
 	private readonly JsonMetadataManager _metadata;
 	private readonly ConcurrentDictionary<ColumnLayoutCacheKey, ColumnLayoutCacheEntry> _columnLayoutCache = [];
 
