@@ -145,10 +145,13 @@ internal static class EsqlFormatting
 			? throw NonFiniteNotSupported(f)
 			: WithExplicitFloatingPoint(f.ToString("G9", InvariantCulture));
 
+	// "R" is the shortest round-trippable form on .NET Core 3.0 and later, identical to "G" there, but on
+	// .NET Framework (reachable through netstandard2.0) "G" stops at 15 significant digits and would
+	// silently change the literal's value.
 	internal static string FormatDouble(double d) =>
 		double.IsNaN(d) || double.IsInfinity(d)
 			? throw NonFiniteNotSupported(d)
-			: WithExplicitFloatingPoint(d.ToString("G", InvariantCulture));
+			: WithExplicitFloatingPoint(d.ToString("R", InvariantCulture));
 
 	// ES|QL has no NaN or Infinity literal; rendering null instead would silently turn the
 	// comparison into a null test that matches no rows.

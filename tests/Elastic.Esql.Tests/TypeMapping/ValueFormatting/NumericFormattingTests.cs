@@ -57,6 +57,17 @@ public class NumericFormattingTests : EsqlTestBase
 	}
 
 	[Test]
+	public void FormatValue_DoubleNeedingSeventeenDigits_RoundTrips()
+	{
+		var value = 0.1 + 0.2;
+
+		var result = EsqlFormatting.FormatValue(value, ReaderOptions);
+
+		_ = result.Should().Be("0.30000000000000004");
+		_ = double.Parse(result, System.Globalization.CultureInfo.InvariantCulture).Should().Be(value);
+	}
+
+	[Test]
 	public void FormatValue_SubMillisecondTimeSpan_ThrowsNotSupported()
 	{
 		var act = () => EsqlFormatting.FormatValue(TimeSpan.FromTicks(15), ReaderOptions);
