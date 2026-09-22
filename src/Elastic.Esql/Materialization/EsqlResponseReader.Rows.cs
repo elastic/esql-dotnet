@@ -30,17 +30,16 @@ internal sealed partial class EsqlResponseReader
 
 		try
 		{
-			var cursor = new AsyncStreamBufferCursor(asyncBuffer);
-			var prepared = await PrepareRowsAsync<T>(cursor, cancellationToken).ConfigureAwait(false);
+			var prepared = await PrepareRowsAsync<T>(asyncBuffer, cancellationToken).ConfigureAwait(false);
 
 			var result = new EsqlAsyncResults<T>();
 			result.SetOwnedResource(asyncBuffer);
-			await ApplyPreparedMetadataAsync(result, prepared, cursor, cancellationToken).ConfigureAwait(false);
+			await ApplyPreparedMetadataAsync(result, prepared, asyncBuffer, cancellationToken).ConfigureAwait(false);
 
 			var forceBuffer = requireId && result.Id is null && !prepared.ValuesFirst && prepared.IsRunning != true;
 			result.Rows = forceBuffer
-				? StreamRowsThenScanForIdAsync(cursor, prepared, result, cancellationToken)
-				: BuildAsyncRows(cursor, prepared, result, cancellationToken);
+				? StreamRowsThenScanForIdAsync(asyncBuffer, prepared, result, cancellationToken)
+				: BuildAsyncRows(asyncBuffer, prepared, result, cancellationToken);
 			return result;
 		}
 		catch
@@ -84,17 +83,16 @@ internal sealed partial class EsqlResponseReader
 
 		try
 		{
-			var cursor = new SyncStreamBufferCursor(syncBuffer);
-			var prepared = PrepareRows<T>(cursor);
+			var prepared = PrepareRows<T>(syncBuffer);
 
 			var result = new EsqlResults<T>();
 			result.SetOwnedResource(syncBuffer);
-			ApplyPreparedMetadata(result, prepared, cursor);
+			ApplyPreparedMetadata(result, prepared, syncBuffer);
 
 			var forceBuffer = requireId && result.Id is null && !prepared.ValuesFirst && prepared.IsRunning != true;
 			result.Rows = forceBuffer
-				? StreamRowsThenScanForId(cursor, prepared, result)
-				: BuildSyncRows(cursor, prepared, result);
+				? StreamRowsThenScanForId(syncBuffer, prepared, result)
+				: BuildSyncRows(syncBuffer, prepared, result);
 			return result;
 		}
 		catch
