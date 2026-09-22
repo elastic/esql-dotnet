@@ -107,6 +107,16 @@ public class DirectRowBinderEligibilityTests
 	}
 
 	[Test]
+	public void Build_GlobalConverterForUnderlyingType_DoesNotCreateDirectBinderForNullable()
+	{
+		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+		options.Converters.Add(new UnixEpochDateTimeConverter());
+		var layout = BuildLayout<NullableDateModel>(options, ("name", "keyword"), ("when", "date"));
+
+		layout.DirectBinder.Should().BeNull();
+	}
+
+	[Test]
 	public void Build_ParameterizedConstructor_DoesNotCreateDirectBinder()
 	{
 		var layout = BuildLayout<RecordProjection>(("message", "keyword"), ("statusCode", "integer"));
@@ -192,6 +202,12 @@ public class DirectRowBinderEligibilityTests
 		public DateTimeOffset DateTimeOffsetValue { get; set; }
 		public Guid GuidValue { get; set; }
 		public int? NullableValue { get; set; }
+	}
+
+	private sealed class NullableDateModel
+	{
+		public string Name { get; set; } = string.Empty;
+		public DateTime? When { get; set; }
 	}
 
 	private sealed class TimestampedModel
