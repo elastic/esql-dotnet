@@ -150,9 +150,7 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 
 		var response = await _executor.PollAsyncQueryAsync(QueryId, _request, cancellationToken).ConfigureAwait(false);
 
-		await DisposeOwnedResponseAsync().ConfigureAwait(false);
-		DisposeResults();
-		_ownedAsyncResponse = response;
+		await ReplaceOwnedResponseAsync(response).ConfigureAwait(false);
 
 		_asyncResult = await _reader.ReadRowsAsync<T>(response.Body, cancellationToken: cancellationToken).ConfigureAwait(false);
 		_syncResult = null;
@@ -176,9 +174,7 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 		{
 			var response = await _executor.PollAsyncQueryAsync(QueryId, _request, cancellationToken).ConfigureAwait(false);
 
-			await DisposeOwnedResponseAsync().ConfigureAwait(false);
-			DisposeResults();
-			_ownedAsyncResponse = response;
+			await ReplaceOwnedResponseAsync(response).ConfigureAwait(false);
 
 			_asyncResult = await _reader.ReadRowsAsync<T>(response.Body, cancellationToken: cancellationToken).ConfigureAwait(false);
 			_syncResult = null;
@@ -219,9 +215,7 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 
 		var response = _executor.PollAsyncQuery(QueryId, _request);
 
-		DisposeOwnedResponse();
-		DisposeResults();
-		_ownedSyncResponse = response;
+		ReplaceOwnedResponse(response);
 
 		_syncResult = _reader.ReadRows<T>(response.Body);
 		_asyncResult = null;
@@ -246,9 +240,7 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 		{
 			var response = _executor.PollAsyncQuery(QueryId, _request);
 
-			DisposeOwnedResponse();
-			DisposeResults();
-			_ownedSyncResponse = response;
+			ReplaceOwnedResponse(response);
 
 			_syncResult = _reader.ReadRows<T>(response.Body);
 			_asyncResult = null;
@@ -394,6 +386,65 @@ public sealed class EsqlAsyncQuery<T> : IAsyncDisposable, IDisposable
 
 		_ownedSyncResponse?.Dispose();
 		_ownedSyncResponse = null;
+	}
+
+	// Hands a freshly polled response over to this instance. If releasing the previous response or
+	// results throws, the replacement is disposed best-effort so it cannot leak, and the teardown
+	// failure is what surfaces.
+	private void ReplaceOwnedResponse(IEsqlResponse response)
+	{
+		try
+		{
+			DisposeOwnedResponse();
+			DisposeResults();
+		}
+		catch
+		{
+			DisposeQuietly(response);
+			throw;
+		}
+
+		_ownedSyncResponse = response;
+	}
+
+	private async ValueTask ReplaceOwnedResponseAsync(IEsqlAsyncResponse response)
+	{
+		try
+		{
+			await DisposeOwnedResponseAsync().ConfigureAwait(false);
+			DisposeResults();
+		}
+		catch
+		{
+			await DisposeQuietlyAsync(response).ConfigureAwait(false);
+			throw;
+		}
+
+		_ownedAsyncResponse = response;
+	}
+
+	private static void DisposeQuietly(IDisposable response)
+	{
+		try
+		{
+			response.Dispose();
+		}
+		catch (Exception)
+		{
+			// Best-effort cleanup on the failure path; the teardown exception is the one to surface.
+		}
+	}
+
+	private static async ValueTask DisposeQuietlyAsync(IAsyncDisposable response)
+	{
+		try
+		{
+			await response.DisposeAsync().ConfigureAwait(false);
+		}
+		catch (Exception)
+		{
+			// Best-effort cleanup on the failure path; the teardown exception is the one to surface.
+		}
 	}
 
 	private readonly struct CancellableAsyncEnumerable(
@@ -564,8 +615,7 @@ public sealed class EsqlAsyncQuery : IAsyncDisposable, IDisposable
 			.PollAsyncQueryAsync(QueryId, _request, cancellationToken)
 			.ConfigureAwait(false);
 
-		await DisposeOwnedResponseAsync().ConfigureAwait(false);
-		_ownedAsyncResponse = response;
+		await ReplaceOwnedResponseAsync(response).ConfigureAwait(false);
 		ApplyHeaderMetadata(response);
 	}
 
@@ -602,8 +652,7 @@ public sealed class EsqlAsyncQuery : IAsyncDisposable, IDisposable
 
 		var response = _executor.PollAsyncQuery(QueryId, _request);
 
-		DisposeOwnedResponse();
-		_ownedSyncResponse = response;
+		ReplaceOwnedResponse(response);
 		ApplyHeaderMetadata(response);
 	}
 
@@ -767,5 +816,62 @@ public sealed class EsqlAsyncQuery : IAsyncDisposable, IDisposable
 
 		_ownedSyncResponse?.Dispose();
 		_ownedSyncResponse = null;
+	}
+
+	// Hands a freshly polled response over to this instance. If releasing the previous response
+	// throws, the replacement is disposed best-effort so it cannot leak, and the teardown failure
+	// is what surfaces.
+	private void ReplaceOwnedResponse(IEsqlResponse response)
+	{
+		try
+		{
+			DisposeOwnedResponse();
+		}
+		catch
+		{
+			DisposeQuietly(response);
+			throw;
+		}
+
+		_ownedSyncResponse = response;
+	}
+
+	private async ValueTask ReplaceOwnedResponseAsync(IEsqlAsyncResponse response)
+	{
+		try
+		{
+			await DisposeOwnedResponseAsync().ConfigureAwait(false);
+		}
+		catch
+		{
+			await DisposeQuietlyAsync(response).ConfigureAwait(false);
+			throw;
+		}
+
+		_ownedAsyncResponse = response;
+	}
+
+	private static void DisposeQuietly(IDisposable response)
+	{
+		try
+		{
+			response.Dispose();
+		}
+		catch (Exception)
+		{
+			// Best-effort cleanup on the failure path; the teardown exception is the one to surface.
+		}
+	}
+
+	private static async ValueTask DisposeQuietlyAsync(IAsyncDisposable response)
+	{
+		try
+		{
+			await response.DisposeAsync().ConfigureAwait(false);
+		}
+		catch (Exception)
+		{
+			// Best-effort cleanup on the failure path; the teardown exception is the one to surface.
+		}
 	}
 }
