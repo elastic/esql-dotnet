@@ -37,7 +37,7 @@ public class DirectBindingTypedSetterTests
 		var layout = BuildLayout<TypedSetterDerivedModel>(("name", "keyword"), ("count", "integer"), ("when", "date"));
 
 		layout.DirectBinder.Should().NotBeNull();
-		layout.DirectBinder!.TypedSetters.Should().HaveCount(3);
+		layout.DirectBinder.TypedSetters.Should().HaveCount(3);
 		layout.DirectBinder.TypedSetters.Should().AllSatisfy(setter => setter.Should().NotBeNull());
 		layout.DirectBinder.TypedSetters[1].Should().BeOfType<Action<object, int>>();
 	}
@@ -62,7 +62,8 @@ public class DirectBindingTypedSetterTests
 		var layout = BuildLayout<TypedSetterStructModel>(("x", "integer"), ("y", "keyword"));
 
 		layout.DirectBinder.Should().NotBeNull();
-		layout.DirectBinder!.TypedSetters.Should().AllSatisfy(setter => setter.Should().BeNull());
+		layout.DirectBinder.TypedSetters.Should().HaveCount(2);
+		layout.DirectBinder.TypedSetters.Should().AllSatisfy(setter => setter.Should().BeNull());
 	}
 
 	[Test]
@@ -85,7 +86,7 @@ public class DirectBindingTypedSetterTests
 		var layout = BuildLayout<InitOnlyModel>(options, ("name", "keyword"), ("count", "integer"));
 
 		layout.DirectBinder.Should().NotBeNull();
-		layout.DirectBinder!.TypedSetters.Should().AllSatisfy(setter => setter.Should().NotBeNull());
+		layout.DirectBinder.TypedSetters.Should().AllSatisfy(setter => setter.Should().NotBeNull());
 	}
 
 	[Test]
@@ -99,6 +100,45 @@ public class DirectBindingTypedSetterTests
 		rows.Should().ContainSingle();
 		rows[0].Name.Should().Be("a");
 		rows[0].Count.Should().Be(1);
+	}
+
+	[Test]
+	public void ReadRows_ForeignAttributeProvider_KeepsBoxingSetterAndBinds()
+	{
+		if (!RuntimeFeature.IsDynamicCodeSupported)
+			return;
+
+		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+		{
+			TypeInfoResolver = new DefaultJsonTypeInfoResolver { Modifiers = { RedirectNameToForeignMember } }
+		};
+
+		var layout = BuildLayout<ForeignProviderModel>(options, ("name", "keyword"), ("count", "integer"));
+
+		layout.DirectBinder.Should().NotBeNull();
+		layout.DirectBinder.TypedSetters[0].Should().BeNull();
+		layout.DirectBinder.TypedSetters[1].Should().NotBeNull();
+
+		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"count","type":"integer"}],"values":[["a",1]]}""";
+		var rows = ReadRows<ForeignProviderModel>(json, options);
+
+		rows.Should().ContainSingle();
+		rows[0].Name.Should().Be("a");
+		rows[0].Count.Should().Be(1);
+	}
+
+	// A contract modifier is the only way to reach the case the guard covers: an AttributeProvider naming a
+	// member of a type the row instance is not.
+	private static void RedirectNameToForeignMember(JsonTypeInfo typeInfo)
+	{
+		if (typeInfo.Type != typeof(ForeignProviderModel))
+			return;
+
+		foreach (var property in typeInfo.Properties)
+		{
+			if (string.Equals(property.Name, "name", StringComparison.Ordinal))
+				property.AttributeProvider = typeof(UnrelatedNameModel).GetProperty(nameof(UnrelatedNameModel.Name));
+		}
 	}
 
 	private static ColumnLayout BuildLayout<T>(params (string Name, string Type)[] columns) =>
@@ -126,9 +166,20 @@ public class DirectBindingTypedSetterTests
 			TypeInfoResolver = JsonTypeInfoResolver.Combine(MaterializationTestJsonContext.Default, EsqlTestMappingContext.Default)
 		};
 
-	private class InitOnlyModel
+	private sealed class InitOnlyModel
 	{
 		public string Name { get; init; } = string.Empty;
 		public int Count { get; init; }
+	}
+
+	private sealed class ForeignProviderModel
+	{
+		public string Name { get; set; } = string.Empty;
+		public int Count { get; set; }
+	}
+
+	private sealed class UnrelatedNameModel
+	{
+		public string Name { get; set; } = string.Empty;
 	}
 }
