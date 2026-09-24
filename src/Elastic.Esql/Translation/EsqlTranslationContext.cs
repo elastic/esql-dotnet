@@ -204,7 +204,7 @@ internal sealed class EsqlTranslationContext
 
 	// Only converters the user registered on the options count; the resolver's built-in converters are
 	// exactly what the explicit-decimal fast path stands in for.
-	private bool HasRegisteredConverter(Type type)
+	internal bool HasRegisteredConverter(Type type)
 	{
 		foreach (var converter in SerializerOptions.Converters)
 		{

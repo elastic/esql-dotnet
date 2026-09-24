@@ -9,6 +9,8 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.Json.Serialization;
+using Elastic.Esql.Core;
 using Elastic.Esql.Extensions;
 using Elastic.Esql.Formatting;
 using Elastic.Esql.Functions;
@@ -464,6 +466,12 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		if (declaringType == typeof(Math))
 			return VisitMathMethod(node);
 
+		// Multi-value field predicates: tags.Any(t => t == "x"), tags.Contains("x").
+		// Checked before the constant-collection IN translation, because there the
+		// collection is a captured constant while here it is a document field.
+		if (TryVisitMultiValueField(node))
+			return node;
+
 		if (methodName == "Contains" && TryVisitCollectionContains(node))
 			return node;
 
@@ -659,10 +667,27 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		return false;
 	}
 
+	/// <summary>
+	/// Whether the call is a Contains overload that takes an equality comparer, as its
+	/// last parameter. The comparison emitted is the one Elasticsearch performs, which
+	/// the comparer would not follow.
+	/// </summary>
+	private static bool TakesAnEqualityComparer(MethodCallExpression node) =>
+		node.Method.Name == "Contains"
+		&& node.Method.GetParameters() is [.., { ParameterType: { IsGenericType: true } last }]
+		&& last.GetGenericTypeDefinition() == typeof(IEqualityComparer<>);
+
+	private static NotSupportedException ContainsWithAnEqualityComparer() => new(
+		"Contains with an equality comparer is not supported: the emitted comparison is the one "
+		+ "Elasticsearch performs, which the comparer would not follow. Call Contains without one.");
+
 	private static bool TryGetContainsArguments(MethodCallExpression node, out Expression valueExpression, out IEnumerable? collection)
 	{
 		valueExpression = null!;
 		collection = null;
+
+		if (TakesAnEqualityComparer(node))
+			throw ContainsWithAnEqualityComparer();
 
 		if (node.Method.IsStatic)
 		{
@@ -1333,4 +1358,688 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 			return false;
 		}
 	}
+
+	/// <summary>
+	/// Predicates over a multi-value document field: <c>field.Any(...)</c>,
+	/// <c>field.All(...)</c> and <c>field.Contains(value)</c>. A document holds every
+	/// value of the field at once, so the quantifier is answered on the field itself,
+	/// without the row duplication MV_EXPAND would introduce.
+	/// <para>
+	/// Equality here is the store's: the field is compared the way Elasticsearch compares
+	/// its values. The property's collection type is how a document is materialized, and
+	/// a comparer set on an instance is not visible when the query is translated, just as
+	/// a scalar comparison on a string property does not see one either. MATCH compares
+	/// the way the field is indexed: exactly on a keyword field, through the analyzer on
+	/// a text field, as MATCH always does; a keyword multi-field of a collection is not a
+	/// shape translated here.
+	/// </para>
+	/// </summary>
+	private bool TryVisitMultiValueField(MethodCallExpression node)
+	{
+		var methodName = node.Method.Name;
+
+		if (methodName is not ("Any" or "All" or "Contains"))
+			return false;
+
+		// the source must be a document field, not a constant collection
+		var source = node.Method.IsStatic
+			? node.Arguments.Count > 0 ? node.Arguments[0] : null
+			: node.Object;
+
+		// arrays reach us through MemoryExtensions.Contains(ReadOnlySpan<T>, T)
+		if (source is not null && node.Method.DeclaringType == typeof(MemoryExtensions))
+			source = TryUnwrapMemoryExtensionsSource(source);
+
+		// "field.Take(n).Any(p)" means "any of the first n", which is what reading the
+		// field position by position computes: the bound belongs to the one predicate
+		// that states it, so it travels with the source rather than in the context
+		var positions = (int?)null;
+		if (source is MethodCallExpression { Method.Name: nameof(Enumerable.Take), Arguments.Count: 2 } take
+			&& take.Method.DeclaringType == typeof(Enumerable))
+		{
+			if (!TryGetConstant(take.Arguments[1], out var taken) || taken is not int count || count < 1)
+			{
+				throw new NotSupportedException(
+					"Take on a multi-value field takes a constant count of at least one: the number of "
+					+ "positions to read has to be fixed when the query is written.");
+			}
+
+			if (count > MaxPredicateTerms)
+			{
+				throw new NotSupportedException(
+					$"Take({count}) on a multi-value field is not supported: each position adds a level "
+					+ $"to the expression Elasticsearch parses, and at most {MaxPredicateTerms} fit.");
+			}
+
+			positions = count;
+			source = take.Arguments[0];
+		}
+
+		if (source is null || !IsMultiValueField(source))
+			return false;
+
+		// only the framework's own Any, All and Contains: a method of that name defined
+		// elsewhere may mean anything, and is left to fail soft as before
+		if (!IsFrameworkMethod(node.Method))
+			return false;
+
+		// A collection of objects is an object in the mapping: ES|QL has a column for each
+		// of its fields and none for the objects themselves, so there is nothing to count
+		// or to compare a value with.
+		if (ExpressionTranslationHelpers.IsObjectSelectionType(ElementType(source.Type)))
+		{
+			throw new NotSupportedException(
+				$"{methodName} over a collection of objects is not supported: ES|QL has a column for "
+				+ "each field of the objects and none for the objects themselves.");
+		}
+
+		// The field holds what the converter writes, and the values compared are emitted as
+		// given: a converter of the collection, on the property, on its type or among the
+		// serializer's converters, does not apply to one of its values, so the two need not
+		// meet, and the count of values need not be the one written either.
+		if (_context.Metadata.FindPropertyConverter(EntityPropertyMember(source)) is not null
+			|| _context.HasRegisteredConverter(source.Type)
+			|| source.Type.IsDefined(typeof(JsonConverterAttribute), inherit: false))
+		{
+			throw new NotSupportedException(
+				$"{methodName} over a collection written through a JsonConverter is not supported: the "
+				+ "field holds what the converter writes, and the values compared are emitted as given, "
+				+ "so the two need not match.");
+		}
+
+		// field.Any() with no predicate: the field simply has to hold a value
+		if (methodName == "Any" && node.Arguments.Count == (node.Method.IsStatic ? 1 : 0))
+		{
+			// MV_COUNT is null over a missing field, and so would be the negation; LINQ
+			// reads a missing field as an empty sequence, where Any() is simply false
+			_ = _builder.Append("COALESCE(MV_COUNT(").Append(ResolveMultiValueField(source)).Append("), 0) > 0");
+			return true;
+		}
+
+		// field.Contains(value), and only that overload: one taking a comparer asks
+		// for a comparison the translation cannot honour
+		if (methodName == "Contains")
+		{
+			if (TakesAnEqualityComparer(node))
+				throw ContainsWithAnEqualityComparer();
+
+			var expectedArguments = node.Method.IsStatic ? 2 : 1;
+
+			if (node.Arguments.Count != expectedArguments)
+				return false;
+
+			// "field.Take(n).Contains(v)" is "one of the first n values is v", which MATCH
+			// over the whole field does not answer
+			if (positions is { } count)
+			{
+				var value = node.Arguments[^1];
+
+				if (!TryGetConstant(value, out var constant) || constant is null)
+					return false;
+
+				AppendValuePattern(
+					ResolveMultiValueField(source),
+					all: false,
+					new ElementPredicate(ElementPredicateKind.Equal, [constant], Negated: false, [CapturedName(value)]),
+					count);
+				return true;
+			}
+
+			return TryAppendMatch(source, node.Arguments[^1]);
+		}
+
+		var argument = node.Arguments[^1];
+
+		if (StripQuotes(argument) is not LambdaExpression { Parameters.Count: 1 } lambda)
+			return false;
+
+		var predicate = TryParseElementPredicate(lambda.Body, lambda.Parameters[0], negated: false);
+		if (predicate is null)
+			return false;
+
+		return TryAppendQuantified(source, all: methodName == "All", predicate.Value, positions);
+	}
+
+	/// <summary>
+	/// Reads the body of the lambda passed to Any/All as one predicate on the element.
+	/// Null guards on the element are dropped, since a stored value is never null.
+	/// </summary>
+	private static ElementPredicate? TryParseElementPredicate(Expression body, ParameterExpression element, bool negated) =>
+		body switch
+		{
+			UnaryExpression { NodeType: ExpressionType.Not } negation =>
+				TryParseElementPredicate(negation.Operand, element, negated: !negated),
+
+			// "x != null && P(x)" is P(x)
+			BinaryExpression { NodeType: ExpressionType.AndAlso } conjunction when IsNullGuard(conjunction.Left, element, ExpressionType.NotEqual) =>
+				TryParseElementPredicate(conjunction.Right, element, negated: negated),
+
+			BinaryExpression { NodeType: ExpressionType.AndAlso } conjunction when IsNullGuard(conjunction.Right, element, ExpressionType.NotEqual) =>
+				TryParseElementPredicate(conjunction.Left, element, negated: negated),
+
+			// "x == null || P(x)" is P(x)
+			BinaryExpression { NodeType: ExpressionType.OrElse } disjunction when IsNullGuard(disjunction.Left, element, ExpressionType.Equal) =>
+				TryParseElementPredicate(disjunction.Right, element, negated: negated),
+
+			BinaryExpression { NodeType: ExpressionType.Equal or ExpressionType.NotEqual } comparison =>
+				TryParseElementEquality(comparison, element, negated: negated),
+
+			BinaryExpression
+			{
+				NodeType: ExpressionType.GreaterThan or ExpressionType.GreaterThanOrEqual
+					or ExpressionType.LessThan or ExpressionType.LessThanOrEqual
+			} ordering => TryParseElementOrdering(ordering, element, negated: negated),
+
+			MethodCallExpression call => TryParseElementCall(call, element, negated: negated),
+
+			_ => null
+		};
+
+	/// <summary><c>x == v</c> or <c>x != v</c>, with the element on either side.</summary>
+	private static ElementPredicate? TryParseElementEquality(BinaryExpression comparison, ParameterExpression element, bool negated)
+	{
+		var value = comparison.Left == element ? comparison.Right
+			: comparison.Right == element ? comparison.Left
+			: null;
+
+		if (value is null || !TryGetConstant(value, out var constant))
+			return null;
+
+		var isEqual = comparison.NodeType == ExpressionType.Equal;
+		return new ElementPredicate(ElementPredicateKind.Equal, [constant], Negated: isEqual ? negated : !negated, [CapturedName(value)]);
+	}
+
+	/// <summary><c>x &gt; v</c> and the other orderings, with the element on either side.</summary>
+	private static ElementPredicate? TryParseElementOrdering(BinaryExpression ordering, ParameterExpression element, bool negated)
+	{
+		// "10 < x" is "x > 10": keep the element on the left
+		var elementOnLeft = ordering.Left == element;
+		var value = elementOnLeft ? ordering.Right : ordering.Right == element ? ordering.Left : null;
+
+		if (value is null || !TryGetConstant(value, out var constant))
+			return null;
+
+		var kind = (ordering.NodeType, elementOnLeft) switch
+		{
+			(ExpressionType.GreaterThan, true) or (ExpressionType.LessThan, false) => ElementPredicateKind.GreaterThan,
+			(ExpressionType.GreaterThanOrEqual, true) or (ExpressionType.LessThanOrEqual, false) => ElementPredicateKind.GreaterThanOrEqual,
+			(ExpressionType.LessThan, true) or (ExpressionType.GreaterThan, false) => ElementPredicateKind.LessThan,
+			_ => ElementPredicateKind.LessThanOrEqual
+		};
+
+		return new ElementPredicate(kind, [constant], Negated: negated, [CapturedName(value)]);
+	}
+
+	/// <summary>
+	/// A call on the element, <c>x.StartsWith("a")</c> and the like, or membership of the
+	/// element in a constant collection, <c>values.Contains(x)</c>.
+	/// </summary>
+	private static ElementPredicate? TryParseElementCall(MethodCallExpression call, ParameterExpression element, bool negated)
+	{
+		// x.StartsWith("a"), x.EndsWith("a"), x.Contains("a"), with or without a
+		// StringComparison: either way the test holds for one value at a time, and only
+		// an ordinal one can be honoured, as for a single field
+		if (call.Object == element
+			&& call.Method.DeclaringType == typeof(string)
+			&& (call.Arguments.Count == 1
+				|| (call.Arguments.Count == 2 && call.Arguments[1].Type == typeof(StringComparison))))
+		{
+			if (!TryGetTextPredicateKind(call.Method.Name, out var kind)
+				|| !TryGetConstant(call.Arguments[0], out var constant))
+				return null;
+
+			EsqlFunctionTranslator.ThrowIfUnsupportedStringComparison(call);
+
+			return new ElementPredicate(kind, [constant], Negated: negated, [CapturedName(call.Arguments[0])]);
+		}
+
+		// values.Contains(x), over a constant collection
+		if (!TryGetContainsArguments(call, out var valueExpression, out var collection)
+			|| valueExpression != element
+			|| collection is null)
+			return null;
+
+		// enumerating the collection loses the equality it was built with: a set
+		// holding "IOT" under an ordinal-ignore-case comparer contains "iot",
+		// which the emitted comparison does not reproduce
+		if (!UsesDefaultEquality(collection))
+		{
+			throw new NotSupportedException(
+				$"Contains over a {TypeName(collection.GetType())} is not supported: a set, a dictionary "
+				+ "or a collection type of your own may compare its values in a way of its own, "
+				+ "which the emitted comparison would not follow. Pass an array, a List or a "
+				+ "LINQ query, which compare with default equality.");
+		}
+
+		var candidates = collection.Cast<object?>().ToList();
+
+		// a stored value is never null, and MATCH(field, null) is not valid ES|QL
+		if (candidates.Any(candidate => candidate is null))
+			return null;
+
+		return new ElementPredicate(ElementPredicateKind.In, candidates, Negated: negated);
+	}
+
+	/// <summary>
+	/// Any(P) and All(P) over the values of a field. A negated predicate is pushed into
+	/// the quantifier, since Any(not P) is "not All(P)" and All(not P) is "not Any(P)".
+	/// With Take(n) on the field every predicate is read over the first n positions,
+	/// since that is what the quantifier ranges over; without it over the whole field.
+	/// </summary>
+	private bool TryAppendQuantified(Expression field, bool all, ElementPredicate predicate, int? positions)
+	{
+		var name = ResolveMultiValueField(field);
+
+		// "Any(not P)" is "not All(P)" and "All(not P)" is "not Any(P)": the negation
+		// moves onto the quantifier, which flips
+		if (predicate.Negated)
+		{
+			_ = _builder.Append("NOT ");
+			all = !all;
+			predicate = predicate with { Negated = false };
+		}
+
+		if (positions is { } count)
+		{
+			AppendValuePattern(name, all: all, predicate, count);
+			return true;
+		}
+
+		switch (predicate.Kind)
+		{
+			// a document matches MATCH when any of the field's values does
+			case ElementPredicateKind.Equal when !all:
+				AppendPresentMatches(name, [RenderValue(predicate, 0)]);
+				return true;
+
+			case ElementPredicateKind.In when !all:
+				if (predicate.Values.Count == 0)
+				{
+					_ = _builder.Append("false");
+					return true;
+				}
+
+				// each value adds one level to the expression
+				if (predicate.Values.Count > MaxPredicateTerms)
+				{
+					throw new NotSupportedException(
+						$"A collection of {predicate.Values.Count} values is not supported here: each value adds "
+						+ $"a level to the expression Elasticsearch parses, and at most {MaxPredicateTerms} fit.");
+				}
+
+				AppendPresentMatches(name, [.. Enumerable.Range(0, predicate.Values.Count).Select(i => RenderValue(predicate, i))]);
+				return true;
+
+			// every value equals v: the field holds one distinct value, and it matches.
+			// A missing field has no value that differs, as All() over an empty sequence is true.
+			case ElementPredicateKind.Equal:
+				_ = _builder.Append('(').Append(name).Append(" IS NULL OR (MV_COUNT(MV_DEDUPE(").Append(name).Append(")) == 1 AND ");
+				AppendMatch(name, RenderValue(predicate, 0));
+				_ = _builder.Append("))");
+				return true;
+
+			// some value is above v when the largest is; every value is when the smallest is
+			case ElementPredicateKind.GreaterThan or ElementPredicateKind.GreaterThanOrEqual
+				or ElementPredicateKind.LessThan or ElementPredicateKind.LessThanOrEqual:
+				{
+					var upper = predicate.Kind is ElementPredicateKind.GreaterThan or ElementPredicateKind.GreaterThanOrEqual;
+					var aggregate = all == upper ? "MV_MIN" : "MV_MAX";
+					var op = ComparisonOperator(predicate.Kind);
+
+					// MV_MIN and MV_MAX are null over a missing field, and so would be the
+					// whole predicate, which then answers neither true nor false. A missing
+					// field is an empty sequence: All holds over it and Any does not, and
+					// saying so explicitly keeps an enclosing NOT meaningful.
+					_ = _builder.Append('(').Append(name).Append(all ? " IS NULL OR " : " IS NOT NULL AND ");
+
+					_ = _builder.Append(aggregate).Append('(').Append(name).Append(") ").Append(op).Append(' ')
+						.Append(RenderValue(predicate, 0)).Append(')');
+
+					return true;
+				}
+
+			// StartsWith and the rest hold for one value at a time, which needs the field
+			// read position by position; how many positions is what Take(n) states
+			default:
+				throw new NotSupportedException(
+						$"A predicate over the individual values of {name} is not supported without a "
+						+ "bound: MATCH, MV_MIN, MV_MAX and MV_COUNT answer a test over the field as a "
+						+ "whole, and a test such as StartsWith holds for one value at a time, which "
+						+ "reads the field position by position. State how many with Take(n) on the "
+						+ "field, as in Tags.Take(4).Any(t => t.StartsWith(\"wat\")).");
+		}
+	}
+
+	private static string ComparisonOperator(ElementPredicateKind kind) => kind switch
+	{
+		ElementPredicateKind.GreaterThan => ">",
+		ElementPredicateKind.GreaterThanOrEqual => ">=",
+		ElementPredicateKind.LessThan => "<",
+		ElementPredicateKind.LessThanOrEqual => "<=",
+		_ => "=="
+	};
+
+	private bool TryAppendMatch(Expression field, Expression value)
+	{
+		if (!TryGetConstant(value, out var constant))
+			return false;
+
+		var name = CapturedName(value);
+
+		AppendPresentMatches(
+			ResolveMultiValueField(field),
+			[name is null ? _context.FormatValue(constant, null) : _context.GetValueOrParameterName(name, constant)]);
+		return true;
+	}
+
+	/// <summary>
+	/// Whether the method is the framework's own: Enumerable and MemoryExtensions for the
+	/// static forms, the collections of the base library for the instance ones.
+	/// </summary>
+	private static bool IsFrameworkMethod(MethodInfo method)
+	{
+		var declaring = method.DeclaringType;
+
+		if (declaring is null)
+			return false;
+
+		if (method.IsStatic)
+			return declaring == typeof(Enumerable) || declaring == typeof(MemoryExtensions);
+
+		return declaring.Assembly == typeof(object).Assembly
+			|| declaring.Assembly.GetName().Name is "System.Collections" or "System.Collections.Immutable";
+	}
+
+	/// <summary>
+	/// The column a field expression names, with the compiler's transparent-identifier
+	/// prefixes stripped the way ordinary field predicates do.
+	/// </summary>
+	private string ResolveMultiValueField(Expression expression) =>
+		expression is MemberExpression member
+			? ResolveFieldPath(member)
+			: expression.ResolveFieldName(_context.Metadata);
+
+	/// <summary>
+	/// A field that holds more than one value: a collection of the document, which is
+	/// what <see cref="TypeHelper.IsEnumerableType"/> counts as one. A dictionary is an
+	/// object in the mapping rather than a list of values, and is not.
+	/// </summary>
+	private static bool IsMultiValueField(Expression expression) =>
+		TypeHelper.IsEnumerableType(expression.Type) && ContainsParameter(expression);
+
+	private static Type ElementType(Type collectionType) =>
+		TypeHelper.FindGenericType(typeof(IEnumerable<>), collectionType)!.GetGenericArguments()[0];
+
+	private static string TypeName(Type type) =>
+		type.Name.IndexOf('`') is var arity and >= 0 ? type.Name.Substring(0, arity) : type.Name;
+
+	private enum ElementPredicateKind
+	{
+		Equal,
+		In,
+		StartsWith,
+		EndsWith,
+		Contains,
+		GreaterThan,
+		GreaterThanOrEqual,
+		LessThan,
+		LessThanOrEqual
+	}
+
+	private readonly record struct ElementPredicate(
+		ElementPredicateKind Kind,
+		IReadOnlyList<object?> Values,
+		bool Negated,
+		IReadOnlyList<string?>? Names = null);
+
+	// MATCH is an analyzed search on a text-mapped field, so it matches more than equality
+	// does. MV_CONTAINS (preview since 9.2) and MV_INTERSECTS (preview since 9.4) are the
+	// exact primitives, and replace this once they are generally available.
+	private void AppendMatch(string field, string renderedValue) =>
+		_ = _builder.Append("MATCH(").Append(field).Append(", ").Append(renderedValue).Append(')');
+
+	/// <summary>
+	/// MATCH over each value, any of them matching, with a document that has no values
+	/// answered false. A shard whose index does not map the field has it replaced by null,
+	/// and MATCH over null is null (elastic/elasticsearch#137430), which an enclosing NOT
+	/// would keep null and so drop the document. Any over an empty sequence is false, and
+	/// it is stated, as for MV_MIN and MV_MAX.
+	/// </summary>
+	private void AppendPresentMatches(string field, IReadOnlyList<string> renderedValues)
+	{
+		_ = _builder.Append('(').Append(field).Append(" IS NOT NULL AND ");
+
+		if (renderedValues.Count > 1)
+			_ = _builder.Append('(');
+
+		for (var i = 0; i < renderedValues.Count; i++)
+		{
+			if (i > 0)
+				_ = _builder.Append(" OR ");
+
+			AppendMatch(field, renderedValues[i]);
+		}
+
+		if (renderedValues.Count > 1)
+			_ = _builder.Append(')');
+
+		_ = _builder.Append(')');
+	}
+
+	private static bool ContainsParameter(Expression expression) => expression switch
+	{
+		ParameterExpression => true,
+		MemberExpression member => member.Expression is not null && ContainsParameter(member.Expression),
+		UnaryExpression unary => ContainsParameter(unary.Operand),
+		MethodCallExpression call => call.Object is not null && ContainsParameter(call.Object),
+		_ => false
+	};
+
+	private static bool IsNullGuard(Expression expression, ParameterExpression element, ExpressionType comparison) =>
+		expression is BinaryExpression binary
+		&& binary.NodeType == comparison
+		&& ((binary.Left == element && IsNullConstant(binary.Right)) || (binary.Right == element && IsNullConstant(binary.Left)));
+
+	/// <summary>
+	/// A value of an element predicate, as a query parameter when it came from a
+	/// captured variable and <c>InlineParameters</c> is off, and as a literal otherwise.
+	/// </summary>
+	private string RenderValue(ElementPredicate predicate, int index)
+	{
+		var name = predicate.Names is { } names && index < names.Count ? names[index] : null;
+
+		return name is null
+			? _context.FormatValue(predicate.Values[index], null)
+			: _context.GetValueOrParameterName(name, predicate.Values[index]);
+	}
+
+	/// <summary>
+	/// How many terms a multi-value predicate may join: the positions Take(n) reads, the
+	/// values of a captured collection, or both together. Each one adds a level to the
+	/// expression Elasticsearch parses, and it stops accepting them past this.
+	/// </summary>
+	private const int MaxPredicateTerms = 256;
+
+	private static Expression StripQuotes(Expression expression)
+	{
+		var current = expression;
+
+		while (current is UnaryExpression { NodeType: ExpressionType.Quote } quote)
+			current = quote.Operand;
+
+		return current;
+	}
+
+	private static bool TryGetTextPredicateKind(string methodName, out ElementPredicateKind kind)
+	{
+		switch (methodName)
+		{
+			case "StartsWith":
+				kind = ElementPredicateKind.StartsWith;
+				return true;
+
+			case "EndsWith":
+				kind = ElementPredicateKind.EndsWith;
+				return true;
+
+			case "Contains":
+				kind = ElementPredicateKind.Contains;
+				return true;
+
+			default:
+				kind = default;
+				return false;
+		}
+	}
+
+	/// <summary>
+	/// Whether enumerating the collection and comparing its values with ES|QL's equality
+	/// answers Contains the way the collection does. Only a collection of a known kind
+	/// is taken to: arrays, lists, the LINQ operators, and the immutable and concurrent
+	/// lists of the base library, which all compare with default equality. A set of any
+	/// kind carries its own comparer, a dictionary and its keys likewise, a collection
+	/// type of the caller's own may answer Contains in any way at all, and so may a
+	/// wrapper such as ReadOnlyCollection, which hands Contains to the list it wraps:
+	/// those are refused rather than answered with a comparison they might not make. A
+	/// set built with the default comparer is refused all the same, since telling it
+	/// apart would take reflection the trimmer cannot follow.
+	/// </summary>
+	private static bool UsesDefaultEquality(IEnumerable collection)
+	{
+		var type = collection.GetType();
+
+		// the LINQ operators are the non-public iterator types of System.Linq, in the
+		// framework's own assembly; a public type there, such as Lookup, answers Contains
+		// its own way
+		if (type.IsArray || (type.Namespace == "System.Linq" && !type.IsPublic && type.Assembly == typeof(Enumerable).Assembly))
+			return true;
+
+		if (!type.IsGenericType)
+			return false;
+
+		var definition = type.GetGenericTypeDefinition();
+
+		return definition == typeof(List<>)
+			|| definition == typeof(Queue<>)
+			|| definition == typeof(Stack<>)
+			|| definition == typeof(LinkedList<>)
+			|| definition == typeof(ArraySegment<>)
+			|| definition == typeof(ConcurrentBag<>)
+			|| definition == typeof(ConcurrentQueue<>)
+			|| definition == typeof(ConcurrentStack<>)
+			|| definition.FullName is "System.Collections.Immutable.ImmutableArray`1"
+				or "System.Collections.Immutable.ImmutableList`1";
+	}
+
+	private static string? CapturedName(Expression expression) =>
+		expression is MemberExpression { Expression: ConstantExpression or MemberExpression } member
+			? member.Member.Name
+			: null;
+
+	/// <summary>
+	/// A predicate over the first <paramref name="positions"/> values of a field, as many
+	/// as Take(n) states. ES|QL applies a comparison or a scalar function to one value, not
+	/// to every value of a field at once, but MV_SLICE reads a value by position, so the
+	/// test is written out once per position and combined: any of them for Any, all of them
+	/// for All. A field holding more values is answered on its first ones, which is what
+	/// Take reads.
+	/// </summary>
+	private void AppendValuePattern(string field, bool all, ElementPredicate predicate, int positions)
+	{
+		// All over an empty list holds only for the empty field; Any never does
+		if (predicate.Kind == ElementPredicateKind.In && predicate.Values.Count == 0)
+		{
+			_ = _builder.Append(all ? field + " IS NULL" : "false");
+			return;
+		}
+
+		// under In the values are written out inside every position as an OR chain, and
+		// a chain of n values adds n - 1 levels to the positions' own; any other predicate
+		// tests one value per position and adds none
+		if (predicate.Kind == ElementPredicateKind.In && positions + predicate.Values.Count - 1 > MaxPredicateTerms)
+		{
+			throw new NotSupportedException(
+				$"{positions} positions and {predicate.Values.Count} values together are more than the expression "
+				+ $"Elasticsearch parses allows: at most {MaxPredicateTerms} of both.");
+		}
+
+		// Rendered once, before the positions, so a captured value becomes one parameter
+		// rather than one per position. A Contains pattern is a LIKE literal with its
+		// wildcards escaped.
+		var rendered = Enumerable.Range(0, predicate.Values.Count)
+			.Select(index => predicate.Kind == ElementPredicateKind.Contains
+				? EsqlFormatting.FormatString(
+					$"*{EscapeLikePattern(Convert.ToString(predicate.Values[index], CultureInfo.InvariantCulture) ?? "")}*")
+				: RenderValue(predicate, index))
+			.ToList();
+
+		// the positions are one term of whatever encloses them
+		if (positions > 1)
+			_ = _builder.Append('(');
+
+		for (var position = 0; position < positions; position++)
+		{
+			if (position > 0)
+				_ = _builder.Append(all ? " AND " : " OR ");
+
+			var value = $"MV_SLICE({field}, {position}, {position})";
+
+			// Past the last value MV_SLICE is null, and so would be the test, leaving
+			// the whole predicate undefined instead of answering either way. An absent
+			// value satisfies All and does not satisfy Any, so it is spelled out: the
+			// result then stays definite under an enclosing NOT.
+			_ = _builder.Append("COALESCE(");
+
+			if (all)
+				_ = _builder.Append(value).Append(" IS NULL OR ");
+
+			AppendValuePredicate(value, predicate.Kind, rendered);
+
+			_ = _builder.Append(", ").Append(all ? "true" : "false").Append(')');
+		}
+
+		if (positions > 1)
+			_ = _builder.Append(')');
+	}
+
+	/// <summary>
+	/// The test on one value. A comparison is made on the value as it is stored, so any
+	/// type ES|QL compares is read the same way; a text predicate reads a string.
+	/// </summary>
+	private void AppendValuePredicate(string value, ElementPredicateKind kind, IReadOnlyList<string> rendered)
+	{
+		switch (kind)
+		{
+			case ElementPredicateKind.StartsWith:
+				_ = _builder.Append("STARTS_WITH(").Append(value).Append(", ").Append(rendered[0]).Append(')');
+				break;
+
+			case ElementPredicateKind.EndsWith:
+				_ = _builder.Append("ENDS_WITH(").Append(value).Append(", ").Append(rendered[0]).Append(')');
+				break;
+
+			case ElementPredicateKind.Contains:
+				_ = _builder.Append(value).Append(" LIKE ").Append(rendered[0]);
+				break;
+
+			case ElementPredicateKind.In:
+				_ = _builder.Append('(');
+
+				for (var i = 0; i < rendered.Count; i++)
+				{
+					if (i > 0)
+						_ = _builder.Append(" OR ");
+
+					_ = _builder.Append(value).Append(" == ").Append(rendered[i]);
+				}
+
+				_ = _builder.Append(')');
+				break;
+
+			default:
+				_ = _builder.Append(value).Append(' ').Append(ComparisonOperator(kind)).Append(' ').Append(rendered[0]);
+				break;
+		}
+	}
+
 }

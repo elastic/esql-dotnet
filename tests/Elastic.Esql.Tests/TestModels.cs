@@ -13,6 +13,9 @@ namespace Elastic.Esql.Tests;
 // ============================================================================
 
 [JsonSerializable(typeof(LogEntry))]
+[JsonSerializable(typeof(TaggedProduct))]
+[JsonSerializable(typeof(SetTaggedProduct))]
+[JsonSerializable(typeof(InterfaceTaggedProduct))]
 [JsonSerializable(typeof(TreeNode))]
 [JsonSerializable(typeof(OptionalDocument))]
 [JsonSerializable(typeof(OptionalCountProjection))]
@@ -21,6 +24,10 @@ namespace Elastic.Esql.Tests;
 [JsonSerializable(typeof(LazyHostRecord))]
 [JsonSerializable(typeof(NestedSelectionHostWithTag))]
 [JsonSerializable(typeof(PrefixedCodeDocument))]
+[JsonSerializable(typeof(ConvertedTagsProduct))]
+[JsonSerializable(typeof(TypeConvertedTagsProduct))]
+[JsonSerializable(typeof(LinedProduct))]
+[JsonSerializable(typeof(AttributedProduct))]
 [JsonSerializable(typeof(NullableNestedModel))]
 [JsonSerializable(typeof(AddressModel))]
 [JsonSerializable(typeof(SimpleDocument))]
@@ -111,6 +118,119 @@ public class NestedSelectionHostWithTag(string tag)
 public class OptionalCountProjection
 {
 	public int? Count { get; set; }
+}
+
+/// <summary>
+/// Document with multi-value fields, for predicates over collections.
+/// </summary>
+public class TaggedProduct
+{
+	public string Name { get; set; } = string.Empty;
+
+	public string[] Tags { get; set; } = [];
+
+	public List<string> Categories { get; set; } = [];
+
+	public List<int> Ratings { get; set; } = [];
+
+	public List<uint> Counts { get; set; } = [];
+
+	public List<double> Weights { get; set; } = [];
+}
+
+/// <summary>Document whose tags are a set: a set answers Contains by its own comparer.</summary>
+public class SetTaggedProduct
+{
+	public HashSet<string> Tags { get; set; } = [];
+}
+
+/// <summary>Document whose tags are typed as an interface, which says nothing about the collection.</summary>
+public class InterfaceTaggedProduct
+{
+	public ICollection<string> Tags { get; set; } = [];
+}
+
+/// <summary>Writes each tag in its prefixed form, so the field holds values the query was not given.</summary>
+public class PrefixedTagsConverter : JsonConverter<List<string>>
+{
+	public override List<string> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+	{
+		var tags = new List<string>();
+
+		while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+			tags.Add((reader.GetString() ?? string.Empty).Replace("TAG-", ""));
+
+		return tags;
+	}
+
+	public override void Write(Utf8JsonWriter writer, List<string> value, JsonSerializerOptions options)
+	{
+		writer.WriteStartArray();
+
+		foreach (var tag in value)
+			writer.WriteStringValue($"TAG-{tag}");
+
+		writer.WriteEndArray();
+	}
+}
+
+/// <summary>A collection type that names its own converter, which then writes every field of the type.</summary>
+[JsonConverter(typeof(PrefixedTagListConverter))]
+public class PrefixedTagList : List<string>;
+
+/// <summary>The same prefixing, for the collection type that carries it.</summary>
+public class PrefixedTagListConverter : JsonConverter<PrefixedTagList>
+{
+	public override PrefixedTagList Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+	{
+		var tags = new PrefixedTagList();
+
+		while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+			tags.Add((reader.GetString() ?? string.Empty).Replace("TAG-", ""));
+
+		return tags;
+	}
+
+	public override void Write(Utf8JsonWriter writer, PrefixedTagList value, JsonSerializerOptions options)
+	{
+		writer.WriteStartArray();
+
+		foreach (var tag in value)
+			writer.WriteStringValue($"TAG-{tag}");
+
+		writer.WriteEndArray();
+	}
+}
+
+/// <summary>Document whose tags are a collection type with a converter of its own.</summary>
+public class TypeConvertedTagsProduct
+{
+	public PrefixedTagList Tags { get; set; } = [];
+}
+
+/// <summary>Document whose tags are serialized through a converter of their own.</summary>
+public class ConvertedTagsProduct
+{
+	[JsonConverter(typeof(PrefixedTagsConverter))]
+	public List<string> Tags { get; set; } = [];
+}
+
+/// <summary>An element of a collection of objects.</summary>
+public class ProductLine
+{
+	public string Sku { get; set; } = string.Empty;
+}
+
+/// <summary>Document holding a collection of objects, which the mapping stores as an object.</summary>
+public class LinedProduct
+{
+	public List<ProductLine> Lines { get; set; } = [];
+}
+
+/// <summary>Document holding a dictionary, which the mapping stores as one object.</summary>
+public class AttributedProduct
+{
+	public Dictionary<string, int> Attributes { get; set; } = [];
 }
 
 /// <summary>Test document with dense_vector fields for KNN / V_* tests.</summary>
