@@ -198,7 +198,8 @@ internal sealed partial class EsqlResponseReader
 		bool IsScalar,
 		JsonTypeInfo<T>? TypeInfo,
 		JsonSerializerOptions Options,
-		DirectBinderKind? ScalarKind);
+		DirectBinderKind? ScalarKind,
+		bool WrapScalarInArray);
 
 	private static RowMaterializationPlan<T> CreateRowMaterializationPlan<T>(ColumnInfo[] columns, JsonSerializerOptions options)
 	{
@@ -206,7 +207,12 @@ internal sealed partial class EsqlResponseReader
 		var typeInfo = TryResolveTypeInfo(typeof(T), options);
 		var isScalar = columns.Length == 1 && IsScalarTarget(typeof(T), typeInfo);
 		var scalarKind = isScalar && DirectRowBinder.TryClassifyScalar(typeof(T), typeInfo, options, out var kind) ? kind : (DirectBinderKind?)null;
-		return new RowMaterializationPlan<T>(estimatedRowSize, isScalar, typeInfo as JsonTypeInfo<T>, options, scalarKind);
+
+		// A collection target takes the whole cell, so a single-valued multi-value column needs the same
+		// wrap the row path applies to a collection property.
+		var wrapScalarInArray = isScalar && typeInfo?.Kind == JsonTypeInfoKind.Enumerable;
+
+		return new RowMaterializationPlan<T>(estimatedRowSize, isScalar, typeInfo as JsonTypeInfo<T>, options, scalarKind, wrapScalarInArray);
 	}
 
 	/// <summary>

@@ -322,7 +322,7 @@ internal sealed partial class EsqlResponseReader
 			yield break;
 		}
 
-		using var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, plan.IsScalar, needsValueBuffer: layout.BranchNodeCount > 0);
+		using var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, plan.IsScalar, plan.WrapScalarInArray, needsValueBuffer: layout.BranchNodeCount > 0);
 
 		try
 		{
@@ -387,7 +387,7 @@ internal sealed partial class EsqlResponseReader
 			yield break;
 		}
 
-		using var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, plan.IsScalar, needsValueBuffer: layout.BranchNodeCount > 0);
+		using var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, plan.IsScalar, plan.WrapScalarInArray, needsValueBuffer: layout.BranchNodeCount > 0);
 
 		try
 		{
@@ -449,7 +449,7 @@ internal sealed partial class EsqlResponseReader
 		[EnumeratorCancellation] CancellationToken cancellationToken,
 		ReaderStateTracker? readerStateTracker = null)
 	{
-		using var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, isScalar: false, needsValueBuffer: true);
+		using var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, isScalar: false, wrapScalarInArray: false, needsValueBuffer: true);
 		using var batchBuffer = new PooledBufferWriter(MaxBatchBufferBytes);
 		var batchRowCount = 0;
 
@@ -541,7 +541,7 @@ internal sealed partial class EsqlResponseReader
 		JsonTypeInfo<List<T>> listTypeInfo,
 		ReaderStateTracker? readerStateTracker = null)
 	{
-		using var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, isScalar: false, needsValueBuffer: true);
+		using var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, isScalar: false, wrapScalarInArray: false, needsValueBuffer: true);
 		using var batchBuffer = new PooledBufferWriter(MaxBatchBufferBytes);
 		var batchRowCount = 0;
 

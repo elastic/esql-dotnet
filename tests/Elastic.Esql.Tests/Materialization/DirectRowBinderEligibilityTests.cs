@@ -162,6 +162,22 @@ public class DirectRowBinderEligibilityTests
 	}
 
 	[Test]
+	public void Build_TypeLevelNumberHandling_DoesNotCreateDirectBinder()
+	{
+		var layout = BuildLayout<StrictNumbersModel>(("numbers", "integer"), ("name", "keyword"));
+
+		layout.DirectBinder.Should().BeNull();
+	}
+
+	[Test]
+	public void Build_IgnoreWhenReadingProperty_DoesNotCreateDirectBinder()
+	{
+		var layout = BuildLayout<IgnoreWhenReadingModel>(("name", "keyword"), ("note", "keyword"));
+
+		layout.DirectBinder.Should().BeNull();
+	}
+
+	[Test]
 	public void Build_UnmappedColumn_DoesNotCreateDirectBinder()
 	{
 		var layout = BuildLayout<ScalarStringModel>(("value", "keyword"), ("count", "integer"), ("extra", "keyword"));
@@ -250,6 +266,21 @@ public class DirectRowBinderEligibilityTests
 	{
 		public List<string> Tags { get; set; } = ["seed"];
 		public string Name { get; set; } = string.Empty;
+	}
+
+	[JsonNumberHandling(JsonNumberHandling.Strict)]
+	private sealed class StrictNumbersModel
+	{
+		public List<int> Numbers { get; set; } = [];
+		public string Name { get; set; } = string.Empty;
+	}
+
+	private sealed class IgnoreWhenReadingModel
+	{
+		public string Name { get; set; } = string.Empty;
+
+		[JsonIgnore(Condition = JsonIgnoreCondition.WhenReading)]
+		public string Note { get; set; } = "default";
 	}
 
 	private sealed class OnDeserializingModel : IJsonOnDeserializing

@@ -57,6 +57,12 @@ internal sealed class DirectRowBinder
 	/// </summary>
 	public required JsonTypeInfo?[] ElementTypeInfos { get; init; }
 
+	/// <summary>
+	/// Per column, whether the target property is a collection. A bare scalar cell for such a column binds only by
+	/// wrapping it, so a column with no element contract falls back instead of letting the deserializer throw.
+	/// </summary>
+	public required bool[] IsCollection { get; init; }
+
 	/// <summary>Per column, whether the property is <c>required</c>: a null cell then falls back so the serializer raises its error.</summary>
 	public required bool[] IsRequired { get; init; }
 
@@ -64,9 +70,9 @@ internal sealed class DirectRowBinder
 
 	/// <summary>
 	/// Builds a binder for a flat layout, or returns null when the type itself cannot be bound with exact serializer
-	/// fidelity: parameterized constructors, serialization callbacks, extension data, per-property number handling,
-	/// a property-level converter, populate-style object creation, a required member without a column, or two
-	/// columns for one property. Cells that are not one of the built-in scalar kinds deserialize through their own
+	/// fidelity: parameterized constructors, serialization callbacks, extension data, number handling on the type or
+	/// a property, a property-level converter, populate-style object creation, a required member without a column, or
+	/// two columns for one property. Cells that are not one of the built-in scalar kinds deserialize through their own
 	/// contract instead.
 	/// </summary>
 	public static DirectRowBinder? TryCreate(ColumnNode[] leafNodes, JsonTypeInfo typeInfo, JsonSerializerOptions options)
@@ -79,12 +85,19 @@ internal sealed class DirectRowBinder
 		if (typeInfo.OnDeserializing is not null || typeInfo.OnDeserialized is not null)
 			return null;
 
+		// A type-level [JsonNumberHandling] applies to every value the serializer reads into the type, but a converter
+		// cell of collection or dictionary type is deserialized with a fresh read stack that never sees it, so its
+		// elements would parse under the options' handling instead.
+		if (typeInfo.NumberHandling is not null)
+			return null;
+
 		var count = leafNodes.Length;
 		var kinds = new DirectBinderKind[count];
 		var properties = new JsonPropertyInfo[count];
 		var typedSetters = new Delegate?[count];
 		var cellTypeInfos = new JsonTypeInfo?[count];
 		var elementTypeInfos = new JsonTypeInfo?[count];
+		var isCollection = new bool[count];
 		var isRequired = new bool[count];
 		var bound = new HashSet<JsonPropertyInfo>();
 
@@ -104,6 +117,7 @@ internal sealed class DirectRowBinder
 				return null;
 
 			properties[i] = property;
+			isCollection[i] = leafNodes[i].IsCollection;
 			isRequired[i] = property.IsRequired;
 
 			if (TryClassify(property.PropertyType, out var kind) && UsesBuiltInConverter(property.PropertyType, options))
@@ -136,6 +150,7 @@ internal sealed class DirectRowBinder
 			TypedSetters = typedSetters,
 			CellTypeInfos = cellTypeInfos,
 			ElementTypeInfos = elementTypeInfos,
+			IsCollection = isCollection,
 			IsRequired = isRequired,
 			CreateObject = typeInfo.CreateObject
 		};
