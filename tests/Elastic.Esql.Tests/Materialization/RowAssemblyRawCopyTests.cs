@@ -14,7 +14,9 @@ namespace Elastic.Esql.Tests.Materialization;
 
 public class RowAssemblyRawCopyTests
 {
-	private const string Columns = """[{"name":"text","type":"keyword"},{"name":"count","type":"integer"},{"name":"attributes","type":"object"},{"name":"numbers","type":"integer"}]""";
+	private const string Columns =
+		"""[{"name":"text","type":"keyword"},{"name":"count","type":"integer"},""" +
+		"""{"name":"attributes","type":"object"},{"name":"numbers","type":"integer"}]""";
 
 	[Test]
 	public void ReadRows_EscapedStringAndNestedCells_RoundTrip()
@@ -61,7 +63,9 @@ public class RowAssemblyRawCopyTests
 	[Test]
 	public void ReadRows_FlatRowWithNullCells_SkipsThem()
 	{
-		const string json = """{"columns":[{"name":"first","type":"keyword"},{"name":"middle","type":"integer"},{"name":"last","type":"keyword"}],"values":[[null,1,"z"],["a",null,null]]}""";
+		const string json =
+			"""{"columns":[{"name":"first","type":"keyword"},{"name":"middle","type":"integer"},""" +
+			"""{"name":"last","type":"keyword"}],"values":[[null,1,"z"],["a",null,null]]}""";
 
 		var rows = ReadRows<NullableCellsRecord>(json);
 
@@ -96,6 +100,28 @@ public class RowAssemblyRawCopyTests
 			rows.Add(row);
 
 		rows.Should().ContainSingle().Which.Text.Should().Be(longText);
+	}
+
+	[Test]
+	public async Task ReadRowsAsync_ComplexCellsSpanningPipeSegments_RoundTrip()
+	{
+		var attributes = Enumerable.Range(0, 300).ToDictionary(i => $"key{i:D3}", i => $"value{i:D3}".PadRight(20, 'x'));
+		var numbers = Enumerable.Range(0, 3000).ToList();
+		var json = $$$"""
+			{"columns":{{{Columns}}},"values":[["t",1,{{{JsonSerializer.Serialize(attributes)}}},{{{JsonSerializer.Serialize(numbers)}}}]]}
+			""";
+		var pipe = new Pipe();
+		await pipe.Writer.WriteAsync(Encoding.UTF8.GetBytes(json));
+		await pipe.Writer.CompleteAsync();
+
+		await using var results = await CreateReader().ReadRowsAsync<EscapedCellsRecord>(pipe.Reader);
+		var rows = new List<EscapedCellsRecord>();
+		await foreach (var row in results.Rows)
+			rows.Add(row);
+
+		var single = rows.Should().ContainSingle().Subject;
+		single.Attributes.Should().BeEquivalentTo(attributes);
+		single.Numbers.Should().Equal(numbers);
 	}
 #endif
 
