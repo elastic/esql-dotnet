@@ -16,6 +16,7 @@ public class SingleColumnProjectionTests
 	private const string NullDateJson = """{"columns":[{"name":"timestamp","type":"date"}],"values":[[null]]}""";
 	private const string GuidJson = """{"columns":[{"name":"id","type":"keyword"}],"values":[["0f8fad5b-d9cb-469f-a165-70867728950e"]]}""";
 	private const string ListJson = """{"columns":[{"name":"tags","type":"keyword"}],"values":[[["a","b"]]]}""";
+	private const string MixedListJson = """{"columns":[{"name":"tags","type":"keyword"}],"values":[["only"],[["a","b"]],[null]]}""";
 	private const string NameJson = """{"columns":[{"name":"name","type":"keyword"}],"values":[["a"]]}""";
 
 	[Test]
@@ -48,6 +49,33 @@ public class SingleColumnProjectionTests
 		var rows = ReadRows<List<string>>(ListJson);
 
 		rows.Should().ContainSingle().Which.Should().Equal("a", "b");
+	}
+
+	[Test]
+	public void ReadRows_SingleValuedMultiValueColumn_WrapsIntoList()
+	{
+		var rows = ReadRows<List<string>>(MixedListJson);
+
+		rows.Should().HaveCount(3);
+		rows[0].Should().Equal("only");
+		rows[1].Should().Equal("a", "b");
+		rows[2].Should().BeNull();
+	}
+
+	[Test]
+	public async Task ReadRowsAsync_SingleValuedMultiValueColumn_WrapsIntoList()
+	{
+		using var stream = new MemoryStream(Encoding.UTF8.GetBytes(MixedListJson));
+		await using var results = await CreateReader().ReadRowsAsync<List<string>>(stream);
+
+		var rows = new List<List<string>?>();
+		await foreach (var row in results.Rows)
+			rows.Add(row);
+
+		rows.Should().HaveCount(3);
+		rows[0].Should().Equal("only");
+		rows[1].Should().Equal("a", "b");
+		rows[2].Should().BeNull();
 	}
 
 	[Test]

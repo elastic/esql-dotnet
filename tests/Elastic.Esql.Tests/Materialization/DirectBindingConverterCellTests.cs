@@ -2,6 +2,7 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -69,6 +70,50 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
+	public void ReadRows_ArrayPropertyWithScalarCell_FallsBackWithoutThrowing()
+	{
+		const string json = """{"columns":[{"name":"tags","type":"keyword"}],"values":[[["a"]],["solo"]]}""";
+
+		// The handler runs on the throwing thread, so counting only this thread's exceptions keeps the
+		// process-wide event from picking up other tests running in parallel.
+		var testThreadId = Environment.CurrentManagedThreadId;
+		var firstChanceCount = 0;
+		void Count(object? sender, FirstChanceExceptionEventArgs args)
+		{
+			if (Environment.CurrentManagedThreadId == testThreadId)
+				Interlocked.Increment(ref firstChanceCount);
+		}
+
+		AppDomain.CurrentDomain.FirstChanceException += Count;
+		List<ArrayTagsModel> rows;
+		try
+		{
+			rows = ReadRows<ArrayTagsModel>(json, CreateOptions());
+		}
+		finally
+		{
+			AppDomain.CurrentDomain.FirstChanceException -= Count;
+		}
+
+		firstChanceCount.Should().Be(0);
+		rows[0].Tags.Should().Equal("a");
+		rows[1].Tags.Should().Equal("solo");
+	}
+
+	[Test]
+	public void ReadRows_ByteArrayProperty_BindsBase64Cell()
+	{
+		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"data","type":"keyword"}],"values":[["a","aGk="]]}""";
+
+		BuildLayout<BinaryDataModel>(("name", "keyword"), ("data", "keyword")).DirectBinder.Should().NotBeNull();
+
+		var row = ReadRows<BinaryDataModel>(json, CreateOptions())[0];
+
+		row.Name.Should().Be("a");
+		row.Data.Should().Equal([0x68, 0x69]);
+	}
+
+	[Test]
 	public void ReadRows_ListPropertyWithUnparsableScalarCell_ThrowsJsonException()
 	{
 		const string json = """{"columns":[{"name":"numbers","type":"integer"}],"values":[["oops"]]}""";
@@ -78,6 +123,30 @@ public class DirectBindingConverterCellTests
 		var act = () => ReadRows<NumbersModel>(json, CreateOptions());
 
 		act.Should().Throw<JsonException>();
+	}
+
+	[Test]
+	public void ReadRows_TypeLevelStrictNumberHandling_RejectsQuotedElement()
+	{
+		const string json = """{"columns":[{"name":"numbers","type":"integer"},{"name":"name","type":"keyword"}],"values":[[["5"],"a"]]}""";
+
+		// Web defaults read numbers from strings; the type opts out of that, and the opt-out has to reach the cell too.
+		BuildLayout<StrictNumbersModel>(("numbers", "integer"), ("name", "keyword")).DirectBinder.Should().BeNull();
+
+		var act = () => ReadRows<StrictNumbersModel>(json, CreateOptions());
+
+		act.Should().Throw<JsonException>();
+	}
+
+	[Test]
+	public void ReadRows_IgnoreWhenReadingProperty_KeepsDefault()
+	{
+		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"note","type":"keyword"}],"values":[["a","sent"]]}""";
+
+		var row = ReadRows<IgnoreWhenReadingModel>(json, CreateOptions())[0];
+
+		row.Name.Should().Be("a");
+		row.Note.Should().Be("default");
 	}
 
 	[Test]
@@ -211,6 +280,27 @@ public class DirectBindingConverterCellTests
 	private sealed class NumbersModel
 	{
 		public List<int> Numbers { get; set; } = [];
+	}
+
+	private sealed class BinaryDataModel
+	{
+		public string Name { get; set; } = string.Empty;
+		public byte[] Data { get; set; } = [];
+	}
+
+	[JsonNumberHandling(JsonNumberHandling.Strict)]
+	private sealed class StrictNumbersModel
+	{
+		public List<int> Numbers { get; set; } = [];
+		public string Name { get; set; } = string.Empty;
+	}
+
+	private sealed class IgnoreWhenReadingModel
+	{
+		public string Name { get; set; } = string.Empty;
+
+		[JsonIgnore(Condition = JsonIgnoreCondition.WhenReading)]
+		public string Note { get; set; } = "default";
 	}
 
 	private sealed class NestedOwnerModel

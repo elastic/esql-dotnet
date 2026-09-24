@@ -8,7 +8,7 @@ namespace Elastic.Esql.Materialization;
 /// Scratch space one response enumeration reuses for every row that goes through JSON assembly. Buffers are
 /// created on first use, so an enumeration whose rows all bind directly never allocates them.
 /// </summary>
-internal sealed class RowAssemblyBuffers(int estimatedRowSize, bool isScalar, bool needsValueBuffer) : IDisposable
+internal sealed class RowAssemblyBuffers(int estimatedRowSize, bool isScalar, bool wrapScalarInArray, bool needsValueBuffer) : IDisposable
 {
 	// IDE0032 suggests auto-properties, but the fields exist to defer allocation until a row needs assembly.
 #pragma warning disable IDE0032
@@ -24,6 +24,9 @@ internal sealed class RowAssemblyBuffers(int estimatedRowSize, bool isScalar, bo
 
 	/// <summary>Whether rows are a single bare cell rather than an assembled JSON object.</summary>
 	public bool IsScalar { get; } = isScalar;
+
+	/// <summary>Whether a bare scalar cell is wrapped into a one-element array, for a scalar read whose target is a collection.</summary>
+	public bool WrapScalarInArray { get; } = wrapScalarInArray;
 
 	public void Dispose()
 	{
