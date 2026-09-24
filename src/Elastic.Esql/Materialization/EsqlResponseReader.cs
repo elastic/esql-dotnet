@@ -7,6 +7,7 @@ using System.Collections.Concurrent;
 #if NET10_0_OR_GREATER
 using System.IO.Pipelines;
 #endif
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Elastic.Esql.Core;
@@ -18,9 +19,9 @@ namespace Elastic.Esql.Materialization;
 /// </summary>
 internal sealed partial class EsqlResponseReader
 {
-	private static readonly JsonWriterOptions SkipValidationWriterOptions = new() { SkipValidation = true };
 	private readonly JsonMetadataManager _metadata;
 	private readonly ConcurrentDictionary<ColumnLayoutCacheKey, ColumnLayoutCacheEntry> _columnLayoutCache = [];
+	private bool _optionsFrozen;
 
 	/// <summary>The <see cref="JsonSerializerOptions"/> used for deserialization.</summary>
 	public JsonSerializerOptions Options => _metadata.Options;
@@ -62,53 +63,6 @@ internal sealed partial class EsqlResponseReader
 		}
 	}
 
-	private interface IBufferCursor
-	{
-		ReadOnlySequence<byte> Buffer { get; }
-		bool IsCompleted { get; }
-		bool IsEofReached { get; }
-		void AdvanceTo(SequencePosition consumed, SequencePosition examined);
-	}
-
-	private interface IAsyncBufferCursor : IBufferCursor
-	{
-		ValueTask<bool> ReadAsync(CancellationToken cancellationToken);
-	}
-
-	private interface ISyncBufferCursor : IBufferCursor
-	{
-		bool Read();
-	}
-
-	private sealed class AsyncStreamBufferCursor(AsyncStreamBuffer asyncBuffer) : IAsyncBufferCursor
-	{
-		public ReadOnlySequence<byte> Buffer => asyncBuffer.Buffer;
-
-		public bool IsCompleted => asyncBuffer.IsCompleted;
-
-		public bool IsEofReached => asyncBuffer.IsEofReached;
-
-		public ValueTask<bool> ReadAsync(CancellationToken cancellationToken) =>
-			asyncBuffer.ReadAsync(cancellationToken);
-
-		public void AdvanceTo(SequencePosition consumed, SequencePosition examined) =>
-			asyncBuffer.AdvanceTo(consumed, examined);
-	}
-
-	private sealed class SyncStreamBufferCursor(SyncStreamBuffer syncBuffer) : ISyncBufferCursor
-	{
-		public ReadOnlySequence<byte> Buffer => syncBuffer.Buffer;
-
-		public bool IsCompleted => syncBuffer.IsCompleted;
-
-		public bool IsEofReached => syncBuffer.IsEofReached;
-
-		public bool Read() => syncBuffer.Read();
-
-		public void AdvanceTo(SequencePosition consumed, SequencePosition examined) =>
-			syncBuffer.AdvanceTo(consumed, examined);
-	}
-
 	/// <summary>
 	/// Cursor over an already-drained response region. Exposes the remaining bytes directly instead of
 	/// re-copying them through a stream and a second pooled buffer.
@@ -145,6 +99,7 @@ internal sealed partial class EsqlResponseReader
 		// For a pipe, a completed read result already means no more data will arrive.
 		public bool IsEofReached => _result.IsCompleted;
 
+		[AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder<>))]
 		public async ValueTask<bool> ReadAsync(CancellationToken cancellationToken)
 		{
 			_result = await pipeReader.ReadAsync(cancellationToken).ConfigureAwait(false);
@@ -156,11 +111,24 @@ internal sealed partial class EsqlResponseReader
 	}
 #endif
 
+	private void EnsureOptionsReadOnly()
+	{
+		if (_optionsFrozen)
+			return;
+		// Mutable options re-resolve a fresh contract on every GetTypeInfo call;
+		// frozen options reuse the cache at near-zero cost. STJ requires a
+		// TypeInfoResolver to be set before accepting MakeReadOnly.
+		if (!Options.IsReadOnly && Options.TypeInfoResolver is not null)
+			Options.MakeReadOnly();
+		_optionsFrozen = true;
+	}
+
 	/// <summary>
 	/// Builds a <see cref="ColumnLayout"/> for the target type and the ES|QL columns.
 	/// </summary>
 	private ColumnLayout GetColumnLayout<T>(ColumnInfo[] columns)
 	{
+		EnsureOptionsReadOnly();
 		var targetType = typeof(T);
 		var schemaHash = ComputeSchemaHash(columns);
 		var key = new ColumnLayoutCacheKey(targetType, schemaHash, columns.Length);
@@ -186,11 +154,11 @@ internal sealed partial class EsqlResponseReader
 		return hashCode.ToHashCode();
 	}
 
-	private static JsonTypeInfo<T>? TryResolveTypeInfo<T>(JsonSerializerOptions options)
+	private static JsonTypeInfo? TryResolveTypeInfo(Type type, JsonSerializerOptions options)
 	{
 		try
 		{
-			return options.GetTypeInfo(typeof(T)) as JsonTypeInfo<T>;
+			return options.GetTypeInfo(type);
 		}
 		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
 		{
@@ -225,15 +193,36 @@ internal sealed partial class EsqlResponseReader
 		}
 	}
 
-	private readonly record struct RowMaterializationPlan<T>(int EstimatedRowSize, bool IsScalar, JsonTypeInfo<T>? TypeInfo, JsonSerializerOptions Options);
+	private readonly record struct RowMaterializationPlan<T>(
+		int EstimatedRowSize,
+		bool IsScalar,
+		JsonTypeInfo<T>? TypeInfo,
+		JsonSerializerOptions Options,
+		DirectBinderKind? ScalarKind,
+		bool WrapScalarInArray);
 
 	private static RowMaterializationPlan<T> CreateRowMaterializationPlan<T>(ColumnInfo[] columns, JsonSerializerOptions options)
 	{
 		var estimatedRowSize = Math.Max(256, columns.Length * 32);
-		var isScalar = columns.Length == 1 && IsPrimitiveJsonType(typeof(T));
-		var typeInfo = TryResolveTypeInfo<T>(options);
-		return new RowMaterializationPlan<T>(estimatedRowSize, isScalar, typeInfo, options);
+		var typeInfo = TryResolveTypeInfo(typeof(T), options);
+		var isScalar = columns.Length == 1 && IsScalarTarget(typeof(T), typeInfo);
+		var scalarKind = isScalar && DirectRowBinder.TryClassifyScalar(typeof(T), typeInfo, options, out var kind) ? kind : (DirectBinderKind?)null;
+
+		// A collection target takes the whole cell, so a single-valued multi-value column needs the same
+		// wrap the row path applies to a collection property.
+		var wrapScalarInArray = isScalar && typeInfo?.Kind == JsonTypeInfoKind.Enumerable;
+
+		return new RowMaterializationPlan<T>(estimatedRowSize, isScalar, typeInfo as JsonTypeInfo<T>, options, scalarKind, wrapScalarInArray);
 	}
+
+	/// <summary>
+	/// A single-column response binds the cell itself to <c>T</c>, unless <c>T</c> is an object or dictionary
+	/// contract whose one property (or key) is what the column maps to.
+	/// </summary>
+	private static bool IsScalarTarget(Type type, JsonTypeInfo? typeInfo) =>
+		typeInfo is null
+			? IsPrimitiveJsonType(type)
+			: typeInfo.Kind is JsonTypeInfoKind.None or JsonTypeInfoKind.Enumerable;
 
 	private static bool IsPrimitiveJsonType(Type type)
 	{
