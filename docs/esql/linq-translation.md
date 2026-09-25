@@ -53,7 +53,7 @@ Use the `EsqlMetadata` static marker class to reference these fields inside lamb
 // FROM books METADATA _score | SORT _score DESC | LIMIT 10
 ```
 
-See the [vector and hybrid search guide](vector-search.md#document-metadata) for the full pattern, including `SourceAs<T>` typed `_source` projection and auto-retention through subsequent `KEEP` commands.
+See the [vector and hybrid search guide](vector-search.md#document-metadata) for the full pattern, including `SourceAs<T>` typed `_source` projection and auto-retention through subsequent `KEEP` commands. To read a list of objects from `_source`, see [Lists of objects from the document](#lists-of-objects-from-the-document).
 
 ## Field name resolution
 
@@ -433,6 +433,34 @@ query.Select(l => new LogDto
 The guard has to read through the path it tests: `l.Host == null ? null : new HostDto { Name = l.Agent.Name }` is refused, since dropping it would give a value to a row that has no host.
 
 Two consequences are worth stating. A parent that exists but whose projected leaves are all null comes back as null, the same as a missing parent, because the row carries nothing to tell the two apart. And the member has to be able to hold that null, so it cannot be declared non-nullable, while a member without an annotation, as a consumer building without nullable reference types has everywhere, passes; the "without an initializer" half of that condition cannot be checked at translation time, so `HostDto? Host { get; set; } = new()` yields an empty object rather than null.
+
+### Lists of objects from the document
+
+ES|QL returns a list of objects as one list per field: `lines.sku` and `lines.qty` arrive as two separate lists, which lose which quantity belongs to which product, and two equal values within a list collapse into one. The document as it was indexed is in `_source`, and a member can be read from there instead, by saying so in the projection:
+
+```csharp
+// one member from the document, the rest from the columns
+orders.Select(o => new OrderDto
+{
+    Reference = o.Reference,
+    Total = o.Total,
+    Lines = EsqlMetadata.SourceAs(o.Lines)
+})
+// FROM orders METADATA _source | KEEP reference, total, _source
+
+// the whole row from the document
+orders.Select(o => EsqlMetadata.SourceAs<Order>())
+orders.AsDocuments()
+// FROM orders METADATA _source | KEEP _source
+```
+
+`METADATA _source` is requested when the projection reads the document. It is refused once a `KEEP`, `STATS` or `FORK` has shaped the rows without it: request `MetadataField.Source` on `From`, or read the document before them. A member is read at its path in the document, so a nested member such as `o.Shipping.Lines` works too. A single object the document holds where the member is a list is read as a list of one, and a member the document does not hold, or holds as null, keeps the value its type initializes it with.
+
+`AsDocuments()` is the same as the `Select` above, so it ends the columns: filter and sort before it.
+
+`EsqlMetadata.Source` itself is a property and stays the whole document as a `JsonObject`; the member form is an overload of `SourceAs`.
+
+Reading `_source` costs the size of the document per row. Where the pairing within a list is not needed, a columnar model answers without it: keep the fields as parallel lists (`List<string> Skus`, `List<int> Quantities`), or store the list as a JSON string in a keyword field and deserialize it with a `JsonConverter` on the property.
 
 ## KEEP and DROP extensions
 
