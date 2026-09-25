@@ -138,4 +138,19 @@ public class CollectionContainsTests : EsqlTestBase
 		var exception = act.Should().Throw<ArgumentNullException>().Which;
 		_ = exception.ParamName.Should().Be("collection");
 	}
+
+	[Test]
+	public void Where_ContainsWithAnEqualityComparer_ThrowsNotSupported()
+	{
+		// the comparer would compare "error" and "ERROR" as equal, which the IN emitted
+		// for the store does not
+		var levels = new[] { "ERROR", "FATAL" };
+
+		var act = () => CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => levels.Contains(l.Level.MultiField("keyword"), StringComparer.OrdinalIgnoreCase))
+			.ToString();
+
+		_ = act.Should().Throw<NotSupportedException>().WithMessage("*equality comparer*");
+	}
 }

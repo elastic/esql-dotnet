@@ -2,6 +2,9 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Collections.Frozen;
+using System.Collections.Immutable;
+using System.Collections.ObjectModel;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Elastic.Esql.Tests.TypeMapping.Escaping;
@@ -13,6 +16,16 @@ namespace Elastic.Esql.Tests;
 // ============================================================================
 
 [JsonSerializable(typeof(LogEntry))]
+[JsonSerializable(typeof(TaggedProduct))]
+[JsonSerializable(typeof(SetTaggedProduct))]
+[JsonSerializable(typeof(FrozenTaggedProduct))]
+[JsonSerializable(typeof(ImmutableTaggedProduct))]
+[JsonSerializable(typeof(CollectionTaggedProduct))]
+[JsonSerializable(typeof(InterfaceTaggedProduct))]
+[JsonSerializable(typeof(TypedValuesProduct))]
+[JsonSerializable(typeof(LinkedProduct))]
+[JsonSerializable(typeof(LabeledProduct))]
+[JsonSerializable(typeof(ArchivedLinesProduct))]
 [JsonSerializable(typeof(TreeNode))]
 [JsonSerializable(typeof(OptionalDocument))]
 [JsonSerializable(typeof(OptionalCountProjection))]
@@ -21,6 +34,10 @@ namespace Elastic.Esql.Tests;
 [JsonSerializable(typeof(LazyHostRecord))]
 [JsonSerializable(typeof(NestedSelectionHostWithTag))]
 [JsonSerializable(typeof(PrefixedCodeDocument))]
+[JsonSerializable(typeof(ConvertedTagsProduct))]
+[JsonSerializable(typeof(TypeConvertedTagsProduct))]
+[JsonSerializable(typeof(LinedProduct))]
+[JsonSerializable(typeof(AttributedProduct))]
 [JsonSerializable(typeof(NullableNestedModel))]
 [JsonSerializable(typeof(AddressModel))]
 [JsonSerializable(typeof(SimpleDocument))]
@@ -111,6 +128,190 @@ public class NestedSelectionHostWithTag(string tag)
 public class OptionalCountProjection
 {
 	public int? Count { get; set; }
+}
+
+/// <summary>
+/// Document with multi-value fields, for predicates over collections.
+/// </summary>
+public class TaggedProduct
+{
+	public string Name { get; set; } = string.Empty;
+
+	public string[] Tags { get; set; } = [];
+
+	public List<string> Categories { get; set; } = [];
+
+	public List<int> Ratings { get; set; } = [];
+}
+
+/// <summary>Document whose tags are a set: a set answers Contains by its own comparer.</summary>
+public class SetTaggedProduct
+{
+	public HashSet<string> Tags { get; set; } = [];
+}
+
+/// <summary>Document whose tags are a frozen set: the base library keeps it in a namespace of its own.</summary>
+public class FrozenTaggedProduct
+{
+#pragma warning disable IDE0301 // [] builds a FrozenSet only from .NET 9 on, and the tests run on .NET 8 as well
+	public FrozenSet<string> Tags { get; set; } = FrozenSet<string>.Empty;
+#pragma warning restore IDE0301
+}
+
+/// <summary>Document whose tags are an immutable array, from the base library's immutable collections.</summary>
+public class ImmutableTaggedProduct
+{
+	public ImmutableArray<string> Tags { get; set; } = [];
+}
+
+/// <summary>Document whose tags are a Collection, from the base library's object model.</summary>
+public class CollectionTaggedProduct
+{
+	public Collection<string> Tags { get; set; } = [];
+}
+
+/// <summary>Document whose tags are typed as an interface, which says nothing about the collection.</summary>
+public class InterfaceTaggedProduct
+{
+	public ICollection<string> Tags { get; set; } = [];
+}
+
+/// <summary>
+/// Document with multi-value fields whose values C# compares through a conversion, as it does
+/// enums and the narrow integers, or with a value computed when the query runs, as a date is.
+/// </summary>
+public class TypedValuesProduct
+{
+	public List<Priority> Priorities { get; set; } = [];
+
+	public List<Grade> Grades { get; set; } = [];
+
+	public List<short> Sizes { get; set; } = [];
+
+	public List<byte> Scores { get; set; } = [];
+
+	public List<DateTime> Restocks { get; set; } = [];
+}
+
+/// <summary>Document whose links are a class the serializer writes as a string.</summary>
+public class LinkedProduct
+{
+	public List<Uri> Links { get; set; } = [];
+}
+
+/// <summary>Document whose labels are dictionaries, each of them one object in the mapping.</summary>
+public class LabeledProduct
+{
+	public List<Dictionary<string, string>> Labels { get; set; } = [];
+}
+
+/// <summary>
+/// Document whose lines the serializer never writes, so that it has no contract for their type:
+/// nothing else in the mapping context refers to <see cref="ArchivedLine"/>.
+/// </summary>
+public class ArchivedLinesProduct
+{
+	public string Name { get; set; } = string.Empty;
+
+	[JsonIgnore]
+	public List<ArchivedLine> Lines { get; set; } = [];
+}
+
+/// <summary>A line held only by an ignored property.</summary>
+public class ArchivedLine
+{
+	public string Sku { get; set; } = string.Empty;
+}
+
+/// <summary>Enum written by name wherever it appears, through the converter on the type.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<Grade>))]
+public enum Grade
+{
+	Low,
+	High
+}
+
+/// <summary>Writes each tag in its prefixed form, so the field holds values the query was not given.</summary>
+public class PrefixedTagsConverter : JsonConverter<List<string>>
+{
+	public override List<string> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+	{
+		var tags = new List<string>();
+
+		while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+			tags.Add((reader.GetString() ?? string.Empty).Replace("TAG-", ""));
+
+		return tags;
+	}
+
+	public override void Write(Utf8JsonWriter writer, List<string> value, JsonSerializerOptions options)
+	{
+		writer.WriteStartArray();
+
+		foreach (var tag in value)
+			writer.WriteStringValue($"TAG-{tag}");
+
+		writer.WriteEndArray();
+	}
+}
+
+/// <summary>A collection type that names its own converter, which then writes every field of the type.</summary>
+[JsonConverter(typeof(PrefixedTagListConverter))]
+public class PrefixedTagList : List<string>;
+
+/// <summary>The same prefixing, for the collection type that carries it.</summary>
+public class PrefixedTagListConverter : JsonConverter<PrefixedTagList>
+{
+	public override PrefixedTagList Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+	{
+		var tags = new PrefixedTagList();
+
+		while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+			tags.Add((reader.GetString() ?? string.Empty).Replace("TAG-", ""));
+
+		return tags;
+	}
+
+	public override void Write(Utf8JsonWriter writer, PrefixedTagList value, JsonSerializerOptions options)
+	{
+		writer.WriteStartArray();
+
+		foreach (var tag in value)
+			writer.WriteStringValue($"TAG-{tag}");
+
+		writer.WriteEndArray();
+	}
+}
+
+/// <summary>Document whose tags are a collection type with a converter of its own.</summary>
+public class TypeConvertedTagsProduct
+{
+	public PrefixedTagList Tags { get; set; } = [];
+}
+
+/// <summary>Document whose tags are serialized through a converter of their own.</summary>
+public class ConvertedTagsProduct
+{
+	[JsonConverter(typeof(PrefixedTagsConverter))]
+	public List<string> Tags { get; set; } = [];
+}
+
+/// <summary>An element of a collection of objects.</summary>
+public class ProductLine
+{
+	public string Sku { get; set; } = string.Empty;
+}
+
+/// <summary>Document holding a collection of objects, which the mapping stores as an object.</summary>
+public class LinedProduct
+{
+	public List<ProductLine> Lines { get; set; } = [];
+}
+
+/// <summary>Document holding a dictionary, which the mapping stores as one object.</summary>
+public class AttributedProduct
+{
+	public Dictionary<string, int> Attributes { get; set; } = [];
 }
 
 /// <summary>Test document with dense_vector fields for KNN / V_* tests.</summary>

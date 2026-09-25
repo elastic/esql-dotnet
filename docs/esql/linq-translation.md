@@ -123,6 +123,8 @@ query.Where(l => levels.Contains(l.Level))
 // WHERE log.level IN ("ERROR", "FATAL", "CRITICAL")
 ```
 
+A `Contains` that takes an equality comparer is refused: the comparison is the one Elasticsearch performs, which the comparer would not follow.
+
 ### Boolean fields
 
 ```csharp
@@ -151,6 +153,35 @@ query.Where(l => levels.Contains(l.Level))
 `CompareTo` and the two-argument `Compare` order by the current culture and are refused. The value compared against must hold no surrogate pair and no character at or above U+E000, the only range where the UTF-16 ordering of .NET and the UTF-8 ordering of Elasticsearch disagree; otherwise the comparison is refused rather than answered with the wrong order.
 
 Four more shapes are refused: two fields compared with each other, which leaves no value to look at; an expression of a field that can be missing, whose value for a missing field is not the field's null; a projected row, which has no field name of its own; and a property with a `JsonConverter`, whose field holds what the converter writes rather than the value the comparison was given.
+
+### Multi-value fields
+
+A field that holds more than one value is tested as a whole, with the function that answers the test over every value at once.
+
+```csharp
+.Where(p => p.Tags.Any(t => t == "water"))        // WHERE (tags IS NOT NULL AND MATCH(tags, "water"))
+.Where(p => p.Tags.Contains("water"))             // WHERE (tags IS NOT NULL AND MATCH(tags, "water"))
+.Where(p => p.Tags.Any())                         // WHERE tags IS NOT NULL
+.Where(p => p.Ratings.Any(r => r > 3))            // WHERE (ratings IS NOT NULL AND MV_MAX(ratings) > 3)
+.Where(p => p.Ratings.All(r => r > 3))            // WHERE (ratings IS NULL OR MV_MIN(ratings) > 3)
+.Where(p => p.Tags.Any(t => wanted.Contains(t)))  // WHERE (tags IS NOT NULL AND (MATCH(tags, "iot") OR MATCH(tags, "water")))
+```
+
+`All` over equality asks for one distinct value that matches, since every value being equal to the same one means there is only one: `MV_COUNT(MV_DEDUPE(tags)) == 1 AND MATCH(...)`. A missing field is an empty sequence, where `All` holds and `Any` does not, and each translation says so explicitly rather than leaving the predicate null. That covers `MATCH` too: a shard whose index does not map the field has it as null, and `MATCH` over null is null, which an enclosing `NOT` would keep null and so drop the document.
+
+Any property typed as an `IEnumerable<T>` is accepted, a set and an interface included; a dictionary is one object in the mapping rather than a field of values, and is not. No collection instance exists when the query is translated, so a comparer on one is as invisible as a `StringComparison` on a scalar: the comparison is the one the store performs, not the one the collection would.
+
+The value the elements are compared with is rendered as in any other predicate: a captured variable inline or as a parameter, `DateTime.UtcNow.AddDays(-7)` as `NOW() - 7 days`, and an enum as the serializer writes it, by name or by number. A comparison with another field is refused, and so is one with null, which Elasticsearch does not store among the values.
+
+A predicate compared with `true` or `false` is written as the predicate or its negation, so `p.Tags.Any() == false` becomes `NOT tags IS NOT NULL`: Elasticsearch takes neither `MATCH` nor `IS NOT NULL` as an operand of a comparison. A comparison with a boolean known only when the query runs is refused.
+
+On a text-mapped field `MATCH` is an analyzed search rather than equality, so `Any(t => t == "water bottle")` also matches a document whose tags are `["water"]`. Map the field as a keyword where the distinction matters. `MV_CONTAINS` and `MV_INTERSECTS` are the exact primitives for this, in preview since 9.2 and 9.4; they replace `MATCH` here once they are generally available.
+
+Elasticsearch does not allow `MATCH` after `LIMIT`, `STATS` or `FORK`, so a predicate that translates to it is refused after `Take`, `GroupBy`, `Fork` or a `RawEsql` fragment holding one of those commands, in a `Fork` branch that follows them as well, when the query is translated, rather than failing when it runs. Put the `Where` before them; `MV_CONTAINS` and `MV_INTERSECTS` lift this as well once they are generally available.
+
+A test that holds for one value at a time, such as `StartsWith`, is refused: it needs the field read position by position, which the functions above do not do. A LINQ operator over the field itself, such as `p.Tags.Where(t => t != "")`, is refused for the same reason, and so is a row that a `Select` made the collection itself, `Select(p => p.Tags)`, which has no field name to test: project the collection into a member instead. So is membership that every value must pass, `All(t => wanted.Contains(t))`, or that some value must fail, `Any(t => !wanted.Contains(t))`: `MATCH` answers whether some value is one of them, and `!p.Tags.Any(t => wanted.Contains(t))` asks that none is. An OR inside the predicate is written as two `Any` joined with `||`.
+
+Five more shapes are refused: a `Contains` that takes an equality comparer, which the comparison Elasticsearch performs would not follow; membership in a captured set, dictionary or collection type of your own, which may compare its values in a way of its own, where an array, a `List`, a `ReadOnlyCollection`, a LINQ query, an iterator method or a collection expression compares with default equality; membership in more than 256 values, each of which adds a level to the expression Elasticsearch parses; a collection written through a `JsonConverter`, on the property, on its type or among the serializer's converters, whose field holds what the converter writes rather than the values compared; and a collection of objects, for which ES|QL has a column for each field of the objects and none for the objects themselves. A class the serializer writes as a value, such as `Uri`, is compared as a value.
 
 ### Captured variables and parameterization
 
