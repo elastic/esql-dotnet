@@ -2,6 +2,7 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using Elastic.Esql.Materialization;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -56,6 +57,12 @@ internal sealed class EsqlTranslationContext
 	/// <c>FROM ... METADATA</c> or implicitly added by FORK).
 	/// </summary>
 	public MetadataField ActiveMetadata { get; set; } = MetadataField.None;
+
+	/// <summary>
+	/// The members the last projection declared as read from <c>_source</c>, with
+	/// <c>EsqlMetadata.SourceAs(o.Member)</c>.
+	/// </summary>
+	public List<SourceMember> SourceMembers { get; } = [];
 
 	/// <summary>True when the <c>FORK</c> command is in scope and <c>_fork</c> is therefore implicitly available.</summary>
 	public bool ForkActive { get; set; }

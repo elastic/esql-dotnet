@@ -2,6 +2,7 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using Elastic.Esql.Materialization;
 using Elastic.Esql.QueryModel.Commands;
 
 namespace Elastic.Esql.QueryModel;
@@ -59,6 +60,12 @@ public sealed class EsqlQuery(
 	/// Gets the requested wire-level response format. <c>null</c> means the default JSON path with typed materialization.
 	/// </summary>
 	public EsqlFormat? Format { get; } = format;
+
+	/// <summary>
+	/// The members the projection declared as read from <c>_source</c>; empty when every member
+	/// comes from a column.
+	/// </summary>
+	internal IReadOnlyList<SourceMember> SourceMembers { get; set; } = [];
 
 	/// <summary>
 	/// Get the source command (e.g. FROM, ROW, etc.) if present.

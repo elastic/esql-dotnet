@@ -2,6 +2,7 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using Elastic.Esql.Materialization;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -86,6 +87,8 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 
 	private ProjectionResult TranslateCore(Action classifyMembers)
 	{
+		// only the last projection's members reach the result row
+		_context.SourceMembers.Clear();
 		_projections.Clear();
 		_activeRenames = [];
 		_referencedFields.Clear();
@@ -302,6 +305,30 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 			_projections.Add(metaName == resultField
 				? new ProjectionEntry(ProjectionKind.Keep, metaName, metaName, null)
 				: new ProjectionEntry(ProjectionKind.Rename, resultField, metaName, null));
+			return;
+		}
+
+		// EsqlMetadata.SourceAs(o.Member) -> the member is read from _source, which is kept;
+		// the member contributes no column of its own
+		if (sourceExpression is MethodCallExpression
+			{
+				Method: { Name: nameof(EsqlMetadata.SourceAs), DeclaringType: var sourceMemberDecl },
+				Arguments: [var sourceMember]
+			}
+			&& sourceMemberDecl == typeof(EsqlMetadata))
+		{
+			if (sourceMember is not MemberExpression member || !ExpressionTranslationHelpers.IsRootedInParameter(member))
+			{
+				throw new NotSupportedException(
+					$"{nameof(EsqlMetadata)}.{nameof(EsqlMetadata.SourceAs)} takes a member of the document, as in "
+					+ "\"Lines = EsqlMetadata.SourceAs(o.Lines)\".");
+			}
+
+			var metaName = _context.ResolveMetadataMemberOrThrow(nameof(EsqlMetadata.Source));
+			if (!_projections.Exists(entry => entry.Kind == ProjectionKind.Keep && entry.ResultField == metaName))
+				_projections.Add(new ProjectionEntry(ProjectionKind.Keep, metaName, metaName, null));
+
+			_context.SourceMembers.Add(new SourceMember(resultField, member.ResolveFieldName(_context.Metadata).Split('.')));
 			return;
 		}
 

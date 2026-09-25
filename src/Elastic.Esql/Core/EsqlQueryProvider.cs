@@ -174,7 +174,7 @@ public sealed class EsqlQueryProvider : IQueryProvider
 			.ConfigureAwait(false);
 		await using var responseDisposal = response.ConfigureAwait(false);
 
-		await using var results = await _reader.ReadRowsAsync<TElement>(response.Body, cancellationToken: cancellationToken).ConfigureAwait(false);
+		await using var results = await ReaderFor(query).ReadRowsAsync<TElement>(response.Body, cancellationToken: cancellationToken).ConfigureAwait(false);
 		await foreach (var item in results.Rows.ConfigureAwait(false).WithCancellation(cancellationToken))
 			yield return item;
 	}
@@ -193,7 +193,12 @@ public sealed class EsqlQueryProvider : IQueryProvider
 	internal EsqlQuery TranslateAndIntercept(Expression expression, bool inlineParameters)
 	{
 		var query = TranslateExpression(expression, inlineParameters);
-		return Interceptor is not null ? Interceptor.Intercept(query) : query;
+		if (Interceptor is null)
+			return query;
+
+		var intercepted = Interceptor.Intercept(query);
+		intercepted.SourceMembers = query.SourceMembers;
+		return intercepted;
 	}
 
 	/// <summary>Submits an async ES|QL query from a LINQ expression. Used by extension methods.</summary>
@@ -207,8 +212,9 @@ public sealed class EsqlQueryProvider : IQueryProvider
 
 		try
 		{
-			var result = _reader.ReadRows<T>(response.Body, requireId: requireId);
-			return new EsqlAsyncQuery<T>(_executor, result, response, _reader, request);
+			var reader = ReaderFor(query);
+			var result = reader.ReadRows<T>(response.Body, requireId: requireId);
+			return new EsqlAsyncQuery<T>(_executor, result, response, reader, request);
 		}
 		catch
 		{
@@ -250,8 +256,9 @@ public sealed class EsqlQueryProvider : IQueryProvider
 
 		try
 		{
-			var result = await _reader.ReadRowsAsync<T>(response.Body, requireId: requireId, cancellationToken).ConfigureAwait(false);
-			return new EsqlAsyncQuery<T>(_executor, result, response, _reader, request);
+			var reader = ReaderFor(query);
+			var result = await reader.ReadRowsAsync<T>(response.Body, requireId: requireId, cancellationToken).ConfigureAwait(false);
+			return new EsqlAsyncQuery<T>(_executor, result, response, reader, request);
 		}
 		catch
 		{
@@ -313,7 +320,7 @@ public sealed class EsqlQueryProvider : IQueryProvider
 		var (esql, query) = TranslateAndFormat(expression);
 		EnsureTypedMaterializationFormat(query);
 		using var response = _executor.ExecuteQuery(BuildRequest(esql, query, query.Format));
-		using var results = _reader.ReadRows<TElement>(response.Body);
+		using var results = ReaderFor(query).ReadRows<TElement>(response.Body);
 
 		foreach (var item in results.Rows)
 			yield return item;
@@ -392,6 +399,17 @@ public sealed class EsqlQueryProvider : IQueryProvider
 			AsyncOptions = asyncOptions,
 			Format = format
 		};
+
+	private readonly System.Collections.Concurrent.ConcurrentDictionary<string, EsqlResponseReader> _sourceReaders = new(StringComparer.Ordinal);
+
+	/// <summary>
+	/// The reader for a query: the shared one, or, when the projection reads members from
+	/// <c>_source</c>, one that binds them, kept per declaration so its layouts are cached too.
+	/// </summary>
+	private EsqlResponseReader ReaderFor(EsqlQuery query) =>
+		query.SourceMembers.Count == 0
+			? _reader
+			: _sourceReaders.GetOrAdd(SourceMember.Signature(query.SourceMembers), _ => new EsqlResponseReader(Metadata, query.SourceMembers));
 
 	private (string Esql, EsqlQuery Query) TranslateAndFormat(Expression expression)
 	{
