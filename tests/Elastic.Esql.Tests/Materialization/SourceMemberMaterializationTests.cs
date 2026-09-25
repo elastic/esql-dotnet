@@ -227,4 +227,23 @@ public class SourceMemberMaterializationTests
             | KEEP _source
             """.NativeLineEndings());
 	}
+
+	[Test]
+	public void Query_ANestedMemberFromTheDocument_IsReadAtItsPath()
+	{
+		var executor = new CapturingQueryExecutor
+		{
+			ResponseJson = Response("""{"shipping":{"lines":[{"sku":"n","qty":9}]},"lines":[{"sku":"top","qty":0}]}""")
+		};
+		var provider = new EsqlQueryProvider(
+			new JsonSerializerOptions { TypeInfoResolver = EsqlTestMappingContext.Default, PropertyNamingPolicy = JsonNamingPolicy.CamelCase },
+			executor);
+
+		var rows = new EsqlQueryable<SourcedOrder>(provider)
+			.From("orders")
+			.Select(o => new SourcedOrderDto { Reference = o.Reference, Lines = EsqlMetadata.SourceAs(o.Shipping!.Lines) })
+			.ToList();
+
+		_ = Skus(rows[0].Lines).Should().Be("nx9");
+	}
 }
