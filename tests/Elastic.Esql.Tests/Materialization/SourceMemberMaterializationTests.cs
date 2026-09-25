@@ -186,4 +186,45 @@ public class SourceMemberMaterializationTests
 		_ = Skus(query.ToList()[0].Lines).Should().Be("ax1,bx2");
 		_ = Skus((await query.AsEsqlQueryable().ToListAsync())[0].Lines).Should().Be("ax1,bx2");
 	}
+
+	[Test]
+	public void Query_AsDocuments_IsTheWholeRowFromTheDocument()
+	{
+		var executor = new CapturingQueryExecutor
+		{
+			ResponseJson = """{"columns":[{"name":"_source","type":"_source"}],"values":[[{"reference":"A1","lines":[{"sku":"a","qty":1}]}]]}"""
+		};
+		var provider = new EsqlQueryProvider(
+			new JsonSerializerOptions { TypeInfoResolver = EsqlTestMappingContext.Default, PropertyNamingPolicy = JsonNamingPolicy.CamelCase },
+			executor);
+
+		var query = new EsqlQueryable<SourcedOrder>(provider)
+			.From("orders", MetadataField.Source)
+			.AsDocuments();
+
+		_ = query.ToString().Should().Be(
+			"""
+            FROM orders METADATA _source
+            | KEEP _source
+            """.NativeLineEndings());
+		_ = Skus(query.ToList()[0].Lines).Should().Be("ax1");
+	}
+
+	[Test]
+	public void Query_AsDocumentsAfterAFilter_FiltersOnTheColumns()
+	{
+		var query = new EsqlQueryable<SourcedOrder>(new EsqlQueryProvider())
+			.From("orders", MetadataField.Source)
+			.Where(o => o.Total > 10)
+			.OrderBy(o => o.Reference)
+			.AsDocuments();
+
+		_ = query.ToString().Should().Be(
+			"""
+            FROM orders METADATA _source
+            | WHERE total > 10.0
+            | SORT reference
+            | KEEP _source
+            """.NativeLineEndings());
+	}
 }
