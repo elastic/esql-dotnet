@@ -136,4 +136,54 @@ public class SourceMemberMaterializationTests
 		_ = Skus(query.ToList()[0].Lines).Should().Be("ax1,bx2");
 		_ = Skus((await query.AsEsqlQueryable().ToListAsync())[0].Lines).Should().Be("ax1,bx2");
 	}
+
+	private static readonly SourceMember WholeRow = new(string.Empty, []);
+
+	[Test]
+	public void ReadRows_TheDocumentAsTheRow_FillsEveryMember()
+	{
+		var rows = ReadRows<SourcedOrder>(
+			"""{"columns":[{"name":"_source","type":"_source"}],"values":[[{"reference":"A1","total":9.5,"lines":[{"sku":"a","qty":1}],"shipping":{"lines":[{"sku":"s","qty":2}]}}]]}""",
+			WholeRow);
+
+		_ = rows[0].Reference.Should().Be("A1");
+		_ = rows[0].Total.Should().Be(9.5);
+		_ = Skus(rows[0].Lines).Should().Be("ax1");
+		_ = Skus(rows[0].Shipping!.Lines).Should().Be("sx2");
+	}
+
+	[Test]
+	public void ReadRows_TheDocumentAsTheRow_WrapsASingleObjectAndKeepsInitializersOverNull()
+	{
+		var rows = ReadRows<SourcedOrder>(
+			"""{"columns":[{"name":"_source","type":"_source"}],"values":[[{"reference":"A1","lines":{"sku":"solo","qty":3},"returns":null}]]}""",
+			WholeRow);
+
+		_ = Skus(rows[0].Lines).Should().Be("solox3");
+		_ = rows[0].Returns.Should().NotBeNull().And.BeEmpty();
+	}
+
+	[Test]
+	public async Task Query_TheWholeRowFromTheDocument_ArrivesFilledSyncAndAsync()
+	{
+		var executor = new CapturingQueryExecutor
+		{
+			ResponseJson = """{"columns":[{"name":"_source","type":"_source"}],"values":[[{"reference":"A1","lines":[{"sku":"a","qty":1},{"sku":"b","qty":2}]}]]}"""
+		};
+		var provider = new EsqlQueryProvider(
+			new JsonSerializerOptions { TypeInfoResolver = EsqlTestMappingContext.Default, PropertyNamingPolicy = JsonNamingPolicy.CamelCase },
+			executor);
+
+		var query = new EsqlQueryable<SourcedOrder>(provider)
+			.From("orders", MetadataField.Source)
+			.Select(o => EsqlMetadata.SourceAs<SourcedOrder>());
+
+		_ = query.ToString().Should().Be(
+			"""
+            FROM orders METADATA _source
+            | KEEP _source
+            """.NativeLineEndings());
+		_ = Skus(query.ToList()[0].Lines).Should().Be("ax1,bx2");
+		_ = Skus((await query.AsEsqlQueryable().ToListAsync())[0].Lines).Should().Be("ax1,bx2");
+	}
 }
