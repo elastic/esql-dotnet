@@ -48,6 +48,8 @@ namespace Elastic.Esql.Tests;
 [JsonSerializable(typeof(AttributedProduct))]
 [JsonSerializable(typeof(NullableNestedModel))]
 [JsonSerializable(typeof(AddressModel))]
+[JsonSerializable(typeof(SourcedOrder))]
+[JsonSerializable(typeof(SourcedOrderDto))]
 [JsonSerializable(typeof(SimpleDocument))]
 [JsonSerializable(typeof(MetricDocument))]
 [JsonSerializable(typeof(EventDocument))]
@@ -1143,3 +1145,46 @@ public class ValueTypeDocument
 	public TimeOnly At { get; set; }
 }
 
+/// <summary>A line of an order: a list of these is an object list, which the columns flatten.</summary>
+public class SourcedLine
+{
+	public string Sku { get; set; } = string.Empty;
+
+	public int Qty { get; set; }
+}
+
+/// <summary>A shipping address holding lines of its own, for a path below the top of the document.</summary>
+public class SourcedShipping
+{
+	public List<SourcedLine> Lines { get; set; } = [];
+}
+
+/// <summary>An order document whose lines are read from <c>_source</c>.</summary>
+public class SourcedOrder
+{
+	public string Reference { get; set; } = string.Empty;
+
+	public double Total { get; set; }
+
+	public List<SourcedLine> Lines { get; set; } = [];
+
+	public List<SourcedLine> Returns { get; set; } = [];
+
+	public SourcedLine? First { get; set; }
+
+	public SourcedShipping? Shipping { get; set; }
+}
+
+/// <summary>The projection of an order, with members read from the columns or from <c>_source</c>.</summary>
+public class SourcedOrderDto
+{
+	public string Reference { get; set; } = string.Empty;
+
+	public double Total { get; set; }
+
+	public List<SourcedLine> Lines { get; set; } = [];
+
+	public List<SourcedLine> Returns { get; set; } = [];
+
+	public SourcedLine? First { get; set; }
+}

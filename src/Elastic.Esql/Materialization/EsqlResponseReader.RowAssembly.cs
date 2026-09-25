@@ -187,6 +187,15 @@ internal sealed partial class EsqlResponseReader
 			}
 
 			var leaf = layout.LeafNodesByColumnIndex[colIndex];
+			if (leaf.SourceBindings is { } bindings)
+			{
+				if (!TryWriteSourceMembers(ref reader, source, bindings, rowBuffer, ref needsComma))
+					return false;
+
+				colIndex++;
+				continue;
+			}
+
 			if (needsComma)
 				rowBuffer.Write((byte)',');
 			needsComma = true;
@@ -317,6 +326,15 @@ internal sealed partial class EsqlResponseReader
 				if (slice.IsNull)
 					continue;
 
+				if (child.SourceBindings is { } bindings)
+				{
+					var document = new ReadOnlySequence<byte>(values.Slice(slice.Start, slice.Length).ToArray());
+					var documentReader = new Utf8JsonReader(document);
+					if (!documentReader.Read() || !TryWriteSourceMembers(ref documentReader, document, bindings, buffer, ref needsComma))
+						throw new JsonException("The _source column holds an incomplete document.");
+					continue;
+				}
+
 				if (needsComma)
 					buffer.Write((byte)',');
 				needsComma = true;
@@ -339,6 +357,81 @@ internal sealed partial class EsqlResponseReader
 				buffer.Write((byte)'{');
 				AssembleChildren(child.Children, buffer, values, slices, activeBranches);
 				buffer.Write((byte)'}');
+			}
+		}
+	}
+
+	/// <summary>
+	/// Writes each declared member from the <c>_source</c> document the reader is positioned on, in one pass
+	/// over the document. A member the document does not hold, or holds as null, is left out, so the target
+	/// keeps its initializer; a single object where the target is a collection is written as a list of one.
+	/// Returns false when the buffer ends inside the document; the caller then retries with more data.
+	/// </summary>
+	private static bool TryWriteSourceMembers(
+		ref Utf8JsonReader reader,
+		in ReadOnlySequence<byte> source,
+		SourceBinding[] bindings,
+		PooledBufferWriter row,
+		ref bool needsComma) =>
+		reader.TokenType == JsonTokenType.StartObject
+			? TryWriteSourceMembers(ref reader, source, bindings, depth: 0, row, ref needsComma)
+			: reader.TrySkip();
+
+	private static bool TryWriteSourceMembers(
+		ref Utf8JsonReader reader,
+		in ReadOnlySequence<byte> source,
+		SourceBinding[] bindings,
+		int depth,
+		PooledBufferWriter row,
+		ref bool needsComma)
+	{
+		while (true)
+		{
+			if (!reader.Read())
+				return false;
+
+			if (reader.TokenType == JsonTokenType.EndObject)
+				return true;
+
+			SourceBinding? found = null;
+			var deeper = false;
+			foreach (var binding in bindings)
+			{
+				if (binding.Path.Length <= depth || !reader.ValueTextEquals(binding.Path[depth]))
+					continue;
+
+				if (binding.Path.Length == depth + 1)
+					found ??= binding;
+				else
+					deeper = true;
+			}
+
+			if (!reader.Read())
+				return false;
+
+			if (found is not null && reader.TokenType != JsonTokenType.Null)
+			{
+				if (needsComma)
+					row.Write((byte)',');
+				needsComma = true;
+
+				row.Write(found.PrefixBytes);
+				var wrap = found.IsCollection && reader.TokenType != JsonTokenType.StartArray;
+				if (wrap)
+					row.Write((byte)'[');
+				if (!TryCopyCurrentValue(ref reader, source, row))
+					return false;
+				if (wrap)
+					row.Write((byte)']');
+			}
+			else if (found is null && deeper && reader.TokenType == JsonTokenType.StartObject)
+			{
+				if (!TryWriteSourceMembers(ref reader, source, bindings, depth + 1, row, ref needsComma))
+					return false;
+			}
+			else if (!reader.TrySkip())
+			{
+				return false;
 			}
 		}
 	}

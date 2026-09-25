@@ -25,6 +25,13 @@ internal sealed class ColumnNode
 	public byte[] PrefixBytes { get; init; } = [];
 	public int ColumnIndex { get; init; } = -1;
 	public bool IsCollection { get; init; }
+
+	/// <summary>
+	/// On the <c>_source</c> leaf, the members declared as read from the document: the leaf then writes
+	/// each of them, not the document itself.
+	/// </summary>
+	public SourceBinding[]? SourceBindings { get; set; }
+
 	public int BranchIndex { get; set; } = -1;
 	public ColumnNode? Parent { get; set; }
 	public List<ColumnNode>? Children { get; set; }
@@ -92,7 +99,8 @@ internal sealed class ColumnLayout
 	public static ColumnLayout Build(
 		ReadOnlySpan<EsqlResponseReader.ColumnInfo> columns,
 		Type targetType,
-		JsonMetadataManager metadata)
+		JsonMetadataManager metadata,
+		IReadOnlyList<SourceMember>? sourceMembers = null)
 	{
 		var options = metadata.Options;
 		var columnCount = columns.Length;
@@ -121,6 +129,9 @@ internal sealed class ColumnLayout
 			InsertIntoTree(root, segments, i, isCollection);
 		}
 
+		if (sourceMembers is { Count: > 0 })
+			BindSourceMembers(root, columns, sourceMembers, typeInfo);
+
 		var maxDepth = ComputeMaxDepth(root);
 
 		var effectiveMaxDepth = EffectiveMaxDepth(options);
@@ -135,6 +146,7 @@ internal sealed class ColumnLayout
 		// The binder is cached together with this layout in the reader's column layout cache, so
 		// eligibility is decided once per (target type, column schema).
 		var directBinder = branchNodeCount == 0 && maxDepth <= 1 && columnCount > 0 && typeInfo is not null
+			&& sourceMembers is not { Count: > 0 }
 			? DirectRowBinder.TryCreate(leafNodesByColumnIndex, columns, typeInfo, metadata)
 			: null;
 
@@ -179,6 +191,46 @@ internal sealed class ColumnLayout
 		result[0] = prefix;
 		subSegments.CopyTo(result, 1);
 		return result;
+	}
+
+	/// <summary>
+	/// Hands the declared members to the <c>_source</c> leaf, each with the name the row gives it and
+	/// whether the target is a collection, so that a single object in the document still fills a list.
+	/// </summary>
+	private static void BindSourceMembers(
+		ColumnNode root,
+		ReadOnlySpan<EsqlResponseReader.ColumnInfo> columns,
+		IReadOnlyList<SourceMember> sourceMembers,
+		JsonTypeInfo? typeInfo)
+	{
+		var sourceIndex = -1;
+		for (var i = 0; i < columns.Length; i++)
+		{
+			if (columns[i].Name == "_source")
+				sourceIndex = i;
+		}
+
+		if (sourceIndex < 0 || root.Children is null)
+			return;
+
+		var leaf = root.Children.Find(child => child.ColumnIndex == sourceIndex);
+		if (leaf is null)
+			return;
+
+		leaf.SourceBindings = [.. sourceMembers.Select(member => new SourceBinding(
+			BuildPrefixBytes(member.Name),
+			[.. member.Path],
+			typeInfo is not null && IsCollectionMember(typeInfo, member.Name)))];
+	}
+
+	private static bool IsCollectionMember(JsonTypeInfo typeInfo, string jsonName)
+	{
+		foreach (var prop in typeInfo.Properties)
+		{
+			if (string.Equals(prop.Name, jsonName, StringComparison.Ordinal))
+				return TypeHelper.IsEnumerableType(prop.PropertyType);
+		}
+		return false;
 	}
 
 	private static bool HasPropertyWithJsonName(JsonTypeInfo typeInfo, string jsonName)
