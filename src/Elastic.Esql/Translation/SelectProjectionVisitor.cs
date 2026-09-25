@@ -2,11 +2,11 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-using Elastic.Esql.Materialization;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Elastic.Esql.Formatting;
+using Elastic.Esql.Materialization;
 
 namespace Elastic.Esql.Translation;
 
@@ -98,7 +98,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 			}
 			&& rowDecl == typeof(EsqlMetadata))
 		{
-			var sourceName = _context.ResolveMetadataMemberOrThrow(nameof(EsqlMetadata.Source));
+			var sourceName = _context.RequestSourceOrThrow();
 			_projections.Add(new ProjectionEntry(ProjectionKind.Keep, sourceName, sourceName, null));
 			_context.SourceMembers.Add(new SourceMember(string.Empty, []));
 			return;
@@ -346,7 +346,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 					+ "\"Lines = EsqlMetadata.SourceAs(o.Lines)\".");
 			}
 
-			var metaName = _context.ResolveMetadataMemberOrThrow(nameof(EsqlMetadata.Source));
+			var metaName = _context.RequestSourceOrThrow();
 			if (!_projections.Exists(entry => entry.Kind == ProjectionKind.Keep && entry.ResultField == metaName))
 				_projections.Add(new ProjectionEntry(ProjectionKind.Keep, metaName, metaName, null));
 
@@ -361,7 +361,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 			}
 			&& sourceAsDecl == typeof(EsqlMetadata))
 		{
-			var metaName = _context.ResolveMetadataMemberOrThrow(nameof(EsqlMetadata.Source));
+			var metaName = _context.RequestSourceOrThrow();
 			_projections.Add(metaName == resultField
 				? new ProjectionEntry(ProjectionKind.Keep, metaName, metaName, null)
 				: new ProjectionEntry(ProjectionKind.Rename, resultField, metaName, null));

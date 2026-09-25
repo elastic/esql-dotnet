@@ -74,14 +74,75 @@ public class SourceMemberProjectionTests : EsqlTestBase
 	}
 
 	[Test]
-	public void Select_AMemberFromTheDocumentWithoutSource_Throws()
+	public void Select_AMemberFromTheDocumentWithoutSourceRequested_RequestsIt()
 	{
+		var esql = CreateQuery<SourcedOrder>()
+			.From("orders")
+			.Where(o => o.Total > 10)
+			.Select(o => new SourcedOrderDto { Reference = o.Reference, Lines = EsqlMetadata.SourceAs(o.Lines) })
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+            FROM orders METADATA _source
+            | WHERE total > 10.0
+            | KEEP reference, _source
+            """.NativeLineEndings());
+	}
+
+	[Test]
+	public void Select_AMemberFromTheDocumentWithOtherMetadataRequested_AddsSource()
+	{
+		var esql = CreateQuery<SourcedOrder>()
+			.From("orders", MetadataField.Id)
+			.Select(o => new { EsqlMetadata.Id, Lines = EsqlMetadata.SourceAs(o.Lines) })
+			.ToString();
+
+		_ = esql.Should().Contain("FROM orders METADATA _id, _source");
+	}
+
+	[Test]
+	public void Select_TheWholeRowWithoutSourceRequested_RequestsIt()
+	{
+		var esql = CreateQuery<SourcedOrder>()
+			.From("orders")
+			.AsDocuments()
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+            FROM orders METADATA _source
+            | KEEP _source
+            """.NativeLineEndings());
+	}
+
+	[Test]
+	public void Select_TheDocumentIntoAMemberWithoutSourceRequested_RequestsIt()
+	{
+		var esql = CreateQuery<SourcedOrder>()
+			.From("orders")
+			.Select(o => new { o.Reference, Document = EsqlMetadata.SourceAs<SourcedOrder>() })
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+            FROM orders METADATA _source
+            | RENAME _source AS document
+            | KEEP reference, document
+            """.NativeLineEndings());
+	}
+
+	[Test]
+	public void Select_AMemberFromTheDocumentAfterAKeep_ThrowsNotSupported()
+	{
+		// the KEEP has dropped the document from the rows by the time the projection reads it
 		var query = CreateQuery<SourcedOrder>()
 			.From("orders")
+			.Keep("reference", "lines")
 			.Select(o => new { Lines = EsqlMetadata.SourceAs(o.Lines) });
 
 		var act = () => query.ToString();
 
-		_ = act.Should().Throw<InvalidOperationException>().WithMessage("*'MetadataField.Source' was not requested*");
+		_ = act.Should().Throw<NotSupportedException>().WithMessage("*no longer carry after KEEP*MetadataField.Source*");
 	}
 }
