@@ -2,7 +2,6 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-using Elastic.Esql.Materialization;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -12,7 +11,9 @@ using System.Text.Json.Serialization;
 
 using Elastic.Esql.Core;
 using Elastic.Esql.Formatting;
+using Elastic.Esql.Materialization;
 using Elastic.Esql.QueryModel;
+using Elastic.Esql.QueryModel.Commands;
 
 namespace Elastic.Esql.Translation;
 
@@ -99,6 +100,42 @@ internal sealed class EsqlTranslationContext
 				$"'{nameof(EsqlMetadata)}.{memberName}' was referenced but '{nameof(MetadataField)}.{flag}' was not requested on 'From'.");
 
 		return name;
+	}
+
+	/// <summary>
+	/// Requests <c>METADATA _source</c> for a projection that reads the document, with
+	/// <c>EsqlMetadata.SourceAs</c>, and returns its name. <c>_source</c> is added to the <c>FROM</c>
+	/// command when it was not requested there, as long as nothing since has shaped the columns:
+	/// after a <c>KEEP</c>, a <c>STATS</c> or a <c>FORK</c> the document is no longer in the rows.
+	/// </summary>
+	public string RequestSourceOrThrow()
+	{
+		const string sourceName = "_source";
+
+		if ((ActiveMetadata & MetadataField.Source) != 0)
+			return sourceName;
+
+		var fromIndex = Commands.FindIndex(command => command is FromCommand);
+		if (fromIndex < 0)
+		{
+			throw new NotSupportedException(
+				$"{nameof(EsqlMetadata)}.{nameof(EsqlMetadata.SourceAs)} reads the document's _source, which only a FROM command provides.");
+		}
+
+		var shaped = Commands.Skip(fromIndex + 1).FirstOrDefault(command =>
+			command is not (WhereCommand or SortCommand or LimitCommand or EvalCommand or RenameCommand or DropCommand or LookupJoinCommand));
+		if (shaped is not null)
+		{
+			throw new NotSupportedException(
+				$"{nameof(EsqlMetadata)}.{nameof(EsqlMetadata.SourceAs)} reads the document's _source, which the rows no longer "
+				+ $"carry after {shaped.GetType().Name.Replace("Command", string.Empty).ToUpperInvariant()}. "
+				+ $"Request {nameof(MetadataField)}.{nameof(MetadataField.Source)} on From, or read the document before it.");
+		}
+
+		var from = (FromCommand)Commands[fromIndex];
+		Commands[fromIndex] = new FromCommand(from.IndexPattern, from.Metadata | MetadataField.Source);
+		ActiveMetadata |= MetadataField.Source;
+		return sourceName;
 	}
 
 	private Dictionary<Type, HashSet<string>>? _anonymousTypeFields;
