@@ -217,11 +217,18 @@ internal sealed class ColumnLayout
 		if (leaf is null)
 			return;
 
-		leaf.SourceBindings = [.. sourceMembers.Select(member => new SourceBinding(
-			BuildPrefixBytes(member.Name),
-			[.. member.Path],
-			typeInfo is not null && IsCollectionMember(typeInfo, member.Name)))];
+		leaf.SourceBindings = [.. sourceMembers.Select(member => member.Path.Count == 0
+			? new SourceBinding([], [], IsCollection: false) { CollectionMembers = CollectionMembers(typeInfo) }
+			: new SourceBinding(
+				BuildPrefixBytes(member.Name),
+				[.. member.Path],
+				typeInfo is not null && IsCollectionMember(typeInfo, member.Name)))];
 	}
+
+	private static HashSet<string> CollectionMembers(JsonTypeInfo? typeInfo) =>
+		typeInfo is null
+			? []
+			: [.. typeInfo.Properties.Where(prop => TypeHelper.IsEnumerableType(prop.PropertyType)).Select(prop => prop.Name)];
 
 	private static bool IsCollectionMember(JsonTypeInfo typeInfo, string jsonName)
 	{

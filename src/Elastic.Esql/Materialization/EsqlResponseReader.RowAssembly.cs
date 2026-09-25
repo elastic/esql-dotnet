@@ -373,9 +373,65 @@ internal sealed partial class EsqlResponseReader
 		SourceBinding[] bindings,
 		PooledBufferWriter row,
 		ref bool needsComma) =>
-		reader.TokenType == JsonTokenType.StartObject
-			? TryWriteSourceMembers(ref reader, source, bindings, depth: 0, row, ref needsComma)
-			: reader.TrySkip();
+		reader.TokenType != JsonTokenType.StartObject
+			? reader.TrySkip()
+			: bindings is [{ Path.Length: 0 } whole]
+				? TryWriteSourceAsRow(ref reader, source, whole.CollectionMembers!, row, ref needsComma)
+				: TryWriteSourceMembers(ref reader, source, bindings, depth: 0, row, ref needsComma);
+
+	/// <summary>
+	/// Writes every property of the document into the row, which the document then is. As for a declared
+	/// member, a null is left out so the target keeps its initializer, and a single object where the target
+	/// is a collection is written as a list of one.
+	/// </summary>
+	private static bool TryWriteSourceAsRow(
+		ref Utf8JsonReader reader,
+		in ReadOnlySequence<byte> source,
+		HashSet<string> collectionMembers,
+		PooledBufferWriter row,
+		ref bool needsComma)
+	{
+		while (true)
+		{
+			if (!reader.Read())
+				return false;
+
+			if (reader.TokenType == JsonTokenType.EndObject)
+				return true;
+
+			var name = reader.GetString()!;
+
+			if (!reader.Read())
+				return false;
+
+			if (reader.TokenType == JsonTokenType.Null)
+				continue;
+
+			if (needsComma)
+				row.Write((byte)',');
+			needsComma = true;
+
+			row.Write(JsonPrefix(name));
+			var wrap = reader.TokenType != JsonTokenType.StartArray && collectionMembers.Contains(name);
+			if (wrap)
+				row.Write((byte)'[');
+			if (!TryCopyCurrentValue(ref reader, source, row))
+				return false;
+			if (wrap)
+				row.Write((byte)']');
+		}
+	}
+
+	private static byte[] JsonPrefix(string name)
+	{
+		var encoded = JsonEncodedText.Encode(name).EncodedUtf8Bytes;
+		var prefix = new byte[encoded.Length + 3];
+		prefix[0] = (byte)'"';
+		encoded.CopyTo(prefix.AsSpan(1));
+		prefix[encoded.Length + 1] = (byte)'"';
+		prefix[encoded.Length + 2] = (byte)':';
+		return prefix;
+	}
 
 	private static bool TryWriteSourceMembers(
 		ref Utf8JsonReader reader,

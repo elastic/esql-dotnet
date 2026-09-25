@@ -43,7 +43,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 	/// Translates a Select lambda to projection commands.
 	/// </summary>
 	public ProjectionResult Translate(LambdaExpression lambda) =>
-		TranslateCore(() => Visit(lambda.Body));
+		TranslateCore(() => ClassifyLambda(lambda));
 
 	/// <summary>
 	/// Translates a value computed from the row into the column of <paramref name="member"/>: the projection of a
@@ -76,13 +76,35 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		_outerFieldRemappings = outerFieldRemappings;
 		try
 		{
-			return TranslateCore(() => Visit(lambda.Body));
+			return TranslateCore(() => ClassifyLambda(lambda));
 		}
 		finally
 		{
 			_outerParameter = null;
 			_outerFieldRemappings = null;
 		}
+	}
+
+	/// <summary>
+	/// Classifies the members of a projection lambda. The whole row from the document,
+	/// <c>Select(o => EsqlMetadata.SourceAs&lt;T&gt;())</c>, is <c>_source</c>, declared as a member with an empty path.
+	/// </summary>
+	private void ClassifyLambda(LambdaExpression lambda)
+	{
+		if (lambda.Body is MethodCallExpression
+			{
+				Method: { Name: nameof(EsqlMetadata.SourceAs), DeclaringType: var rowDecl },
+				Arguments.Count: 0
+			}
+			&& rowDecl == typeof(EsqlMetadata))
+		{
+			var sourceName = _context.ResolveMetadataMemberOrThrow(nameof(EsqlMetadata.Source));
+			_projections.Add(new ProjectionEntry(ProjectionKind.Keep, sourceName, sourceName, null));
+			_context.SourceMembers.Add(new SourceMember(string.Empty, []));
+			return;
+		}
+
+		_ = Visit(lambda.Body);
 	}
 
 	private ProjectionResult TranslateCore(Action classifyMembers)
