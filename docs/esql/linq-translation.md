@@ -123,7 +123,7 @@ query.Where(l => levels.Contains(l.Level))
 // WHERE log.level IN ("ERROR", "FATAL", "CRITICAL")
 ```
 
-A `Contains` that takes an equality comparer is refused: the comparison is the one Elasticsearch performs, which the comparer would not follow.
+A `Contains` that takes an equality comparer is refused: the comparison is the one Elasticsearch performs, which the comparer would not follow. So is `Contains` over a captured set, dictionary or collection type of your own, which may compare its values in a way of its own; an array, a `List`, a `ReadOnlyCollection`, a LINQ query, an iterator method or a collection expression compares with default equality and is enumerated into the `IN`.
 
 ### Boolean fields
 

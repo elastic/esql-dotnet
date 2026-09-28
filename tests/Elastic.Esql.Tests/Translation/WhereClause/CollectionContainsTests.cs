@@ -24,37 +24,46 @@ public class CollectionContainsTests : EsqlTestBase
 	}
 
 	[Test]
-	public void Where_HashSetContains_GeneratesInClause()
+	public void Where_HashSetContains_ThrowsNotSupported()
 	{
-		var levels = new SortedSet<string> { "ERROR", "FATAL" };
+		// the set's comparer decides what it contains, which the emitted IN would not follow
+		var levels = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "ERROR", "FATAL" };
 
-		var esql = CreateQuery<LogEntry>()
+		var act = () => CreateQuery<LogEntry>()
 			.From("logs-*")
 			.Where(l => levels.Contains(l.Level.MultiField("keyword")))
 			.ToString();
 
-		_ = esql.Should().Be(
-			"""
-			FROM logs-*
-			| WHERE log.level.keyword IN ("ERROR", "FATAL")
-			""".NativeLineEndings());
+		_ = act.Should().Throw<NotSupportedException>().WithMessage("*HashSet*way of its own*");
 	}
 
 	[Test]
-	public void Where_ISetContains_GeneratesInClause()
+	public void Where_SortedSetContains_ThrowsNotSupported()
 	{
-		var levels = (ISet<string>)new SortedSet<string> { "ERROR", "FATAL" };
+		// a set built with the default comparer is refused all the same: telling it apart
+		// would take reflection, and a SortedSet compares its strings by culture
+		var levels = new SortedSet<string> { "ERROR", "FATAL" };
 
-		var esql = CreateQuery<LogEntry>()
+		var act = () => CreateQuery<LogEntry>()
 			.From("logs-*")
 			.Where(l => levels.Contains(l.Level.MultiField("keyword")))
 			.ToString();
 
-		_ = esql.Should().Be(
-			"""
-			FROM logs-*
-			| WHERE log.level.keyword IN ("ERROR", "FATAL")
-			""".NativeLineEndings());
+		_ = act.Should().Throw<NotSupportedException>().WithMessage("*SortedSet*way of its own*");
+	}
+
+	[Test]
+	public void Where_ISetContains_ThrowsNotSupported()
+	{
+		// the collection is judged by what it is, not by the interface it is typed as
+		var levels = (ISet<string>)new SortedSet<string> { "ERROR", "FATAL" };
+
+		var act = () => CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => levels.Contains(l.Level.MultiField("keyword")))
+			.ToString();
+
+		_ = act.Should().Throw<NotSupportedException>().WithMessage("*SortedSet*way of its own*");
 	}
 
 	[Test]

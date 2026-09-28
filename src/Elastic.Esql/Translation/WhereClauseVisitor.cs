@@ -695,14 +695,28 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 	private bool TryVisitCollectionContains(MethodCallExpression node)
 	{
-		if (TryGetContainsArguments(node, out var valueExpression, out var collection))
-		{
-			AppendContainsCollection(valueExpression, collection);
-			return true;
-		}
+		if (!TryGetContainsArguments(node, out var valueExpression, out var collection))
+			return false;
 
-		return false;
+		// the rule membership of a field's values follows as well: only a collection known
+		// to compare with default equality is enumerated into an IN
+		if (collection is not null && !UsesDefaultEquality(collection))
+			throw ContainsOverACollectionWithItsOwnEquality(collection);
+
+		AppendContainsCollection(valueExpression, collection);
+		return true;
 	}
+
+	/// <summary>
+	/// Enumerating the collection loses the equality it was built with: a set holding "IOT"
+	/// under an ordinal-ignore-case comparer contains "iot", which the emitted comparison
+	/// does not reproduce.
+	/// </summary>
+	private static NotSupportedException ContainsOverACollectionWithItsOwnEquality(IEnumerable collection) => new(
+		$"Contains over a {TypeName(collection.GetType())} is not supported: a set, a dictionary "
+		+ "or a collection type of your own may compare its values in a way of its own, "
+		+ "which the emitted comparison would not follow. Pass an array, a List or a "
+		+ "LINQ query, which compare with default equality.");
 
 	/// <summary>
 	/// Whether the call is a Contains overload that takes an equality comparer, as its
@@ -1773,17 +1787,8 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 			|| collection is null)
 			return null;
 
-		// enumerating the collection loses the equality it was built with: a set
-		// holding "IOT" under an ordinal-ignore-case comparer contains "iot",
-		// which the emitted comparison does not reproduce
 		if (!UsesDefaultEquality(collection))
-		{
-			throw new NotSupportedException(
-				$"Contains over a {TypeName(collection.GetType())} is not supported: a set, a dictionary "
-				+ "or a collection type of your own may compare its values in a way of its own, "
-				+ "which the emitted comparison would not follow. Pass an array, a List or a "
-				+ "LINQ query, which compare with default equality.");
-		}
+			throw ContainsOverACollectionWithItsOwnEquality(collection);
 
 		var candidates = collection.Cast<object?>().ToList();
 
