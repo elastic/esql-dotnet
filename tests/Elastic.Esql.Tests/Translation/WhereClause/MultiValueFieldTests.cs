@@ -859,6 +859,21 @@ public class MultiValueFieldTests : EsqlTestBase
 	}
 
 	[Test]
+	public void Where_ContainsInAQueryOverACapturedCollection_IsNotTakenForAField()
+	{
+		// the lambda inside the query has a parameter of its own, which does not make the
+		// query a field of the document: it is a value the translation cannot read, and says so
+		var allowed = new[] { "ERROR", "FATAL" };
+
+		var act = () => CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => allowed.Where(a => a.Length > 4).Contains(l.Level))
+			.ToString();
+
+		_ = act.Should().Throw<NotSupportedException>().WithMessage("Method Enumerable.Contains is not supported.");
+	}
+
+	[Test]
 	public void Where_AnyOverAProjectedCollection_ThrowsNotSupported()
 	{
 		// after Select(p => p.Categories) the row is the collection, with no field name of its own

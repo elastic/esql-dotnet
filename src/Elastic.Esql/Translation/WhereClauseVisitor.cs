@@ -1126,14 +1126,39 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		return finder.Found;
 	}
 
-	/// <summary>Finds the lambda parameter anywhere in an expression, or the one given.</summary>
-	private sealed class ParameterFinder(ParameterExpression? parameter = null) : ExpressionVisitor
+	/// <summary>
+	/// Whether the expression reads a parameter declared outside it, which is the document:
+	/// <c>allowed.Where(a => a.Enabled)</c> reads only the parameter of its own lambda, and is
+	/// a value, not a field.
+	/// </summary>
+	private static bool ReadsADocumentField(Expression expression)
 	{
+		var finder = new ParameterFinder(skipOwnLambdas: true);
+		_ = finder.Visit(expression);
+		return finder.Found;
+	}
+
+	/// <summary>
+	/// Finds a lambda parameter anywhere in an expression, or the one given, leaving out those
+	/// declared by a lambda inside the expression when asked to.
+	/// </summary>
+	private sealed class ParameterFinder(ParameterExpression? parameter = null, bool skipOwnLambdas = false) : ExpressionVisitor
+	{
+		private readonly HashSet<ParameterExpression> _declared = [];
+
 		public bool Found { get; private set; }
+
+		protected override Expression VisitLambda<T>(Expression<T> node)
+		{
+			if (skipOwnLambdas)
+				_declared.UnionWith(node.Parameters);
+
+			return base.VisitLambda(node);
+		}
 
 		protected override Expression VisitParameter(ParameterExpression node)
 		{
-			Found |= parameter is null || node == parameter;
+			Found |= (parameter is null || node == parameter) && !_declared.Contains(node);
 			return base.VisitParameter(node);
 		}
 	}
@@ -2005,10 +2030,11 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 	/// <summary>
 	/// A field that holds more than one value: a collection of the document, which is
 	/// what <see cref="TypeHelper.IsEnumerableType"/> counts as one. A dictionary is an
-	/// object in the mapping rather than a list of values, and is not.
+	/// object in the mapping rather than a list of values, and is not; nor is a query over
+	/// a captured collection, whose own lambda reads no field.
 	/// </summary>
 	private static bool IsMultiValueField(Expression expression) =>
-		ReadsAField(expression) && TypeHelper.IsEnumerableType(expression.Type);
+		ReadsADocumentField(expression) && TypeHelper.IsEnumerableType(expression.Type);
 
 	private static Type ElementType(Type collectionType) =>
 		TypeHelper.FindGenericType(typeof(IEnumerable<>), collectionType)!.GetGenericArguments()[0];
