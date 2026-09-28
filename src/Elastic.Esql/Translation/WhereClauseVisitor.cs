@@ -33,6 +33,9 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 	/// </summary>
 	private const int MaxMatchedValues = 256;
 
+	// the commands Elasticsearch does not allow MATCH after
+	private static readonly string[] CommandsBlockingMatch = ["FORK", "LIMIT", "STATS"];
+
 	private readonly EsqlTranslationContext _context = context ?? throw new ArgumentNullException(nameof(context));
 	private readonly StringBuilder _builder = new();
 	private MemberInfo? _comparisonPropertyContext;
@@ -2043,32 +2046,27 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 	}
 
 	/// <summary>
-	/// The first LIMIT, STATS or FORK among the commands, which Elasticsearch does not allow MATCH
-	/// after. A raw fragment is text, and its first word says which command it is.
+	/// The first FORK, LIMIT or STATS among the commands, which Elasticsearch does not allow MATCH
+	/// after. A raw fragment is text, and each command in it is read by its first word.
 	/// </summary>
 	internal static string? FindCommandBlockingMatch(IEnumerable<QueryCommand> commands) =>
 		commands
 			.Select(command => command switch
 			{
-				LimitCommand => "LIMIT",
-				StatsCommand => "STATS",
 				ForkCommand => "FORK",
+				LimitCommand => "LIMIT",
 				RawFragmentCommand raw => FindKeywordBlockingMatch(raw.Fragment),
+				StatsCommand => "STATS",
 				_ => null
 			})
 			.FirstOrDefault(command => command is not null);
 
-	// ES|QL keywords are case-insensitive and any whitespace may follow them, as ForkBranchVisitor
-	// reads a raw LIMIT
-	private static string? FindKeywordBlockingMatch(string fragment)
-	{
-		var trimmed = fragment.TrimStart();
-		var keywords = new[] { "LIMIT", "STATS", "FORK" };
-
-		return Array.Find(keywords, keyword =>
-			trimmed.StartsWith(keyword, StringComparison.OrdinalIgnoreCase)
-			&& (trimmed.Length == keyword.Length || char.IsWhiteSpace(trimmed[keyword.Length])));
-	}
+	// a fragment may hold several commands joined with the pipe
+	private static string? FindKeywordBlockingMatch(string fragment) =>
+		fragment
+			.Split('|')
+			.Select(command => Array.Find(CommandsBlockingMatch, keyword => command.StartsWithCommand(keyword)))
+			.FirstOrDefault(keyword => keyword is not null);
 
 	/// <summary>
 	/// MATCH over each value, any of them matching, with a document that has no values

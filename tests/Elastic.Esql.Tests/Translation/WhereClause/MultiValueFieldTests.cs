@@ -1479,6 +1479,20 @@ public class MultiValueFieldTests : EsqlTestBase
 	}
 
 	[Test]
+	public void Where_ContainsAfterARawPipeHoldingALimit_ThrowsNotSupported()
+	{
+		// a raw fragment may hold several commands on one line, joined with the pipe
+		var query = CreateQuery<TaggedProduct>()
+			.From("products")
+			.RawEsql("EVAL x = 1 | LIMIT 10")
+			.Where(p => p.Tags.Contains("iot"));
+
+		var act = () => query.ToString();
+
+		_ = act.Should().Throw<NotSupportedException>().WithMessage("*after LIMIT*");
+	}
+
+	[Test]
 	public void Where_ContainsInAForkBranchAfterTake_ThrowsNotSupported()
 	{
 		// Elasticsearch verifies a branch on top of the pipeline before the Fork, so the LIMIT

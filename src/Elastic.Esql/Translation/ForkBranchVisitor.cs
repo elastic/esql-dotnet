@@ -66,21 +66,12 @@ internal static class ForkBranchVisitor
 		var hasLimit = query.Commands.Any(command => command switch
 		{
 			LimitCommand => true,
-			RawFragmentCommand raw => IsLimitFragment(raw.Fragment),
+			RawFragmentCommand raw => raw.Fragment.StartsWithCommand("LIMIT"),
 			_ => false
 		});
 
 		// a branch that projects leaves the rows projected for whatever follows the Fork
 		return new ForkBranch(fragments, hasLimit: hasLimit, hasProjected: visitor.Context.HasProjected);
-	}
-
-	// ES|QL keywords are case-insensitive and any whitespace may follow them, so a raw "limit 10" or
-	// a tab-separated "LIMIT\t10" satisfies FUSE just like "LIMIT 10".
-	private static bool IsLimitFragment(string fragment)
-	{
-		var trimmed = fragment.TrimStart();
-		return trimmed.StartsWith("LIMIT", StringComparison.OrdinalIgnoreCase)
-			&& (trimmed.Length == 5 || char.IsWhiteSpace(trimmed[5]));
 	}
 
 	/// <summary>

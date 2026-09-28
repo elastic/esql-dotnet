@@ -68,6 +68,18 @@ internal static class TranslationExtensions
 	}
 
 	/// <summary>
+	/// Whether a raw ES|QL fragment is the given command. Keywords are case-insensitive and any
+	/// whitespace may follow them, so "limit 10" and a tab-separated "LIMIT\t10" are both a LIMIT.
+	/// </summary>
+	public static bool StartsWithCommand(this string fragment, string command)
+	{
+		var trimmed = fragment.TrimStart();
+
+		return trimmed.StartsWith(command, StringComparison.OrdinalIgnoreCase)
+			&& (trimmed.Length == command.Length || char.IsWhiteSpace(trimmed[command.Length]));
+	}
+
+	/// <summary>
 	/// Resolves a field name from an expression, handling plain member access and <c>MultiField()</c> calls.
 	/// Returned paths are ES|QL-escaped per segment via <see cref="EsqlIdentifier.EscapeColumnName"/>.
 	/// </summary>
