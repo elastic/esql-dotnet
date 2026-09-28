@@ -36,6 +36,27 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 	// the commands Elasticsearch does not allow MATCH after
 	private static readonly string[] CommandsBlockingMatch = ["FORK", "LIMIT", "STATS"];
 
+	// the collections of the base library that compare with default equality, the immutable
+	// ones by name since the netstandard2.0 build does not reference their assembly
+	private static readonly HashSet<Type> DefaultEqualityCollections =
+	[
+		typeof(ArraySegment<>),
+		typeof(ConcurrentBag<>),
+		typeof(ConcurrentQueue<>),
+		typeof(ConcurrentStack<>),
+		typeof(LinkedList<>),
+		typeof(List<>),
+		typeof(Queue<>),
+		typeof(ReadOnlyCollection<>),
+		typeof(Stack<>)
+	];
+
+	private static readonly HashSet<string> DefaultEqualityCollectionNames =
+	[
+		"System.Collections.Immutable.ImmutableArray`1",
+		"System.Collections.Immutable.ImmutableList`1"
+	];
+
 	private readonly EsqlTranslationContext _context = context ?? throw new ArgumentNullException(nameof(context));
 	private readonly StringBuilder _builder = new();
 	private MemberInfo? _comparisonPropertyContext;
@@ -1669,19 +1690,9 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 			UnaryExpression { NodeType: ExpressionType.Not } negation =>
 				TryParseElementPredicate(negation.Operand, element, field, negated: !negated),
 
-			// "x != null && P(x)" is P(x)
-			BinaryExpression { NodeType: ExpressionType.AndAlso } conjunction when IsNullGuard(conjunction.Left, element, ExpressionType.NotEqual) =>
-				TryParseElementPredicate(conjunction.Right, element, field, negated: negated),
-
-			BinaryExpression { NodeType: ExpressionType.AndAlso } conjunction when IsNullGuard(conjunction.Right, element, ExpressionType.NotEqual) =>
-				TryParseElementPredicate(conjunction.Left, element, field, negated: negated),
-
-			// "x == null || P(x)" is P(x)
-			BinaryExpression { NodeType: ExpressionType.OrElse } disjunction when IsNullGuard(disjunction.Left, element, ExpressionType.Equal) =>
-				TryParseElementPredicate(disjunction.Right, element, field, negated: negated),
-
-			BinaryExpression { NodeType: ExpressionType.OrElse } disjunction when IsNullGuard(disjunction.Right, element, ExpressionType.Equal) =>
-				TryParseElementPredicate(disjunction.Left, element, field, negated: negated),
+			// "x != null && P(x)" and "x == null || P(x)" are P(x)
+			_ when StripNullGuard(body, element) is { } guarded =>
+				TryParseElementPredicate(guarded, element, field, negated: negated),
 
 			// Any(a || b) is Any(a) || Any(b), which the caller can write
 			BinaryExpression { NodeType: ExpressionType.OrElse } => throw OrInsideThePredicate(field),
@@ -1697,6 +1708,25 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 			MethodCallExpression call => TryParseElementCall(call, element, field, negated: negated),
 
+			_ => null
+		};
+
+	/// <summary>
+	/// The predicate a null guard on the element wraps, <c>x != null &amp;&amp; P(x)</c> or
+	/// <c>x == null || P(x)</c> with the guard on either side, or null when the body is no
+	/// such guard. A stored value is never null, so the guard changes nothing.
+	/// </summary>
+	private static Expression? StripNullGuard(Expression body, ParameterExpression element) =>
+		body switch
+		{
+			BinaryExpression { NodeType: ExpressionType.AndAlso } conjunction when IsNullGuard(conjunction.Left, element, ExpressionType.NotEqual) =>
+				conjunction.Right,
+			BinaryExpression { NodeType: ExpressionType.AndAlso } conjunction when IsNullGuard(conjunction.Right, element, ExpressionType.NotEqual) =>
+				conjunction.Left,
+			BinaryExpression { NodeType: ExpressionType.OrElse } disjunction when IsNullGuard(disjunction.Left, element, ExpressionType.Equal) =>
+				disjunction.Right,
+			BinaryExpression { NodeType: ExpressionType.OrElse } disjunction when IsNullGuard(disjunction.Right, element, ExpressionType.Equal) =>
+				disjunction.Left,
 			_ => null
 		};
 
@@ -2213,16 +2243,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 		var definition = type.GetGenericTypeDefinition();
 
-		return definition == typeof(ArraySegment<>)
-			|| definition == typeof(ConcurrentBag<>)
-			|| definition == typeof(ConcurrentQueue<>)
-			|| definition == typeof(ConcurrentStack<>)
-			|| definition.FullName is "System.Collections.Immutable.ImmutableArray`1"
-				or "System.Collections.Immutable.ImmutableList`1"
-			|| definition == typeof(LinkedList<>)
-			|| definition == typeof(List<>)
-			|| definition == typeof(Queue<>)
-			|| definition == typeof(ReadOnlyCollection<>)
-			|| definition == typeof(Stack<>);
+		return DefaultEqualityCollections.Contains(definition)
+			|| (definition.FullName is { } name && DefaultEqualityCollectionNames.Contains(name));
 	}
 }
