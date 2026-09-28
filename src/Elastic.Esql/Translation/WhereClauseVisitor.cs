@@ -2065,23 +2065,23 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 	// exact primitives, and replace this once they are generally available.
 	private void AppendMatch(string field, string renderedValue)
 	{
-		ThrowIfMatchFollowsLimitStatsOrFork();
+		ThrowIfACommandBlocksMatch();
 		_ = _builder.Append("MATCH(").Append(field).Append(", ").Append(renderedValue).Append(')');
 	}
 
-	// Elasticsearch rejects MATCH after LIMIT, STATS and FORK, and would only say so when the
+	// Elasticsearch rejects MATCH after FORK, LIMIT and STATS, and would only say so when the
 	// query runs. MV_CONTAINS for equality and Contains, and MV_INTERSECTS for membership in a
 	// captured collection, lift this: both are evaluated per row rather than through the index,
 	// so the position rule does not apply to them, and nothing is pushed to the index after
 	// those commands anyway. Both are still preview (9.2 and 9.4): the refusal stays until they
 	// are generally available, and this is the place to revisit then.
-	private void ThrowIfMatchFollowsLimitStatsOrFork()
+	private void ThrowIfACommandBlocksMatch()
 	{
 		if (_matchPositionChecked)
 			return;
 
 		_matchPositionChecked = true;
-		var command = FindCommandBlockingMatch(_context.Commands) ?? _context.ParentCommandBlockingMatch;
+		var command = FindCommandBlockingMatch(_context.CommandsInThePipeline());
 
 		if (command is not null)
 		{
@@ -2095,7 +2095,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 	/// The first FORK, LIMIT or STATS among the commands, which Elasticsearch does not allow MATCH
 	/// after. A raw fragment is text, and each command in it is read by its first word.
 	/// </summary>
-	internal static string? FindCommandBlockingMatch(IEnumerable<QueryCommand> commands) =>
+	private static string? FindCommandBlockingMatch(IEnumerable<QueryCommand> commands) =>
 		commands
 			.Select(command => command switch
 			{

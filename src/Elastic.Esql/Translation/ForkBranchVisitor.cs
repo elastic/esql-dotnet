@@ -43,7 +43,7 @@ internal static class ForkBranchVisitor
 		// a branch starts from whatever the parent had built: if the rows were already
 		// projected there, they are projected in the branch too
 		visitor.Context.HasProjected = parentContext.HasProjected;
-		visitor.Context.ParentCommandBlockingMatch = WhereClauseVisitor.FindCommandBlockingMatch(parentContext.Commands);
+		visitor.Context.Parent = parentContext;
 
 		// Share the parent's parameter accumulator so closure-captured values inside branches
 		// land in the final params payload (and uniquely-suffixed names are reserved across branches).
