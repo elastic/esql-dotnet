@@ -1611,6 +1611,9 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 			BinaryExpression { NodeType: ExpressionType.OrElse } disjunction when IsNullGuard(disjunction.Left, element, ExpressionType.Equal) =>
 				TryParseElementPredicate(disjunction.Right, element, field, negated: negated),
 
+			BinaryExpression { NodeType: ExpressionType.OrElse } disjunction when IsNullGuard(disjunction.Right, element, ExpressionType.Equal) =>
+				TryParseElementPredicate(disjunction.Left, element, field, negated: negated),
+
 			// Any(a || b) is Any(a) || Any(b), which the caller can write
 			BinaryExpression { NodeType: ExpressionType.OrElse } => throw OrInsideThePredicate(field),
 

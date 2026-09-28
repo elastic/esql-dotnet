@@ -1279,6 +1279,22 @@ public class MultiValueFieldTests : EsqlTestBase
 	}
 
 	[Test]
+	public void Where_AllWithANullGuardAfterThePredicateThatAdmitsNull_DropsTheGuard()
+	{
+		// "P(x) || x == null" is the same guard with the sides swapped
+		var esql = CreateQuery<TaggedProduct>()
+			.From("products")
+			.Where(p => p.Tags.All(t => t == "iot" || t == null))
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+            FROM products
+            | WHERE (tags IS NULL OR (MV_COUNT(MV_DEDUPE(tags)) == 1 AND MATCH(tags, "iot")))
+            """.NativeLineEndings());
+	}
+
+	[Test]
 	public void Where_AControlCharacterInTheValue_IsEscaped()
 	{
 		// the value is written the way a single field's is, escapes included
