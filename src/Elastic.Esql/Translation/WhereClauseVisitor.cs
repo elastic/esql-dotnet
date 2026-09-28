@@ -71,15 +71,15 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 	private enum ElementPredicateKind
 	{
-		Equal,
-		In,
-		StartsWith,
-		EndsWith,
 		Contains,
+		EndsWith,
+		Equal,
 		GreaterThan,
 		GreaterThanOrEqual,
+		In,
 		LessThan,
-		LessThanOrEqual
+		LessThanOrEqual,
+		StartsWith
 	}
 
 	private readonly record struct ElementPredicate(
