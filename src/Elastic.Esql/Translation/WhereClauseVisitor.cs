@@ -1415,8 +1415,8 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 	/// a comparer set on an instance is not visible when the query is translated, just as
 	/// a scalar comparison on a string property does not see one either. MATCH compares
 	/// the way the field is indexed: exactly on a keyword field, through the analyzer on
-	/// a text field, as MATCH always does; a keyword multi-field of a collection is not a
-	/// shape translated here.
+	/// a text field, as MATCH always does, so <c>p.Tags.MultiField("keyword")</c> compares
+	/// exactly where the collection itself is mapped as text.
 	/// </para>
 	/// </summary>
 	private bool TryVisitMultiValueField(MethodCallExpression node)
@@ -1547,8 +1547,9 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		// The field holds what the converter writes, and the values compared are emitted as
 		// given: a converter of the collection, on the property, on its type or among the
 		// serializer's converters, does not apply to one of its values, so the two need not
-		// meet, and the count of values need not be the one written either.
-		if (_context.Metadata.FindPropertyConverter(EntityPropertyMember(source)) is not null
+		// meet, and the count of values need not be the one written either. A multi-field
+		// of the property holds the written form as well.
+		if (_context.Metadata.FindPropertyConverter(ConvertedMember(source)) is not null
 			|| _context.HasRegisteredConverter(source.Type)
 			|| source.Type.IsDefined(typeof(JsonConverterAttribute), inherit: false))
 		{

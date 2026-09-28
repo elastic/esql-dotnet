@@ -917,6 +917,19 @@ public class MultiValueFieldTests : EsqlTestBase
 	}
 
 	[Test]
+	public void Where_ContainsOverAMultiFieldOfAPropertyWithAJsonConverter_ThrowsNotSupported()
+	{
+		// the multi-field holds what the converter wrote as well, "TAG-iot", which MATCH(tags.keyword, "iot") would not find
+		var query = CreateQuery<ConvertedTagsProduct>()
+			.From("products")
+			.Where(p => p.Tags.MultiField("keyword").Contains("iot"));
+
+		var act = () => query.ToString();
+
+		_ = act.Should().Throw<NotSupportedException>().WithMessage("*JsonConverter*");
+	}
+
+	[Test]
 	public void Where_AnyWithInequality_BecomesNotAllEqual()
 	{
 		// Any(t != v) is "not every value is v"
