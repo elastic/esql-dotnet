@@ -721,23 +721,46 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 	/// <summary>
 	/// Whether the call is a Contains overload that takes an equality comparer, as its
 	/// last parameter. The comparison emitted is the one Elasticsearch performs, which
-	/// the comparer would not follow.
+	/// only the default comparers follow.
 	/// </summary>
 	private static bool TakesAnEqualityComparer(MethodCallExpression node) =>
 		node.Method.Name == "Contains"
 		&& node.Method.GetParameters() is [.., { ParameterType: { IsGenericType: true } last }]
 		&& last.GetGenericTypeDefinition() == typeof(IEqualityComparer<>);
 
+	/// <summary>
+	/// Whether the comparer is one that compares as the store does: EqualityComparer&lt;T&gt;.Default
+	/// or StringComparer.Ordinal, named as such or captured. Any other, or one read only when
+	/// the query runs, may compare in a way of its own.
+	/// </summary>
+	private static bool IsTheDefaultComparer(Expression comparer)
+	{
+		if (comparer.UnwrapConvertExpressions() is MemberExpression { Expression: null } member)
+		{
+			if (member.Member.DeclaringType == typeof(StringComparer) && member.Member.Name == nameof(StringComparer.Ordinal))
+				return true;
+
+			if (member.Member.DeclaringType is { IsGenericType: true } declaring
+				&& declaring.GetGenericTypeDefinition() == typeof(EqualityComparer<>)
+				&& member.Member.Name == nameof(EqualityComparer<>.Default))
+				return true;
+		}
+
+		return TryGetConstant(comparer, out var value) && ReferenceEquals(value, StringComparer.Ordinal);
+	}
+
 	private static NotSupportedException ContainsWithAnEqualityComparer() => new(
-		"Contains with an equality comparer is not supported: the emitted comparison is the one "
-		+ "Elasticsearch performs, which the comparer would not follow. Call Contains without one.");
+		"Contains with an equality comparer other than the default is not supported: the emitted comparison "
+		+ "is the one Elasticsearch performs, which EqualityComparer<T>.Default and StringComparer.Ordinal make "
+		+ "and another comparer need not. Call Contains without one.");
 
 	private static bool TryGetContainsArguments(MethodCallExpression node, out Expression valueExpression, out IEnumerable? collection)
 	{
 		valueExpression = null!;
 		collection = null;
 
-		if (TakesAnEqualityComparer(node))
+		var takesComparer = TakesAnEqualityComparer(node);
+		if (takesComparer && !IsTheDefaultComparer(node.Arguments[^1]))
 			throw ContainsWithAnEqualityComparer();
 
 		if (node.Method.IsStatic)
@@ -761,7 +784,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 			return false;
 		}
 
-		if (node.Object is null || node.Arguments.Count != 1 || !IsNonStringEnumerable(node.Object.Type))
+		if (node.Object is null || node.Arguments.Count != (takesComparer ? 2 : 1) || !IsNonStringEnumerable(node.Object.Type))
 			return false;
 
 		valueExpression = node.Arguments[0];
@@ -1576,18 +1599,20 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 
 	/// <summary>
 	/// <c>field.Contains(value)</c>, which is <c>field.Any(x =&gt; x == value)</c> and is
-	/// answered as that, and only that overload: one taking a comparer asks for a comparison
-	/// the translation cannot honour.
+	/// answered as that. An overload taking a comparer other than the default asks for a
+	/// comparison the translation cannot honour.
 	/// </summary>
 	private bool TryVisitFieldContains(MethodCallExpression node, Expression source, string name)
 	{
-		if (TakesAnEqualityComparer(node))
+		var takesComparer = TakesAnEqualityComparer(node);
+		if (takesComparer && !IsTheDefaultComparer(node.Arguments[^1]))
 			throw ContainsWithAnEqualityComparer();
 
-		if (node.Arguments.Count != (node.Method.IsStatic ? 2 : 1))
+		var valueIndex = node.Method.IsStatic ? 1 : 0;
+		if (node.Arguments.Count != valueIndex + (takesComparer ? 2 : 1))
 			return false;
 
-		var compared = GetComparedValue(node.Arguments[^1], ElementType(source.Type), name);
+		var compared = GetComparedValue(node.Arguments[valueIndex], ElementType(source.Type), name);
 
 		return TryAppendQuantified(name, all: false, new ElementPredicate(ElementPredicateKind.Equal, [compared], Negated: false));
 	}

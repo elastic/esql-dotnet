@@ -162,4 +162,39 @@ public class CollectionContainsTests : EsqlTestBase
 
 		_ = act.Should().Throw<NotSupportedException>().WithMessage("*equality comparer*");
 	}
+
+	[Test]
+	public void Where_ContainsWithTheOrdinalComparer_GeneratesInClause()
+	{
+		// ordinal equality is the comparison Elasticsearch performs, so the comparer changes nothing
+		var levels = new[] { "ERROR", "FATAL" };
+
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => levels.Contains(l.Level.MultiField("keyword"), StringComparer.Ordinal))
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| WHERE log.level.keyword IN ("ERROR", "FATAL")
+			""".NativeLineEndings());
+	}
+
+	[Test]
+	public void Where_ContainsWithTheDefaultComparer_GeneratesInClause()
+	{
+		var levels = new[] { "ERROR", "FATAL" };
+
+		var esql = CreateQuery<LogEntry>()
+			.From("logs-*")
+			.Where(l => levels.Contains(l.Level.MultiField("keyword"), EqualityComparer<string>.Default))
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+			FROM logs-*
+			| WHERE log.level.keyword IN ("ERROR", "FATAL")
+			""".NativeLineEndings());
+	}
 }

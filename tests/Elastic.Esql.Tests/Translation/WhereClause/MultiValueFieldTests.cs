@@ -492,6 +492,39 @@ public class MultiValueFieldTests : EsqlTestBase
 	}
 
 	[Test]
+	public void Where_FieldContainsWithTheOrdinalComparer_TranslatesToMatch()
+	{
+		// ordinal equality is the comparison a keyword field makes, so the comparer changes nothing
+		var esql = CreateQuery<TaggedProduct>()
+			.From("products")
+			.Where(p => p.Tags.Contains("iot", StringComparer.Ordinal))
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+            FROM products
+            | WHERE (tags IS NOT NULL AND MATCH(tags, "iot"))
+            """.NativeLineEndings());
+	}
+
+	[Test]
+	public void Where_AnyOverAContainsWithTheOrdinalComparer_MatchesEachValue()
+	{
+		var wanted = new[] { "iot", "water" };
+
+		var esql = CreateQuery<TaggedProduct>()
+			.From("products")
+			.Where(p => p.Tags.Any(t => wanted.Contains(t, StringComparer.Ordinal)))
+			.ToString();
+
+		_ = esql.Should().Be(
+			"""
+            FROM products
+            | WHERE (tags IS NOT NULL AND (MATCH(tags, "iot") OR MATCH(tags, "water")))
+            """.NativeLineEndings());
+	}
+
+	[Test]
 	public void Where_ContainsWithACapturedValue_Parameterizes()
 	{
 		var tag = "water";
