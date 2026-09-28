@@ -1760,13 +1760,33 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		// the value the null check resolved is reused rather than read a second time
 		if (_resolvedCaptures.TryGetValue(unwrapped, out var captured) && captured is not null)
 		{
-			_resolvedCaptures[unwrapped] = Enum.ToObject(enumType, captured);
+			_resolvedCaptures[unwrapped] = ToEnumMember(enumType, captured, field);
 			return unwrapped;
 		}
 
 		return TryGetConstant(unwrapped, out var number) && number is not null
-			? Expression.Constant(Enum.ToObject(enumType, number), enumType)
+			? Expression.Constant(ToEnumMember(enumType, number, field), enumType)
 			: value;
+	}
+
+	/// <summary>
+	/// The member of the enum a value stands for: the enum itself, or a whole number of any
+	/// width, which is what a cast from a number reaches the tree as. A fraction or a string
+	/// cast to the enum is legal C# with no member behind it, and is refused rather than left
+	/// to Enum.ToObject.
+	/// </summary>
+	private static object ToEnumMember(Type enumType, object value, string field)
+	{
+		if (value.GetType() == enumType)
+			return value;
+
+		if (Type.GetTypeCode(value.GetType()) is TypeCode.Byte or TypeCode.Int16 or TypeCode.Int32 or TypeCode.Int64
+			or TypeCode.SByte or TypeCode.UInt16 or TypeCode.UInt32 or TypeCode.UInt64)
+			return Enum.ToObject(enumType, value);
+
+		throw new NotSupportedException(
+			$"Comparing the values of {field} with a {TypeName(value.GetType())} turned into a {enumType.Name} is not "
+			+ "supported: only a whole number, or the enum itself, names one of its members.");
 	}
 
 	private static NotSupportedException ComparisonWithAnotherField(string field) => new(
@@ -1829,7 +1849,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		var enumType = Nullable.GetUnderlyingType(element.Type) ?? element.Type;
 		var values = candidates.Cast<object>();
 		if (enumType.IsEnum)
-			values = values.Select(value => value.GetType() == enumType ? value : Enum.ToObject(enumType, value));
+			values = values.Select(value => ToEnumMember(enumType, value, field));
 
 		return new ElementPredicate(ElementPredicateKind.In, [.. values.Select(Expression.Constant)], Negated: negated);
 	}

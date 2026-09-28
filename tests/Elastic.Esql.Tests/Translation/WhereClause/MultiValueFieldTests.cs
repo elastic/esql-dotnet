@@ -1032,6 +1032,36 @@ public class MultiValueFieldTests : EsqlTestBase
 	}
 
 	[Test]
+	public void Where_AnyWithACapturedDoubleCastToAnEnum_ThrowsNotSupported()
+	{
+		// C# lets a double be cast to an enum, but no member of the enum is a fraction
+		var level = 1.0;
+
+		var query = CreateQuery<TypedValuesProduct>()
+			.From("products")
+			.Where(p => p.Grades.Any(g => g == (Grade)level));
+
+		var act = () => query.ToString();
+
+		_ = act.Should().Throw<NotSupportedException>().WithMessage("*Double*Grade*");
+	}
+
+	[Test]
+	public void Where_AnyOverAMembershipOfValuesThatAreNotTheEnum_ThrowsNotSupported()
+	{
+		// a string among the values is neither a member of the enum nor a number of one
+		var codes = new List<object> { "high" };
+
+		var query = CreateQuery<TypedValuesProduct>()
+			.From("products")
+			.Where(p => p.Grades.Any(g => codes.Contains((int)g)));
+
+		var act = () => query.ToString();
+
+		_ = act.Should().Throw<NotSupportedException>().WithMessage("*String*Grade*");
+	}
+
+	[Test]
 	public void Where_AnyOverACapturedLinqQuery_MatchesEachValue()
 	{
 		// a LINQ operator compares with default equality, and is enumerated once
