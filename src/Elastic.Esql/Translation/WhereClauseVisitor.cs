@@ -1641,8 +1641,8 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 			return false;
 
 		var compared = GetComparedValue(node.Arguments[valueIndex], ElementType(source.Type), name);
-
-		return TryAppendQuantified(name, all: false, new ElementPredicate(ElementPredicateKind.Equal, [compared], Negated: false));
+		AppendQuantified(name, all: false, new ElementPredicate(ElementPredicateKind.Equal, [compared], Negated: false));
+		return true;
 	}
 
 	/// <summary><c>field.Any(predicate)</c> and <c>field.All(predicate)</c>, over one predicate on the element.</summary>
@@ -1652,9 +1652,11 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 			return false;
 
 		var predicate = TryParseElementPredicate(lambda.Body, lambda.Parameters[0], name, negated: false);
+		if (predicate is null)
+			return false;
 
-		return predicate is not null
-			&& TryAppendQuantified(name, all: node.Method.Name == "All", predicate.Value);
+		AppendQuantified(name, all: node.Method.Name == "All", predicate.Value);
+		return true;
 	}
 
 	/// <summary>
@@ -1883,7 +1885,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 	/// Any(P) and All(P) over the values of a field. A negated predicate is pushed into
 	/// the quantifier, since Any(not P) is "not All(P)" and All(not P) is "not Any(P)".
 	/// </summary>
-	private bool TryAppendQuantified(string name, bool all, ElementPredicate predicate)
+	private void AppendQuantified(string name, bool all, ElementPredicate predicate)
 	{
 		// "Any(not P)" is "not All(P)" and "All(not P)" is "not Any(P)": the negation
 		// moves onto the quantifier, which flips
@@ -1897,16 +1899,16 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		{
 			case ElementPredicateKind.Equal:
 				AppendEquality(name, all, predicate);
-				return true;
+				break;
 
 			case ElementPredicateKind.In:
 				AppendMembership(name, all, predicate);
-				return true;
+				break;
 
 			case ElementPredicateKind.GreaterThan or ElementPredicateKind.GreaterThanOrEqual
 				or ElementPredicateKind.LessThan or ElementPredicateKind.LessThanOrEqual:
 				AppendOrdering(name, all, predicate);
-				return true;
+				break;
 
 			// StartsWith and the rest test one value at a time, which needs the field read
 			// position by position: the shape is refused rather than answered by a test that
