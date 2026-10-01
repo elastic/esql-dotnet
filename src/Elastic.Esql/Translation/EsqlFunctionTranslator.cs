@@ -398,12 +398,10 @@ internal static class EsqlFunctionTranslator
 	private static string? TranslateRound(Func<Expression, string> translate, IReadOnlyList<Expression> args)
 	{
 		var hasMode = args[^1].Type == typeof(MidpointRounding);
-		MidpointRounding mode;
-		if (!hasMode)
-			mode = MidpointRounding.ToEven;
-		else if (args[^1] is ConstantExpression { Value: MidpointRounding constant })
-			mode = constant;
-		else
+		var mode = !hasMode ? MidpointRounding.ToEven
+			: args[^1] is ConstantExpression { Value: MidpointRounding constant } ? constant
+			: (MidpointRounding?)null;
+		if (mode is null)
 			return null;
 
 		var value = translate(args[0]);
@@ -414,7 +412,7 @@ internal static class EsqlFunctionTranslator
 
 		var scaled = digits is null ? value : $"{value} * POW(10, {digits})";
 		// ToZero, ToNegativeInfinity and ToPositiveInfinity are not defined in netstandard2.0, so they are matched by value.
-		var rounded = (int)mode switch
+		var rounded = (int)mode.Value switch
 		{
 			(int)MidpointRounding.ToEven => $"CASE({scaled} - FLOOR({scaled}) == 0.5, FLOOR({scaled}) + ABS(FLOOR({scaled}) % 2), ROUND({scaled}))",
 			2 => $"CASE({scaled} >= 0, FLOOR({scaled}), CEIL({scaled}))",
