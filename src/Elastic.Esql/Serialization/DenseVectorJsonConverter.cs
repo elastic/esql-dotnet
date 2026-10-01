@@ -2,6 +2,7 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Buffers;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Elastic.Esql.Formatting;
@@ -45,16 +46,34 @@ internal sealed class DenseVectorFloatJsonConverter : JsonConverter<DenseVector<
 		if (reader.TokenType != JsonTokenType.StartArray)
 			throw new JsonException("Expected start of array for DenseVector<float>.");
 
-		var list = new List<float>();
-		while (reader.Read())
+		// Vectors are hundreds to a few thousand elements; a rented buffer grows without leaving List<T> arrays behind.
+		var scratch = ArrayPool<float>.Shared.Rent(256);
+		var count = 0;
+
+		try
 		{
-			if (reader.TokenType == JsonTokenType.EndArray)
-				return new DenseVector<float>(list.ToArray());
+			while (reader.Read())
+			{
+				if (reader.TokenType == JsonTokenType.EndArray)
+					return new DenseVector<float>(scratch.AsSpan(0, count).ToArray());
 
-			list.Add(reader.GetSingle());
+				if (count == scratch.Length)
+				{
+					var grown = ArrayPool<float>.Shared.Rent(scratch.Length * 2);
+					scratch.AsSpan(0, count).CopyTo(grown);
+					ArrayPool<float>.Shared.Return(scratch);
+					scratch = grown;
+				}
+
+				scratch[count++] = reader.GetSingle();
+			}
+
+			throw new JsonException("Unexpected end of JSON while reading DenseVector<float>.");
 		}
-
-		throw new JsonException("Unexpected end of JSON while reading DenseVector<float>.");
+		finally
+		{
+			ArrayPool<float>.Shared.Return(scratch);
+		}
 	}
 
 	public override void Write(Utf8JsonWriter writer, DenseVector<float> value, JsonSerializerOptions options)
@@ -95,35 +114,53 @@ internal sealed class DenseVectorByteJsonConverter : JsonConverter<DenseVector<b
 		if (reader.TokenType != JsonTokenType.StartArray)
 			throw new JsonException("Expected start of array for DenseVector<byte>.");
 
-		var list = new List<byte>();
-		while (reader.Read())
+		// Vectors are hundreds to a few thousand elements; a rented buffer grows without leaving List<T> arrays behind.
+		var scratch = ArrayPool<byte>.Shared.Rent(256);
+		var count = 0;
+
+		try
 		{
-			if (reader.TokenType == JsonTokenType.EndArray)
-				return new DenseVector<byte>(list.ToArray());
-
-			if (reader.TokenType != JsonTokenType.Number)
-				throw new JsonException($"DenseVector<byte> elements must be JSON numbers, got {reader.TokenType}.");
-
-			// Accept both signed (-128..127) and unsigned (0..255) representations. ES|QL
-			// responses for dense_vector byte fields can use either form depending on the path.
-			if (!reader.TryGetInt32(out var raw))
+			while (reader.Read())
 			{
-				var asDouble = reader.GetDouble();
-				var rounded = Math.Round(asDouble);
-				if (Math.Abs(asDouble - rounded) > double.Epsilon)
+				if (reader.TokenType == JsonTokenType.EndArray)
+					return new DenseVector<byte>(scratch.AsSpan(0, count).ToArray());
+
+				if (reader.TokenType != JsonTokenType.Number)
+					throw new JsonException($"DenseVector<byte> elements must be JSON numbers, got {reader.TokenType}.");
+
+				// Accept both signed (-128..127) and unsigned (0..255) representations. ES|QL
+				// responses for dense_vector byte fields can use either form depending on the path.
+				if (!reader.TryGetInt32(out var raw))
+				{
+					var asDouble = reader.GetDouble();
+					var rounded = Math.Round(asDouble);
+					if (Math.Abs(asDouble - rounded) > double.Epsilon)
+						throw new JsonException(
+							$"DenseVector<byte> element {asDouble} is not an integer.");
+					raw = (int)rounded;
+				}
+
+				if (raw is < -128 or > 255)
 					throw new JsonException(
-						$"DenseVector<byte> element {asDouble} is not an integer.");
-				raw = (int)rounded;
+						$"DenseVector<byte> element {raw} is outside the supported range [-128, 255].");
+
+				if (count == scratch.Length)
+				{
+					var grown = ArrayPool<byte>.Shared.Rent(scratch.Length * 2);
+					scratch.AsSpan(0, count).CopyTo(grown);
+					ArrayPool<byte>.Shared.Return(scratch);
+					scratch = grown;
+				}
+
+				scratch[count++] = (byte)(raw & 0xFF);
 			}
 
-			if (raw is < -128 or > 255)
-				throw new JsonException(
-					$"DenseVector<byte> element {raw} is outside the supported range [-128, 255].");
-
-			list.Add((byte)(raw & 0xFF));
+			throw new JsonException("Unexpected end of JSON while reading DenseVector<byte>.");
 		}
-
-		throw new JsonException("Unexpected end of JSON while reading DenseVector<byte>.");
+		finally
+		{
+			ArrayPool<byte>.Shared.Return(scratch);
+		}
 	}
 
 	public override void Write(Utf8JsonWriter writer, DenseVector<byte> value, JsonSerializerOptions options)

@@ -2,7 +2,6 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 #if NET10_0_OR_GREATER
 using System.IO.Pipelines;
@@ -31,17 +30,16 @@ internal sealed partial class EsqlResponseReader
 
 		try
 		{
-			var cursor = new AsyncStreamBufferCursor(asyncBuffer);
-			var prepared = await PrepareRowsAsync<T>(cursor, cancellationToken).ConfigureAwait(false);
+			var prepared = await PrepareRowsAsync<T>(asyncBuffer, cancellationToken).ConfigureAwait(false);
 
 			var result = new EsqlAsyncResults<T>();
 			result.SetOwnedResource(asyncBuffer);
-			await ApplyPreparedMetadataAsync(result, prepared, cursor, cancellationToken).ConfigureAwait(false);
+			await ApplyPreparedMetadataAsync(result, prepared, asyncBuffer, cancellationToken).ConfigureAwait(false);
 
 			var forceBuffer = requireId && result.Id is null && !prepared.ValuesFirst && prepared.IsRunning != true;
 			result.Rows = forceBuffer
-				? StreamRowsThenScanForIdAsync(cursor, prepared, result, cancellationToken)
-				: BuildAsyncRows(cursor, prepared, result, cancellationToken);
+				? StreamRowsThenScanForIdAsync(asyncBuffer, prepared, result, cancellationToken)
+				: BuildAsyncRows(asyncBuffer, prepared, result, cancellationToken);
 			return result;
 		}
 		catch
@@ -85,17 +83,16 @@ internal sealed partial class EsqlResponseReader
 
 		try
 		{
-			var cursor = new SyncStreamBufferCursor(syncBuffer);
-			var prepared = PrepareRows<T>(cursor);
+			var prepared = PrepareRows<T>(syncBuffer);
 
 			var result = new EsqlResults<T>();
 			result.SetOwnedResource(syncBuffer);
-			ApplyPreparedMetadata(result, prepared, cursor);
+			ApplyPreparedMetadata(result, prepared, syncBuffer);
 
 			var forceBuffer = requireId && result.Id is null && !prepared.ValuesFirst && prepared.IsRunning != true;
 			result.Rows = forceBuffer
-				? StreamRowsThenScanForId(cursor, prepared, result)
-				: BuildSyncRows(cursor, prepared, result);
+				? StreamRowsThenScanForId(syncBuffer, prepared, result)
+				: BuildSyncRows(syncBuffer, prepared, result);
 			return result;
 		}
 		catch
@@ -145,25 +142,19 @@ internal sealed partial class EsqlResponseReader
 		}
 	}
 
-	private async IAsyncEnumerable<T> BuildAsyncRows<T>(
+	private IAsyncEnumerable<T> BuildAsyncRows<T>(
 		IAsyncBufferCursor cursor,
 		PrepareRowsResult prepared,
 		EsqlAsyncResults<T> result,
-		[EnumeratorCancellation] CancellationToken cancellationToken)
+		CancellationToken cancellationToken)
 	{
 		if (prepared.IsRunning == true)
-			yield break;
+			return EmptyAsyncEnumerable<T>.Instance;
 
 		if (prepared.ValuesFirst)
-		{
-			await foreach (var item in ReadFromBufferedResponseAsync<T>(cursor, result, cancellationToken).ConfigureAwait(false))
-				yield return item;
-			yield break;
-		}
+			return ReadFromBufferedResponseAsync<T>(cursor, result, cancellationToken);
 
-		await foreach (var item in StreamRowsAsync<T>(cursor, prepared.ReaderState, prepared.Columns, prepared.Layout, Options, cancellationToken: cancellationToken)
-			.ConfigureAwait(false))
-			yield return item;
+		return StreamRowsAsync<T>(cursor, prepared.ReaderState, prepared.Columns, prepared.Layout, Options, cancellationToken: cancellationToken);
 	}
 
 #if NET10_0_OR_GREATER
@@ -192,17 +183,12 @@ internal sealed partial class EsqlResponseReader
 		EsqlResults<T> result)
 	{
 		if (prepared.IsRunning == true)
-			yield break;
+			return [];
 
 		if (prepared.ValuesFirst)
-		{
-			foreach (var item in ReadFromBufferedResponse<T>(cursor, result))
-				yield return item;
-			yield break;
-		}
+			return ReadFromBufferedResponse<T>(cursor, result);
 
-		foreach (var item in StreamRows<T>(cursor, prepared.ReaderState, prepared.Columns, prepared.Layout, Options))
-			yield return item;
+		return StreamRows<T>(cursor, prepared.ReaderState, prepared.Columns, prepared.Layout, Options);
 	}
 
 	private async IAsyncEnumerable<T> StreamRowsThenScanForIdAsync<T>(
@@ -336,11 +322,7 @@ internal sealed partial class EsqlResponseReader
 			yield break;
 		}
 
-		var rowBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
-		var valueBuffer = plan.IsScalar ? null : new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
-		await using var valueWriter = plan.IsScalar ? null : new Utf8JsonWriter(valueBuffer!, SkipValidationWriterOptions);
-		await using var scalarWriter = plan.IsScalar ? new Utf8JsonWriter(rowBuffer, SkipValidationWriterOptions) : null;
-		var buffers = new RowAssemblyBuffers(rowBuffer, valueBuffer, valueWriter, scalarWriter);
+		using var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, plan.IsScalar, plan.WrapScalarInArray, needsValueBuffer: layout.BranchNodeCount > 0);
 
 		try
 		{
@@ -405,11 +387,7 @@ internal sealed partial class EsqlResponseReader
 			yield break;
 		}
 
-		var rowBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
-		var valueBuffer = plan.IsScalar ? null : new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
-		using var valueWriter = plan.IsScalar ? null : new Utf8JsonWriter(valueBuffer!, SkipValidationWriterOptions);
-		using var scalarWriter = plan.IsScalar ? new Utf8JsonWriter(rowBuffer, SkipValidationWriterOptions) : null;
-		var buffers = new RowAssemblyBuffers(rowBuffer, valueBuffer, valueWriter, scalarWriter);
+		using var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, plan.IsScalar, plan.WrapScalarInArray, needsValueBuffer: layout.BranchNodeCount > 0);
 
 		try
 		{
@@ -471,11 +449,8 @@ internal sealed partial class EsqlResponseReader
 		[EnumeratorCancellation] CancellationToken cancellationToken,
 		ReaderStateTracker? readerStateTracker = null)
 	{
-		var rowBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
-		var valueBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
-		var batchBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize * 8);
-		await using var valueWriter = new Utf8JsonWriter(valueBuffer, SkipValidationWriterOptions);
-		var buffers = new RowAssemblyBuffers(rowBuffer, valueBuffer, valueWriter, scalarWriter: null);
+		using var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, isScalar: false, wrapScalarInArray: false, needsValueBuffer: true);
+		using var batchBuffer = new PooledBufferWriter(MaxBatchBufferBytes);
 		var batchRowCount = 0;
 
 		try
@@ -520,7 +495,7 @@ internal sealed partial class EsqlResponseReader
 					if (!assembled || reachedEnd)
 						break;
 
-					AppendRowToBatch(batchBuffer, rowBuffer, batchRowCount);
+					AppendRowToBatch(batchBuffer, buffers.RowBuffer, batchRowCount);
 					batchRowCount++;
 
 					if (batchRowCount < MaxBatchRowCount && batchBuffer.WrittenCount < MaxBatchBufferBytes)
@@ -566,11 +541,8 @@ internal sealed partial class EsqlResponseReader
 		JsonTypeInfo<List<T>> listTypeInfo,
 		ReaderStateTracker? readerStateTracker = null)
 	{
-		var rowBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
-		var valueBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize);
-		var batchBuffer = new ArrayBufferWriter<byte>(plan.EstimatedRowSize * 8);
-		using var valueWriter = new Utf8JsonWriter(valueBuffer, SkipValidationWriterOptions);
-		var buffers = new RowAssemblyBuffers(rowBuffer, valueBuffer, valueWriter, scalarWriter: null);
+		using var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, isScalar: false, wrapScalarInArray: false, needsValueBuffer: true);
+		using var batchBuffer = new PooledBufferWriter(MaxBatchBufferBytes);
 		var batchRowCount = 0;
 
 		try
@@ -615,7 +587,7 @@ internal sealed partial class EsqlResponseReader
 					if (!assembled || reachedEnd)
 						break;
 
-					AppendRowToBatch(batchBuffer, rowBuffer, batchRowCount);
+					AppendRowToBatch(batchBuffer, buffers.RowBuffer, batchRowCount);
 					batchRowCount++;
 
 					if (batchRowCount < MaxBatchRowCount && batchBuffer.WrittenCount < MaxBatchBufferBytes)
@@ -648,7 +620,7 @@ internal sealed partial class EsqlResponseReader
 		}
 	}
 
-	private static void AppendRowToBatch(ArrayBufferWriter<byte> batchBuffer, ArrayBufferWriter<byte> rowBuffer, int batchRowCount)
+	private static void AppendRowToBatch(PooledBufferWriter batchBuffer, PooledBufferWriter rowBuffer, int batchRowCount)
 	{
 		WriteRawByte(batchBuffer, batchRowCount == 0 ? (byte)'[' : (byte)',');
 		WriteRawBytes(batchBuffer, rowBuffer.WrittenSpan);
@@ -659,7 +631,7 @@ internal sealed partial class EsqlResponseReader
 	/// by one so every row before the faulty one still reaches the consumer, matching the per-row
 	/// path's partial-result behavior; the faulty row then rethrows.
 	/// </summary>
-	private static IEnumerable<T> DeserializeBatch<T>(ArrayBufferWriter<byte> batchBuffer, JsonTypeInfo<List<T>> listTypeInfo, RowMaterializationPlan<T> plan)
+	private static IEnumerable<T> DeserializeBatch<T>(PooledBufferWriter batchBuffer, JsonTypeInfo<List<T>> listTypeInfo, RowMaterializationPlan<T> plan)
 	{
 		WriteRawByte(batchBuffer, (byte)']');
 

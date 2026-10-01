@@ -81,11 +81,12 @@ public class DirectRowBinderEligibilityTests
 	}
 
 	[Test]
-	public void Build_CollectionProperty_DoesNotCreateDirectBinder()
+	public void Build_CollectionProperty_UsesConverterKind()
 	{
 		var layout = BuildLayout<ArrayStringPropertyModel>(("name", "keyword"), ("tags", "keyword"));
 
-		layout.DirectBinder.Should().BeNull();
+		layout.DirectBinder.Should().NotBeNull();
+		layout.DirectBinder.Kinds.Should().Equal([DirectBinderKind.String, DirectBinderKind.Converter]);
 	}
 
 	[Test]
@@ -97,13 +98,27 @@ public class DirectRowBinderEligibilityTests
 	}
 
 	[Test]
-	public void Build_GlobalConverterForPropertyType_DoesNotCreateDirectBinder()
+	public void Build_GlobalConverterForPropertyType_UsesConverterKind()
 	{
 		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 		options.Converters.Add(new UnixEpochDateTimeConverter());
 		var layout = BuildLayout<TimestampedModel>(options, ("name", "keyword"), ("createdAt", "date"));
 
-		layout.DirectBinder.Should().BeNull();
+		layout.DirectBinder.Should().NotBeNull();
+		layout.DirectBinder.Kinds.Should().Equal([DirectBinderKind.String, DirectBinderKind.Converter]);
+	}
+
+	[Test]
+	public void Build_GlobalConverterForUnderlyingType_UsesConverterKind()
+	{
+		// GetTypeInfo(DateTime?) yields the built-in nullable converter wrapping the user's DateTime
+		// converter, so the cell contract applies it exactly as the serializer would.
+		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+		options.Converters.Add(new UnixEpochDateTimeConverter());
+		var layout = BuildLayout<NullableDateModel>(options, ("name", "keyword"), ("when", "date"));
+
+		layout.DirectBinder.Should().NotBeNull();
+		layout.DirectBinder.Kinds.Should().Equal([DirectBinderKind.String, DirectBinderKind.Converter]);
 	}
 
 	[Test]
@@ -115,9 +130,17 @@ public class DirectRowBinderEligibilityTests
 	}
 
 	[Test]
-	public void Build_RequiredProperty_DoesNotCreateDirectBinder()
+	public void Build_RequiredPropertyWithColumn_CreatesDirectBinder()
 	{
 		var layout = BuildLayout<RequiredPropertyModel>(("name", "keyword"), ("count", "integer"));
+
+		layout.DirectBinder.Should().NotBeNull();
+	}
+
+	[Test]
+	public void Build_RequiredPropertyWithoutColumn_DoesNotCreateDirectBinder()
+	{
+		var layout = BuildLayout<RequiredPropertyModel>(("count", "integer"));
 
 		layout.DirectBinder.Should().BeNull();
 	}
@@ -126,6 +149,30 @@ public class DirectRowBinderEligibilityTests
 	public void Build_TypeWithOnDeserializing_DoesNotCreateDirectBinder()
 	{
 		var layout = BuildLayout<OnDeserializingModel>(("value", "keyword"), ("count", "integer"));
+
+		layout.DirectBinder.Should().BeNull();
+	}
+
+	[Test]
+	public void Build_TypeWithPopulateCreationHandling_DoesNotCreateDirectBinder()
+	{
+		var layout = BuildLayout<PopulateModel>(("tags", "keyword"), ("name", "keyword"));
+
+		layout.DirectBinder.Should().BeNull();
+	}
+
+	[Test]
+	public void Build_TypeLevelNumberHandling_DoesNotCreateDirectBinder()
+	{
+		var layout = BuildLayout<StrictNumbersModel>(("numbers", "integer"), ("name", "keyword"));
+
+		layout.DirectBinder.Should().BeNull();
+	}
+
+	[Test]
+	public void Build_IgnoreWhenReadingProperty_DoesNotCreateDirectBinder()
+	{
+		var layout = BuildLayout<IgnoreWhenReadingModel>(("name", "keyword"), ("note", "keyword"));
 
 		layout.DirectBinder.Should().BeNull();
 	}
@@ -147,19 +194,21 @@ public class DirectRowBinderEligibilityTests
 	}
 
 	[Test]
-	public void Build_EnumProperty_DoesNotCreateDirectBinder()
+	public void Build_EnumProperty_UsesConverterKind()
 	{
 		var layout = BuildLayout<OrdinalEnumDocument>(("priority", "integer"), ("name", "keyword"));
 
-		layout.DirectBinder.Should().BeNull();
+		layout.DirectBinder.Should().NotBeNull();
+		layout.DirectBinder.Kinds.Should().Equal([DirectBinderKind.Converter, DirectBinderKind.String]);
 	}
 
 	[Test]
-	public void Build_DenseVectorProperty_DoesNotCreateDirectBinder()
+	public void Build_DenseVectorProperty_UsesConverterKind()
 	{
 		var layout = BuildLayout<BookDocument>(("title", "keyword"), ("titleVec", "dense_vector"));
 
-		layout.DirectBinder.Should().BeNull();
+		layout.DirectBinder.Should().NotBeNull();
+		layout.DirectBinder.Kinds[1].Should().Be(DirectBinderKind.Converter);
 	}
 
 	private static ColumnLayout BuildLayout<T>(params (string Name, string Type)[] columns) =>
@@ -194,6 +243,12 @@ public class DirectRowBinderEligibilityTests
 		public int? NullableValue { get; set; }
 	}
 
+	private sealed class NullableDateModel
+	{
+		public string Name { get; set; } = string.Empty;
+		public DateTime? When { get; set; }
+	}
+
 	private sealed class TimestampedModel
 	{
 		public string Name { get; set; } = string.Empty;
@@ -204,6 +259,28 @@ public class DirectRowBinderEligibilityTests
 	{
 		public required string Name { get; set; }
 		public int Count { get; set; }
+	}
+
+	[JsonObjectCreationHandling(JsonObjectCreationHandling.Populate)]
+	private sealed class PopulateModel
+	{
+		public List<string> Tags { get; set; } = ["seed"];
+		public string Name { get; set; } = string.Empty;
+	}
+
+	[JsonNumberHandling(JsonNumberHandling.Strict)]
+	private sealed class StrictNumbersModel
+	{
+		public List<int> Numbers { get; set; } = [];
+		public string Name { get; set; } = string.Empty;
+	}
+
+	private sealed class IgnoreWhenReadingModel
+	{
+		public string Name { get; set; } = string.Empty;
+
+		[JsonIgnore(Condition = JsonIgnoreCondition.WhenReading)]
+		public string Note { get; set; } = "default";
 	}
 
 	private sealed class OnDeserializingModel : IJsonOnDeserializing

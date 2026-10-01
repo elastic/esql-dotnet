@@ -6,7 +6,6 @@ using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
-using System.Text.Json.Serialization.Metadata;
 
 namespace Elastic.Esql.Materialization;
 
@@ -27,11 +26,11 @@ internal sealed partial class EsqlResponseReader
 		item = default;
 		reachedEnd = false;
 
-		// Fast path: for eligible flat layouts, bind cells directly off the reader and skip both the
-		// value re-write and the second parse. Only attempt when a binder exists and this is not the
-		// scalar path. Any row whose token shapes need serializer semantics falls through per-row to
-		// the assemble-and-deserialize path below, which re-reads nothing outside this row.
-		if (buffers.ScalarWriter is null && layout.DirectBinder is { } directBinder)
+		// Fast paths: eligible flat layouts bind cells straight off the reader, and scalar reads of the built-in
+		// kinds read the one cell the same way. A row whose token shapes need the serializer's coercion or error
+		// semantics falls through, per row, to assemble-and-deserialize below.
+		var bindsDirect = buffers.IsScalar ? plan.ScalarKind is not null : layout.DirectBinder is not null;
+		if (bindsDirect)
 		{
 			var savedState = state;
 			var savedBuffer = buffer;
@@ -51,14 +50,14 @@ internal sealed partial class EsqlResponseReader
 
 			if (reader.TokenType == JsonTokenType.StartArray)
 			{
-				// Bind on a copy so the assemble-and-deserialize fallback can resume from the original
-				// reader state, which still sits on this row's StartArray token.
-				var directReader = reader;
+				var bound = buffers.IsScalar
+					? TryBindScalarDirect(ref reader, plan.ScalarKind!.Value, out item, out var incomplete)
+					: TryBindRowDirect(ref reader, layout.DirectBinder!, out item, out incomplete);
 
-				if (TryBindRowDirect(ref directReader, directBinder, out item, out var incomplete))
+				if (bound)
 				{
-					state = directReader.CurrentState;
-					buffer = buffer.Slice(directReader.Position);
+					state = reader.CurrentState;
+					buffer = buffer.Slice(reader.Position);
 					return true;
 				}
 
@@ -69,9 +68,7 @@ internal sealed partial class EsqlResponseReader
 					return false;
 				}
 
-				// Token shape needs the serializer's coercion or error semantics - fall through to the
-				// slow path for this row only. state/buffer are unchanged (savedState/savedBuffer), so
-				// TryAssembleNextRow below re-reads this row from its StartArray.
+				// state and buffer still hold the saved values, so TryAssembleNextRow re-reads this row from its StartArray.
 			}
 		}
 
@@ -89,140 +86,8 @@ internal sealed partial class EsqlResponseReader
 	}
 
 	/// <summary>
-	/// Reads one row's cells directly off the reader and assigns them via cached
-	/// <see cref="JsonPropertyInfo.Set"/> delegates. The reader must have just consumed the row's
-	/// StartArray token. Returns false with <paramref name="incomplete"/> set when the buffer ends
-	/// mid-row (caller re-reads with more data), or false with it unset when a cell's token shape
-	/// requires the serializer's coercion or error semantics (caller falls back for this row).
-	/// </summary>
-	internal static bool TryBindRowDirect<T>(
-		ref Utf8JsonReader reader,
-		DirectRowBinder binder,
-		out T? item,
-		out bool incomplete)
-	{
-		item = default;
-		incomplete = false;
-
-		var kinds = binder.Kinds;
-		var properties = binder.Properties;
-
-		var instance = binder.CreateObject();
-
-		for (var i = 0; i < kinds.Length; i++)
-		{
-			if (!reader.Read())
-			{
-				incomplete = true;
-				return false;
-			}
-
-			var tokenType = reader.TokenType;
-
-			// Fewer cells than columns - the slow path raises the canonical JsonException.
-			if (tokenType == JsonTokenType.EndArray)
-				return false;
-
-			// Null cells leave the property at its initializer value, matching the assembled-row
-			// path which omits null cells from the row JSON entirely.
-			if (tokenType == JsonTokenType.Null)
-				continue;
-
-			if (!TryBindDirectValue(ref reader, kinds[i], tokenType, properties[i], instance))
-				return false;
-		}
-
-		if (!reader.Read())
-		{
-			incomplete = true;
-			return false;
-		}
-
-		// More cells than columns - the slow path raises the canonical JsonException.
-		if (reader.TokenType != JsonTokenType.EndArray)
-			return false;
-
-		item = (T)instance;
-		return true;
-	}
-
-	private static bool TryBindDirectValue(
-		ref Utf8JsonReader reader,
-		DirectBinderKind kind,
-		JsonTokenType tokenType,
-		JsonPropertyInfo property,
-		object instance)
-	{
-		switch (kind)
-		{
-			case DirectBinderKind.String:
-				if (tokenType != JsonTokenType.String)
-					return false;
-				property.Set!(instance, reader.GetString());
-				return true;
-
-			case DirectBinderKind.Bool:
-				if (tokenType is not (JsonTokenType.True or JsonTokenType.False))
-					return false;
-				property.Set!(instance, reader.GetBoolean());
-				return true;
-
-			case DirectBinderKind.Int32:
-				if (tokenType != JsonTokenType.Number || !reader.TryGetInt32(out var int32Value))
-					return false;
-				property.Set!(instance, int32Value);
-				return true;
-
-			case DirectBinderKind.Int64:
-				if (tokenType != JsonTokenType.Number || !reader.TryGetInt64(out var int64Value))
-					return false;
-				property.Set!(instance, int64Value);
-				return true;
-
-			case DirectBinderKind.Double:
-				if (tokenType != JsonTokenType.Number || !reader.TryGetDouble(out var doubleValue))
-					return false;
-				property.Set!(instance, doubleValue);
-				return true;
-
-			case DirectBinderKind.Single:
-				if (tokenType != JsonTokenType.Number || !reader.TryGetSingle(out var singleValue))
-					return false;
-				property.Set!(instance, singleValue);
-				return true;
-
-			case DirectBinderKind.Decimal:
-				if (tokenType != JsonTokenType.Number || !reader.TryGetDecimal(out var decimalValue))
-					return false;
-				property.Set!(instance, decimalValue);
-				return true;
-
-			case DirectBinderKind.DateTime:
-				if (tokenType != JsonTokenType.String || !reader.TryGetDateTime(out var dateTimeValue))
-					return false;
-				property.Set!(instance, dateTimeValue);
-				return true;
-
-			case DirectBinderKind.DateTimeOffset:
-				if (tokenType != JsonTokenType.String || !reader.TryGetDateTimeOffset(out var dateTimeOffsetValue))
-					return false;
-				property.Set!(instance, dateTimeOffsetValue);
-				return true;
-
-			case DirectBinderKind.Guid:
-				if (tokenType != JsonTokenType.String || !reader.TryGetGuid(out var guidValue))
-					return false;
-				property.Set!(instance, guidValue);
-				return true;
-
-			default:
-				return false;
-		}
-	}
-
-	/// <summary>
 	/// Parses the next row from the <c>values</c> array and assembles it into the row buffer
-	/// (a JSON object, or a bare scalar value when <paramref name="buffers"/>.<see cref="RowAssemblyBuffers.ScalarWriter"/> is set)
+	/// (a JSON object, or a bare scalar value when <paramref name="buffers"/>.<see cref="RowAssemblyBuffers.IsScalar"/> is set)
 	/// without deserializing. Returns <see langword="false"/> when more input is needed; state and buffer are
 	/// restored so the caller can retry with more data.
 	/// </summary>
@@ -259,16 +124,11 @@ internal sealed partial class EsqlResponseReader
 			return false;
 		}
 
-		if (buffers.ScalarWriter is not null)
-		{
-			if (!TryWriteScalarValue(ref reader, buffers.RowBuffer, buffers.ScalarWriter))
-			{
-				state = savedState;
-				buffer = savedBuffer;
-				return false;
-			}
-		}
-		else if (buffers.ValueBuffer is null || buffers.ValueWriter is null || !TryMaterializeRow(ref reader, layout, buffers.RowBuffer, buffers.ValueBuffer, buffers.ValueWriter))
+		var materialized = buffers.IsScalar
+			? TryCopyScalarValue(ref reader, buffer, buffers)
+			: TryMaterializeRow(ref reader, buffer, layout, buffers);
+
+		if (!materialized)
 		{
 			state = savedState;
 			buffer = savedBuffer;
@@ -280,12 +140,88 @@ internal sealed partial class EsqlResponseReader
 		return true;
 	}
 
-	private static bool TryMaterializeRow(
+	[DoesNotReturn]
+	private static void ThrowMoreValuesThanColumns(int columnCount) =>
+		throw new JsonException($"ES|QL row contains more values than declared columns ({columnCount}).");
+
+	[DoesNotReturn]
+	private static void ThrowFewerValuesThanColumns(int colIndex, int columnCount) =>
+		throw new JsonException($"ES|QL row contains fewer values ({colIndex}) than declared columns ({columnCount}).");
+
+	private static bool TryMaterializeRow(ref Utf8JsonReader reader, in ReadOnlySequence<byte> source, ColumnLayout layout, RowAssemblyBuffers buffers) =>
+		layout.BranchNodeCount == 0
+			? TryMaterializeFlatRow(ref reader, source, layout, buffers.RowBuffer)
+			: TryMaterializeNestedRow(ref reader, source, layout, buffers.RowBuffer, buffers.ValueBuffer!);
+
+	/// <summary>
+	/// Flat layouts list their leaves in column order, so every non-null cell is written into the row object as
+	/// it is read; no per-cell scratch or regrouping is needed.
+	/// </summary>
+	private static bool TryMaterializeFlatRow(
 		ref Utf8JsonReader reader,
+		in ReadOnlySequence<byte> source,
 		ColumnLayout layout,
-		ArrayBufferWriter<byte> rowBuffer,
-		ArrayBufferWriter<byte> valueBuffer,
-		Utf8JsonWriter valueWriter)
+		PooledBufferWriter rowBuffer)
+	{
+		var columnCount = layout.ColumnCount;
+		rowBuffer.ResetWrittenCount();
+		WriteRawByte(rowBuffer, (byte)'{');
+
+		var colIndex = 0;
+		var needsComma = false;
+		while (true)
+		{
+			if (!reader.Read())
+				return false;
+
+			if (reader.TokenType == JsonTokenType.EndArray)
+				break;
+
+			if (colIndex >= columnCount)
+				ThrowMoreValuesThanColumns(columnCount);
+
+			if (reader.TokenType == JsonTokenType.Null)
+			{
+				colIndex++;
+				continue;
+			}
+
+			var leaf = layout.LeafNodesByColumnIndex[colIndex];
+			if (needsComma)
+				WriteRawByte(rowBuffer, (byte)',');
+			needsComma = true;
+
+			WriteRawBytes(rowBuffer, leaf.PrefixBytes);
+
+			// ES|QL returns a single-valued multi-value field as a bare scalar; the target property is a collection.
+			var wrap = leaf.IsCollection && reader.TokenType != JsonTokenType.StartArray;
+			if (wrap)
+				WriteRawByte(rowBuffer, (byte)'[');
+			if (!TryCopyCurrentValue(ref reader, source, rowBuffer))
+				return false;
+			if (wrap)
+				WriteRawByte(rowBuffer, (byte)']');
+
+			colIndex++;
+		}
+
+		if (colIndex < columnCount)
+			ThrowFewerValuesThanColumns(colIndex, columnCount);
+
+		WriteRawByte(rowBuffer, (byte)'}');
+		return true;
+	}
+
+	/// <summary>
+	/// Nested layouts regroup cells into nested objects, so the cells are buffered in column order first and the
+	/// row object is assembled from the tree afterwards.
+	/// </summary>
+	private static bool TryMaterializeNestedRow(
+		ref Utf8JsonReader reader,
+		in ReadOnlySequence<byte> source,
+		ColumnLayout layout,
+		PooledBufferWriter rowBuffer,
+		PooledBufferWriter valueBuffer)
 	{
 		valueBuffer.ResetWrittenCount();
 
@@ -317,7 +253,7 @@ internal sealed partial class EsqlResponseReader
 					break;
 
 				if (colIndex >= columnCount)
-					throw new JsonException($"ES|QL row contains more values than declared columns ({columnCount}).");
+					ThrowMoreValuesThanColumns(columnCount);
 
 				if (reader.TokenType == JsonTokenType.Null)
 				{
@@ -329,19 +265,16 @@ internal sealed partial class EsqlResponseReader
 				var start = valueBuffer.WrittenCount;
 				var firstToken = reader.TokenType;
 
-				valueWriter.Reset();
-				if (!TryWriteCurrentValue(ref reader, valueWriter))
+				if (!TryCopyCurrentValue(ref reader, source, valueBuffer))
 					return false;
-				valueWriter.Flush();
 
-				var length = valueBuffer.WrittenCount - start;
-				slices[colIndex] = new ValueSlice(start, length, firstToken, IsNull: false);
+				slices[colIndex] = new ValueSlice(start, valueBuffer.WrittenCount - start, firstToken, IsNull: false);
 				MarkActiveBranches(layout.LeafNodesByColumnIndex[colIndex], activeBranches);
 				colIndex++;
 			}
 
 			if (colIndex < columnCount)
-				throw new JsonException($"ES|QL row contains fewer values ({colIndex}) than declared columns ({columnCount}).");
+				ThrowFewerValuesThanColumns(colIndex, columnCount);
 
 			rowBuffer.ResetWrittenCount();
 			WriteRawByte(rowBuffer, (byte)'{');
@@ -376,7 +309,7 @@ internal sealed partial class EsqlResponseReader
 
 	private static void AssembleChildren(
 		List<ColumnNode> children,
-		ArrayBufferWriter<byte> buffer,
+		PooledBufferWriter buffer,
 		ReadOnlySpan<byte> values,
 		ReadOnlySpan<ValueSlice> slices,
 		ReadOnlySpan<bool> activeBranches)
@@ -428,129 +361,115 @@ internal sealed partial class EsqlResponseReader
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private static void WriteRawByte(ArrayBufferWriter<byte> buffer, byte value)
+	private static void WriteRawByte(PooledBufferWriter buffer, byte value)
 	{
 		buffer.GetSpan(1)[0] = value;
 		buffer.Advance(1);
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private static void WriteRawBytes(ArrayBufferWriter<byte> buffer, ReadOnlySpan<byte> value)
+	private static void WriteRawBytes(PooledBufferWriter buffer, ReadOnlySpan<byte> value)
 	{
 		value.CopyTo(buffer.GetSpan(value.Length));
 		buffer.Advance(value.Length);
 	}
 
-	private static bool TryWriteScalarValue(ref Utf8JsonReader reader, ArrayBufferWriter<byte> buffer, Utf8JsonWriter writer)
+	private static bool TryCopyScalarValue(ref Utf8JsonReader reader, in ReadOnlySequence<byte> source, RowAssemblyBuffers buffers)
 	{
-		buffer.ResetWrittenCount();
-		writer.Reset();
+		var rowBuffer = buffers.RowBuffer;
+		rowBuffer.ResetWrittenCount();
 
 		if (!reader.Read())
 			return false;
 
-		if (!TryWriteCurrentValue(ref reader, writer))
+		// ES|QL returns a single-valued multi-value field as a bare scalar, and the read target is a collection;
+		// wrap it the way TryMaterializeFlatRow wraps such a cell for a collection property. A null cell stays null.
+		var wrap = buffers.WrapScalarInArray && reader.TokenType is not (JsonTokenType.StartArray or JsonTokenType.Null);
+		if (wrap)
+			WriteRawByte(rowBuffer, (byte)'[');
+
+		if (!TryCopyCurrentValue(ref reader, source, rowBuffer))
 			return false;
 
-		if (!reader.Read() || reader.TokenType != JsonTokenType.EndArray)
+		if (wrap)
+			WriteRawByte(rowBuffer, (byte)']');
+
+		if (!reader.Read())
 			return false;
 
-		writer.Flush();
+		if (reader.TokenType != JsonTokenType.EndArray)
+			ThrowMoreValuesThanColumns(1);
+
 		return true;
 	}
 
-	private static bool TryWriteCurrentValue(
-		ref Utf8JsonReader reader,
-		Utf8JsonWriter writer)
+	/// <summary>
+	/// Copies the current token's JSON text verbatim. The bytes already passed the reader's validation, so
+	/// re-encoding them through a writer would only add a decode, a string allocation, and a second escape pass.
+	/// </summary>
+	private static bool TryCopyCurrentValue(ref Utf8JsonReader reader, in ReadOnlySequence<byte> source, PooledBufferWriter destination)
 	{
 		switch (reader.TokenType)
 		{
 			case JsonTokenType.String:
-				// GetString decodes the escaped token once; WriteStringValue re-encodes once.
-				// Passing raw ValueSpan/ValueSequence bytes would escape an already-escaped
-				// token, corrupting any string containing a backslash or quote.
-				writer.WriteStringValue(reader.GetString());
+				WriteRawByte(destination, (byte)'"');
+				CopyTokenValue(ref reader, destination);
+				WriteRawByte(destination, (byte)'"');
 				return true;
 
 			case JsonTokenType.Number:
-				writer.WriteRawValue(reader.HasValueSequence
-					? reader.ValueSequence.ToArray()
-					: reader.ValueSpan, skipInputValidation: true);
+				CopyTokenValue(ref reader, destination);
 				return true;
 
 			case JsonTokenType.True:
-				writer.WriteBooleanValue(true);
+				WriteRawBytes(destination, "true"u8);
 				return true;
 
 			case JsonTokenType.False:
-				writer.WriteBooleanValue(false);
+				WriteRawBytes(destination, "false"u8);
 				return true;
 
 			case JsonTokenType.Null:
-				writer.WriteNullValue();
+				WriteRawBytes(destination, "null"u8);
 				return true;
 
 			case JsonTokenType.StartArray:
 			case JsonTokenType.StartObject:
-				return TryWriteComplexValue(ref reader, writer);
+				return TryCopyComplexValue(ref reader, source, destination);
 
 			default:
 				throw new JsonException($"Unexpected token {reader.TokenType} in ES|QL row value.");
 		}
 	}
 
-	private static bool TryWriteComplexValue(
-		ref Utf8JsonReader reader,
-		Utf8JsonWriter writer)
+	private static void CopyTokenValue(ref Utf8JsonReader reader, PooledBufferWriter destination)
 	{
-		var depth = reader.CurrentDepth;
-
-		if (reader.TokenType == JsonTokenType.StartArray)
-			writer.WriteStartArray();
-		else
-			writer.WriteStartObject();
-
-		while (true)
+		if (!reader.HasValueSequence)
 		{
-			if (!reader.Read())
-				return false;
-
-			if (reader.CurrentDepth <= depth)
-			{
-				if (reader.TokenType == JsonTokenType.EndArray)
-					writer.WriteEndArray();
-				else
-					writer.WriteEndObject();
-				break;
-			}
-
-			switch (reader.TokenType)
-			{
-				case JsonTokenType.PropertyName:
-					// GetString decodes the escaped token once; WritePropertyName re-encodes once.
-					// Raw ValueSpan/ValueSequence bytes would be escaped a second time (same rule
-					// as the String case in TryWriteCurrentValue).
-					writer.WritePropertyName(reader.GetString()!);
-					break;
-				case JsonTokenType.StartObject:
-					writer.WriteStartObject();
-					break;
-				case JsonTokenType.EndObject:
-					writer.WriteEndObject();
-					break;
-				case JsonTokenType.StartArray:
-					writer.WriteStartArray();
-					break;
-				case JsonTokenType.EndArray:
-					writer.WriteEndArray();
-					break;
-				default:
-					if (!TryWriteCurrentValue(ref reader, writer))
-						return false;
-					break;
-			}
+			WriteRawBytes(destination, reader.ValueSpan);
+			return;
 		}
 
+		var sequence = reader.ValueSequence;
+		var length = checked((int)sequence.Length);
+		sequence.CopyTo(destination.GetSpan(length));
+		destination.Advance(length);
+	}
+
+	/// <summary>
+	/// Skips the array or object and copies its source bytes, whitespace included, in one block. Returns false when
+	/// the buffer ends inside the value; the caller then retries with more data.
+	/// </summary>
+	private static bool TryCopyComplexValue(ref Utf8JsonReader reader, in ReadOnlySequence<byte> source, PooledBufferWriter destination)
+	{
+		var start = reader.TokenStartIndex;
+		if (!reader.TrySkip())
+			return false;
+
+		var raw = source.Slice(start, reader.BytesConsumed - start);
+		var length = checked((int)raw.Length);
+		raw.CopyTo(destination.GetSpan(length));
+		destination.Advance(length);
 		return true;
 	}
 }

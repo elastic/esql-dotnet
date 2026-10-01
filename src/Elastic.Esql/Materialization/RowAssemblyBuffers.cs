@@ -2,26 +2,37 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-using System.Buffers;
-using System.Text.Json;
-
 namespace Elastic.Esql.Materialization;
 
 /// <summary>
-/// The scratch writers one response enumeration reuses for every row: the assembled row JSON,
-/// the per-cell value scratch, and the optional scalar writer for single-column reads.
+/// Scratch space one response enumeration reuses for every row that goes through JSON assembly. Buffers are
+/// created on first use, so an enumeration whose rows all bind directly never allocates them.
 /// </summary>
-internal sealed class RowAssemblyBuffers(
-	ArrayBufferWriter<byte> rowBuffer,
-	ArrayBufferWriter<byte>? valueBuffer,
-	Utf8JsonWriter? valueWriter,
-	Utf8JsonWriter? scalarWriter)
+internal sealed class RowAssemblyBuffers(int estimatedRowSize, bool isScalar, bool wrapScalarInArray, bool needsValueBuffer) : IDisposable
 {
-	public ArrayBufferWriter<byte> RowBuffer { get; } = rowBuffer;
+	// IDE0032 suggests auto-properties, but the fields exist to defer allocation until a row needs assembly.
+#pragma warning disable IDE0032
+	private PooledBufferWriter? _rowBuffer;
+	private PooledBufferWriter? _valueBuffer;
+#pragma warning restore IDE0032
 
-	public ArrayBufferWriter<byte>? ValueBuffer { get; } = valueBuffer;
+	/// <summary>The assembled row object, or the bare cell for scalar reads.</summary>
+	public PooledBufferWriter RowBuffer => _rowBuffer ??= new PooledBufferWriter(estimatedRowSize);
 
-	public Utf8JsonWriter? ValueWriter { get; } = valueWriter;
+	/// <summary>Per-cell scratch for nested layouts, whose cells are regrouped before assembly; null for flat and scalar reads.</summary>
+	public PooledBufferWriter? ValueBuffer => needsValueBuffer ? _valueBuffer ??= new PooledBufferWriter(estimatedRowSize) : null;
 
-	public Utf8JsonWriter? ScalarWriter { get; } = scalarWriter;
+	/// <summary>Whether rows are a single bare cell rather than an assembled JSON object.</summary>
+	public bool IsScalar { get; } = isScalar;
+
+	/// <summary>Whether a bare scalar cell is wrapped into a one-element array, for a scalar read whose target is a collection.</summary>
+	public bool WrapScalarInArray { get; } = wrapScalarInArray;
+
+	public void Dispose()
+	{
+		_rowBuffer?.Dispose();
+		_valueBuffer?.Dispose();
+		_rowBuffer = null;
+		_valueBuffer = null;
+	}
 }

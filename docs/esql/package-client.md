@@ -93,6 +93,14 @@ attribute; any other type must be declared in the context, or materialization fa
 
 If neither `JsonSerializerContext` nor `JsonSerializerOptions` is provided, `EsqlClient` defaults to camelCase naming.
 
+Whichever options the client ends up with are made read-only when the first result is materialized, the same way
+`JsonSerializer` freezes options on its own first use. Register every converter, naming policy and resolver before
+running the first query; changing them on an instance that has already been used throws.
+
+On runtimes that support dynamic code, the cells of a directly bound row are assigned through setters compiled for the
+target member, and those setters write the member itself. A contract modifier that replaces `JsonPropertyInfo.Set` with
+custom logic is therefore not honored for rows that take the direct path.
+
 ## Querying
 
 ### LINQ fluent syntax
