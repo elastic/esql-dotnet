@@ -453,6 +453,8 @@ public class LogEntry
 
 	public double Duration { get; set; }  // → "duration"
 
+	public decimal Price { get; set; }  // → "price"
+
 	public bool IsError { get; set; }  // → "isError"
 
 	public string? ClientIp { get; set; }  // → "clientIp"

@@ -223,8 +223,7 @@ internal static class EsqlFunctionTranslator
 			nameof(Math.Abs) => $"ABS({translate(args[0])})",
 			nameof(Math.Ceiling) => $"CEIL({translate(args[0])})",
 			nameof(Math.Floor) => $"FLOOR({translate(args[0])})",
-			nameof(Math.Round) when args.Count == 1 => $"ROUND({translate(args[0])})",
-			nameof(Math.Round) when args.Count == 2 => $"ROUND({translate(args[0])}, {translate(args[1])})",
+			nameof(Math.Round) => TranslateRound(translate, args),
 			nameof(Math.Max) => $"GREATEST({translate(args[0])}, {translate(args[1])})",
 			nameof(Math.Min) => $"LEAST({translate(args[0])}, {translate(args[1])})",
 			nameof(Math.Pow) => $"POW({translate(args[0])}, {translate(args[1])})",
@@ -393,6 +392,46 @@ internal static class EsqlFunctionTranslator
 	private static bool IsDayOfWeekMember(Expression expression) =>
 		expression is MemberExpression { Member: { Name: nameof(DateTime.DayOfWeek), DeclaringType: var declaringType } }
 		&& (declaringType == typeof(DateTime) || declaringType == typeof(DateTimeOffset));
+
+	// ES|QL ROUND rounds a midpoint away from zero; the other .NET modes, ToEven being the default, are built from FLOOR and CEIL.
+	// With digits the value is scaled by a power of ten, rounded and scaled back, as Math.Round does.
+	private static string? TranslateRound(Func<Expression, string> translate, IReadOnlyList<Expression> args)
+	{
+		var hasMode = args[^1].Type == typeof(MidpointRounding);
+		var mode = !hasMode ? MidpointRounding.ToEven
+			: args[^1] is ConstantExpression { Value: MidpointRounding constant } ? constant
+			: (MidpointRounding?)null;
+		if (mode is null)
+			return null;
+
+		var value = translate(args[0]);
+		var digits = args.Count == (hasMode ? 3 : 2) ? translate(args[1]) : null;
+
+		var rounded = mode == MidpointRounding.AwayFromZero
+			? digits is null ? $"ROUND({value})" : $"ROUND({value}, {digits})"
+			: RoundWithFloorAndCeil((int)mode.Value, value, digits);
+		if (rounded is null || digits is null || args[0].Type != typeof(double) || args[1] is ConstantExpression { Value: < 0 })
+			return rounded;
+
+		// Math.Round with digits returns a double of 1e16 or more unchanged, where scaling it would lose precision or overflow.
+		var keep = args[1] is ConstantExpression ? $"ABS({value}) >= 1e16" : $"ABS({value}) >= 1e16 AND {digits} >= 0";
+		return $"CASE({keep}, {value}, {rounded})";
+	}
+
+	private static string? RoundWithFloorAndCeil(int mode, string value, string? digits)
+	{
+		var scaled = digits is null ? value : $"{value} * POW(10, {digits})";
+		// ToZero, ToNegativeInfinity and ToPositiveInfinity are not defined in netstandard2.0, so they are matched by value.
+		var rounded = mode switch
+		{
+			(int)MidpointRounding.ToEven => $"CASE({scaled} - FLOOR({scaled}) == 0.5, FLOOR({scaled}) + ABS(FLOOR({scaled}) % 2), ROUND({scaled}))",
+			2 => $"CASE({scaled} >= 0, FLOOR({scaled}), CEIL({scaled}))",
+			3 => $"FLOOR({scaled})",
+			4 => $"CEIL({scaled})",
+			_ => null
+		};
+		return rounded is null || digits is null ? rounded : $"{rounded} / POW(10, {digits})";
+	}
 
 	/// <summary>Translates a Math static field/const access to ES|QL. Returns null if not recognized.</summary>
 	public static string? TryTranslateMathConstant(string memberName) =>
