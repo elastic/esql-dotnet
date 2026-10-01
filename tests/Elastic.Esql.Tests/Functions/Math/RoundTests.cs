@@ -65,9 +65,9 @@ public class RoundTests : EsqlTestBase
 			.ToString();
 
 		_ = esql.Should().Be(
-			"""
+			$"""
             FROM logs-*
-            | EVAL roundedDuration = ROUND(duration, 2)
+            | EVAL roundedDuration = {KeepLarge("duration", "ROUND(duration, 2)")}
             | KEEP roundedDuration
             """.NativeLineEndings());
 	}
@@ -99,7 +99,7 @@ public class RoundTests : EsqlTestBase
 		_ = esql.Should().Be(
 			$"""
             FROM logs-*
-            | EVAL roundedDuration = {ToEven("duration * POW(10, 2)")} / POW(10, 2)
+            | EVAL roundedDuration = {KeepLarge("duration", ToEven("duration * POW(10, 2)") + " / POW(10, 2)")}
             | KEEP roundedDuration
             """.NativeLineEndings());
 	}
@@ -131,7 +131,7 @@ public class RoundTests : EsqlTestBase
 		_ = esql.Should().Be(
 			$"""
             FROM logs-*
-            | EVAL roundedDuration = {ToEven("duration * POW(10, 2)")} / POW(10, 2)
+            | EVAL roundedDuration = {KeepLarge("duration", ToEven("duration * POW(10, 2)") + " / POW(10, 2)")}
             | KEEP roundedDuration
             """.NativeLineEndings());
 	}
@@ -161,9 +161,9 @@ public class RoundTests : EsqlTestBase
 			.ToString();
 
 		_ = esql.Should().Be(
-			"""
+			$"""
             FROM logs-*
-            | EVAL roundedDuration = CASE(duration * POW(10, 2) >= 0, FLOOR(duration * POW(10, 2)), CEIL(duration * POW(10, 2))) / POW(10, 2)
+            | EVAL roundedDuration = {KeepLarge("duration", ToZero("duration * POW(10, 2)") + " / POW(10, 2)")}
             | KEEP roundedDuration
             """.NativeLineEndings());
 	}
@@ -193,9 +193,9 @@ public class RoundTests : EsqlTestBase
 			.ToString();
 
 		_ = esql.Should().Be(
-			"""
+			$"""
             FROM logs-*
-            | EVAL roundedDuration = FLOOR(duration * POW(10, 2)) / POW(10, 2)
+            | EVAL roundedDuration = {KeepLarge("duration", "FLOOR(duration * POW(10, 2)) / POW(10, 2)")}
             | KEEP roundedDuration
             """.NativeLineEndings());
 	}
@@ -225,9 +225,9 @@ public class RoundTests : EsqlTestBase
 			.ToString();
 
 		_ = esql.Should().Be(
-			"""
+			$"""
             FROM logs-*
-            | EVAL roundedDuration = CEIL(duration * POW(10, 2)) / POW(10, 2)
+            | EVAL roundedDuration = {KeepLarge("duration", "CEIL(duration * POW(10, 2)) / POW(10, 2)")}
             | KEEP roundedDuration
             """.NativeLineEndings());
 	}
@@ -243,7 +243,7 @@ public class RoundTests : EsqlTestBase
 		_ = esql.Should().Be(
 			$"""
             FROM logs-*
-            | EVAL roundedDuration = {ToEven("(duration + statusCode) * POW(10, 2)")} / POW(10, 2)
+            | EVAL roundedDuration = {KeepLarge("(duration + statusCode)", ToEven("(duration + statusCode) * POW(10, 2)") + " / POW(10, 2)")}
             | KEEP roundedDuration
             """.NativeLineEndings());
 	}
@@ -259,7 +259,7 @@ public class RoundTests : EsqlTestBase
 		_ = esql.Should().Be(
 			$"""
             FROM logs-*
-            | EVAL roundedDuration = {ToEven("duration * POW(10, statusCode)")} / POW(10, statusCode)
+            | EVAL roundedDuration = CASE(ABS(duration) >= 1e16 AND statusCode >= 0, duration, {ToEven("duration * POW(10, statusCode)")} / POW(10, statusCode))
             | KEEP roundedDuration
             """.NativeLineEndings());
 	}
@@ -505,9 +505,9 @@ public class RoundTests : EsqlTestBase
 			.ToString();
 
 		_ = esql.Should().Be(
-			"""
+			$"""
             FROM logs-*
-            | EVAL roundedDuration = ROUND(duration, statusCode)
+            | EVAL roundedDuration = CASE(ABS(duration) >= 1e16 AND statusCode >= 0, duration, ROUND(duration, statusCode))
             | KEEP roundedDuration
             """.NativeLineEndings());
 	}
@@ -515,6 +515,9 @@ public class RoundTests : EsqlTestBase
 	// Math.Round rounds a midpoint to even by default, ROUND rounds it away from zero.
 	private static string ToEven(string value) =>
 		$"CASE({value} - FLOOR({value}) == 0.5, FLOOR({value}) + ABS(FLOOR({value}) % 2), ROUND({value}))";
+
+	// Math.Round with digits returns a double of 1e16 or more unchanged.
+	private static string KeepLarge(string value, string rounded) => $"CASE(ABS({value}) >= 1e16, {value}, {rounded})";
 
 	private static string ToZero(string value) => $"CASE({value} >= 0, FLOOR({value}), CEIL({value}))";
 }

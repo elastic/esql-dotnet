@@ -407,12 +407,22 @@ internal static class EsqlFunctionTranslator
 		var value = translate(args[0]);
 		var digits = args.Count == (hasMode ? 3 : 2) ? translate(args[1]) : null;
 
-		if (mode == MidpointRounding.AwayFromZero)
-			return digits is null ? $"ROUND({value})" : $"ROUND({value}, {digits})";
+		var rounded = mode == MidpointRounding.AwayFromZero
+			? digits is null ? $"ROUND({value})" : $"ROUND({value}, {digits})"
+			: RoundWithFloorAndCeil((int)mode.Value, value, digits);
+		if (rounded is null || digits is null || args[0].Type != typeof(double) || args[1] is ConstantExpression { Value: < 0 })
+			return rounded;
 
+		// Math.Round with digits returns a double of 1e16 or more unchanged, where scaling it would lose precision or overflow.
+		var keep = args[1] is ConstantExpression ? $"ABS({value}) >= 1e16" : $"ABS({value}) >= 1e16 AND {digits} >= 0";
+		return $"CASE({keep}, {value}, {rounded})";
+	}
+
+	private static string? RoundWithFloorAndCeil(int mode, string value, string? digits)
+	{
 		var scaled = digits is null ? value : $"{value} * POW(10, {digits})";
 		// ToZero, ToNegativeInfinity and ToPositiveInfinity are not defined in netstandard2.0, so they are matched by value.
-		var rounded = (int)mode.Value switch
+		var rounded = mode switch
 		{
 			(int)MidpointRounding.ToEven => $"CASE({scaled} - FLOOR({scaled}) == 0.5, FLOOR({scaled}) + ABS(FLOOR({scaled}) % 2), ROUND({scaled}))",
 			2 => $"CASE({scaled} >= 0, FLOOR({scaled}), CEIL({scaled}))",
