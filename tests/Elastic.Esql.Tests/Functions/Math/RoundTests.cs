@@ -97,9 +97,9 @@ public class RoundTests : EsqlTestBase
 			.ToString();
 
 		_ = esql.Should().Be(
-			"""
+			$"""
             FROM logs-*
-            | EVAL roundedDuration = CASE(duration * POW(10, 2) - FLOOR(duration * POW(10, 2)) == 0.5, FLOOR(duration * POW(10, 2)) + ABS(FLOOR(duration * POW(10, 2)) % 2), ROUND(duration * POW(10, 2))) / POW(10, 2)
+            | EVAL roundedDuration = {ToEven("duration * POW(10, 2)")} / POW(10, 2)
             | KEEP roundedDuration
             """.NativeLineEndings());
 	}
@@ -129,9 +129,9 @@ public class RoundTests : EsqlTestBase
 			.ToString();
 
 		_ = esql.Should().Be(
-			"""
+			$"""
             FROM logs-*
-            | EVAL roundedDuration = CASE(duration * POW(10, 2) - FLOOR(duration * POW(10, 2)) == 0.5, FLOOR(duration * POW(10, 2)) + ABS(FLOOR(duration * POW(10, 2)) % 2), ROUND(duration * POW(10, 2))) / POW(10, 2)
+            | EVAL roundedDuration = {ToEven("duration * POW(10, 2)")} / POW(10, 2)
             | KEEP roundedDuration
             """.NativeLineEndings());
 	}
@@ -241,9 +241,9 @@ public class RoundTests : EsqlTestBase
 			.ToString();
 
 		_ = esql.Should().Be(
-			"""
+			$"""
             FROM logs-*
-            | EVAL roundedDuration = CASE((duration + statusCode) * POW(10, 2) - FLOOR((duration + statusCode) * POW(10, 2)) == 0.5, FLOOR((duration + statusCode) * POW(10, 2)) + ABS(FLOOR((duration + statusCode) * POW(10, 2)) % 2), ROUND((duration + statusCode) * POW(10, 2))) / POW(10, 2)
+            | EVAL roundedDuration = {ToEven("(duration + statusCode) * POW(10, 2)")} / POW(10, 2)
             | KEEP roundedDuration
             """.NativeLineEndings());
 	}
@@ -257,9 +257,9 @@ public class RoundTests : EsqlTestBase
 			.ToString();
 
 		_ = esql.Should().Be(
-			"""
+			$"""
             FROM logs-*
-            | EVAL roundedDuration = CASE(duration * POW(10, statusCode) - FLOOR(duration * POW(10, statusCode)) == 0.5, FLOOR(duration * POW(10, statusCode)) + ABS(FLOOR(duration * POW(10, statusCode)) % 2), ROUND(duration * POW(10, statusCode))) / POW(10, statusCode)
+            | EVAL roundedDuration = {ToEven("duration * POW(10, statusCode)")} / POW(10, statusCode)
             | KEEP roundedDuration
             """.NativeLineEndings());
 	}
@@ -273,9 +273,9 @@ public class RoundTests : EsqlTestBase
 			.ToString();
 
 		_ = esql.Should().Be(
-			"""
+			$"""
             FROM logs-*
-            | EVAL roundedDuration = CASE(duration * POW(10, -2) - FLOOR(duration * POW(10, -2)) == 0.5, FLOOR(duration * POW(10, -2)) + ABS(FLOOR(duration * POW(10, -2)) % 2), ROUND(duration * POW(10, -2))) / POW(10, -2)
+            | EVAL roundedDuration = {ToEven("duration * POW(10, -2)")} / POW(10, -2)
             | KEEP roundedDuration
             """.NativeLineEndings());
 	}
@@ -365,9 +365,9 @@ public class RoundTests : EsqlTestBase
 			.ToString();
 
 		_ = esql.Should().Be(
-			"""
+			$"""
             FROM logs-*
-            | EVAL roundedPrice = CASE(price * POW(10, 2) - FLOOR(price * POW(10, 2)) == 0.5, FLOOR(price * POW(10, 2)) + ABS(FLOOR(price * POW(10, 2)) % 2), ROUND(price * POW(10, 2))) / POW(10, 2)
+            | EVAL roundedPrice = {ToEven("price * POW(10, 2)")} / POW(10, 2)
             | KEEP roundedPrice
             """.NativeLineEndings());
 	}
@@ -511,4 +511,10 @@ public class RoundTests : EsqlTestBase
             | KEEP roundedDuration
             """.NativeLineEndings());
 	}
+
+	// Math.Round rounds a midpoint to even by default, ROUND rounds it away from zero.
+	private static string ToEven(string value) =>
+		$"CASE({value} - FLOOR({value}) == 0.5, FLOOR({value}) + ABS(FLOOR({value}) % 2), ROUND({value}))";
+
+	private static string ToZero(string value) => $"CASE({value} >= 0, FLOOR({value}), CEIL({value}))";
 }
