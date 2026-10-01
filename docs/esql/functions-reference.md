@@ -148,7 +148,7 @@ Standard `Math.*` methods translate to their ES|QL equivalents in both Where and
 | [`LOG10`](elasticsearch://reference/query-languages/esql/functions-operators/math-functions.md#esql-log10) | | `Math.Log10(n)` |
 | [`PI`](elasticsearch://reference/query-languages/esql/functions-operators/math-functions.md#esql-pi) | `EsqlFunctions.Pi()` | |
 | [`POW`](elasticsearch://reference/query-languages/esql/functions-operators/math-functions.md#esql-pow) | | `Math.Pow(base, exp)` |
-| [`ROUND`](elasticsearch://reference/query-languages/esql/functions-operators/math-functions.md#esql-round) | `EsqlFunctions.Round(n, decimals)` | `Math.Round(n)` |
+| [`ROUND`](elasticsearch://reference/query-languages/esql/functions-operators/math-functions.md#esql-round) | `EsqlFunctions.Round(n, decimals)` | `Math.Round(n, MidpointRounding.AwayFromZero)` |
 | [`ROUND_TO`](elasticsearch://reference/query-languages/esql/functions-operators/math-functions.md#esql-round_to) | `EsqlFunctions.RoundTo(n, dp)` | |
 | [`SCALB`](elasticsearch://reference/query-languages/esql/functions-operators/math-functions.md#esql-scalb) | `EsqlFunctions.ScaleB(n, exp)` | `Math.ScaleB(n, exp)` |
 | [`SIGNUM`](elasticsearch://reference/query-languages/esql/functions-operators/math-functions.md#esql-signum) | `EsqlFunctions.Signum(n)` | `Math.Sign(n)` |
@@ -160,6 +160,8 @@ Standard `Math.*` methods translate to their ES|QL equivalents in both Where and
 | [`TAU`](elasticsearch://reference/query-languages/esql/functions-operators/math-functions.md#esql-tau) | `EsqlFunctions.Tau()` | |
 
 Note: `Math.E`, `Math.PI`, and `Math.Tau` are const fields that the C# compiler inlines as numeric literals. Use `EsqlFunctions.E()`, `.Pi()`, `.Tau()` instead to generate the ES|QL function calls.
+
+Note: `ROUND` rounds a midpoint away from zero, so it matches `Math.Round` with `MidpointRounding.AwayFromZero`. `Math.Round` with the default `MidpointRounding.ToEven`, or with `ToZero`, `ToNegativeInfinity` or `ToPositiveInfinity`, is translated with `FLOOR` and `CEIL` so that the result is the same as in .NET: `Math.Round(2.5)` returns `2`.
 
 ## Dense vector functions
 
