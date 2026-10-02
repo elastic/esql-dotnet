@@ -230,14 +230,8 @@ internal sealed partial class EsqlResponseReader
 	private static RowMaterializationPlan<T> CreateRowMaterializationPlan<T>(ColumnInfo[] columns, JsonSerializerOptions options)
 	{
 		var estimatedRowSize = Math.Max(256, columns.Length * 32);
-		var isScalar = columns.Length == 1 && IsPrimitiveJsonType(typeof(T));
+		var isScalar = columns.Length == 1 && TypeHelper.IsSingleValueType(typeof(T));
 		var typeInfo = TryResolveTypeInfo<T>(options);
 		return new RowMaterializationPlan<T>(estimatedRowSize, isScalar, typeInfo, options);
-	}
-
-	private static bool IsPrimitiveJsonType(Type type)
-	{
-		var t = Nullable.GetUnderlyingType(type) ?? type;
-		return t.IsPrimitive || t == typeof(decimal) || t == typeof(string) || t.IsEnum;
 	}
 }

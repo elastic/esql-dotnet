@@ -100,7 +100,7 @@ FROM logs-*
 .Where(l => l != null && l.Tag != null) // WHERE (true AND tag IS NOT NULL)
 ```
 
-A null check on the document itself, which generated predicates often carry, is a constant: a document is never null. After a `Select` the parameter stands for the projected value, which can be null, so there such a check is refused rather than folded.
+A null check on the document itself, which generated predicates often carry, is a constant: a document is never null. After a `Select` the parameter stands for the projected value, which can be null: a single value is tested on its column, so `Select(l => l.ClientIp).Where(ip => ip == null)` gives `WHERE clientIp IS NULL`, while a check on a projected object is refused rather than folded.
 
 ### Compound conditions
 
@@ -352,6 +352,29 @@ query.Select(l => new { l.Message, Secs = l.Duration / 1000 })
 query.Select(l => new { Upper = l.Message.ToUpper(), Hour = l.Timestamp.Hour })
 // | EVAL upper = TO_UPPER(message), hour = DATE_EXTRACT("hour_of_day", @timestamp)
 ```
+
+### Single values
+
+A `Select` that returns a single value keeps the field it reads, or computes the value into a `result` column. The operators that follow read that column:
+
+```csharp
+query.Select(l => l.Message).Where(m => m.StartsWith("a"))
+// | KEEP message
+// | WHERE message LIKE "a*"
+
+query.Select(l => l.Duration * 3).Where(x => x > 5).OrderBy(x => x)
+// | EVAL result = (duration * 3.0)
+// | KEEP result
+// | WHERE result > 5.0
+// | SORT result
+
+query.Select(l => l.Duration * 3).Max()
+// | EVAL result = (duration * 3.0)
+// | KEEP result
+// | STATS max = MAX(result)
+```
+
+The column takes its name through the naming policy, as a member of an anonymous type does: `Result` without one.
 
 ### Conditional projections
 

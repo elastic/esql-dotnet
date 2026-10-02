@@ -57,7 +57,9 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 	/// </summary>
 	public EsqlQuery Translate(Expression expression)
 	{
+		expression = new IndexedSelectVisitor().Visit(expression);
 		expression = new SelectMergingVisitor().Visit(expression);
+		expression = new ScalarSelectVisitor().Visit(expression);
 		_ = Visit(expression);
 
 		if (_pendingGroupJoin is not null)
@@ -293,8 +295,12 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 				return;
 			}
 
+			// A computed single value is projected as the member of a one-member row, into the result column.
+			var isScalar = ScalarSelectVisitor.IsScalarSelector(lambda);
+			var projected = isScalar && ScalarSelectVisitor.IsComputed(lambda) ? ScalarSelectVisitor.WrapComputedSelector(lambda) : lambda;
+
 			var projectionVisitor = new SelectProjectionVisitor(Context);
-			var result = projectionVisitor.Translate(lambda);
+			var result = projectionVisitor.Translate(projected);
 
 			// From here the rows are whatever the selector built, not the document, unless
 			// the selector hands the row back as it is: an identity Select projects nothing
@@ -302,7 +308,7 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 			// since within this selector the parameter is still the row that came before.
 			Context.HasProjected |= !IsIdentitySelector(lambda);
 
-			ProjectionEmitter.Emit(result);
+			ProjectionEmitter.Emit(result, retainMetadata: !isScalar);
 		}
 	}
 

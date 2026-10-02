@@ -23,6 +23,23 @@ internal static class TypeHelper
 		return FindGenericType(typeof(IEnumerable<>), type) is not null;
 	}
 
+	/// <summary>
+	/// Returns <see langword="true"/> when <paramref name="type"/>, or the type a <see cref="Nullable{T}"/> wraps, is read from
+	/// a single column: a primitive, <see cref="decimal"/>, <see cref="string"/>, an enum, a date or time, a <see cref="TimeSpan"/>
+	/// or a <see cref="Guid"/>. The translation of a single-value Select and the reader of its rows agree on this list.
+	/// </summary>
+	internal static bool IsSingleValueType(Type type)
+	{
+		var t = Nullable.GetUnderlyingType(type) ?? type;
+		return t.IsPrimitive || t.IsEnum
+			|| t == typeof(decimal) || t == typeof(string)
+			|| t == typeof(DateTime) || t == typeof(DateTimeOffset)
+#if NET6_0_OR_GREATER
+			|| t == typeof(DateOnly) || t == typeof(TimeOnly)
+#endif
+			|| t == typeof(TimeSpan) || t == typeof(Guid);
+	}
+
 	/// <summary>Returns <see langword="true"/> when <paramref name="type"/> is a dictionary type (<see cref="IDictionary"/>, <see cref="IDictionary{TKey,TValue}"/>, or <see cref="IReadOnlyDictionary{TKey,TValue}"/>).</summary>
 	private static bool IsDictionaryType(Type type) =>
 		typeof(IDictionary).IsAssignableFrom(type)
