@@ -6,6 +6,7 @@ using System.Collections.Frozen;
 using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Elastic.Esql.Tests.TypeMapping.Escaping;
 
@@ -779,6 +780,8 @@ public record SpecialCharacterProjection([property: JsonPropertyName("user-agent
 [JsonSerializable(typeof(TypedSetterStructModel))]
 [JsonSerializable(typeof(EscapedCellsRecord))]
 [JsonSerializable(typeof(NullableCellsRecord))]
+[JsonSerializable(typeof(BinaryRecord))]
+[JsonSerializable(typeof(JsonArrayRecord))]
 [JsonSerializable(typeof(int))]
 [JsonSerializable(typeof(int?))]
 [JsonSerializable(typeof(long))]
@@ -821,6 +824,12 @@ public record EscapedCellsRecord(string Text, int Count, Dictionary<string, stri
 
 /// <summary>Positional record with all-nullable cells, forcing null cells through the JSON assembly path.</summary>
 public record NullableCellsRecord(string? First, int? Middle, string? Last);
+
+/// <summary>Positional record with a byte array member, forcing a base64 cell through the JSON assembly path.</summary>
+public record BinaryRecord(string Name, byte[] Data);
+
+/// <summary>Positional record with a JsonArray member, forcing a single-valued cell through the JSON assembly path.</summary>
+public record JsonArrayRecord(string Name, JsonArray? Tags);
 
 public class TypedSetterBaseModel
 {

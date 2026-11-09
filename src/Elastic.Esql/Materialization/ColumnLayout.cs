@@ -4,6 +4,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization.Metadata;
 using Elastic.Esql.Core;
 
@@ -230,7 +231,7 @@ internal sealed class ColumnLayout
 				return false;
 
 			if (i == segments.Length - 1)
-				return TypeHelper.IsEnumerableType(matchedProp.PropertyType);
+				return IsCollectionContract(matchedProp.PropertyType, options);
 
 			var propType = Nullable.GetUnderlyingType(matchedProp.PropertyType) ?? matchedProp.PropertyType;
 			try
@@ -247,6 +248,25 @@ internal sealed class ColumnLayout
 		}
 
 		return false;
+	}
+
+	/// <summary>Determines if the serializer reads a property type from a JSON array, so a bare single-valued cell needs wrapping.</summary>
+	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Type info resolution delegates to the user-provided JsonSerializerOptions/JsonSerializerContext.")]
+	[UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Type info resolution delegates to the user-provided JsonSerializerOptions/JsonSerializerContext.")]
+	private static bool IsCollectionContract(Type propertyType, JsonSerializerOptions options)
+	{
+		// JsonArray's converter takes only an array, so a bare cell still needs the wrap.
+		if (typeof(JsonArray).IsAssignableFrom(propertyType))
+			return true;
+
+		try
+		{
+			return options.GetTypeInfo(propertyType).Kind == JsonTypeInfoKind.Enumerable;
+		}
+		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
+		{
+			return false;
+		}
 	}
 
 	private static void InsertIntoTree(ColumnNode parent, string[] segments, int columnIndex, bool isCollection)

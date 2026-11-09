@@ -45,6 +45,28 @@ public class RowAssemblyRawCopyTests
 	}
 
 	[Test]
+	public void ReadRows_ByteArrayMemberOnAssemblyPath_BindsBase64Cell()
+	{
+		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"data","type":"keyword"}],"values":[["a","aGk="]]}""";
+
+		var rows = ReadRows<BinaryRecord>(json);
+
+		rows.Should().ContainSingle().Which.Data.Should().Equal([0x68, 0x69]);
+	}
+
+	[Test]
+	public void ReadRows_JsonArrayMemberWithScalarCell_IsWrapped()
+	{
+		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"tags","type":"keyword"}],"values":[["a","solo"]]}""";
+
+		var rows = ReadRows<JsonArrayRecord>(json);
+
+		var tags = rows.Should().ContainSingle().Which.Tags;
+		tags!.Count.Should().Be(1);
+		tags[0]!.GetValue<string>().Should().Be("solo");
+	}
+
+	[Test]
 	public void ReadRows_ComplexCellSplitAcrossReads_RoundTrips()
 	{
 		var json = $$$"""{"columns":{{{Columns}}},"values":[["x",3,{"a":"b","c":"d"},[10,20,30]],["y",4,null,null]]}""";
