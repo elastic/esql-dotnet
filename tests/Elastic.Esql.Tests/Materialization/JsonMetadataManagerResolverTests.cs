@@ -17,6 +17,10 @@ public class JsonMetadataManagerResolverTests
 		JsonMetadataManager.IsModifierFreeResolver(new DefaultJsonTypeInfoResolver { Modifiers = { static _ => { } } }).Should().BeFalse();
 
 	[Test]
+	public void IsModifierFreeResolver_SourceGeneratedContext_IsTrue() =>
+		JsonMetadataManager.IsModifierFreeResolver(MaterializationTestJsonContext.Default).Should().BeTrue();
+
+	[Test]
 	public void IsModifierFreeResolver_DefaultResolverSubclass_IsFalse() =>
 		JsonMetadataManager.IsModifierFreeResolver(new DerivedResolver()).Should().BeFalse();
 

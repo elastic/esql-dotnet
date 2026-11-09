@@ -2,6 +2,9 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+#if NET10_0_OR_GREATER
+using System.IO.Pipelines;
+#endif
 using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Text;
@@ -57,23 +60,11 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
-	public void ReadRows_ArrayPropertyWithScalarCell_BindsDirectly()
-	{
-		const string json = """{"columns":[{"name":"tags","type":"keyword"}],"values":[[["a"]],["solo"]]}""";
-
-		var layout = BuildLayout<ArrayTagsModel>(("tags", "keyword"));
-		layout.DirectBinder.Should().NotBeNull();
-
-		var rows = ReadRows<ArrayTagsModel>(json, CreateOptions());
-
-		rows[0].Tags.Should().Equal("a");
-		rows[1].Tags.Should().Equal("solo");
-	}
-
-	[Test]
 	public void ReadRows_ArrayPropertyWithScalarCell_BindsWithoutThrowing()
 	{
 		const string json = """{"columns":[{"name":"tags","type":"keyword"}],"values":[[["a"]],["solo"]]}""";
+
+		BuildLayout<ArrayTagsModel>(("tags", "keyword")).DirectBinder.Should().NotBeNull();
 
 		// The handler runs on the throwing thread, so counting only this thread's exceptions keeps the
 		// process-wide event from picking up other tests running in parallel.
@@ -192,6 +183,34 @@ public class DirectBindingConverterCellTests
 		BuildLayout<RequiredNameModel>(("count", "integer")).DirectBinder.Should().BeNull();
 
 	[Test]
+	public void ReadRows_ConverterCellRowWithNullRequiredMember_ThrowsJsonException()
+	{
+		const string json = """{"columns":[{"name":"level","type":"integer"},{"name":"name","type":"keyword"}],"values":[[2,null]]}""";
+
+		var binder = BuildLayout<RequiredNameLevelModel>(("level", "integer"), ("name", "keyword")).DirectBinder;
+		binder.Should().NotBeNull();
+		binder.Kinds.Should().Equal([DirectBinderKind.Converter, DirectBinderKind.String]);
+		var act = () => ReadRows<RequiredNameLevelModel>(json, CreateOptions());
+
+		act.Should().Throw<JsonException>().WithMessage("*required*");
+	}
+
+	[Test]
+	public void ReadRows_ConverterCellRowWithMoreCellsThanColumns_ThrowsJsonException()
+	{
+		// A bind that stops before the first row's closing bracket makes the next read take that bracket for the end of
+		// values, which drops the second row.
+		const string json = """{"columns":[{"name":"level","type":"integer"},{"name":"name","type":"keyword"}],"values":[[2,"a",3],[1,"b"]]}""";
+
+		var binder = BuildLayout<RequiredNameLevelModel>(("level", "integer"), ("name", "keyword")).DirectBinder;
+		binder.Should().NotBeNull();
+		binder.Kinds.Should().Equal([DirectBinderKind.Converter, DirectBinderKind.String]);
+		var act = () => ReadRows<RequiredNameLevelModel>(json, CreateOptions());
+
+		act.Should().Throw<JsonException>().WithMessage("*more values*");
+	}
+
+	[Test]
 	public void ReadRows_PropertyLevelConverter_IsHonored()
 	{
 		const string json = """{"columns":[{"name":"enabled","type":"keyword"},{"name":"name","type":"keyword"}],"values":[["yes","a"],["no","b"]]}""";
@@ -237,7 +256,7 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
-	public void Build_NullablePropertyLevelConverter_UsesWrappedConverterKind()
+	public void Build_NullablePropertyLevelConverter_UsesConverterKind()
 	{
 		if (!RuntimeFeature.IsDynamicCodeSupported)
 			return;
@@ -283,6 +302,32 @@ public class DirectBindingConverterCellTests
 		rows[0].Tags.Should().Equal("a", "b");
 		rows[1].Tags.Should().Equal("c");
 	}
+
+#if NET10_0_OR_GREATER
+	[Test]
+	public async Task ReadRowsAsync_ConverterCellRowAcrossPipeSegments_BindsEachCell()
+	{
+		// Longer than a pipe segment, so the assigning pass reads the name from a slice that spans segments.
+		var longName = new string('x', 9000);
+		var json = $$"""{"columns":[{"name":"level","type":"integer"},{"name":"name","type":"keyword"}],"values":[[2,"{{longName}}"]]}""";
+
+		var binder = BuildLayout<EnumModel>(("level", "integer"), ("name", "keyword")).DirectBinder;
+		binder.Should().NotBeNull();
+		binder.Kinds.Should().Equal([DirectBinderKind.Converter, DirectBinderKind.String]);
+		var pipe = new Pipe();
+		await pipe.Writer.WriteAsync(Encoding.UTF8.GetBytes(json));
+		await pipe.Writer.CompleteAsync();
+
+		await using var results = await new EsqlResponseReader(new JsonMetadataManager(CreateOptions())).ReadRowsAsync<EnumModel>(pipe.Reader);
+		var rows = new List<EnumModel>();
+		await foreach (var row in results.Rows)
+			rows.Add(row);
+
+		var single = rows.Should().ContainSingle().Subject;
+		single.Level.Should().Be(Level.High);
+		single.Name.Should().Be(longName);
+	}
+#endif
 
 	[Test]
 	[NotInParallel(nameof(CountingOwner))]
@@ -390,19 +435,23 @@ public class DirectBindingConverterCellTests
 		options.RespectNullableAnnotations = true;
 		options.Converters.Add(new NullingStringConverter());
 
-		BuildLayout<NonNullableNameModel>(("name", "keyword"), ("count", "integer")).DirectBinder.Should().NotBeNull();
+		var binder = BuildLayout<NonNullableNameModel>(options, ("name", "keyword"), ("count", "integer")).DirectBinder;
+		binder.Should().NotBeNull();
+		binder.Kinds[0].Should().Be(DirectBinderKind.Converter);
 		var act = () => ReadRows<NonNullableNameModel>(json, options);
 
 		act.Should().Throw<JsonException>();
 	}
 
-	private static ColumnLayout BuildLayout<T>(params (string Name, string Type)[] columns)
+	private static ColumnLayout BuildLayout<T>(params (string Name, string Type)[] columns) => BuildLayout<T>(CreateOptions(), columns);
+
+	private static ColumnLayout BuildLayout<T>(JsonSerializerOptions options, params (string Name, string Type)[] columns)
 	{
 		var columnInfos = new EsqlResponseReader.ColumnInfo[columns.Length];
 		for (var i = 0; i < columns.Length; i++)
 			columnInfos[i] = new EsqlResponseReader.ColumnInfo(columns[i].Name, columns[i].Type);
 
-		return ColumnLayout.Build(columnInfos, typeof(T), new JsonMetadataManager(CreateOptions()));
+		return ColumnLayout.Build(columnInfos, typeof(T), new JsonMetadataManager(options));
 	}
 
 	private static List<T> ReadRows<T>(string json, JsonSerializerOptions options)
@@ -523,6 +572,12 @@ public class DirectBindingConverterCellTests
 	{
 		public required string Name { get; set; }
 		public int Count { get; set; }
+	}
+
+	private sealed class RequiredNameLevelModel
+	{
+		public Level Level { get; set; }
+		public required string Name { get; set; }
 	}
 
 	private sealed class NonNullableNameModel

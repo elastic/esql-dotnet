@@ -106,6 +106,16 @@ public class SingleColumnProjectionTests
 	}
 
 	[Test]
+	public void ReadRows_SingleColumnNullableJsonElementTarget_StillAssemblesRow()
+	{
+		var rows = ReadRows<JsonElement?>(NameJson);
+
+		var element = rows.Should().ContainSingle().Subject.GetValueOrDefault();
+		element.ValueKind.Should().Be(JsonValueKind.Object);
+		element.GetProperty("name").GetString().Should().Be("a");
+	}
+
+	[Test]
 	public void ReadRows_SingleColumnObjectTarget_StillAssemblesRow()
 	{
 		var rows = ReadRows<object>(NameJson);
@@ -117,6 +127,14 @@ public class SingleColumnProjectionTests
 	public void ReadRows_SingleColumnJsonNodeTarget_StillAssemblesRow()
 	{
 		var rows = ReadRows<JsonNode>(NameJson);
+
+		rows.Should().ContainSingle().Which!["name"]!.GetValue<string>().Should().Be("a");
+	}
+
+	[Test]
+	public void ReadRows_SingleColumnJsonObjectTarget_StillAssemblesRow()
+	{
+		var rows = ReadRows<JsonObject>(NameJson);
 
 		rows.Should().ContainSingle().Which!["name"]!.GetValue<string>().Should().Be("a");
 	}
