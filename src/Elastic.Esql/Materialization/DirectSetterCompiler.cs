@@ -15,8 +15,8 @@ namespace Elastic.Esql.Materialization;
 /// so Native AOT keeps the object-typed setter.
 /// </summary>
 /// <remarks>
-/// The compiled setter assigns the member directly, so a contract modifier that replaced
-/// <see cref="JsonPropertyInfo.Set"/> with custom logic is not honored on this path.
+/// The compiled setter assigns the member directly and bypasses <see cref="JsonPropertyInfo.Set"/>, so the binder asks
+/// for one only when the resolver cannot carry a contract modifier that replaces it.
 /// </remarks>
 internal static class DirectSetterCompiler
 {
@@ -30,8 +30,7 @@ internal static class DirectSetterCompiler
 	/// <summary>
 	/// Returns a compiled <c>Action&lt;object, TValue&gt;</c> for the exact value type of <paramref name="kind"/>,
 	/// or null when the runtime does not support dynamic code, the declaring type is a struct, or the member
-	/// cannot be resolved via <see cref="JsonPropertyInfo.AttributeProvider"/> or does not belong to
-	/// <paramref name="declaringType"/>.
+	/// cannot be resolved via <see cref="JsonPropertyInfo.AttributeProvider"/>.
 	/// </summary>
 	public static Delegate? TryCreate(JsonPropertyInfo property, DirectBinderKind kind, Type declaringType)
 	{
@@ -41,36 +40,32 @@ internal static class DirectSetterCompiler
 
 		return kind switch
 		{
-			DirectBinderKind.String => TryCreate<string?>(property, declaringType),
-			DirectBinderKind.Bool => TryCreate<bool>(property, declaringType),
-			DirectBinderKind.Int32 => TryCreate<int>(property, declaringType),
-			DirectBinderKind.Int64 => TryCreate<long>(property, declaringType),
-			DirectBinderKind.Double => TryCreate<double>(property, declaringType),
-			DirectBinderKind.Single => TryCreate<float>(property, declaringType),
-			DirectBinderKind.Decimal => TryCreate<decimal>(property, declaringType),
-			DirectBinderKind.DateTime => TryCreate<DateTime>(property, declaringType),
-			DirectBinderKind.DateTimeOffset => TryCreate<DateTimeOffset>(property, declaringType),
-			DirectBinderKind.Guid => TryCreate<Guid>(property, declaringType),
+			DirectBinderKind.String => TryCreate<string?>(property),
+			DirectBinderKind.Bool => TryCreate<bool>(property),
+			DirectBinderKind.Int32 => TryCreate<int>(property),
+			DirectBinderKind.Int64 => TryCreate<long>(property),
+			DirectBinderKind.Double => TryCreate<double>(property),
+			DirectBinderKind.Single => TryCreate<float>(property),
+			DirectBinderKind.Decimal => TryCreate<decimal>(property),
+			DirectBinderKind.DateTime => TryCreate<DateTime>(property),
+			DirectBinderKind.DateTimeOffset => TryCreate<DateTimeOffset>(property),
+			DirectBinderKind.Guid => TryCreate<Guid>(property),
 			_ => null
 		};
 	}
 
-	private static Action<object, TValue>? TryCreate<TValue>(JsonPropertyInfo property, Type declaringType)
+	private static Action<object, TValue>? TryCreate<TValue>(JsonPropertyInfo property)
 	{
 		var instance = Expression.Parameter(typeof(object), "instance");
 		var value = Expression.Parameter(typeof(TValue), "value");
 
-		// A contract modifier can point AttributeProvider at a member of an unrelated type. Converting the row
-		// instance to that type would throw at bind time, so such a column keeps the boxing setter.
 		MemberExpression target;
 		switch (property.AttributeProvider)
 		{
-			case PropertyInfo { SetMethod: not null, DeclaringType: { } propertyDeclaringType } propertyInfo
-				when propertyDeclaringType.IsAssignableFrom(declaringType):
+			case PropertyInfo { SetMethod: not null, DeclaringType: { } propertyDeclaringType } propertyInfo:
 				target = Expression.Property(Expression.Convert(instance, propertyDeclaringType), propertyInfo);
 				break;
-			case FieldInfo { IsInitOnly: false, DeclaringType: { } fieldDeclaringType } fieldInfo
-				when fieldDeclaringType.IsAssignableFrom(declaringType):
+			case FieldInfo { IsInitOnly: false, DeclaringType: { } fieldDeclaringType } fieldInfo:
 				target = Expression.Field(Expression.Convert(instance, fieldDeclaringType), fieldInfo);
 				break;
 			default:

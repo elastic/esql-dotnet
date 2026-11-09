@@ -5,6 +5,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
+using Elastic.Esql.Core;
 
 namespace Elastic.Esql.Materialization;
 
@@ -43,7 +44,8 @@ internal sealed class DirectRowBinder
 
 	/// <summary>
 	/// Per-column <c>Action&lt;object, TValue&gt;</c> compiled for the exact cell type, or null where the column
-	/// assigns through the boxing <see cref="JsonPropertyInfo.Set"/> (Native AOT, struct targets, unresolvable members).
+	/// assigns through the boxing <see cref="JsonPropertyInfo.Set"/> (Native AOT, resolvers that can carry a contract
+	/// modifier, struct targets, unresolvable members).
 	/// </summary>
 	public required Delegate?[] TypedSetters { get; init; }
 
@@ -74,8 +76,10 @@ internal sealed class DirectRowBinder
 	/// two columns for one property. Cells that are not one of the built-in scalar kinds deserialize through their own
 	/// contract instead.
 	/// </summary>
-	public static DirectRowBinder? TryCreate(ColumnNode[] leafNodes, JsonTypeInfo typeInfo, JsonSerializerOptions options)
+	public static DirectRowBinder? TryCreate(ColumnNode[] leafNodes, JsonTypeInfo typeInfo, JsonMetadataManager metadata)
 	{
+		var options = metadata.Options;
+
 		if (typeInfo.Kind != JsonTypeInfoKind.Object || typeInfo.CreateObject is null)
 			return null;
 
@@ -122,7 +126,8 @@ internal sealed class DirectRowBinder
 			if (TryClassify(property.PropertyType, out var kind) && UsesBuiltInConverter(property.PropertyType, options))
 			{
 				kinds[i] = kind;
-				typedSetters[i] = DirectSetterCompiler.TryCreate(property, kind, typeInfo.Type);
+				// A compiled setter writes the member directly and would skip a modifier's replacement Set.
+				typedSetters[i] = metadata.ResolverIsModifierFree ? DirectSetterCompiler.TryCreate(property, kind, typeInfo.Type) : null;
 				continue;
 			}
 

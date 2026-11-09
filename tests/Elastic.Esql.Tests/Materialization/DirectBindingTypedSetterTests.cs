@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Elastic.Esql.Materialization;
+using Elastic.Esql.Tests.Execution;
 
 namespace Elastic.Esql.Tests.Materialization;
 
@@ -103,62 +104,83 @@ public class DirectBindingTypedSetterTests
 	}
 
 	[Test]
-	public void ReadRows_ForeignAttributeProvider_KeepsBoxingSetterAndBinds()
+	public void ReadRows_ModifierReplacesSetter_IsHonored()
+	{
+		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+		{
+			TypeInfoResolver = new DefaultJsonTypeInfoResolver { Modifiers = { TrimNameOnSet } }
+		};
+		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"count","type":"integer"}],"values":[["  a  ",1]]}""";
+
+		var rows = ReadRows<TrimmedNameModel>(json, options);
+
+		rows.Should().ContainSingle().Which.Name.Should().Be("a");
+	}
+
+	[Test]
+	public void ReadRows_ModifierAddedAfterConstruction_IsHonored()
+	{
+		var resolver = new DefaultJsonTypeInfoResolver();
+		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web) { TypeInfoResolver = resolver };
+		var reader = new EsqlResponseReader(new JsonMetadataManager(options));
+		resolver.Modifiers.Add(TrimNameOnSet);
+		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"count","type":"integer"}],"values":[["  a  ",1]]}""";
+		using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+		using var results = reader.ReadRows<TrimmedNameModel>(stream);
+
+		results.Rows.ToList().Should().ContainSingle().Which.Name.Should().Be("a");
+	}
+
+	[Test]
+	public void Build_ContextConstructedProvider_CompilesTypedSetters()
 	{
 		if (!RuntimeFeature.IsDynamicCodeSupported)
 			return;
 
-		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
-		{
-			TypeInfoResolver = new DefaultJsonTypeInfoResolver { Modifiers = { RedirectNameToForeignMember } }
-		};
-
-		var layout = BuildLayout<ForeignProviderModel>(options, ("name", "keyword"), ("count", "integer"));
+		var provider = new EsqlQueryProvider(MaterializationTestJsonContext.Default, new CapturingQueryExecutor());
+		var layout = ColumnLayout.Build(Columns(("Name", "keyword"), ("Count", "integer")), typeof(TypedSetterDerivedModel), provider.Metadata);
 
 		layout.DirectBinder.Should().NotBeNull();
-		layout.DirectBinder.TypedSetters[0].Should().BeNull();
-		layout.DirectBinder.TypedSetters[1].Should().NotBeNull();
-
-		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"count","type":"integer"}],"values":[["a",1]]}""";
-		var rows = ReadRows<ForeignProviderModel>(json, options);
-
-		rows.Should().ContainSingle();
-		rows[0].Name.Should().Be("a");
-		rows[0].Count.Should().Be(1);
+		layout.DirectBinder.TypedSetters.Should().AllSatisfy(setter => setter.Should().NotBeNull());
 	}
 
-	// A contract modifier is the only way to reach the case the guard covers: an AttributeProvider naming a
-	// member of a type the row instance is not.
-	private static void RedirectNameToForeignMember(JsonTypeInfo typeInfo)
+	private static void TrimNameOnSet(JsonTypeInfo typeInfo)
 	{
-		if (typeInfo.Type != typeof(ForeignProviderModel))
+		if (typeInfo.Type != typeof(TrimmedNameModel))
 			return;
 
 		foreach (var property in typeInfo.Properties)
 		{
 			if (string.Equals(property.Name, "name", StringComparison.Ordinal))
-				property.AttributeProvider = typeof(UnrelatedNameModel).GetProperty(nameof(UnrelatedNameModel.Name));
+				property.Set = static (instance, value) => ((TrimmedNameModel)instance).Name = ((string?)value)?.Trim() ?? string.Empty;
 		}
 	}
 
 	private static ColumnLayout BuildLayout<T>(params (string Name, string Type)[] columns) =>
 		BuildLayout<T>(null, columns);
 
-	private static ColumnLayout BuildLayout<T>(JsonSerializerOptions? options, params (string Name, string Type)[] columns)
+	private static ColumnLayout BuildLayout<T>(JsonSerializerOptions? options, params (string Name, string Type)[] columns) =>
+		ColumnLayout.Build(Columns(columns), typeof(T), CreateMetadata(options));
+
+	private static List<T> ReadRows<T>(string json, JsonSerializerOptions? options = null)
+	{
+		using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+		using var results = new EsqlResponseReader(CreateMetadata(options)).ReadRows<T>(stream);
+		return results.Rows.ToList();
+	}
+
+	private static EsqlResponseReader.ColumnInfo[] Columns(params (string Name, string Type)[] columns)
 	{
 		var columnInfos = new EsqlResponseReader.ColumnInfo[columns.Length];
 		for (var i = 0; i < columns.Length; i++)
 			columnInfos[i] = new EsqlResponseReader.ColumnInfo(columns[i].Name, columns[i].Type);
 
-		return ColumnLayout.Build(columnInfos, typeof(T), new JsonMetadataManager(options ?? CreateOptions()));
+		return columnInfos;
 	}
 
-	private static List<T> ReadRows<T>(string json, JsonSerializerOptions? options = null)
-	{
-		using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
-		using var results = new EsqlResponseReader(new JsonMetadataManager(options ?? CreateOptions())).ReadRows<T>(stream);
-		return results.Rows.ToList();
-	}
+	// The combined test contexts carry no modifier, so vouching for them keeps the setter tests independent of the resolver check.
+	private static JsonMetadataManager CreateMetadata(JsonSerializerOptions? options) =>
+		options is null ? new JsonMetadataManager(CreateOptions(), resolverIsModifierFree: true) : new JsonMetadataManager(options);
 
 	private static JsonSerializerOptions CreateOptions() =>
 		new(JsonSerializerDefaults.Web)
@@ -172,14 +194,9 @@ public class DirectBindingTypedSetterTests
 		public int Count { get; init; }
 	}
 
-	private sealed class ForeignProviderModel
+	private sealed class TrimmedNameModel
 	{
 		public string Name { get; set; } = string.Empty;
 		public int Count { get; set; }
-	}
-
-	private sealed class UnrelatedNameModel
-	{
-		public string Name { get; set; } = string.Empty;
 	}
 }

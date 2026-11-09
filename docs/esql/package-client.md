@@ -97,9 +97,11 @@ Whichever options the client ends up with are made read-only when the first resu
 `JsonSerializer` freezes options on its own first use. Register every converter, naming policy and resolver before
 running the first query; changing them on an instance that has already been used throws.
 
-On runtimes that support dynamic code, the cells of a directly bound row are assigned through setters compiled for the
-target member, and those setters write the member itself. A contract modifier that replaces `JsonPropertyInfo.Set` with
-custom logic is therefore not honored for rows that take the direct path.
+On runtimes that support dynamic code, and when the resolver cannot carry a contract modifier (a
+`DefaultJsonTypeInfoResolver` without modifiers, a `JsonSerializerContext`, or the client's own combination of a context
+with the reflection resolver), the cells of a directly bound row are assigned through setters compiled for the target
+member. Any other resolver keeps the contract's own `JsonPropertyInfo.Set`, so a modifier that replaces it is honored on
+every row. The decision is made when the first result is materialized, with the options already read-only.
 
 A cell that its own contract rejects is read again by the serializer so the error carries the property path. A
 deserialization callback on a nested type therefore runs twice before such a row fails.

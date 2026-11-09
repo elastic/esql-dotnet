@@ -44,22 +44,30 @@ public sealed class EsqlQueryProvider : IQueryProvider
 
 	/// <summary>Creates a translation-only provider from a source-generated <see cref="JsonSerializerContext"/>.</summary>
 	public EsqlQueryProvider(JsonSerializerContext context)
-		: this(ResolveOptions(context), ThrowingQueryExecutor.Instance) { }
+		: this(context, ThrowingQueryExecutor.Instance) { }
 
 	/// <summary>Creates an execution-capable provider using the provided <see cref="JsonSerializerOptions"/> and executor.</summary>
 	public EsqlQueryProvider(JsonSerializerOptions options, IEsqlQueryExecutor executor)
+		: this(options, executor, resolverIsModifierFree: null) { }
+
+	/// <summary>Creates an execution-capable provider from a source-generated <see cref="JsonSerializerContext"/> and executor.</summary>
+	public EsqlQueryProvider(JsonSerializerContext context, IEsqlQueryExecutor executor)
+		: this(ResolveOptions(context), executor, resolverIsModifierFree: true) { }
+
+	/// <summary>
+	/// Creates an execution-capable provider. <paramref name="resolverIsModifierFree"/> is <see langword="true"/> only when
+	/// the caller built the options' resolver itself and it cannot carry a contract modifier. <see langword="null"/> leaves
+	/// the decision to <see cref="JsonMetadataManager.ResolverIsModifierFree"/>.
+	/// </summary>
+	internal EsqlQueryProvider(JsonSerializerOptions options, IEsqlQueryExecutor executor, bool? resolverIsModifierFree)
 	{
 		Verify.NotNull(options);
 		Verify.NotNull(executor);
 
-		Metadata = new JsonMetadataManager(options);
+		Metadata = new JsonMetadataManager(options, resolverIsModifierFree);
 		_reader = new EsqlResponseReader(Metadata);
 		_executor = executor;
 	}
-
-	/// <summary>Creates an execution-capable provider from a source-generated <see cref="JsonSerializerContext"/> and executor.</summary>
-	public EsqlQueryProvider(JsonSerializerContext context, IEsqlQueryExecutor executor)
-		: this(ResolveOptions(context), executor) { }
 
 	/// <inheritdoc/>
 	/// <remarks>
