@@ -90,14 +90,6 @@ public class DirectRowBinderEligibilityTests
 	}
 
 	[Test]
-	public void Build_PropertyLevelConverter_DoesNotCreateDirectBinder()
-	{
-		var layout = BuildLayout<CustomConverterDocument>(("customId", "keyword"), ("name", "keyword"));
-
-		layout.DirectBinder.Should().BeNull();
-	}
-
-	[Test]
 	public void Build_GlobalConverterForPropertyType_UsesConverterKind()
 	{
 		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);

@@ -2,6 +2,7 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Text.Json;
@@ -195,12 +196,56 @@ public class DirectBindingConverterCellTests
 	{
 		const string json = """{"columns":[{"name":"enabled","type":"keyword"},{"name":"name","type":"keyword"}],"values":[["yes","a"],["no","b"]]}""";
 
-		// The converter has to see the root options, so the whole type stays on the slow path.
-		BuildLayout<YesNoModel>(("enabled", "keyword"), ("name", "keyword")).DirectBinder.Should().BeNull();
 		var rows = ReadRows<YesNoModel>(json, CreateOptions());
 
 		rows[0].Enabled.Should().BeTrue();
 		rows[1].Enabled.Should().BeFalse();
+	}
+
+	[Test]
+	public void Build_PropertyLevelConverter_UsesConverterKind()
+	{
+		if (!RuntimeFeature.IsDynamicCodeSupported)
+			return;
+
+		var layout = BuildLayout<YesNoModel>(("enabled", "keyword"), ("name", "keyword"));
+
+		layout.DirectBinder.Should().NotBeNull();
+		layout.DirectBinder.Kinds.Should().Equal([DirectBinderKind.Converter, DirectBinderKind.String]);
+	}
+
+	[Test]
+	public void ReadRows_PropertyLevelConverter_ReadsCellThroughThatConverter()
+	{
+		const string json = """{"columns":[{"name":"value","type":"integer"},{"name":"name","type":"keyword"}],"values":[[21,"a"]]}""";
+
+		var rows = ReadRows<DoubledModel>(json, CreateOptions());
+
+		rows.Should().ContainSingle().Which.Value.Should().Be(42);
+	}
+
+	[Test]
+	public void Build_NullablePropertyLevelConverterFactory_UsesConverterKind()
+	{
+		if (!RuntimeFeature.IsDynamicCodeSupported)
+			return;
+
+		var layout = BuildLayout<MaybeLevelModel>(("maybe", "keyword"));
+
+		layout.DirectBinder.Should().NotBeNull();
+		layout.DirectBinder.Kinds.Should().Equal([DirectBinderKind.Converter]);
+	}
+
+	[Test]
+	public void ReadRows_NullablePropertyLevelConverterFactory_BindsStringAndNull()
+	{
+		const string json = """{"columns":[{"name":"maybe","type":"keyword"}],"values":[["low"],[null]]}""";
+
+		var rows = ReadRows<MaybeLevelModel>(json, CreateOptions());
+
+		rows.Should().HaveCount(2);
+		rows[0].Maybe.Should().Be(Level.Low);
+		rows[1].Maybe.Should().BeNull();
 	}
 
 	[Test]
@@ -435,6 +480,19 @@ public class DirectBindingConverterCellTests
 		public string Name { get; set; } = string.Empty;
 	}
 
+	private sealed class DoubledModel
+	{
+		[JsonConverter(typeof(DoublingIntConverter))]
+		public int Value { get; set; }
+		public string Name { get; set; } = string.Empty;
+	}
+
+	private sealed class MaybeLevelModel
+	{
+		[JsonConverter(typeof(JsonStringEnumConverter))]
+		public Level? Maybe { get; set; }
+	}
+
 	private sealed class DateOnlyModel
 	{
 		public DateOnly Day { get; set; }
@@ -453,6 +511,15 @@ public class DirectBindingConverterCellTests
 
 		public override void Write(Utf8JsonWriter writer, bool value, JsonSerializerOptions options) =>
 			writer.WriteStringValue(value ? "yes" : "no");
+	}
+
+	private sealed class DoublingIntConverter : JsonConverter<int>
+	{
+		public override int Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+			reader.GetInt32() * 2;
+
+		public override void Write(Utf8JsonWriter writer, int value, JsonSerializerOptions options) =>
+			writer.WriteNumberValue(value);
 	}
 
 	private sealed class UnixEpochDateTimeConverter : JsonConverter<DateTime>

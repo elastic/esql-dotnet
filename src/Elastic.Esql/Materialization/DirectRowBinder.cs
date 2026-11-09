@@ -72,9 +72,9 @@ internal sealed class DirectRowBinder
 	/// <summary>
 	/// Builds a binder for a flat layout, or returns null when the type itself cannot be bound with exact serializer
 	/// fidelity: parameterized constructors, serialization callbacks, extension data, number handling on the type or
-	/// a property, a property-level converter, populate-style object creation, a required member without a column, or
-	/// two columns for one property. Cells that are not one of the built-in scalar kinds deserialize through their own
-	/// contract instead.
+	/// a property, a property-level converter no cell contract can be built for, populate-style object creation, a
+	/// required member without a column, or two columns for one property. Cells that are not one of the built-in scalar
+	/// kinds deserialize through their own contract instead.
 	/// </summary>
 	public static DirectRowBinder? TryCreate(ColumnNode[] leafNodes, JsonTypeInfo typeInfo, JsonMetadataManager metadata)
 	{
@@ -110,11 +110,6 @@ internal sealed class DirectRowBinder
 			if (property is null || property.Set is null || property.IsExtensionData || property.NumberHandling is not null)
 				return null;
 
-			// A property-level converter must see the root options, which JsonSerializer.Deserialize(ref reader,
-			// JsonTypeInfo) cannot provide for a single cell.
-			if (property.CustomConverter is not null)
-				return null;
-
 			// Two columns for one property, or populate-style creation, are the serializer's business.
 			if (!bound.Add(property) || EffectiveCreationHandling(property, typeInfo, options) == JsonObjectCreationHandling.Populate)
 				return null;
@@ -122,6 +117,19 @@ internal sealed class DirectRowBinder
 			properties[i] = property;
 			isCollection[i] = leafNodes[i].IsCollection;
 			isRequired[i] = property.IsRequired;
+
+			// Checked before the built-in kinds, which would read the cell without the property's converter.
+			if (property.CustomConverter is { } customConverter)
+			{
+				var converterTypeInfo = PropertyConverterContracts.TryCreate(property.PropertyType, customConverter, options);
+				if (converterTypeInfo is null)
+					return null;
+
+				kinds[i] = DirectBinderKind.Converter;
+				cellTypeInfos[i] = converterTypeInfo;
+				converterCellCount++;
+				continue;
+			}
 
 			if (TryClassify(property.PropertyType, out var kind) && UsesBuiltInConverter(property.PropertyType, options))
 			{

@@ -4,7 +4,6 @@
 
 using System.Linq.Expressions;
 using System.Reflection;
-using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization.Metadata;
 
 namespace Elastic.Esql.Materialization;
@@ -20,13 +19,6 @@ namespace Elastic.Esql.Materialization;
 /// </remarks>
 internal static class DirectSetterCompiler
 {
-	// netstandard2.0 has no RuntimeFeature.IsDynamicCodeSupported, but every runtime it targets here compiles expression trees.
-#if NETSTANDARD2_0
-	private const bool DynamicCodeSupported = true;
-#else
-	private static bool DynamicCodeSupported => RuntimeFeature.IsDynamicCodeSupported;
-#endif
-
 	/// <summary>
 	/// Returns a compiled <c>Action&lt;object, TValue&gt;</c> for the exact value type of <paramref name="kind"/>,
 	/// or null when the runtime does not support dynamic code, the declaring type is a struct, or the member
@@ -35,7 +27,7 @@ internal static class DirectSetterCompiler
 	public static Delegate? TryCreate(JsonPropertyInfo property, DirectBinderKind kind, Type declaringType)
 	{
 		// A struct instance would be unboxed by copy inside the lambda and the assignment lost.
-		if (!DynamicCodeSupported || declaringType.IsValueType)
+		if (!DynamicCode.IsSupported || declaringType.IsValueType)
 			return null;
 
 		return kind switch
