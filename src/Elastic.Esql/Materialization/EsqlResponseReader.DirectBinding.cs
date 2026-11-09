@@ -610,10 +610,10 @@ internal sealed partial class EsqlResponseReader
 				break;
 
 			default:
-				// TryAssignCells routes string and converter cells elsewhere, and TryReadDirectValue rejects any other kind in
-				// the first pass, so no recorded cell reaches this.
-				Debug.Fail($"No direct value is stored for {kind}.");
-				break;
+				// TryAssignCells routes string and converter cells elsewhere and TryReadDirectValue rejects any other kind, so
+				// only a kind stored there and missed here lands on this arm. Throwing fails such a row rather than bind the
+				// property at its initializer.
+				throw new InvalidOperationException($"No direct value is stored for {kind}.");
 		}
 	}
 
