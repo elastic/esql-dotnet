@@ -99,9 +99,10 @@ running the first query; changing them on an instance that has already been used
 
 On runtimes that support dynamic code, and when the resolver cannot carry a contract modifier (a
 `DefaultJsonTypeInfoResolver` without modifiers, a `JsonSerializerContext`, or the client's own combination of a context
-with the reflection resolver), the cells of a directly bound row are assigned through setters compiled for the target
-member. Any other resolver keeps the contract's own `JsonPropertyInfo.Set`, so a modifier that replaces it is honored on
-every row. The decision is made when the first result is materialized, with the options already read-only.
+with the reflection resolver), the built-in scalar cells of a directly bound row are assigned through setters compiled
+for the target member. Converter cells, and every cell under any other resolver, go through the contract's own
+`JsonPropertyInfo.Set`, so a modifier that replaces it is honored on every row. The decision is made when the first
+result is materialized, with the options already read-only.
 
 A cell that its own contract rejects, or a converter result of null for a property that does not accept null, is read
 again by the serializer so the error carries the property path. A deserialization callback on a nested type therefore
@@ -352,6 +353,8 @@ document. A type qualifies for this path when all of the following hold:
 - neither the type nor a mapped property sets its own `JsonNumberHandling`
 - no mapped property uses `JsonObjectCreationHandling.Populate`, whether set on the property, the type or the options
 - every `required` member has a column
+- no mapped property binds as a converter cell while the options' `MaxDepth` is 1, because a cell reader needs one level
+  below the row
 - no two columns map to the same property
 - every column is flat, so a dotted name such as `address.city` that resolves into a nested object keeps the type on the
   fallback
@@ -362,14 +365,16 @@ type. Any other property binds as a converter cell, deserialized from the cell a
 `[JsonConverter]` when it has one and through the contract of its type otherwise. Enums, collections, dictionaries,
 nested objects, types with a converter registered on the `JsonSerializerOptions` and properties with a `[JsonConverter]`
 attribute all bind this way. A property-level converter needs a runtime that supports dynamic code, so under Native AOT
-a type with one stays on the fallback. The compiled setters described under AOT-safe configuration need dynamic code
-too, and without it a directly bound row assigns its cells through the contract's own `JsonPropertyInfo.Set`.
+a type with one stays on the fallback. It must also be a converter for the property type itself, after a factory is
+expanded. A converter declared for a base type keeps the type on the fallback, where the serializer applies it through
+its casting converter. The compiled setters described under AOT-safe configuration need dynamic code too, and without it
+a directly bound row assigns its cells through the contract's own `JsonPropertyInfo.Set`.
 
 A type that misses any condition in the list falls back to assembling each row as a JSON object and deserializing it
 with `System.Text.Json`. The fallback is correct but slower, and nothing signals which path is active. If throughput
 matters, shape the result type to the list above. A row whose cell does not match the property type is retried through
-the fallback, so the serializer produces the same value coercion or error either way. The same retry happens when a
-streamed row is cut by a chunk boundary and completes on the next read. For a type without converter cells, each retried
+the fallback, so the serializer produces the same value coercion or error either way. A streamed row cut by a chunk
+boundary is read again on the direct path once it completes. For a type without converter cells, each retried or re-read
 row allocates and discards one partially bound instance, so a constructor or property setter with side effects runs more
 than once for such rows. A type with converter cells checks the whole row before it creates the instance, so it discards
 one only when a converter cell fails after that check.
