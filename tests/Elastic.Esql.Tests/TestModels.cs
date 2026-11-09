@@ -16,6 +16,10 @@ namespace Elastic.Esql.Tests;
 // ============================================================================
 
 [JsonSerializable(typeof(LogEntry))]
+[JsonSerializable(typeof(ResultFieldDocument))]
+[JsonSerializable(typeof(DateTimeOffsetPropertyModel))]
+[JsonSerializable(typeof(ValueTypeDocument))]
+[JsonSerializable(typeof(long))]
 [JsonSerializable(typeof(TaggedProduct))]
 [JsonSerializable(typeof(OddlyNamedTaggedProduct))]
 [JsonSerializable(typeof(OddlyNestedTaggedProduct))]
@@ -1003,3 +1007,26 @@ public sealed class CountingValue<T>(T value)
 		}
 	}
 }
+
+/// <summary>A document with a field named like the column a computed scalar Select projects into.</summary>
+public class ResultFieldDocument
+{
+	public double Result { get; set; }
+
+	public double Duration { get; set; }
+}
+
+/// <summary>A document with the value types that are read as a single value besides numbers, strings and dates.</summary>
+public class ValueTypeDocument
+{
+	public Guid Id { get; set; }
+
+	public Guid? ParentId { get; set; }
+
+	public TimeSpan Elapsed { get; set; }
+
+	public DateOnly Day { get; set; }
+
+	public TimeOnly At { get; set; }
+}
+

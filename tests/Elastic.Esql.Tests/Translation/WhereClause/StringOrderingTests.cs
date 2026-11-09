@@ -309,18 +309,21 @@ public class StringOrderingTests : EsqlTestBase
 	}
 
 	[Test]
-	public void Where_CompareAgainstTheProjectedRow_ThrowsNotSupported()
+	public void Where_CompareAgainstTheProjectedRow_ComparesTheField()
 	{
-		// a projected scalar row has no field name of its own, and emitting it would
-		// leave the operand empty
-		var query = CreateQuery<LogEntry>()
+		// a projected scalar row is the field it was read from
+		var esql = CreateQuery<LogEntry>()
 			.From("logs-*")
 			.Select(l => l.ClientIp)
-			.Where(s => string.Compare(s, "m", StringComparison.Ordinal) < 0);
+			.Where(s => string.Compare(s, "m", StringComparison.Ordinal) < 0)
+			.ToString();
 
-		var act = () => query.ToString();
-
-		_ = act.Should().Throw<NotSupportedException>().WithMessage("*projected value*");
+		_ = esql.Should().Be(
+			"""
+            FROM logs-*
+            | KEEP clientIp
+            | WHERE (clientIp IS NULL OR clientIp < "m")
+            """.NativeLineEndings());
 	}
 
 	[Test]

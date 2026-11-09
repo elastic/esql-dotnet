@@ -42,7 +42,23 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 	/// Translates a Select lambda to projection commands.
 	/// </summary>
 	public ProjectionResult Translate(LambdaExpression lambda) =>
-		TranslateCore(lambda);
+		TranslateCore(() => Visit(lambda.Body));
+
+	/// <summary>
+	/// Translates a value computed from the row into the column of <paramref name="member"/>: the projection of a
+	/// Select that returns a single value, which has no member of its own to project into.
+	/// </summary>
+	public ProjectionResult TranslateValue(Expression value, PropertyInfo member)
+	{
+		var declaringType = member.DeclaringType
+			?? throw new ArgumentException("The member has no declaring type.", nameof(member));
+		return TranslateCore(() => ClassifyProjectionMember(
+			_context.ResolveFieldName(declaringType, member),
+			value,
+			target: member,
+			targetName: member.Name
+		));
+	}
 
 	/// <summary>
 	/// Translates a join result selector lambda to projection commands, applying
@@ -59,7 +75,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		_outerFieldRemappings = outerFieldRemappings;
 		try
 		{
-			return TranslateCore(lambda);
+			return TranslateCore(() => Visit(lambda.Body));
 		}
 		finally
 		{
@@ -68,14 +84,14 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		}
 	}
 
-	private ProjectionResult TranslateCore(LambdaExpression lambda)
+	private ProjectionResult TranslateCore(Action classifyMembers)
 	{
 		_projections.Clear();
 		_activeRenames = [];
 		_referencedFields.Clear();
 
 		// Pass 1: classify all projection members
-		_ = Visit(lambda.Body);
+		classifyMembers();
 
 		var keepFields = new List<string>();
 		var aliases = new List<(string Source, string Target)>();

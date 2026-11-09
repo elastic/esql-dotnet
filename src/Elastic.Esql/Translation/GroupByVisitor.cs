@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information
 
 using System.Linq.Expressions;
+using Elastic.Esql.Core;
 using Elastic.Esql.Extensions;
 using Elastic.Esql.Functions;
 using Elastic.Esql.QueryModel.Commands;
@@ -16,14 +17,19 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 {
 	private const string SingleKeyMarker = "__single_key__";
 	private readonly EsqlTranslationContext _context = context ?? throw new ArgumentNullException(nameof(context));
-	private LambdaExpression? _elementSelector;
+	private Expression? _element;
+	private ParameterExpression? _group;
 
 	/// <summary>
 	/// Translates a GroupBy with result selector (from subsequent Select) to a STATS command.
 	/// </summary>
-	public StatsCommand Translate(LambdaExpression keySelector, LambdaExpression resultSelector, LambdaExpression? elementSelector = null)
+	/// <param name="keySelector">The key selector of the GroupBy.</param>
+	/// <param name="resultSelector">The selector of the Select that follows it.</param>
+	/// <param name="element">The field each element of a group reads, when it is not the row itself.</param>
+	public StatsCommand Translate(LambdaExpression keySelector, LambdaExpression resultSelector, Expression? element = null)
 	{
-		_elementSelector = elementSelector;
+		_element = element;
+		_group = resultSelector.Parameters[0];
 
 		var groupByFields = ExtractGroupByFields(keySelector.Body);
 		var keyPropertyNames = ExtractKeyPropertyNames(keySelector.Body);
@@ -283,11 +289,26 @@ internal sealed class GroupByVisitor(EsqlTranslationContext context) : Expressio
 			var selector = methodCall.Arguments[1];
 			fieldExpr = ExtractFieldFromSelector(selector);
 		}
-		else if (_elementSelector is not null && methodName is "Sum" or "Average" or "Min" or "Max")
+		else if (methodName is "Sum" or "Average" or "Min" or "Max" && methodCall.Arguments[0].UnwrapConvertExpressions() != _group)
 		{
-			// A parameterless aggregation on IGrouping<K, TElement> aggregates the elements
-			// produced by the GroupBy element selector.
-			fieldExpr = ExtractFieldFromLambdaBody(_elementSelector.Body.UnwrapConvertExpressions());
+			// The elements a filter or a projection leaves are not a column: aggregating the field would drop the filter.
+			throw new NotSupportedException(
+				$"{methodName} over a group that is filtered or transformed, such as g.Where(...), is not supported: "
+				+ "filter the rows before the GroupBy and aggregate the group itself."
+			);
+		}
+		else if (_element is not null && methodName is "Sum" or "Average" or "Min" or "Max")
+		{
+			// A parameterless aggregation on IGrouping<K, TElement> aggregates the elements:
+			// those of the GroupBy element selector, or the single value of the rows.
+			fieldExpr = ExtractFieldFromLambdaBody(_element.UnwrapConvertExpressions());
+		}
+		else if (methodName is "Sum" or "Average" or "Min" or "Max"
+			&& TypeHelper.FindGenericType(typeof(IEnumerable<>), methodCall.Arguments[0].Type) is { } elements
+			&& TypeHelper.IsSingleValueType(elements.GetGenericArguments()[0]))
+		{
+			// The elements are single values whose column is not known, as those of a RawEsql to a single-value type.
+			throw ScalarSelectVisitor.ValueWithoutColumn(methodName);
 		}
 
 		return methodName switch

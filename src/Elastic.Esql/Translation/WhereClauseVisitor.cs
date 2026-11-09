@@ -1146,57 +1146,20 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 	/// is whether it depends on the lambda parameter, whatever its shape, since a function
 	/// of a captured value is a value all the same.
 	/// </summary>
-	private static bool ReadsAField(Expression expression)
-	{
-		var finder = new ParameterFinder();
-		_ = finder.Visit(expression);
-		return finder.Found;
-	}
+	private static bool ReadsAField(Expression expression) =>
+		ExpressionTranslationHelpers.ReadsParameter(expression);
 
 	/// <summary>Whether the expression reads the element of an Any or All, anywhere in it.</summary>
-	private static bool ReadsTheElement(Expression expression, ParameterExpression element)
-	{
-		var finder = new ParameterFinder(element);
-		_ = finder.Visit(expression);
-		return finder.Found;
-	}
+	private static bool ReadsTheElement(Expression expression, ParameterExpression element) =>
+		ExpressionTranslationHelpers.ReadsParameter(expression, element);
 
 	/// <summary>
 	/// Whether the expression reads a parameter declared outside it, which is the document:
 	/// <c>allowed.Where(a => a.Enabled)</c> reads only the parameter of its own lambda, and is
 	/// a value, not a field.
 	/// </summary>
-	private static bool ReadsADocumentField(Expression expression)
-	{
-		var finder = new ParameterFinder(skipOwnLambdas: true);
-		_ = finder.Visit(expression);
-		return finder.Found;
-	}
-
-	/// <summary>
-	/// Finds a lambda parameter anywhere in an expression, or the one given, leaving out those
-	/// declared by a lambda inside the expression when asked to.
-	/// </summary>
-	private sealed class ParameterFinder(ParameterExpression? parameter = null, bool skipOwnLambdas = false) : ExpressionVisitor
-	{
-		private readonly HashSet<ParameterExpression> _declared = [];
-
-		public bool Found { get; private set; }
-
-		protected override Expression VisitLambda<T>(Expression<T> node)
-		{
-			if (skipOwnLambdas)
-				_declared.UnionWith(node.Parameters);
-
-			return base.VisitLambda(node);
-		}
-
-		protected override Expression VisitParameter(ParameterExpression node)
-		{
-			Found |= (parameter is null || node == parameter) && !_declared.Contains(node);
-			return base.VisitParameter(node);
-		}
-	}
+	private static bool ReadsADocumentField(Expression expression) =>
+		ExpressionTranslationHelpers.ReadsParameter(expression, skipOwnLambdas: true);
 
 	/// <summary>
 	/// Refuses the operands whose ordering the translation cannot reproduce: the row

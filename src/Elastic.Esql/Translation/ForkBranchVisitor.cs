@@ -32,8 +32,7 @@ internal static class ForkBranchVisitor
 		// Substitute the branch's input parameter with a synthetic root expression.
 		var branchParameter = branchLambda.Parameters[0];
 		var rootExpression = Expression.Constant(null, branchParameter.Type);
-		var substitutor = new ParameterSubstitutor(branchParameter, rootExpression);
-		var rewrittenBody = substitutor.Visit(branchLambda.Body)
+		var rewrittenBody = ExpressionTranslationHelpers.ReplaceParameter(branchLambda.Body, branchParameter, rootExpression)
 			?? throw new NotSupportedException("Fork branch lambda body could not be rewritten.");
 
 		var visitor = new EsqlExpressionVisitor(provider, inlineParameters);
@@ -72,16 +71,5 @@ internal static class ForkBranchVisitor
 
 		// a branch that projects leaves the rows projected for whatever follows the Fork
 		return new ForkBranch(fragments, hasLimit: hasLimit, hasProjected: visitor.Context.HasProjected);
-	}
-
-	/// <summary>
-	/// Replaces every occurrence of <see cref="ParameterExpression"/> <c>target</c> in an
-	/// expression tree with <c>replacement</c>. Used to splice the parent's source expression
-	/// into a fork branch lambda body.
-	/// </summary>
-	private sealed class ParameterSubstitutor(ParameterExpression target, Expression replacement) : ExpressionVisitor
-	{
-		protected override Expression VisitParameter(ParameterExpression node) =>
-			node == target ? replacement : base.VisitParameter(node);
 	}
 }

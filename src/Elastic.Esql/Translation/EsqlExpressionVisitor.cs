@@ -22,10 +22,13 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 	private LambdaExpression? _pendingGroupByKeySelector;
 
 	// Tracks pending GroupBy element selector, applied to parameterless Sum/Average/Min/Max in the subsequent Select
-	private LambdaExpression? _pendingGroupByElementSelector;
+	private Expression? _pendingGroupByElement;
 
 	// Tracks pending GroupJoin for combining with subsequent SelectMany (left outer join pattern)
 	private PendingGroupJoin? _pendingGroupJoin;
+
+	// Tracks the Selects that return a single value, and the column each leaves
+	private readonly ScalarSelectVisitor _scalarSelects = new();
 
 	private sealed record PendingGroupJoin(
 		Expression InnerSource,
@@ -57,7 +60,9 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 	/// </summary>
 	public EsqlQuery Translate(Expression expression)
 	{
+		expression = new IndexedSelectVisitor().Visit(expression);
 		expression = new SelectMergingVisitor().Visit(expression);
+		expression = _scalarSelects.Visit(expression);
 		_ = Visit(expression);
 
 		if (_pendingGroupJoin is not null)
@@ -96,6 +101,9 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 		// Visit the source first (builds the query from inside out).
 		if (node.Arguments.Count > 0)
 			_ = Visit(node.Arguments[0]);
+
+		// Only now, so that the refusal of an operator in the source comes first.
+		_scalarSelects.ThrowIfReadingAValueWithoutColumn(node);
 
 		var methodName = node.Method.Name;
 		var declaringType = node.Method.DeclaringType;
@@ -285,16 +293,24 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 			if (_pendingGroupByKeySelector != null)
 			{
 				var groupByVisitor = new GroupByVisitor(Context);
-				var statsCommand = groupByVisitor.Translate(_pendingGroupByKeySelector, lambda, _pendingGroupByElementSelector);
+				var statsCommand = groupByVisitor.Translate(_pendingGroupByKeySelector, lambda, _pendingGroupByElement);
 				Context.Commands.Add(statsCommand);
 				_pendingGroupByKeySelector = null;
-				_pendingGroupByElementSelector = null;
+				_pendingGroupByElement = null;
 				ClearMetadataAfterStats();
 				return;
 			}
 
+			// A computed single value is projected into the result column, as the member of a one-member row.
+			ScalarSelectVisitor.ThrowIfConversionChangesTheValue(lambda);
+			var kind = ScalarSelectVisitor.Classify(lambda);
+			if (kind == ScalarSelectorKind.None)
+				ScalarSelectVisitor.ThrowIfComputedAsAnotherType(lambda);
+
 			var projectionVisitor = new SelectProjectionVisitor(Context);
-			var result = projectionVisitor.Translate(lambda);
+			var result = kind == ScalarSelectorKind.Computed
+				? projectionVisitor.TranslateValue(lambda.Body, ScalarSelectVisitor.ResultMemberOf(lambda.ReturnType))
+				: projectionVisitor.Translate(lambda);
 
 			// From here the rows are whatever the selector built, not the document, unless
 			// the selector hands the row back as it is: an identity Select projects nothing
@@ -302,7 +318,7 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 			// since within this selector the parameter is still the row that came before.
 			Context.HasProjected |= !IsIdentitySelector(lambda);
 
-			ProjectionEmitter.Emit(result);
+			ProjectionEmitter.Emit(result, retainMetadata: kind == ScalarSelectorKind.None);
 		}
 	}
 
@@ -451,6 +467,9 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 			if (selector is UnaryExpression unary && unary.Operand is LambdaExpression lambda)
 				fieldName = ExtractFieldName(lambda.Body);
 		}
+		// Sum(), Max() and the like after a Select returning a single value aggregate the column it is held in.
+		else if (_scalarSelects.SingleValueColumnOf(node.Arguments[0]) is { } column)
+			fieldName = ExtractFieldName(column);
 
 		var resultName = function.ToLowerInvariant();
 		Context.Commands.Add(new StatsCommand([$"{resultName} = {function}({fieldName})"]));
@@ -499,7 +518,8 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 				"Project the key and aggregations in a subsequent Select instead, " +
 				"e.g. '.GroupBy(x => x.Field).Select(g => new { g.Key, Count = g.Count() })'.");
 
-		LambdaExpression? elementSelector = null;
+		// The rows of a single value group that value, in the column that holds it.
+		var element = _scalarSelects.SingleValueColumnOf(node.Arguments[0]);
 
 		if (node.Arguments.Count > 2)
 		{
@@ -529,14 +549,14 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 						"GroupBy element selectors are limited to a single field access (e.g. '.GroupBy(x => x.Key, x => x.Field)'); " +
 						"project composite values in a subsequent Select instead.");
 
-				elementSelector = extraLambda;
+				element = extraLambda.Body;
 			}
 		}
 
 		// Store the selectors for combining with the subsequent Select into STATS...BY.
 		// Overwrite unconditionally: a later GroupBy without an element selector must not inherit a stale one.
 		_pendingGroupByKeySelector = lambda;
-		_pendingGroupByElementSelector = elementSelector;
+		_pendingGroupByElement = element;
 	}
 
 	private void VisitFrom(MethodCallExpression node)

@@ -23,6 +23,18 @@ public class GroupByElementSelectorTests : EsqlTestBase
 	}
 
 	[Test]
+	public void GroupBy_WithElementSelector_ParameterlessSumOfAFilteredGroup_IsNotSupported()
+	{
+		var act = () => CreateQuery<SimpleDocument>()
+			.From("docs-*")
+			.GroupBy(d => d.Name, d => d.Value)
+			.Select(g => new { Name = g.Key, Total = g.Where(v => v > 1).Sum() })
+			.ToString();
+
+		_ = act.Should().Throw<NotSupportedException>().WithMessage("Sum over a group that is filtered or transformed*");
+	}
+
+	[Test]
 	public void GroupBy_WithElementSelector_CountStaysCountStar()
 	{
 		var esql = CreateQuery<SimpleDocument>()
