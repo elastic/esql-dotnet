@@ -56,14 +56,12 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
-	public void ReadRows_ArrayPropertyWithScalarCell_FallsBackAndStillBinds()
+	public void ReadRows_ArrayPropertyWithScalarCell_BindsDirectly()
 	{
 		const string json = """{"columns":[{"name":"tags","type":"keyword"}],"values":[[["a"]],["solo"]]}""";
 
-		// Eligible, but an array contract cannot take a wrapped single value, so the bare cell falls back per row.
 		var layout = BuildLayout<ArrayTagsModel>(("tags", "keyword"));
 		layout.DirectBinder.Should().NotBeNull();
-		layout.DirectBinder.ElementTypeInfos[0].Should().BeNull();
 
 		var rows = ReadRows<ArrayTagsModel>(json, CreateOptions());
 
@@ -72,7 +70,7 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
-	public void ReadRows_ArrayPropertyWithScalarCell_FallsBackWithoutThrowing()
+	public void ReadRows_ArrayPropertyWithScalarCell_BindsWithoutThrowing()
 	{
 		const string json = """{"columns":[{"name":"tags","type":"keyword"}],"values":[[["a"]],["solo"]]}""";
 
@@ -241,6 +239,75 @@ public class DirectBindingConverterCellTests
 		rows[1].Tags.Should().Equal("c");
 	}
 
+	[Test]
+	[NotInParallel(nameof(CountingOwner))]
+	public void ReadRows_ConverterCellRowSplitAcrossReads_RunsNestedCallbackOnce()
+	{
+		const string json =
+			"""{"columns":[{"name":"owner","type":"object"},""" +
+			"""{"name":"count","type":"integer"}],"values":[[{"name":"ada"},1],[{"name":"bob"},2]]}""";
+		CountingOwner.Deserialized = 0;
+		using var stream = new ChunkedReadStream(Encoding.UTF8.GetBytes(json), maxBytesPerRead: 1);
+		using var results = new EsqlResponseReader(new JsonMetadataManager(CreateOptions())).ReadRows<CountingOwnerModel>(stream);
+
+		var rows = results.Rows.ToList();
+
+		rows.Should().HaveCount(2);
+		CountingOwner.Deserialized.Should().Be(2);
+	}
+
+	[Test]
+	[NotInParallel(nameof(CountingOwner))]
+	public void ReadRows_ConverterCellRowThatFallsBack_RunsNestedCallbackOnce()
+	{
+		// Web defaults read a quoted number, so the count cell falls back to the serializer after the owner cell.
+		const string json = """{"columns":[{"name":"owner","type":"object"},{"name":"count","type":"integer"}],"values":[[{"name":"ada"},"1"]]}""";
+		CountingOwner.Deserialized = 0;
+
+		var rows = ReadRows<CountingOwnerModel>(json, CreateOptions());
+
+		rows.Should().ContainSingle().Which.Count.Should().Be(1);
+		CountingOwner.Deserialized.Should().Be(1);
+	}
+
+	[Test]
+	public void ReadRows_ScalarSetterAfterConverterCell_AssignsInColumnOrder()
+	{
+		const string json = """{"columns":[{"name":"owner","type":"object"},{"name":"count","type":"integer"}],"values":[[{"name":"ada"},7]]}""";
+
+		BuildLayout<ForwardingModel>(("owner", "object"), ("count", "integer")).DirectBinder.Should().NotBeNull();
+		var row = ReadRows<ForwardingModel>(json, CreateOptions())[0];
+
+		row.Owner.Name.Should().Be("ada");
+		row.Count.Should().Be(7);
+	}
+
+	[Test]
+	public void ReadRows_ConverterCellBeyondMaxDepth_ThrowsLikeTheSerializer()
+	{
+		const string json = """{"columns":[{"name":"tags","type":"keyword"},{"name":"name","type":"keyword"}],"values":[[["a","b"],"x"]]}""";
+		var options = CreateOptions();
+		options.MaxDepth = 1;
+
+		var act = () => ReadRows<TagsModel>(json, options);
+
+		act.Should().Throw<JsonException>();
+	}
+
+	[Test]
+	public void ReadRows_ConverterReturnsNullForNonNullableProperty_ThrowsUnderRespectNullableAnnotations()
+	{
+		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"count","type":"integer"}],"values":[["a",1]]}""";
+		var options = CreateOptions();
+		options.RespectNullableAnnotations = true;
+		options.Converters.Add(new NullingStringConverter());
+
+		BuildLayout<NonNullableNameModel>(("name", "keyword"), ("count", "integer")).DirectBinder.Should().NotBeNull();
+		var act = () => ReadRows<NonNullableNameModel>(json, options);
+
+		act.Should().Throw<JsonException>();
+	}
+
 	private static ColumnLayout BuildLayout<T>(params (string Name, string Type)[] columns)
 	{
 		var columnInfos = new EsqlResponseReader.ColumnInfo[columns.Length];
@@ -314,6 +381,33 @@ public class DirectBindingConverterCellTests
 	private sealed class Owner
 	{
 		public string Name { get; set; } = string.Empty;
+		public int Count { get; set; }
+	}
+
+	private sealed class CountingOwnerModel
+	{
+		public CountingOwner? Owner { get; set; }
+		public int Count { get; set; }
+	}
+
+	private sealed class CountingOwner : IJsonOnDeserialized
+	{
+		public static int Deserialized;
+
+		public string Name { get; set; } = string.Empty;
+
+		public void OnDeserialized() => Deserialized++;
+	}
+
+	private sealed class ForwardingModel
+	{
+		public Owner Owner { get; set; } = new();
+
+		public int Count
+		{
+			get => Owner.Count;
+			set => Owner.Count = value;
+		}
 	}
 
 	private sealed class AttributesModel
@@ -325,6 +419,12 @@ public class DirectBindingConverterCellTests
 	private sealed class RequiredNameModel
 	{
 		public required string Name { get; set; }
+		public int Count { get; set; }
+	}
+
+	private sealed class NonNullableNameModel
+	{
+		public string Name { get; set; } = string.Empty;
 		public int Count { get; set; }
 	}
 
@@ -362,5 +462,17 @@ public class DirectBindingConverterCellTests
 
 		public override void Write(Utf8JsonWriter writer, DateTime value, JsonSerializerOptions options) =>
 			writer.WriteNumberValue((long)(value - DateTime.UnixEpoch).TotalSeconds);
+	}
+
+	private sealed class NullingStringConverter : JsonConverter<string>
+	{
+		public override string? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+		{
+			reader.Skip();
+			return null;
+		}
+
+		public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options) =>
+			writer.WriteStringValue(value);
 	}
 }

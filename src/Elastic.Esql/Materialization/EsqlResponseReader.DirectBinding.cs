@@ -2,7 +2,7 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-using System.Collections;
+using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -12,21 +12,30 @@ namespace Elastic.Esql.Materialization;
 
 internal sealed partial class EsqlResponseReader
 {
+	/// <summary>A validated cell's extent in the source, and whether its bare scalar is read as <c>[value]</c>.</summary>
+	private readonly record struct CellSpan(int Column, long Start, long Length, bool Wrap);
+
 	/// <summary>
 	/// Reads one row's cells directly off the reader and assigns them through the binder's typed setters, or through
 	/// the contract's <see cref="JsonPropertyInfo.Set"/> delegate where none was compiled. The reader must have just
-	/// consumed the row's StartArray token. Returns false with <paramref name="incomplete"/> set when the buffer ends
-	/// mid-row (caller re-reads with more data), or false with it unset when a cell's token shape
-	/// requires the serializer's coercion or error semantics (caller falls back for this row).
+	/// consumed the row's StartArray token, and <paramref name="source"/> is the sequence it reads. Returns false with
+	/// <paramref name="incomplete"/> set when the buffer ends mid-row (caller re-reads with more data), or false with
+	/// it unset when a cell's token shape requires the serializer's coercion or error semantics (caller falls back
+	/// for this row).
 	/// </summary>
 	internal static bool TryBindRowDirect<T>(
 		ref Utf8JsonReader reader,
+		in ReadOnlySequence<byte> source,
 		DirectRowBinder binder,
+		RowAssemblyBuffers buffers,
 		out T? item,
 		out bool incomplete)
 	{
 		item = default;
 		incomplete = false;
+
+		if (binder.ConverterCellCount > 0)
+			return TryBindValidatedRow(ref reader, source, binder, buffers, out item, out incomplete);
 
 		var kinds = binder.Kinds;
 		var properties = binder.Properties;
@@ -58,13 +67,6 @@ internal sealed partial class EsqlResponseReader
 				continue;
 			}
 
-			if (kinds[i] == DirectBinderKind.Converter)
-			{
-				if (!TryBindConverterCell(ref reader, tokenType, binder, i, instance, out incomplete))
-					return false;
-				continue;
-			}
-
 			if (!TryBindDirectValue(ref reader, kinds[i], tokenType, properties[i], typedSetters[i], instance))
 				return false;
 		}
@@ -84,64 +86,192 @@ internal sealed partial class EsqlResponseReader
 	}
 
 	/// <summary>
-	/// Deserializes one cell through its own contract and assigns it. A truncated cell reports incomplete, and a cell
-	/// the contract rejects returns false so the slow path re-reads the row and raises the canonical error.
+	/// Binds a row with converter cells in two passes. The first validates every cell and assigns nothing, so a row
+	/// that falls back or ends mid-buffer has run no nested type's deserialization callback. The second assigns the
+	/// cells in column order, the order the serializer's setters see.
 	/// </summary>
-	private static bool TryBindConverterCell(
+	private static bool TryBindValidatedRow<T>(
 		ref Utf8JsonReader reader,
-		JsonTokenType tokenType,
+		in ReadOnlySequence<byte> source,
 		DirectRowBinder binder,
-		int index,
-		object instance,
+		RowAssemblyBuffers buffers,
+		out T? item,
 		out bool incomplete)
 	{
+		item = default;
+		var columnCount = binder.Kinds.Length;
+
+		CellSpan[]? rentedSpans = null;
+		var spans = columnCount <= 64
+			? stackalloc CellSpan[columnCount]
+			: (rentedSpans = ArrayPool<CellSpan>.Shared.Rent(columnCount)).AsSpan(0, columnCount);
+
+		try
+		{
+			if (!TryValidateRow(ref reader, binder, spans, out var recorded, out incomplete))
+				return false;
+
+			var instance = binder.CreateObject();
+			if (!TryAssignCells(source, binder, buffers, spans[..recorded], instance))
+				return false;
+
+			item = (T)instance;
+			return true;
+		}
+		finally
+		{
+			if (rentedSpans is not null)
+				ArrayPool<CellSpan>.Shared.Return(rentedSpans);
+		}
+	}
+
+	/// <summary>
+	/// Checks every cell's token shape, skips over every converter cell, and records the extent of each non-null cell.
+	/// Returns false with <paramref name="incomplete"/> set when the buffer ends mid-row.
+	/// </summary>
+	private static bool TryValidateRow(ref Utf8JsonReader reader, DirectRowBinder binder, scoped Span<CellSpan> spans, out int recorded, out bool incomplete)
+	{
+		recorded = 0;
 		incomplete = false;
+		var kinds = binder.Kinds;
 
-		// A single-valued multi-value field arrives as a bare scalar, and a collection contract without an element
-		// contract (arrays, sets, immutable collections) cannot take the wrap that would make it bind. Falling back
-		// here keeps the row's outcome identical while skipping a throw that costs tens of microseconds. The cell's
-		// own contract decides: a collection-typed property whose contract is a value converter, as byte[] is, binds
-		// a bare scalar directly.
-		if (binder.IsCollection[index]
-			&& tokenType != JsonTokenType.StartArray
-			&& binder.ElementTypeInfos[index] is null
-			&& binder.CellTypeInfos[index]!.Kind == JsonTypeInfoKind.Enumerable)
-			return false;
+		for (var i = 0; i < kinds.Length; i++)
+		{
+			if (!reader.Read())
+			{
+				incomplete = true;
+				return false;
+			}
 
-		// The serializer cannot tell a truncated value from an invalid one, so probe the extent first.
-		var probe = reader;
-		if (!probe.TrySkip())
+			var tokenType = reader.TokenType;
+
+			// Fewer cells than columns - the slow path raises the canonical JsonException.
+			if (tokenType == JsonTokenType.EndArray)
+				return false;
+
+			if (tokenType == JsonTokenType.Null)
+			{
+				// A null cell leaves the property at its initializer, as the assembled row omits it. For a
+				// required member that omission is the serializer's error to raise.
+				if (binder.IsRequired[i])
+					return false;
+				continue;
+			}
+
+			var start = reader.TokenStartIndex;
+			var wrap = binder.IsCollection[i] && tokenType != JsonTokenType.StartArray;
+
+			if (kinds[i] == DirectBinderKind.Converter)
+			{
+				if (!reader.TrySkip())
+				{
+					incomplete = true;
+					return false;
+				}
+
+				// The serializer rejects the assembled row once the cell nests, and a cell reader cannot enforce that
+				// because it reads a depth limit of zero as the default.
+				if (binder.CellMaxDepth < 1 && (wrap || tokenType is JsonTokenType.StartArray or JsonTokenType.StartObject))
+					return false;
+			}
+			else if (!TryValidateDirectValue(ref reader, kinds[i], tokenType))
+				return false;
+
+			spans[recorded++] = new CellSpan(i, start, reader.BytesConsumed - start, wrap);
+		}
+
+		if (!reader.Read())
 		{
 			incomplete = true;
 			return false;
 		}
 
-		var cellTypeInfo = binder.CellTypeInfos[index]!;
-		var elementTypeInfo = binder.ElementTypeInfos[index];
-		object? value;
+		// More cells than columns - the slow path raises the canonical JsonException.
+		return reader.TokenType == JsonTokenType.EndArray;
+	}
 
+	private static bool TryAssignCells(
+		in ReadOnlySequence<byte> source,
+		DirectRowBinder binder,
+		RowAssemblyBuffers buffers,
+		ReadOnlySpan<CellSpan> spans,
+		object instance)
+	{
+		foreach (var span in spans)
+		{
+			var column = span.Column;
+			var kind = binder.Kinds[column];
+
+			if (kind == DirectBinderKind.Converter)
+			{
+				if (!TryBindConverterCell(source, span, binder, buffers, instance))
+					return false;
+				continue;
+			}
+
+			var cellReader = new Utf8JsonReader(source.Slice(span.Start, span.Length), isFinalBlock: true, CellReaderState(binder));
+			_ = cellReader.Read();
+
+			if (!TryBindDirectValue(ref cellReader, kind, cellReader.TokenType, binder.Properties[column], binder.TypedSetters[column], instance))
+				return false;
+		}
+
+		return true;
+	}
+
+	/// <summary>
+	/// Deserializes one validated cell through its own contract and assigns it. A cell the contract rejects returns
+	/// false so the slow path re-reads the row and raises the canonical error.
+	/// </summary>
+	private static bool TryBindConverterCell(
+		in ReadOnlySequence<byte> source,
+		in CellSpan span,
+		DirectRowBinder binder,
+		RowAssemblyBuffers buffers,
+		object instance)
+	{
+		var slice = source.Slice(span.Start, span.Length);
+		var cellTypeInfo = binder.CellTypeInfos[span.Column]!;
+		var property = binder.Properties[span.Column];
+
+		// ES|QL returns a single-valued multi-value field as a bare scalar, and the row path rewrites it as [value].
+		var cellReader = span.Wrap
+			? new Utf8JsonReader(WrapInArray(slice, buffers.RowBuffer), isFinalBlock: true, CellReaderState(binder))
+			: new Utf8JsonReader(slice, isFinalBlock: true, CellReaderState(binder));
+
+		object? value;
 		try
 		{
-			if (elementTypeInfo is not null && tokenType != JsonTokenType.StartArray)
-			{
-				// ES|QL returns a single-valued multi-value field as a bare scalar, so wrap it like the row path does.
-				var list = (IList)cellTypeInfo.CreateObject!();
-				_ = list.Add(JsonSerializer.Deserialize(ref reader, elementTypeInfo));
-				value = list;
-			}
-			else
-			{
-				value = JsonSerializer.Deserialize(ref reader, cellTypeInfo);
-			}
+			_ = cellReader.Read();
+			value = JsonSerializer.Deserialize(ref cellReader, cellTypeInfo);
 		}
 		catch (JsonException)
 		{
 			return false;
 		}
 
-		binder.Properties[index].Set!(instance, value);
+		// The serializer raises its nullability error for this value, and the direct path must not accept what it rejects.
+		if (value is null && cellTypeInfo.Options.RespectNullableAnnotations && !property.IsSetNullable)
+			return false;
+
+		property.Set!(instance, value);
 		return true;
 	}
+
+	private static ReadOnlySpan<byte> WrapInArray(in ReadOnlySequence<byte> value, PooledBufferWriter buffer)
+	{
+		buffer.ResetWrittenCount();
+		WriteRawByte(buffer, (byte)'[');
+		foreach (var segment in value)
+			WriteRawBytes(buffer, segment.Span);
+		WriteRawByte(buffer, (byte)']');
+		return buffer.WrittenSpan;
+	}
+
+	// The reader's depth limit takes precedence over the options' one inside Deserialize, and the assembled row
+	// object sits one level above every cell.
+	private static JsonReaderState CellReaderState(DirectRowBinder binder) =>
+		new(new JsonReaderOptions { MaxDepth = binder.CellMaxDepth });
 
 	/// <summary>
 	/// Reads the single cell of a scalar row. Null cells and unexpected token shapes return false so the serializer
@@ -176,7 +306,7 @@ internal sealed partial class EsqlResponseReader
 		return false;
 	}
 
-	// Mirrors TryBindDirectValue, so keep both switches in sync when adding a new DirectBinderKind.
+	// Mirrors TryBindDirectValue and TryValidateDirectValue, so keep the three switches in sync when adding a new DirectBinderKind.
 	private static bool TryReadScalar<T>(ref Utf8JsonReader reader, DirectBinderKind kind, JsonTokenType tokenType, out T? item)
 	{
 		item = default;
@@ -260,7 +390,7 @@ internal sealed partial class EsqlResponseReader
 		return Unsafe.As<TValue?, T>(ref nullable);
 	}
 
-	// Mirrors TryReadScalar, so keep both switches in sync when adding a new DirectBinderKind.
+	// Mirrors TryReadScalar and TryValidateDirectValue, so keep the three switches in sync when adding a new DirectBinderKind.
 	private static bool TryBindDirectValue(
 		ref Utf8JsonReader reader,
 		DirectBinderKind kind,
@@ -335,6 +465,24 @@ internal sealed partial class EsqlResponseReader
 				return false;
 		}
 	}
+
+	// Mirrors TryReadScalar and TryBindDirectValue without the assignment, so keep the three switches in sync when
+	// adding a new DirectBinderKind.
+	private static bool TryValidateDirectValue(ref Utf8JsonReader reader, DirectBinderKind kind, JsonTokenType tokenType) =>
+		kind switch
+		{
+			DirectBinderKind.String => tokenType == JsonTokenType.String,
+			DirectBinderKind.Bool => tokenType is JsonTokenType.True or JsonTokenType.False,
+			DirectBinderKind.Int32 => tokenType == JsonTokenType.Number && reader.TryGetInt32(out _),
+			DirectBinderKind.Int64 => tokenType == JsonTokenType.Number && reader.TryGetInt64(out _),
+			DirectBinderKind.Double => tokenType == JsonTokenType.Number && reader.TryGetDouble(out _),
+			DirectBinderKind.Single => tokenType == JsonTokenType.Number && reader.TryGetSingle(out _),
+			DirectBinderKind.Decimal => tokenType == JsonTokenType.Number && reader.TryGetDecimal(out _),
+			DirectBinderKind.DateTime => tokenType == JsonTokenType.String && reader.TryGetDateTime(out _),
+			DirectBinderKind.DateTimeOffset => tokenType == JsonTokenType.String && reader.TryGetDateTimeOffset(out _),
+			DirectBinderKind.Guid => tokenType == JsonTokenType.String && reader.TryGetGuid(out _),
+			_ => false
+		};
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private static void Assign<TValue>(Delegate? typedSetter, JsonPropertyInfo property, object instance, TValue value)

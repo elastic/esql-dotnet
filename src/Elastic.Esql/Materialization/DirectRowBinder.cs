@@ -2,7 +2,6 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
-using System.Collections;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
@@ -52,14 +51,8 @@ internal sealed class DirectRowBinder
 	public required JsonTypeInfo?[] CellTypeInfos { get; init; }
 
 	/// <summary>
-	/// Element contract for collection-typed converter cells whose contract creates an <see cref="System.Collections.IList"/>.
-	/// A bare scalar cell is deserialized as one element and wrapped, matching the row path's <c>[value]</c> rewrite.
-	/// </summary>
-	public required JsonTypeInfo?[] ElementTypeInfos { get; init; }
-
-	/// <summary>
-	/// Per column, whether the target property is a collection. A bare scalar cell for such a column binds only by
-	/// wrapping it, so a column with no element contract falls back instead of letting the deserializer throw.
+	/// Per column, whether the target property is a collection. A bare scalar cell for such a column is wrapped in
+	/// brackets before its contract reads it, matching the row path's <c>[value]</c> rewrite.
 	/// </summary>
 	public required bool[] IsCollection { get; init; }
 
@@ -67,6 +60,12 @@ internal sealed class DirectRowBinder
 	public required bool[] IsRequired { get; init; }
 
 	public required Func<object> CreateObject { get; init; }
+
+	/// <summary>Number of <see cref="DirectBinderKind.Converter"/> columns. A row with any validates every cell before it deserializes one.</summary>
+	public required int ConverterCellCount { get; init; }
+
+	/// <summary>Depth limit for a cell read on its own reader: the options' limit less the level the assembled row object adds.</summary>
+	public required int CellMaxDepth { get; init; }
 
 	/// <summary>
 	/// Builds a binder for a flat layout, or returns null when the type itself cannot be bound with exact serializer
@@ -96,9 +95,9 @@ internal sealed class DirectRowBinder
 		var properties = new JsonPropertyInfo[count];
 		var typedSetters = new Delegate?[count];
 		var cellTypeInfos = new JsonTypeInfo?[count];
-		var elementTypeInfos = new JsonTypeInfo?[count];
 		var isCollection = new bool[count];
 		var isRequired = new bool[count];
+		var converterCellCount = 0;
 		var bound = new HashSet<JsonPropertyInfo>();
 
 		for (var i = 0; i < count; i++)
@@ -133,7 +132,7 @@ internal sealed class DirectRowBinder
 
 			kinds[i] = DirectBinderKind.Converter;
 			cellTypeInfos[i] = cellTypeInfo;
-			elementTypeInfos[i] = leafNodes[i].IsCollection ? ResolveListElementTypeInfo(cellTypeInfo) : null;
+			converterCellCount++;
 		}
 
 		// A required property without a column fails every row in the serializer, so keep that behavior on the slow path.
@@ -143,16 +142,19 @@ internal sealed class DirectRowBinder
 				return null;
 		}
 
+		var effectiveMaxDepth = options.MaxDepth > 0 ? options.MaxDepth : ColumnLayout.DefaultMaxDepth;
+
 		return new DirectRowBinder
 		{
 			Kinds = kinds,
 			Properties = properties,
 			TypedSetters = typedSetters,
 			CellTypeInfos = cellTypeInfos,
-			ElementTypeInfos = elementTypeInfos,
 			IsCollection = isCollection,
 			IsRequired = isRequired,
-			CreateObject = typeInfo.CreateObject
+			CreateObject = typeInfo.CreateObject,
+			ConverterCellCount = converterCellCount,
+			CellMaxDepth = effectiveMaxDepth - 1
 		};
 	}
 
@@ -170,27 +172,6 @@ internal sealed class DirectRowBinder
 		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
 		{
 			// The documented STJ failures for an unsupported type: keep the slow path.
-			return null;
-		}
-	}
-
-	/// <summary>Resolves the element contract a single-valued multi-value cell is deserialized and wrapped with.</summary>
-	private static JsonTypeInfo? ResolveListElementTypeInfo(JsonTypeInfo collectionTypeInfo)
-	{
-		if (collectionTypeInfo.Kind != JsonTypeInfoKind.Enumerable || collectionTypeInfo.ElementType is null || collectionTypeInfo.CreateObject is null)
-			return null;
-
-		try
-		{
-			// Only list-shaped contracts can take a wrapped single value, so arrays and sets fall back per row.
-			// The probe runs the collection's own constructor, so a failure there also keeps the slow path.
-			if (collectionTypeInfo.CreateObject() is not IList)
-				return null;
-
-			return collectionTypeInfo.Options.GetTypeInfo(collectionTypeInfo.ElementType);
-		}
-		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
-		{
 			return null;
 		}
 	}

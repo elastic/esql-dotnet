@@ -101,6 +101,9 @@ On runtimes that support dynamic code, the cells of a directly bound row are ass
 target member, and those setters write the member itself. A contract modifier that replaces `JsonPropertyInfo.Set` with
 custom logic is therefore not honored for rows that take the direct path.
 
+A cell that its own contract rejects is read again by the serializer so the error carries the property path. A
+deserialization callback on a nested type therefore runs twice before such a row fails.
+
 ## Querying
 
 ### LINQ fluent syntax

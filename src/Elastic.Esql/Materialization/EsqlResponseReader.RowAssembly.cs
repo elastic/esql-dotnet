@@ -52,7 +52,7 @@ internal sealed partial class EsqlResponseReader
 			{
 				var bound = buffers.IsScalar
 					? TryBindScalarDirect(ref reader, plan.ScalarKind!.Value, out item, out var incomplete)
-					: TryBindRowDirect(ref reader, layout.DirectBinder!, out item, out incomplete);
+					: TryBindRowDirect(ref reader, buffer, layout.DirectBinder!, buffers, out item, out incomplete);
 
 				if (bound)
 				{
