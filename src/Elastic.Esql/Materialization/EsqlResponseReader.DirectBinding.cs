@@ -40,7 +40,6 @@ internal sealed partial class EsqlResponseReader
 		var kinds = binder.Kinds;
 		var properties = binder.Properties;
 		var typedSetters = binder.TypedSetters;
-		var isRequired = binder.IsRequired;
 
 		var instance = binder.CreateObject();
 
@@ -62,7 +61,7 @@ internal sealed partial class EsqlResponseReader
 			{
 				// A null cell leaves the property at its initializer, as the assembled row omits it. For a
 				// required member that omission is the serializer's error to raise.
-				if (isRequired[i])
+				if (properties[i].IsRequired)
 					return false;
 				continue;
 			}
@@ -153,7 +152,7 @@ internal sealed partial class EsqlResponseReader
 			{
 				// A null cell leaves the property at its initializer, as the assembled row omits it. For a
 				// required member that omission is the serializer's error to raise.
-				if (binder.IsRequired[i])
+				if (binder.Properties[i].IsRequired)
 					return false;
 				continue;
 			}
@@ -168,11 +167,6 @@ internal sealed partial class EsqlResponseReader
 					incomplete = true;
 					return false;
 				}
-
-				// The serializer rejects the assembled row once the cell nests, and a cell reader cannot enforce that
-				// because it reads a depth limit of zero as the default.
-				if (binder.CellMaxDepth < 1 && (wrap || tokenType is JsonTokenType.StartArray or JsonTokenType.StartObject))
-					return false;
 			}
 			else if (!TryValidateDirectValue(ref reader, kinds[i], tokenType))
 				return false;

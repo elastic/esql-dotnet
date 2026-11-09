@@ -35,7 +35,7 @@ internal sealed class ColumnNode
 /// </summary>
 internal sealed class ColumnLayout
 {
-	internal const int DefaultMaxDepth = 64;
+	private const int DefaultMaxDepth = 64;
 
 	/// <summary>Virtual root whose <see cref="ColumnNode.Children"/> are the top-level properties.</summary>
 	public ColumnNode Root { get; }
@@ -70,6 +70,9 @@ internal sealed class ColumnLayout
 		BranchNodeCount = branchNodeCount;
 		DirectBinder = directBinder;
 	}
+
+	/// <summary>The depth limit the serializer enforces under <paramref name="options"/>, where a limit of zero means the default.</summary>
+	internal static int EffectiveMaxDepth(JsonSerializerOptions options) => options.MaxDepth > 0 ? options.MaxDepth : DefaultMaxDepth;
 
 	/// <summary>
 	/// Builds a <see cref="ColumnLayout"/> for the given columns and target type.
@@ -112,7 +115,7 @@ internal sealed class ColumnLayout
 
 		var maxDepth = ComputeMaxDepth(root);
 
-		var effectiveMaxDepth = options.MaxDepth > 0 ? options.MaxDepth : DefaultMaxDepth;
+		var effectiveMaxDepth = EffectiveMaxDepth(options);
 		if (maxDepth > effectiveMaxDepth)
 			throw new JsonException(
 				$"ES|QL column nesting depth ({maxDepth}) exceeds the configured maximum depth ({effectiveMaxDepth}). " +
@@ -189,16 +192,8 @@ internal sealed class ColumnLayout
 			if (TypeHelper.IsEnumerableType(propType))
 				return null;
 
-			try
-			{
-				var subTypeInfo = options.GetTypeInfo(propType);
-				return subTypeInfo.Kind == JsonTypeInfoKind.Object ? subTypeInfo : null;
-			}
-			catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
-			{
-				// Property type not registered: treat the dotted column as flat instead of nested.
-				return null;
-			}
+			// Property type not registered: treat the dotted column as flat instead of nested.
+			return JsonMetadataManager.TryResolveTypeInfo(propType, options) is { Kind: JsonTypeInfoKind.Object } sub ? sub : null;
 		}
 		return null;
 	}
@@ -231,43 +226,24 @@ internal sealed class ColumnLayout
 				return false;
 
 			if (i == segments.Length - 1)
-				return IsCollectionContract(matchedProp.PropertyType, options);
+				return IsCollectionContract(matchedProp.PropertyType, JsonMetadataManager.TryResolveTypeInfo(matchedProp.PropertyType, options));
 
 			var propType = Nullable.GetUnderlyingType(matchedProp.PropertyType) ?? matchedProp.PropertyType;
-			try
-			{
-				currentTypeInfo = options.GetTypeInfo(propType);
-				if (currentTypeInfo.Kind != JsonTypeInfoKind.Object)
-					return false;
-			}
-			catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
-			{
-				// Intermediate type not registered: the path cannot resolve to a collection column.
+
+			// Intermediate type not registered: the path cannot resolve to a collection column.
+			if (JsonMetadataManager.TryResolveTypeInfo(propType, options) is not { Kind: JsonTypeInfoKind.Object } next)
 				return false;
-			}
+
+			currentTypeInfo = next;
 		}
 
 		return false;
 	}
 
-	/// <summary>Determines if the serializer reads a property type from a JSON array, so a bare single-valued cell needs wrapping.</summary>
-	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Type info resolution delegates to the user-provided JsonSerializerOptions/JsonSerializerContext.")]
-	[UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Type info resolution delegates to the user-provided JsonSerializerOptions/JsonSerializerContext.")]
-	private static bool IsCollectionContract(Type propertyType, JsonSerializerOptions options)
-	{
+	/// <summary>Determines if the serializer reads <paramref name="type"/> from a JSON array, so a bare single-valued cell needs wrapping.</summary>
+	internal static bool IsCollectionContract(Type type, JsonTypeInfo? typeInfo) =>
 		// JsonArray's converter takes only an array, so a bare cell still needs the wrap.
-		if (typeof(JsonArray).IsAssignableFrom(propertyType))
-			return true;
-
-		try
-		{
-			return options.GetTypeInfo(propertyType).Kind == JsonTypeInfoKind.Enumerable;
-		}
-		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
-		{
-			return false;
-		}
-	}
+		typeof(JsonArray).IsAssignableFrom(type) || typeInfo?.Kind == JsonTypeInfoKind.Enumerable;
 
 	private static void InsertIntoTree(ColumnNode parent, string[] segments, int columnIndex, bool isCollection)
 	{

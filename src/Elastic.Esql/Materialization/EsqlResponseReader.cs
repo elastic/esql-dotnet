@@ -155,19 +155,6 @@ internal sealed partial class EsqlResponseReader
 		return hashCode.ToHashCode();
 	}
 
-	private static JsonTypeInfo? TryResolveTypeInfo(Type type, JsonSerializerOptions options)
-	{
-		try
-		{
-			return options.GetTypeInfo(type);
-		}
-		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
-		{
-			// No metadata for T: rows deserialize through the non-generic options-based overload instead.
-			return null;
-		}
-	}
-
 	/// <summary>
 	/// Resolves <see cref="JsonTypeInfo{T}"/> for <c>List&lt;T&gt;</c>, enabling batched row deserialization.
 	/// Returns <see langword="null"/> when the configured resolver has no metadata for <c>List&lt;T&gt;</c>
@@ -182,8 +169,7 @@ internal sealed partial class EsqlResponseReader
 			// source-generated contexts that omit List<T>: this runs once per enumeration. A user
 			// converter for List<T> would see the internal batch wrapper instead of the caller's
 			// rows, so only the framework's own list converter keeps batching transparent.
-			return options.TryGetTypeInfo(typeof(List<T>), out var typeInfo)
-				&& typeInfo.Converter.GetType().Assembly == typeof(JsonSerializerOptions).Assembly
+			return options.TryGetTypeInfo(typeof(List<T>), out var typeInfo) && DirectRowBinder.HasBuiltInConverter(typeInfo)
 				? typeInfo as JsonTypeInfo<List<T>>
 				: null;
 		}
@@ -205,13 +191,14 @@ internal sealed partial class EsqlResponseReader
 	private static RowMaterializationPlan<T> CreateRowMaterializationPlan<T>(ColumnInfo[] columns, JsonSerializerOptions options)
 	{
 		var estimatedRowSize = Math.Max(256, columns.Length * 32);
-		var typeInfo = TryResolveTypeInfo(typeof(T), options);
+		// Null when T has no metadata: rows then deserialize through the non-generic options-based overload.
+		var typeInfo = JsonMetadataManager.TryResolveTypeInfo(typeof(T), options);
 		var isScalar = columns.Length == 1 && IsScalarTarget(typeof(T), typeInfo);
-		var scalarKind = isScalar && DirectRowBinder.TryClassifyScalar(typeof(T), typeInfo, options, out var kind) ? kind : (DirectBinderKind?)null;
+		var scalarKind = isScalar && DirectRowBinder.TryClassifyScalar(typeof(T), options, out var kind) ? kind : (DirectBinderKind?)null;
 
 		// A collection target takes the whole cell, so a single-valued multi-value column needs the same
 		// wrap the row path applies to a collection property.
-		var wrapScalarInArray = isScalar && typeInfo?.Kind == JsonTypeInfoKind.Enumerable;
+		var wrapScalarInArray = isScalar && ColumnLayout.IsCollectionContract(typeof(T), typeInfo);
 
 		return new RowMaterializationPlan<T>(estimatedRowSize, isScalar, typeInfo as JsonTypeInfo<T>, options, scalarKind, wrapScalarInArray);
 	}

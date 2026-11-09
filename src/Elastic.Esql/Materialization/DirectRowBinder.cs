@@ -58,9 +58,6 @@ internal sealed class DirectRowBinder
 	/// </summary>
 	public required bool[] IsCollection { get; init; }
 
-	/// <summary>Per column, whether the property is <c>required</c>: a null cell then falls back so the serializer raises its error.</summary>
-	public required bool[] IsRequired { get; init; }
-
 	public required Func<object> CreateObject { get; init; }
 
 	/// <summary>Number of <see cref="DirectBinderKind.Converter"/> columns. A row with any validates every cell before it deserializes one.</summary>
@@ -73,8 +70,8 @@ internal sealed class DirectRowBinder
 	/// Builds a binder for a flat layout, or returns null when the type itself cannot be bound with exact serializer
 	/// fidelity: parameterized constructors, serialization callbacks, extension data, number handling on the type or
 	/// a property, a property-level converter no cell contract can be built for, populate-style object creation, a
-	/// required member without a column, or two columns for one property. Cells that are not one of the built-in scalar
-	/// kinds deserialize through their own contract instead.
+	/// required member without a column, two columns for one property, or a converter cell under a depth limit of one.
+	/// Cells that are not one of the built-in scalar kinds deserialize through their own contract instead.
 	/// </summary>
 	public static DirectRowBinder? TryCreate(ColumnNode[] leafNodes, JsonTypeInfo typeInfo, JsonMetadataManager metadata)
 	{
@@ -100,7 +97,6 @@ internal sealed class DirectRowBinder
 		var typedSetters = new Delegate?[count];
 		var cellTypeInfos = new JsonTypeInfo?[count];
 		var isCollection = new bool[count];
-		var isRequired = new bool[count];
 		var converterCellCount = 0;
 		var bound = new HashSet<JsonPropertyInfo>();
 
@@ -116,30 +112,19 @@ internal sealed class DirectRowBinder
 
 			properties[i] = property;
 			isCollection[i] = leafNodes[i].IsCollection;
-			isRequired[i] = property.IsRequired;
 
 			// Checked before the built-in kinds, which would read the cell without the property's converter.
-			if (property.CustomConverter is { } customConverter)
-			{
-				var converterTypeInfo = PropertyConverterContracts.TryCreate(property.PropertyType, customConverter, options);
-				if (converterTypeInfo is null)
-					return null;
-
-				kinds[i] = DirectBinderKind.Converter;
-				cellTypeInfos[i] = converterTypeInfo;
-				converterCellCount++;
-				continue;
-			}
-
-			if (TryClassify(property.PropertyType, out var kind) && UsesBuiltInConverter(property.PropertyType, options))
+			if (property.CustomConverter is null && TryClassifyScalar(property.PropertyType, options, out var kind))
 			{
 				kinds[i] = kind;
 				// A compiled setter writes the member directly and would skip a modifier's replacement Set.
-				typedSetters[i] = metadata.ResolverIsModifierFree ? DirectSetterCompiler.TryCreate(property, kind, typeInfo.Type) : null;
+				typedSetters[i] = metadata.ResolverIsModifierFree ? metadata.GetOrCompileSetter(property, kind) : null;
 				continue;
 			}
 
-			var cellTypeInfo = ResolveCellTypeInfo(property, options);
+			var cellTypeInfo = property.CustomConverter is { } customConverter
+				? metadata.GetOrCreatePropertyContract(property, customConverter)
+				: JsonMetadataManager.TryResolveTypeInfo(property.PropertyType, options);
 			if (cellTypeInfo is null)
 				return null;
 
@@ -155,7 +140,12 @@ internal sealed class DirectRowBinder
 				return null;
 		}
 
-		var effectiveMaxDepth = options.MaxDepth > 0 ? options.MaxDepth : ColumnLayout.DefaultMaxDepth;
+		var effectiveMaxDepth = ColumnLayout.EffectiveMaxDepth(options);
+
+		// A cell reader would get a depth limit of zero, which it reads as the default, so it could not reject a nested
+		// converter cell the way the serializer rejects the assembled row. The assemble path serves these rows instead.
+		if (converterCellCount > 0 && effectiveMaxDepth < 2)
+			return null;
 
 		return new DirectRowBinder
 		{
@@ -164,7 +154,6 @@ internal sealed class DirectRowBinder
 			TypedSetters = typedSetters,
 			CellTypeInfos = cellTypeInfos,
 			IsCollection = isCollection,
-			IsRequired = isRequired,
 			CreateObject = typeInfo.CreateObject,
 			ConverterCellCount = converterCellCount,
 			CellMaxDepth = effectiveMaxDepth - 1
@@ -174,20 +163,6 @@ internal sealed class DirectRowBinder
 	/// <summary>Resolves the creation handling the serializer would apply to a property: property, then type, then options.</summary>
 	private static JsonObjectCreationHandling EffectiveCreationHandling(JsonPropertyInfo property, JsonTypeInfo typeInfo, JsonSerializerOptions options) =>
 		property.ObjectCreationHandling ?? typeInfo.PreferredPropertyObjectCreationHandling ?? options.PreferredObjectCreationHandling;
-
-	/// <summary>Resolves the contract a converter cell deserializes through, or null when the type has none usable.</summary>
-	private static JsonTypeInfo? ResolveCellTypeInfo(JsonPropertyInfo property, JsonSerializerOptions options)
-	{
-		try
-		{
-			return options.GetTypeInfo(property.PropertyType);
-		}
-		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
-		{
-			// The documented STJ failures for an unsupported type: keep the slow path.
-			return null;
-		}
-	}
 
 	private static JsonPropertyInfo? FindProperty(JsonTypeInfo typeInfo, string jsonName, bool caseInsensitive)
 	{
@@ -216,12 +191,9 @@ internal sealed class DirectRowBinder
 		return match;
 	}
 
-	/// <summary>Classifies a scalar read target the same way a flat column is classified, including the converter check.</summary>
-	internal static bool TryClassifyScalar(Type type, JsonTypeInfo? typeInfo, JsonSerializerOptions options, out DirectBinderKind kind)
-	{
-		kind = default;
-		return typeInfo is not null && TryClassify(type, out kind) && UsesBuiltInConverter(type, options);
-	}
+	/// <summary>Classifies a flat column's property type or a scalar read target as a built-in kind read through the stock converter.</summary>
+	internal static bool TryClassifyScalar(Type type, JsonSerializerOptions options, out DirectBinderKind kind) =>
+		TryClassify(type, out kind) && UsesBuiltInConverter(type, options);
 
 	private static bool TryClassify(Type propertyType, out DirectBinderKind kind)
 	{
@@ -262,18 +234,13 @@ internal sealed class DirectRowBinder
 	{
 		try
 		{
-			if (!options.TryGetTypeInfo(propertyType, out var propertyTypeInfo)
-				|| propertyTypeInfo.Converter.GetType().Assembly != typeof(JsonSerializerOptions).Assembly)
+			if (!options.TryGetTypeInfo(propertyType, out var propertyTypeInfo) || !HasBuiltInConverter(propertyTypeInfo))
 				return false;
 
 			// For nullable value types the wrapper converter is always a built-in NullableConverter<T>.
 			// Also check the underlying type so a user converter for T disqualifies T? as well.
 			var underlying = Nullable.GetUnderlyingType(propertyType);
-			if (underlying is null)
-				return true;
-
-			return options.TryGetTypeInfo(underlying, out var underlyingTypeInfo)
-				&& underlyingTypeInfo.Converter.GetType().Assembly == typeof(JsonSerializerOptions).Assembly;
+			return underlying is null || (options.TryGetTypeInfo(underlying, out var underlyingTypeInfo) && HasBuiltInConverter(underlyingTypeInfo));
 		}
 		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
 		{
@@ -282,4 +249,7 @@ internal sealed class DirectRowBinder
 			return false;
 		}
 	}
+
+	/// <summary>Whether <paramref name="typeInfo"/> reads through one of the serializer's own converters.</summary>
+	internal static bool HasBuiltInConverter(JsonTypeInfo typeInfo) => typeInfo.Converter.GetType().Assembly == typeof(JsonSerializerOptions).Assembly;
 }

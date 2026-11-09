@@ -3,10 +3,12 @@
 // See the LICENSE file in the project root for more information
 
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
+using Elastic.Esql.Materialization;
 
 namespace Elastic.Esql.Core;
 
@@ -21,6 +23,12 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options, bool? r
 	private readonly ConcurrentDictionary<Type, JsonSerializerOptions> _converterOptionsCache = [];
 	private readonly ConcurrentDictionary<Type, Dictionary<string, JsonPropertyInfo>> _ctorPropertyMapCache = [];
 	private readonly ConcurrentDictionary<Type, Dictionary<MemberInfo, JsonPropertyInfo>> _memberPropertyMapCache = [];
+
+	// Keyed by property rather than by column layout: a type read under several column schemas would otherwise compile
+	// every setter and build every converter contract once per schema.
+	private readonly ConcurrentDictionary<JsonPropertyInfo, Delegate?> _compiledSetterCache = [];
+	private readonly ConcurrentDictionary<JsonPropertyInfo, JsonTypeInfo?> _propertyContractCache = [];
+
 	private bool? _resolverIsModifierFree = resolverIsModifierFree;
 
 	/// <summary>The underlying <see cref="JsonSerializerOptions"/>.</summary>
@@ -53,6 +61,30 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options, bool? r
 			DefaultJsonTypeInfoResolver { Modifiers.Count: 0 } => resolver.GetType() == typeof(DefaultJsonTypeInfoResolver),
 			_ => false
 		};
+
+	/// <summary>Returns the contract <paramref name="options"/> resolve for <paramref name="type"/>, or null when the type has no usable metadata.</summary>
+	[UnconditionalSuppressMessage(
+		"AOT",
+		"IL3050",
+		Justification = "Type info resolution delegates to the user-provided JsonSerializerOptions/JsonSerializerContext."
+	)]
+	[UnconditionalSuppressMessage(
+		"Trimming",
+		"IL2026",
+		Justification = "Type info resolution delegates to the user-provided JsonSerializerOptions/JsonSerializerContext."
+	)]
+	internal static JsonTypeInfo? TryResolveTypeInfo(Type type, JsonSerializerOptions options)
+	{
+		try
+		{
+			return options.GetTypeInfo(type);
+		}
+		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
+		{
+			// The documented STJ failures for a type without usable metadata. Anything else is a resolver bug and must surface.
+			return null;
+		}
+	}
 
 	/// <summary>
 	/// Returns the <see cref="JsonTypeInfo"/> for <paramref name="type"/>, validating that the
@@ -148,6 +180,14 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options, bool? r
 			result.Converters.Insert(0, converter);
 			return result;
 		});
+
+	/// <summary>Returns the typed setter compiled for <paramref name="property"/>, or null where none can be compiled.</summary>
+	public Delegate? GetOrCompileSetter(JsonPropertyInfo property, DirectBinderKind kind) =>
+		_compiledSetterCache.GetOrAdd(property, p => DirectSetterCompiler.TryCreate(p, kind));
+
+	/// <summary>Returns the contract that reads <paramref name="property"/> through <paramref name="converter"/>, or null when none can be built.</summary>
+	public JsonTypeInfo? GetOrCreatePropertyContract(JsonPropertyInfo property, JsonConverter converter) =>
+		_propertyContractCache.GetOrAdd(property, p => PropertyConverterContracts.TryCreate(p.PropertyType, converter, options));
 
 	private Dictionary<MemberInfo, JsonPropertyInfo> GetMemberPropertyMap(Type type) =>
 		_memberPropertyMapCache.GetOrAdd(type, t =>

@@ -310,7 +310,7 @@ internal sealed partial class EsqlResponseReader
 
 		// The batched path wraps rows in a JSON array, adding one nesting level over the per-row
 		// object deserialize, so it needs strictly more depth headroom than the layout itself.
-		var effectiveMaxDepth = options.MaxDepth > 0 ? options.MaxDepth : ColumnLayout.DefaultMaxDepth;
+		var effectiveMaxDepth = ColumnLayout.EffectiveMaxDepth(options);
 
 		// Batching only pays off for nested layouts, where every per-row Deserialize call
 		// allocates serializer-internal depth-tracking state. Flat layouts keep true
@@ -375,7 +375,7 @@ internal sealed partial class EsqlResponseReader
 
 		// The batched path wraps rows in a JSON array, adding one nesting level over the per-row
 		// object deserialize, so it needs strictly more depth headroom than the layout itself.
-		var effectiveMaxDepth = options.MaxDepth > 0 ? options.MaxDepth : ColumnLayout.DefaultMaxDepth;
+		var effectiveMaxDepth = ColumnLayout.EffectiveMaxDepth(options);
 
 		// Batching only pays off for nested layouts, where every per-row Deserialize call
 		// allocates serializer-internal depth-tracking state. Flat layouts keep true

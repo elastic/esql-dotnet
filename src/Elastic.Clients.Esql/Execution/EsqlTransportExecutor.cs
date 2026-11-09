@@ -334,17 +334,18 @@ internal sealed class TransportEsqlResponse(ElasticsearchStreamResponse response
 	public void Dispose() => response.Dispose();
 }
 
-#if NET10_0_OR_GREATER
-/// <summary>
-/// Wraps an <see cref="ElasticsearchStreamResponse"/> as an <see cref="IEsqlAsyncResponse"/>. The body is exposed
-/// through a <see cref="PipeReader"/> with 64 KB segments: the transport's own pipe response reads 4 KB at a time,
-/// which keeps the JSON reader in its slower multi-segment mode for most rows.
-/// </summary>
+/// <summary>Wraps an <see cref="ElasticsearchStreamResponse"/> as an <see cref="IEsqlAsyncResponse"/>.</summary>
 internal sealed class TransportEsqlAsyncResponse(ElasticsearchStreamResponse response) : IEsqlAsyncResponse
 {
+#if NET10_0_OR_GREATER
+	// 64 KB segments: the transport's own pipe response reads 4 KB at a time, which keeps the JSON reader in its slower
+	// multi-segment mode for most rows.
 	private static readonly StreamPipeReaderOptions PipeOptions = new(bufferSize: 64 * 1024, minimumReadSize: 16 * 1024, leaveOpen: true);
 
 	public PipeReader Body { get; } = PipeReader.Create(response.Body, PipeOptions);
+#else
+	public Stream Body => response.Body;
+#endif
 
 	public bool TryGetHeader(string name, out IEnumerable<string> values)
 	{
@@ -358,35 +359,18 @@ internal sealed class TransportEsqlAsyncResponse(ElasticsearchStreamResponse res
 		return false;
 	}
 
+#if NET10_0_OR_GREATER
 	public async ValueTask DisposeAsync()
 	{
 		// The pipe leaves the stream open. The response owns the connection and releases it.
 		await Body.CompleteAsync().ConfigureAwait(false);
 		response.Dispose();
 	}
-}
 #else
-/// <summary>Wraps an <see cref="ElasticsearchStreamResponse"/> as an <see cref="IEsqlAsyncResponse"/>.</summary>
-internal sealed class TransportEsqlAsyncResponse(ElasticsearchStreamResponse response) : IEsqlAsyncResponse
-{
-	public Stream Body => response.Body;
-
-	public bool TryGetHeader(string name, out IEnumerable<string> values)
-	{
-		if (response.ApiCallDetails.TryGetHeader(name, out var found))
-		{
-			values = found;
-			return true;
-		}
-
-		values = [];
-		return false;
-	}
-
 	public ValueTask DisposeAsync()
 	{
 		response.Dispose();
 		return default;
 	}
-}
 #endif
+}

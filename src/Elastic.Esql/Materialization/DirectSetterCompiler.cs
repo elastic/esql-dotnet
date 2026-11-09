@@ -24,10 +24,9 @@ internal static class DirectSetterCompiler
 	/// or null when the runtime does not support dynamic code, the declaring type is a struct, or the member
 	/// cannot be resolved via <see cref="JsonPropertyInfo.AttributeProvider"/>.
 	/// </summary>
-	public static Delegate? TryCreate(JsonPropertyInfo property, DirectBinderKind kind, Type declaringType)
+	public static Delegate? TryCreate(JsonPropertyInfo property, DirectBinderKind kind)
 	{
-		// A struct instance would be unboxed by copy inside the lambda and the assignment lost.
-		if (!DynamicCode.IsSupported || declaringType.IsValueType)
+		if (!DynamicCode.IsSupported)
 			return null;
 
 		return kind switch
@@ -52,12 +51,13 @@ internal static class DirectSetterCompiler
 		var value = Expression.Parameter(typeof(TValue), "value");
 
 		MemberExpression target;
+		// A struct instance would be unboxed by copy inside the lambda and the assignment lost.
 		switch (property.AttributeProvider)
 		{
-			case PropertyInfo { SetMethod: not null, DeclaringType: { } propertyDeclaringType } propertyInfo:
+			case PropertyInfo { SetMethod: not null, DeclaringType: { IsValueType: false } propertyDeclaringType } propertyInfo:
 				target = Expression.Property(Expression.Convert(instance, propertyDeclaringType), propertyInfo);
 				break;
-			case FieldInfo { IsInitOnly: false, DeclaringType: { } fieldDeclaringType } fieldInfo:
+			case FieldInfo { IsInitOnly: false, DeclaringType: { IsValueType: false } fieldDeclaringType } fieldInfo:
 				target = Expression.Field(Expression.Convert(instance, fieldDeclaringType), fieldInfo);
 				break;
 			default:
