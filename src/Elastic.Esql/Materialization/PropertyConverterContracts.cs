@@ -47,8 +47,9 @@ internal static class PropertyConverterContracts
 			converter = created;
 		}
 
-		// The serializer wraps a converter for T around a T? property when it builds the contract, so a mismatch left
-		// here is one the serializer would reject as well.
+		// The serializer wraps a converter for T around a T? property when it builds the contract. A converter of any
+		// other type reaches the property through the serializer's casting converter, so the slow path handles it the
+		// way the serializer does.
 		if (converter.Type != propertyType)
 			return null;
 

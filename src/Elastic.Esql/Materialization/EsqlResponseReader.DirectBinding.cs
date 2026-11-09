@@ -19,10 +19,10 @@ internal sealed partial class EsqlResponseReader
 	/// <summary>The parsed value of a built-in cell, in the field its <see cref="DirectBinderKind"/> selects.</summary>
 	/// <remarks>
 	/// The fields overlap, so the struct stays 16 bytes and unmanaged and a stackalloc'd row of <see cref="CellSpan"/>
-	/// can carry each built-in cell from the validating pass to the assigning one without a second parse. Only primitives
-	/// overlap, because an auto-layout field such as DateTime inside an explicit layout is not guaranteed to load on every
-	/// runtime the netstandard2.0 build serves. A date lives in <see cref="Int64"/>, so offset 8 is free for the offset of
-	/// a DateTimeOffset whenever a date is the live kind.
+	/// can carry each built-in cell from the validating pass to the assigning one without a second parse. Only
+	/// sequential-layout fields overlap, because an auto-layout field such as DateTime inside an explicit layout is not
+	/// guaranteed to load on every runtime the netstandard2.0 build serves. A date lives in <see cref="Int64"/>, so
+	/// offset 8 is free for the offset of a DateTimeOffset whenever a date is the live kind.
 	/// </remarks>
 	[StructLayout(LayoutKind.Explicit)]
 	private struct DirectValue

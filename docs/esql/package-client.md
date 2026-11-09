@@ -103,8 +103,9 @@ with the reflection resolver), the cells of a directly bound row are assigned th
 member. Any other resolver keeps the contract's own `JsonPropertyInfo.Set`, so a modifier that replaces it is honored on
 every row. The decision is made when the first result is materialized, with the options already read-only.
 
-A cell that its own contract rejects is read again by the serializer so the error carries the property path. A
-deserialization callback on a nested type therefore runs twice before such a row fails.
+A cell that its own contract rejects, or a converter result of null for a property that does not accept null, is read
+again by the serializer so the error carries the property path. A deserialization callback on a nested type therefore
+runs twice before such a row fails.
 
 ## Querying
 
@@ -342,26 +343,36 @@ await foreach (var entry in query.AsAsyncEnumerable())
 
 ### How rows are materialized
 
-Flat result types are bound directly from the response reader, property by property, without an
-intermediate JSON document. A type qualifies for this path when all of the following hold:
+Flat result types are bound directly from the response reader, property by property, without an intermediate JSON
+document. A type qualifies for this path when all of the following hold:
 
-- it is a class or struct with a parameterless constructor and no `required` members;
-- it has no `OnDeserializing` or `OnDeserialized` callbacks;
-- every result column maps to a settable property;
-- every mapped property is a `string`, `bool`, `int`, `long`, `double`, `float`, `decimal`,
-  `DateTime`, `DateTimeOffset` or `Guid`, or the nullable form of one of these;
-- no mapped property uses a custom converter, whether declared with a `JsonConverter` attribute or
-  registered on the `JsonSerializerOptions`; only the framework's built-in converters qualify, and
-  enums are not used.
+- it is a class or struct that the serializer creates through a parameterless constructor
+- it has no `OnDeserializing` or `OnDeserialized` callback of its own
+- every result column maps to a settable property that is not the extension data property
+- neither the type nor a mapped property sets its own `JsonNumberHandling`
+- no mapped property uses `JsonObjectCreationHandling.Populate`, whether set on the property, the type or the options
+- every `required` member has a column
+- no two columns map to the same property
+- every column is flat, so a dotted name such as `address.city` that resolves into a nested object keeps the type on the
+  fallback
 
-Anything else, including nested object columns, falls back to assembling each row as a JSON
-object and deserializing it with `System.Text.Json`. The fallback is correct but slower, and
-nothing signals which path is active. If throughput matters, shape the result type to the list
-above. A row whose cell does not match the property type is retried through the fallback, so the
-serializer produces the same value coercion or error either way. The same retry happens when a
-streamed row is cut by a chunk boundary and completes on the next read. Each retried row allocates
-and discards one partially bound instance of the type; a constructor or property setter with side
-effects therefore runs more than once for such rows.
+A mapped `string`, `bool`, `int`, `long`, `double`, `float`, `decimal`, `DateTime`, `DateTimeOffset` or `Guid` property,
+or the nullable form of one of these, is parsed straight off the reader when the serializer's own converter reads that
+type. Any other property binds as a converter cell, deserialized from the cell alone through the property's
+`[JsonConverter]` when it has one and through the contract of its type otherwise. Enums, collections, dictionaries,
+nested objects, types with a converter registered on the `JsonSerializerOptions` and properties with a `[JsonConverter]`
+attribute all bind this way. A property-level converter needs a runtime that supports dynamic code, so under Native AOT
+a type with one stays on the fallback. The compiled setters described under AOT-safe configuration need dynamic code
+too, and without it a directly bound row assigns its cells through the contract's own `JsonPropertyInfo.Set`.
+
+A type that misses any condition in the list falls back to assembling each row as a JSON object and deserializing it
+with `System.Text.Json`. The fallback is correct but slower, and nothing signals which path is active. If throughput
+matters, shape the result type to the list above. A row whose cell does not match the property type is retried through
+the fallback, so the serializer produces the same value coercion or error either way. The same retry happens when a
+streamed row is cut by a chunk boundary and completes on the next read. For a type without converter cells, each retried
+row allocates and discards one partially bound instance, so a constructor or property setter with side effects runs more
+than once for such rows. A type with converter cells checks the whole row before it creates the instance, so it discards
+one only when a converter cell fails after that check.
 
 Nested result types are deserialized in batches of up to 64 rows or 64 KB, so the first row
 becomes available after the first batch rather than immediately. Batching also requires the

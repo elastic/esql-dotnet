@@ -242,7 +242,7 @@ internal sealed class ColumnLayout
 
 	/// <summary>Determines if the serializer reads <paramref name="type"/> from a JSON array, so a bare single-valued cell needs wrapping.</summary>
 	internal static bool IsCollectionContract(Type type, JsonTypeInfo? typeInfo) =>
-		// JsonArray's converter takes only an array, so a bare cell still needs the wrap.
+		// JsonArray's contract kind is None, but its converter takes only an array, so a bare cell still needs the wrap.
 		typeof(JsonArray).IsAssignableFrom(type) || typeInfo?.Kind == JsonTypeInfoKind.Enumerable;
 
 	private static void InsertIntoTree(ColumnNode parent, string[] segments, int columnIndex, bool isCollection)

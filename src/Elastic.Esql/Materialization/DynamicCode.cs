@@ -9,7 +9,8 @@ namespace Elastic.Esql.Materialization;
 /// <summary>Whether the runtime can generate code, which compiled setters and property converter contracts need.</summary>
 internal static class DynamicCode
 {
-	// netstandard2.0 has no RuntimeFeature.IsDynamicCodeSupported, but every runtime it targets here compiles expression trees.
+	// netstandard2.0 has no RuntimeFeature.IsDynamicCodeSupported, but every runtime it targets here compiles
+	// expression trees and instantiates generic methods at run time.
 #if NETSTANDARD2_0
 	public static bool IsSupported => true;
 #else

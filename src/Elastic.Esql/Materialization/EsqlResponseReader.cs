@@ -207,8 +207,9 @@ internal sealed partial class EsqlResponseReader
 	}
 
 	/// <summary>
-	/// A single-column response binds the cell itself to <c>T</c>, unless <c>T</c> is an object or dictionary
-	/// contract whose one property (or key) is what the column maps to.
+	/// A single-column response binds the cell itself to <c>T</c>, unless <c>T</c> is a document-like target, an object
+	/// or dictionary contract whose one property (or key) is what the column maps to, or a type without metadata that
+	/// is not a JSON primitive.
 	/// </summary>
 	private static bool IsScalarTarget(Type type, JsonTypeInfo? typeInfo) =>
 		!IsDocumentTarget(type)

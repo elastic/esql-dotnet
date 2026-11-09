@@ -35,7 +35,7 @@ internal enum DirectBinderKind
 /// <remarks>
 /// Binding directly is a large net win over the assemble-and-deserialize pipeline, which tokenizes, re-writes and
 /// re-parses every cell. Built once per (target type, column schema) and cached on the <see cref="ColumnLayout"/>.
-/// Immutable after construction because layouts are shared across threads.
+/// It is immutable after construction because layouts are shared across threads.
 /// </remarks>
 internal sealed class DirectRowBinder
 {
