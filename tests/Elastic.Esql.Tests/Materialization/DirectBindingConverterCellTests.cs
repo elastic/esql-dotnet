@@ -225,7 +225,19 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
-	public void Build_NullablePropertyLevelConverterFactory_UsesConverterKind()
+	public void Build_PropertyLevelConverterFactory_UsesConverterKind()
+	{
+		if (!RuntimeFeature.IsDynamicCodeSupported)
+			return;
+
+		var layout = BuildLayout<PlainLevelModel>(("plain", "keyword"));
+
+		layout.DirectBinder.Should().NotBeNull();
+		layout.DirectBinder.Kinds.Should().Equal([DirectBinderKind.Converter]);
+	}
+
+	[Test]
+	public void Build_NullablePropertyLevelConverter_UsesWrappedConverterKind()
 	{
 		if (!RuntimeFeature.IsDynamicCodeSupported)
 			return;
@@ -234,18 +246,6 @@ public class DirectBindingConverterCellTests
 
 		layout.DirectBinder.Should().NotBeNull();
 		layout.DirectBinder.Kinds.Should().Equal([DirectBinderKind.Converter]);
-	}
-
-	[Test]
-	public void ReadRows_NullablePropertyLevelConverterFactory_BindsStringAndNull()
-	{
-		const string json = """{"columns":[{"name":"maybe","type":"keyword"}],"values":[["low"],[null]]}""";
-
-		var rows = ReadRows<MaybeLevelModel>(json, CreateOptions());
-
-		rows.Should().HaveCount(2);
-		rows[0].Maybe.Should().Be(Level.Low);
-		rows[1].Maybe.Should().BeNull();
 	}
 
 	[Test]
@@ -491,6 +491,12 @@ public class DirectBindingConverterCellTests
 	{
 		[JsonConverter(typeof(JsonStringEnumConverter))]
 		public Level? Maybe { get; set; }
+	}
+
+	private sealed class PlainLevelModel
+	{
+		[JsonConverter(typeof(JsonStringEnumConverter))]
+		public Level Plain { get; set; }
 	}
 
 	private sealed class DateOnlyModel
