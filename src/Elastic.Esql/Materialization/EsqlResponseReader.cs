@@ -9,6 +9,7 @@ using System.IO.Pipelines;
 #endif
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization.Metadata;
 using Elastic.Esql.Core;
 
@@ -220,9 +221,15 @@ internal sealed partial class EsqlResponseReader
 	/// contract whose one property (or key) is what the column maps to.
 	/// </summary>
 	private static bool IsScalarTarget(Type type, JsonTypeInfo? typeInfo) =>
-		typeInfo is null
-			? IsPrimitiveJsonType(type)
-			: typeInfo.Kind is JsonTypeInfoKind.None or JsonTypeInfoKind.Enumerable;
+		!IsDocumentTarget(type)
+		&& (typeInfo is null ? IsPrimitiveJsonType(type) : typeInfo.Kind is JsonTypeInfoKind.None or JsonTypeInfoKind.Enumerable);
+
+	/// <summary>A document-like target reads the whole row whatever the column count, so a one-column query keeps the shape of a wider one.</summary>
+	private static bool IsDocumentTarget(Type type)
+	{
+		var t = Nullable.GetUnderlyingType(type) ?? type;
+		return t == typeof(object) || t == typeof(JsonElement) || typeof(JsonNode).IsAssignableFrom(t);
+	}
 
 	private static bool IsPrimitiveJsonType(Type type)
 	{

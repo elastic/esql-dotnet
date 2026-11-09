@@ -4,6 +4,7 @@
 
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization.Metadata;
 using Elastic.Esql.Materialization;
 using Elastic.Esql.Tests.Execution;
@@ -92,6 +93,32 @@ public class SingleColumnProjectionTests
 		var rows = ReadRows<Dictionary<string, string>>(NameJson);
 
 		rows.Should().ContainSingle().Which.Should().ContainKey("name").WhoseValue.Should().Be("a");
+	}
+
+	[Test]
+	public void ReadRows_SingleColumnJsonElementTarget_StillAssemblesRow()
+	{
+		var rows = ReadRows<JsonElement>(NameJson);
+
+		var element = rows.Should().ContainSingle().Subject;
+		element.ValueKind.Should().Be(JsonValueKind.Object);
+		element.GetProperty("name").GetString().Should().Be("a");
+	}
+
+	[Test]
+	public void ReadRows_SingleColumnObjectTarget_StillAssemblesRow()
+	{
+		var rows = ReadRows<object>(NameJson);
+
+		rows.Should().ContainSingle().Which.Should().BeOfType<JsonElement>().Which.ValueKind.Should().Be(JsonValueKind.Object);
+	}
+
+	[Test]
+	public void ReadRows_SingleColumnJsonNodeTarget_StillAssemblesRow()
+	{
+		var rows = ReadRows<JsonNode>(NameJson);
+
+		rows.Should().ContainSingle().Which!["name"]!.GetValue<string>().Should().Be("a");
 	}
 
 	[Test]
