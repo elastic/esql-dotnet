@@ -8,7 +8,7 @@ namespace Elastic.Esql.Materialization;
 /// Scratch space one response enumeration reuses for every row that goes through JSON assembly. Buffers are
 /// created on first use, so an enumeration whose rows all bind directly never allocates them.
 /// </summary>
-internal sealed class RowAssemblyBuffers(int estimatedRowSize, bool isScalar, bool wrapScalarInArray, bool needsValueBuffer) : IDisposable
+internal sealed class RowAssemblyBuffers(int estimatedRowSize, bool isScalar, bool wrapScalarInArray) : IDisposable
 {
 	// IDE0032 suggests auto-properties, but the fields exist to defer allocation until a row needs assembly.
 #pragma warning disable IDE0032
@@ -19,8 +19,8 @@ internal sealed class RowAssemblyBuffers(int estimatedRowSize, bool isScalar, bo
 	/// <summary>The assembled row object, or the bare cell for scalar reads.</summary>
 	public PooledBufferWriter RowBuffer => _rowBuffer ??= new PooledBufferWriter(estimatedRowSize);
 
-	/// <summary>Per-cell scratch for nested layouts, whose cells are regrouped before assembly. Null for flat and scalar reads.</summary>
-	public PooledBufferWriter? ValueBuffer => needsValueBuffer ? _valueBuffer ??= new PooledBufferWriter(estimatedRowSize) : null;
+	/// <summary>Per-cell scratch for nested layouts, whose cells are regrouped before assembly.</summary>
+	public PooledBufferWriter ValueBuffer => _valueBuffer ??= new PooledBufferWriter(estimatedRowSize);
 
 	/// <summary>Whether rows are a single bare cell rather than an assembled JSON object.</summary>
 	public bool IsScalar { get; } = isScalar;

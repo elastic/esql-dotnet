@@ -6,6 +6,7 @@ using System.Buffers;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Elastic.Esql.Formatting;
+using Elastic.Esql.Materialization;
 
 namespace Elastic.Esql.Serialization;
 
@@ -58,12 +59,7 @@ internal sealed class DenseVectorFloatJsonConverter : JsonConverter<DenseVector<
 					return new DenseVector<float>(scratch.AsSpan(0, count).ToArray());
 
 				if (count == scratch.Length)
-				{
-					var grown = ArrayPool<float>.Shared.Rent(scratch.Length * 2);
-					scratch.AsSpan(0, count).CopyTo(grown);
-					ArrayPool<float>.Shared.Return(scratch);
-					scratch = grown;
-				}
+					PooledArrays.Grow(ref scratch, 0, count, scratch.Length * 2);
 
 				scratch[count++] = reader.GetSingle();
 			}
@@ -145,12 +141,7 @@ internal sealed class DenseVectorByteJsonConverter : JsonConverter<DenseVector<b
 						$"DenseVector<byte> element {raw} is outside the supported range [-128, 255].");
 
 				if (count == scratch.Length)
-				{
-					var grown = ArrayPool<byte>.Shared.Rent(scratch.Length * 2);
-					scratch.AsSpan(0, count).CopyTo(grown);
-					ArrayPool<byte>.Shared.Return(scratch);
-					scratch = grown;
-				}
+					PooledArrays.Grow(ref scratch, 0, count, scratch.Length * 2);
 
 				scratch[count++] = (byte)(raw & 0xFF);
 			}

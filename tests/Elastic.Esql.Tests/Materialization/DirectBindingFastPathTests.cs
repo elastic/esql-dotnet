@@ -16,7 +16,7 @@ public class DirectBindingFastPathTests
 	public void TryBindRowDirect_FlatRow_BindsAllValues()
 	{
 		var binder = CreateBinder<ScalarStringModel>(("value", "keyword"), ("count", "integer"));
-		using var buffers = new RowAssemblyBuffers(256, isScalar: false, wrapScalarInArray: false, needsValueBuffer: false);
+		using var buffers = new RowAssemblyBuffers(256, isScalar: false, wrapScalarInArray: false);
 		var source = new ReadOnlySequence<byte>("[\"hello\",42]"u8.ToArray());
 		var reader = new Utf8JsonReader(source);
 		reader.Read();
@@ -33,7 +33,7 @@ public class DirectBindingFastPathTests
 	public void TryBindRowDirect_NullCell_LeavesInitializerValue()
 	{
 		var binder = CreateBinder<ScalarStringModel>(("value", "keyword"), ("count", "integer"));
-		using var buffers = new RowAssemblyBuffers(256, isScalar: false, wrapScalarInArray: false, needsValueBuffer: false);
+		using var buffers = new RowAssemblyBuffers(256, isScalar: false, wrapScalarInArray: false);
 		var source = new ReadOnlySequence<byte>("[null,5]"u8.ToArray());
 		var reader = new Utf8JsonReader(source);
 		reader.Read();
@@ -50,7 +50,7 @@ public class DirectBindingFastPathTests
 	public void TryBindRowDirect_ArrayCell_ReturnsFalseWithoutIncomplete()
 	{
 		var binder = CreateBinder<ScalarStringModel>(("value", "keyword"), ("count", "integer"));
-		using var buffers = new RowAssemblyBuffers(256, isScalar: false, wrapScalarInArray: false, needsValueBuffer: false);
+		using var buffers = new RowAssemblyBuffers(256, isScalar: false, wrapScalarInArray: false);
 		var source = new ReadOnlySequence<byte>("[[\"a\",\"b\"],1]"u8.ToArray());
 		var reader = new Utf8JsonReader(source);
 		reader.Read();
@@ -65,7 +65,7 @@ public class DirectBindingFastPathTests
 	public void TryBindRowDirect_StringNumberCell_ReturnsFalseWithoutIncomplete()
 	{
 		var binder = CreateBinder<ScalarStringModel>(("value", "keyword"), ("count", "integer"));
-		using var buffers = new RowAssemblyBuffers(256, isScalar: false, wrapScalarInArray: false, needsValueBuffer: false);
+		using var buffers = new RowAssemblyBuffers(256, isScalar: false, wrapScalarInArray: false);
 		var source = new ReadOnlySequence<byte>("[\"hello\",\"42\"]"u8.ToArray());
 		var reader = new Utf8JsonReader(source);
 		reader.Read();
@@ -80,7 +80,7 @@ public class DirectBindingFastPathTests
 	public void TryBindRowDirect_FewerCellsThanColumns_ReturnsFalseWithoutIncomplete()
 	{
 		var binder = CreateBinder<ScalarStringModel>(("value", "keyword"), ("count", "integer"));
-		using var buffers = new RowAssemblyBuffers(256, isScalar: false, wrapScalarInArray: false, needsValueBuffer: false);
+		using var buffers = new RowAssemblyBuffers(256, isScalar: false, wrapScalarInArray: false);
 		var source = new ReadOnlySequence<byte>("[\"hello\"]"u8.ToArray());
 		var reader = new Utf8JsonReader(source);
 		reader.Read();
@@ -95,7 +95,7 @@ public class DirectBindingFastPathTests
 	public void TryBindRowDirect_MoreCellsThanColumns_ReturnsFalseWithoutIncomplete()
 	{
 		var binder = CreateBinder<ScalarStringModel>(("value", "keyword"), ("count", "integer"));
-		using var buffers = new RowAssemblyBuffers(256, isScalar: false, wrapScalarInArray: false, needsValueBuffer: false);
+		using var buffers = new RowAssemblyBuffers(256, isScalar: false, wrapScalarInArray: false);
 		var source = new ReadOnlySequence<byte>("[\"hello\",1,2]"u8.ToArray());
 		var reader = new Utf8JsonReader(source);
 		reader.Read();
@@ -110,7 +110,7 @@ public class DirectBindingFastPathTests
 	public void TryBindRowDirect_TruncatedRow_ReturnsIncomplete()
 	{
 		var binder = CreateBinder<ScalarStringModel>(("value", "keyword"), ("count", "integer"));
-		using var buffers = new RowAssemblyBuffers(256, isScalar: false, wrapScalarInArray: false, needsValueBuffer: false);
+		using var buffers = new RowAssemblyBuffers(256, isScalar: false, wrapScalarInArray: false);
 		var source = new ReadOnlySequence<byte>("[\"hello\""u8.ToArray());
 		var reader = new Utf8JsonReader(source, isFinalBlock: false, default);
 		reader.Read();

@@ -9,27 +9,22 @@ namespace Elastic.Esql.Tests.Materialization;
 public class PooledBufferWriterTests
 {
 	[Test]
-	public void GetSpan_BeyondCapacity_GrowsAndKeepsWrittenBytes()
+	public void Write_BeyondCapacity_GrowsAndKeepsWrittenBytes()
 	{
 		using var writer = new PooledBufferWriter(16);
-		var first = writer.GetSpan(4);
-		"abcd"u8.CopyTo(first);
-		writer.Advance(4);
+		writer.Write("abcd"u8);
 
-		var second = writer.GetSpan(1000);
-		second[..3].Fill((byte)'x');
-		writer.Advance(3);
+		writer.Write("efghijklmnopqrstuvwxyz"u8);
 
-		writer.WrittenCount.Should().Be(7);
-		writer.WrittenSpan.ToArray().Should().Equal("abcdxxx"u8.ToArray());
+		writer.WrittenCount.Should().Be(26);
+		writer.WrittenSpan.ToArray().Should().Equal("abcdefghijklmnopqrstuvwxyz"u8.ToArray());
 	}
 
 	[Test]
 	public void ResetWrittenCount_KeepsCapacityAndClearsLength()
 	{
 		using var writer = new PooledBufferWriter(16);
-		writer.GetSpan(8)[0] = 1;
-		writer.Advance(8);
+		writer.Write("abcdefgh"u8);
 
 		writer.ResetWrittenCount();
 
@@ -49,12 +44,12 @@ public class PooledBufferWriterTests
 	}
 
 	[Test]
-	public void GetSpan_AfterDispose_Throws()
+	public void Write_AfterDispose_Throws()
 	{
 		var writer = new PooledBufferWriter(16);
 		writer.Dispose();
 
-		Action act = () => writer.GetSpan(1);
+		Action act = () => writer.Write(1);
 
 		act.Should().Throw<ObjectDisposedException>();
 	}

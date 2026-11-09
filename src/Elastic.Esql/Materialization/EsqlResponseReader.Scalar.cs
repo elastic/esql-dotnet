@@ -25,7 +25,7 @@ internal sealed partial class EsqlResponseReader
 		Stream stream,
 		CancellationToken cancellationToken = default)
 	{
-		using var asyncBuffer = new AsyncStreamBuffer(stream);
+		using var asyncBuffer = new StreamBuffer(stream);
 		return await ReadScalarAsync<T>(asyncBuffer, cancellationToken).ConfigureAwait(false);
 	}
 
@@ -49,7 +49,7 @@ internal sealed partial class EsqlResponseReader
 	/// </summary>
 	public ScalarResult<T> ReadScalar<T>(Stream stream)
 	{
-		using var syncBuffer = new SyncStreamBuffer(stream);
+		using var syncBuffer = new StreamBuffer(stream);
 		return ReadScalar<T>(syncBuffer);
 	}
 
@@ -68,7 +68,7 @@ internal sealed partial class EsqlResponseReader
 		var (columns, readerState, layout) = (prepared.Columns, prepared.ReaderState, prepared.Layout);
 		var plan = CreateRowMaterializationPlan<T>(columns, Options);
 
-		using var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, plan.IsScalar, plan.WrapScalarInArray, needsValueBuffer: layout.BranchNodeCount > 0);
+		using var buffers = plan.CreateAssemblyBuffers();
 
 		T? value = default;
 		var rowCount = 0;
@@ -111,7 +111,7 @@ internal sealed partial class EsqlResponseReader
 		var (columns, readerState, layout) = (prepared.Columns, prepared.ReaderState, prepared.Layout);
 		var plan = CreateRowMaterializationPlan<T>(columns, Options);
 
-		using var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, plan.IsScalar, plan.WrapScalarInArray, needsValueBuffer: layout.BranchNodeCount > 0);
+		using var buffers = plan.CreateAssemblyBuffers();
 
 		T? value = default;
 		var rowCount = 0;

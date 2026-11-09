@@ -3,7 +3,7 @@
 // See the LICENSE file in the project root for more information
 
 using System.Buffers;
-using System.Diagnostics;
+using System.Runtime.CompilerServices;
 
 namespace Elastic.Esql.Materialization;
 
@@ -11,7 +11,7 @@ namespace Elastic.Esql.Materialization;
 /// Growable byte buffer backed by <see cref="ArrayPool{T}.Shared"/>. Growth swaps in a larger rented array and
 /// returns the old one, so scratch buffers leave no garbage behind however large a row or batch gets.
 /// </summary>
-internal sealed class PooledBufferWriter(int initialCapacity) : IBufferWriter<byte>, IDisposable
+internal sealed class PooledBufferWriter(int initialCapacity) : IDisposable
 {
 	private byte[]? _buffer = ArrayPool<byte>.Shared.Rent(initialCapacity);
 
@@ -23,30 +23,36 @@ internal sealed class PooledBufferWriter(int initialCapacity) : IBufferWriter<by
 
 	public void ResetWrittenCount() => WrittenCount = 0;
 
-	public void Advance(int count)
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public void Write(byte value)
 	{
-		Debug.Assert(WrittenCount + count <= Buffer.Length, "Advance past the rented capacity.");
-		WrittenCount += count;
+		EnsureCapacity(1)[WrittenCount] = value;
+		WrittenCount++;
 	}
 
-	public Memory<byte> GetMemory(int sizeHint = 0) => EnsureCapacity(sizeHint).AsMemory(WrittenCount);
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public void Write(ReadOnlySpan<byte> value)
+	{
+		value.CopyTo(EnsureCapacity(value.Length).AsSpan(WrittenCount));
+		WrittenCount += value.Length;
+	}
 
-	public Span<byte> GetSpan(int sizeHint = 0) => EnsureCapacity(sizeHint).AsSpan(WrittenCount);
+	public void Write(in ReadOnlySequence<byte> value)
+	{
+		var length = checked((int)value.Length);
+		value.CopyTo(EnsureCapacity(length).AsSpan(WrittenCount));
+		WrittenCount += length;
+	}
 
 	private byte[] EnsureCapacity(int sizeHint)
 	{
 		var buffer = Buffer;
-		if (sizeHint <= 0)
-			sizeHint = 1;
-
 		if (WrittenCount + sizeHint <= buffer.Length)
 			return buffer;
 
-		var grown = ArrayPool<byte>.Shared.Rent(Math.Max(buffer.Length * 2, WrittenCount + sizeHint));
-		buffer.AsSpan(0, WrittenCount).CopyTo(grown);
-		ArrayPool<byte>.Shared.Return(buffer);
-		_buffer = grown;
-		return grown;
+		PooledArrays.Grow(ref buffer, 0, WrittenCount, Math.Max(buffer.Length * 2, WrittenCount + sizeHint));
+		_buffer = buffer;
+		return buffer;
 	}
 
 	public void Dispose()

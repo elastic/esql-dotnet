@@ -83,7 +83,7 @@ internal sealed partial class EsqlResponseReader
 		public bool Read() => _consumed < end;
 
 		// Positions originate from Buffer, a single-segment sequence over the backing array, so
-		// GetInteger() is the absolute array index (the same contract SyncStreamBuffer relies on).
+		// GetInteger() is the absolute array index (the same contract StreamBuffer relies on).
 		public void AdvanceTo(SequencePosition consumed, SequencePosition examined) =>
 			_consumed = consumed.GetInteger();
 	}
@@ -186,7 +186,10 @@ internal sealed partial class EsqlResponseReader
 		JsonTypeInfo<T>? TypeInfo,
 		JsonSerializerOptions Options,
 		DirectBinderKind? ScalarKind,
-		bool WrapScalarInArray);
+		bool WrapScalarInArray)
+	{
+		public RowAssemblyBuffers CreateAssemblyBuffers() => new(EstimatedRowSize, IsScalar, WrapScalarInArray);
+	}
 
 	private static RowMaterializationPlan<T> CreateRowMaterializationPlan<T>(ColumnInfo[] columns, JsonSerializerOptions options)
 	{

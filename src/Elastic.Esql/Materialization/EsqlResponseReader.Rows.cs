@@ -26,7 +26,7 @@ internal sealed partial class EsqlResponseReader
 	public async Task<EsqlAsyncResults<T>> ReadRowsAsync<T>(
 		Stream stream, bool requireId = false, CancellationToken cancellationToken = default)
 	{
-		var asyncBuffer = new AsyncStreamBuffer(stream);
+		var asyncBuffer = new StreamBuffer(stream);
 
 		try
 		{
@@ -79,7 +79,7 @@ internal sealed partial class EsqlResponseReader
 	/// <summary>Reads rows from an ES|QL response stream synchronously. Metadata is eagerly parsed before returning.</summary>
 	public EsqlResults<T> ReadRows<T>(Stream stream, bool requireId = false)
 	{
-		var syncBuffer = new SyncStreamBuffer(stream);
+		var syncBuffer = new StreamBuffer(stream);
 
 		try
 		{
@@ -322,7 +322,7 @@ internal sealed partial class EsqlResponseReader
 			yield break;
 		}
 
-		using var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, plan.IsScalar, plan.WrapScalarInArray, needsValueBuffer: layout.BranchNodeCount > 0);
+		using var buffers = plan.CreateAssemblyBuffers();
 
 		try
 		{
@@ -387,7 +387,7 @@ internal sealed partial class EsqlResponseReader
 			yield break;
 		}
 
-		using var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, plan.IsScalar, plan.WrapScalarInArray, needsValueBuffer: layout.BranchNodeCount > 0);
+		using var buffers = plan.CreateAssemblyBuffers();
 
 		try
 		{
@@ -449,7 +449,7 @@ internal sealed partial class EsqlResponseReader
 		[EnumeratorCancellation] CancellationToken cancellationToken,
 		ReaderStateTracker? readerStateTracker = null)
 	{
-		using var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, isScalar: false, wrapScalarInArray: false, needsValueBuffer: true);
+		using var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, isScalar: false, wrapScalarInArray: false);
 		using var batchBuffer = new PooledBufferWriter(MaxBatchBufferBytes);
 		var batchRowCount = 0;
 
@@ -541,7 +541,7 @@ internal sealed partial class EsqlResponseReader
 		JsonTypeInfo<List<T>> listTypeInfo,
 		ReaderStateTracker? readerStateTracker = null)
 	{
-		using var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, isScalar: false, wrapScalarInArray: false, needsValueBuffer: true);
+		using var buffers = new RowAssemblyBuffers(plan.EstimatedRowSize, isScalar: false, wrapScalarInArray: false);
 		using var batchBuffer = new PooledBufferWriter(MaxBatchBufferBytes);
 		var batchRowCount = 0;
 
@@ -622,8 +622,8 @@ internal sealed partial class EsqlResponseReader
 
 	private static void AppendRowToBatch(PooledBufferWriter batchBuffer, PooledBufferWriter rowBuffer, int batchRowCount)
 	{
-		WriteRawByte(batchBuffer, batchRowCount == 0 ? (byte)'[' : (byte)',');
-		WriteRawBytes(batchBuffer, rowBuffer.WrittenSpan);
+		batchBuffer.Write(batchRowCount == 0 ? (byte)'[' : (byte)',');
+		batchBuffer.Write(rowBuffer.WrittenSpan);
 	}
 
 	/// <summary>
@@ -633,7 +633,7 @@ internal sealed partial class EsqlResponseReader
 	/// </summary>
 	private static IEnumerable<T> DeserializeBatch<T>(PooledBufferWriter batchBuffer, JsonTypeInfo<List<T>> listTypeInfo, RowMaterializationPlan<T> plan)
 	{
-		WriteRawByte(batchBuffer, (byte)']');
+		batchBuffer.Write((byte)']');
 
 		List<T>? items;
 		try

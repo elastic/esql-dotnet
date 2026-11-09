@@ -255,10 +255,9 @@ internal sealed partial class EsqlResponseReader
 	private static ReadOnlySpan<byte> WrapInArray(in ReadOnlySequence<byte> value, PooledBufferWriter buffer)
 	{
 		buffer.ResetWrittenCount();
-		WriteRawByte(buffer, (byte)'[');
-		foreach (var segment in value)
-			WriteRawBytes(buffer, segment.Span);
-		WriteRawByte(buffer, (byte)']');
+		buffer.Write((byte)'[');
+		buffer.Write(value);
+		buffer.Write((byte)']');
 		return buffer.WrittenSpan;
 	}
 
@@ -268,8 +267,9 @@ internal sealed partial class EsqlResponseReader
 		new(new JsonReaderOptions { MaxDepth = binder.CellMaxDepth });
 
 	/// <summary>
-	/// Reads the single cell of a scalar row. Null cells and unexpected token shapes return false so the serializer
-	/// keeps its own semantics for them (null into a non-nullable value type is its error, not ours).
+	/// Reads the single cell of a scalar row. A null cell binds <c>default(T)</c> when <c>T</c> accepts null, as the
+	/// serializer reads a root null. A null cell for a non-nullable value type and an unexpected token shape return
+	/// false so the serializer keeps its own semantics for them (null into a non-nullable value type is its error, not ours).
 	/// </summary>
 	private static bool TryBindScalarDirect<T>(ref Utf8JsonReader reader, DirectBinderKind kind, out T? item, out bool incomplete)
 	{
@@ -283,7 +283,12 @@ internal sealed partial class EsqlResponseReader
 		}
 
 		var tokenType = reader.TokenType;
-		if (tokenType is JsonTokenType.Null or JsonTokenType.EndArray || !TryReadScalar(ref reader, kind, tokenType, out item))
+		if (tokenType == JsonTokenType.Null)
+		{
+			if (default(T) is not null)
+				return false;
+		}
+		else if (tokenType == JsonTokenType.EndArray || !TryReadScalar(ref reader, kind, tokenType, out item))
 			return false;
 
 		if (!reader.Read())

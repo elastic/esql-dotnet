@@ -151,7 +151,7 @@ internal sealed partial class EsqlResponseReader
 	private static bool TryMaterializeRow(ref Utf8JsonReader reader, in ReadOnlySequence<byte> source, ColumnLayout layout, RowAssemblyBuffers buffers) =>
 		layout.BranchNodeCount == 0
 			? TryMaterializeFlatRow(ref reader, source, layout, buffers.RowBuffer)
-			: TryMaterializeNestedRow(ref reader, source, layout, buffers.RowBuffer, buffers.ValueBuffer!);
+			: TryMaterializeNestedRow(ref reader, source, layout, buffers.RowBuffer, buffers.ValueBuffer);
 
 	/// <summary>
 	/// Flat layouts list their leaves in column order, so every non-null cell is written into the row object as
@@ -165,7 +165,7 @@ internal sealed partial class EsqlResponseReader
 	{
 		var columnCount = layout.ColumnCount;
 		rowBuffer.ResetWrittenCount();
-		WriteRawByte(rowBuffer, (byte)'{');
+		rowBuffer.Write((byte)'{');
 
 		var colIndex = 0;
 		var needsComma = false;
@@ -188,19 +188,13 @@ internal sealed partial class EsqlResponseReader
 
 			var leaf = layout.LeafNodesByColumnIndex[colIndex];
 			if (needsComma)
-				WriteRawByte(rowBuffer, (byte)',');
+				rowBuffer.Write((byte)',');
 			needsComma = true;
 
-			WriteRawBytes(rowBuffer, leaf.PrefixBytes);
+			rowBuffer.Write(leaf.PrefixBytes);
 
-			// ES|QL returns a single-valued multi-value field as a bare scalar, but the target property is a collection.
-			var wrap = leaf.IsCollection && reader.TokenType != JsonTokenType.StartArray;
-			if (wrap)
-				WriteRawByte(rowBuffer, (byte)'[');
-			if (!TryCopyCurrentValue(ref reader, source, rowBuffer))
+			if (!TryCopyCell(ref reader, source, rowBuffer, leaf.IsCollection))
 				return false;
-			if (wrap)
-				WriteRawByte(rowBuffer, (byte)']');
 
 			colIndex++;
 		}
@@ -208,7 +202,7 @@ internal sealed partial class EsqlResponseReader
 		if (colIndex < columnCount)
 			ThrowFewerValuesThanColumns(colIndex, columnCount);
 
-		WriteRawByte(rowBuffer, (byte)'}');
+		rowBuffer.Write((byte)'}');
 		return true;
 	}
 
@@ -257,19 +251,19 @@ internal sealed partial class EsqlResponseReader
 
 				if (reader.TokenType == JsonTokenType.Null)
 				{
-					slices[colIndex] = new ValueSlice(0, 0, JsonTokenType.Null, IsNull: true);
+					slices[colIndex] = new ValueSlice(0, 0, IsNull: true);
 					colIndex++;
 					continue;
 				}
 
+				var leaf = layout.LeafNodesByColumnIndex[colIndex];
 				var start = valueBuffer.WrittenCount;
-				var firstToken = reader.TokenType;
 
-				if (!TryCopyCurrentValue(ref reader, source, valueBuffer))
+				if (!TryCopyCell(ref reader, source, valueBuffer, leaf.IsCollection))
 					return false;
 
-				slices[colIndex] = new ValueSlice(start, valueBuffer.WrittenCount - start, firstToken, IsNull: false);
-				MarkActiveBranches(layout.LeafNodesByColumnIndex[colIndex], activeBranches);
+				slices[colIndex] = new ValueSlice(start, valueBuffer.WrittenCount - start, IsNull: false);
+				MarkActiveBranches(leaf, activeBranches);
 				colIndex++;
 			}
 
@@ -277,9 +271,9 @@ internal sealed partial class EsqlResponseReader
 				ThrowFewerValuesThanColumns(colIndex, columnCount);
 
 			rowBuffer.ResetWrittenCount();
-			WriteRawByte(rowBuffer, (byte)'{');
+			rowBuffer.Write((byte)'{');
 			AssembleChildren(layout.Root.Children!, rowBuffer, valueBuffer.WrittenSpan, slices, activeBranches);
-			WriteRawByte(rowBuffer, (byte)'}');
+			rowBuffer.Write((byte)'}');
 
 			return true;
 		}
@@ -324,22 +318,11 @@ internal sealed partial class EsqlResponseReader
 					continue;
 
 				if (needsComma)
-					WriteRawByte(buffer, (byte)',');
+					buffer.Write((byte)',');
 				needsComma = true;
 
-				WriteRawBytes(buffer, child.PrefixBytes);
-				var raw = values.Slice(slice.Start, slice.Length);
-
-				if (child.IsCollection && slice.FirstToken != JsonTokenType.StartArray)
-				{
-					WriteRawByte(buffer, (byte)'[');
-					WriteRawBytes(buffer, raw);
-					WriteRawByte(buffer, (byte)']');
-				}
-				else
-				{
-					WriteRawBytes(buffer, raw);
-				}
+				buffer.Write(child.PrefixBytes);
+				buffer.Write(values.Slice(slice.Start, slice.Length));
 			}
 			else
 			{
@@ -349,29 +332,15 @@ internal sealed partial class EsqlResponseReader
 					continue;
 
 				if (needsComma)
-					WriteRawByte(buffer, (byte)',');
+					buffer.Write((byte)',');
 				needsComma = true;
 
-				WriteRawBytes(buffer, child.PrefixBytes);
-				WriteRawByte(buffer, (byte)'{');
+				buffer.Write(child.PrefixBytes);
+				buffer.Write((byte)'{');
 				AssembleChildren(child.Children, buffer, values, slices, activeBranches);
-				WriteRawByte(buffer, (byte)'}');
+				buffer.Write((byte)'}');
 			}
 		}
-	}
-
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private static void WriteRawByte(PooledBufferWriter buffer, byte value)
-	{
-		buffer.GetSpan(1)[0] = value;
-		buffer.Advance(1);
-	}
-
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	private static void WriteRawBytes(PooledBufferWriter buffer, ReadOnlySpan<byte> value)
-	{
-		value.CopyTo(buffer.GetSpan(value.Length));
-		buffer.Advance(value.Length);
 	}
 
 	private static bool TryCopyScalarValue(ref Utf8JsonReader reader, in ReadOnlySequence<byte> source, RowAssemblyBuffers buffers)
@@ -382,23 +351,32 @@ internal sealed partial class EsqlResponseReader
 		if (!reader.Read())
 			return false;
 
-		// ES|QL returns a single-valued multi-value field as a bare scalar, and the read target is a collection,
-		// so wrap it the way TryMaterializeFlatRow wraps such a cell for a collection property. A null cell stays null.
-		var wrap = buffers.WrapScalarInArray && reader.TokenType is not (JsonTokenType.StartArray or JsonTokenType.Null);
-		if (wrap)
-			WriteRawByte(rowBuffer, (byte)'[');
-
-		if (!TryCopyCurrentValue(ref reader, source, rowBuffer))
+		if (!TryCopyCell(ref reader, source, rowBuffer, buffers.WrapScalarInArray))
 			return false;
-
-		if (wrap)
-			WriteRawByte(rowBuffer, (byte)']');
 
 		if (!reader.Read())
 			return false;
 
 		if (reader.TokenType != JsonTokenType.EndArray)
 			ThrowMoreValuesThanColumns(1);
+
+		return true;
+	}
+
+	/// <summary>Copies the current cell, writing a bare value for a collection target as <c>[value]</c>.</summary>
+	private static bool TryCopyCell(ref Utf8JsonReader reader, in ReadOnlySequence<byte> source, PooledBufferWriter destination, bool collectionTarget)
+	{
+		// ES|QL returns a single-valued multi-value field as a bare scalar, but a collection target reads a JSON array.
+		// A null cell stays null.
+		var wrap = collectionTarget && reader.TokenType is not (JsonTokenType.StartArray or JsonTokenType.Null);
+		if (wrap)
+			destination.Write((byte)'[');
+
+		if (!TryCopyCurrentValue(ref reader, source, destination))
+			return false;
+
+		if (wrap)
+			destination.Write((byte)']');
 
 		return true;
 	}
@@ -412,9 +390,9 @@ internal sealed partial class EsqlResponseReader
 		switch (reader.TokenType)
 		{
 			case JsonTokenType.String:
-				WriteRawByte(destination, (byte)'"');
+				destination.Write((byte)'"');
 				CopyTokenValue(ref reader, destination);
-				WriteRawByte(destination, (byte)'"');
+				destination.Write((byte)'"');
 				return true;
 
 			case JsonTokenType.Number:
@@ -422,15 +400,15 @@ internal sealed partial class EsqlResponseReader
 				return true;
 
 			case JsonTokenType.True:
-				WriteRawBytes(destination, "true"u8);
+				destination.Write("true"u8);
 				return true;
 
 			case JsonTokenType.False:
-				WriteRawBytes(destination, "false"u8);
+				destination.Write("false"u8);
 				return true;
 
 			case JsonTokenType.Null:
-				WriteRawBytes(destination, "null"u8);
+				destination.Write("null"u8);
 				return true;
 
 			case JsonTokenType.StartArray:
@@ -444,16 +422,10 @@ internal sealed partial class EsqlResponseReader
 
 	private static void CopyTokenValue(ref Utf8JsonReader reader, PooledBufferWriter destination)
 	{
-		if (!reader.HasValueSequence)
-		{
-			WriteRawBytes(destination, reader.ValueSpan);
-			return;
-		}
-
-		var sequence = reader.ValueSequence;
-		var length = checked((int)sequence.Length);
-		sequence.CopyTo(destination.GetSpan(length));
-		destination.Advance(length);
+		if (reader.HasValueSequence)
+			destination.Write(reader.ValueSequence);
+		else
+			destination.Write(reader.ValueSpan);
 	}
 
 	/// <summary>
@@ -466,10 +438,7 @@ internal sealed partial class EsqlResponseReader
 		if (!reader.TrySkip())
 			return false;
 
-		var raw = source.Slice(start, reader.BytesConsumed - start);
-		var length = checked((int)raw.Length);
-		raw.CopyTo(destination.GetSpan(length));
-		destination.Advance(length);
+		destination.Write(source.Slice(start, reader.BytesConsumed - start));
 		return true;
 	}
 }

@@ -8,14 +8,14 @@ using System.Runtime.CompilerServices;
 namespace Elastic.Esql.Materialization;
 
 /// <summary>
-/// Lightweight asynchronous buffer manager that wraps a <see cref="Stream"/> and provides
-/// a read-advance pattern analogous to <c>PipeReader</c> while remaining stream based.
+/// Lightweight buffer manager that wraps a <see cref="Stream"/> and provides a read-advance pattern analogous to
+/// <c>PipeReader</c> while remaining stream based, refilled by a blocking or an awaited read.
 /// </summary>
 /// <remarks>
 /// The fill loop needs MinimumReadSize free bytes, and a 16 KB rent regrows to 32 KB on the second read
 /// whenever a partial row remains, so the default starts there.
 /// </remarks>
-internal sealed class AsyncStreamBuffer(Stream stream, int initialBufferSize = 32768) : IAsyncBufferCursor, IDisposable
+internal sealed class StreamBuffer(Stream stream, int initialBufferSize = 32768) : IAsyncBufferCursor, ISyncBufferCursor, IDisposable
 {
 	private const int MinimumReadSize = 16384;
 
@@ -47,19 +47,8 @@ internal sealed class AsyncStreamBuffer(Stream stream, int initialBufferSize = 3
 #endif
 	public async ValueTask<bool> ReadAsync(CancellationToken cancellationToken)
 	{
-		// Unexamined buffered data satisfies the caller without touching the stream, mirroring
-		// PipeReader.ReadAsync, so rows that already arrived are not held back by a network read.
-		if (_examined < _filled)
-			return true;
-
-		if (_streamCompleted)
-			return _offset < _filled;
-
-		EnsureWritableSpace(MinimumReadSize);
-
-		// Compaction in EnsureWritableSpace shifts absolute indexes; everything buffered has been
-		// examined when this point is reached, so realign before appending new data.
-		_examined = _filled;
+		if (TryAnswerFromBuffer(out var hasData))
+			return hasData;
 
 #if NETSTANDARD2_0
 		var bytesRead = await stream
@@ -71,15 +60,12 @@ internal sealed class AsyncStreamBuffer(Stream stream, int initialBufferSize = 3
 			.ConfigureAwait(false);
 #endif
 
-		if (bytesRead == 0)
-		{
-			_streamCompleted = true;
-			return _offset < _filled;
-		}
-
-		_filled += bytesRead;
-		return true;
+		return CompleteRead(bytesRead);
 	}
+
+	/// <inheritdoc cref="ReadAsync"/>
+	public bool Read() =>
+		TryAnswerFromBuffer(out var hasData) ? hasData : CompleteRead(stream.Read(_buffer, _filled, _buffer.Length - _filled));
 
 	/// <summary>
 	/// Advances past consumed data and records how far the caller examined, following the
@@ -99,6 +85,47 @@ internal sealed class AsyncStreamBuffer(Stream stream, int initialBufferSize = 3
 			ArrayPool<byte>.Shared.Return(buf);
 	}
 
+	/// <summary>
+	/// Answers a read from buffered state when it can. Otherwise makes room for the stream read that follows and
+	/// returns <see langword="false"/>.
+	/// </summary>
+	private bool TryAnswerFromBuffer(out bool hasData)
+	{
+		// Unexamined buffered data satisfies the caller without touching the stream, mirroring
+		// PipeReader.ReadAsync, so rows that already arrived are not held back by a network read.
+		if (_examined < _filled)
+		{
+			hasData = true;
+			return true;
+		}
+
+		if (_streamCompleted)
+		{
+			hasData = _offset < _filled;
+			return true;
+		}
+
+		EnsureWritableSpace(MinimumReadSize);
+
+		// Compaction in EnsureWritableSpace shifts absolute indexes. Everything buffered has been
+		// examined when this point is reached, so realign before appending new data.
+		_examined = _filled;
+		hasData = false;
+		return false;
+	}
+
+	private bool CompleteRead(int bytesRead)
+	{
+		if (bytesRead == 0)
+		{
+			_streamCompleted = true;
+			return _offset < _filled;
+		}
+
+		_filled += bytesRead;
+		return true;
+	}
+
 	private void EnsureWritableSpace(int sizeHint)
 	{
 		var availableTail = _buffer.Length - _filled;
@@ -116,15 +143,7 @@ internal sealed class AsyncStreamBuffer(Stream stream, int initialBufferSize = 3
 			return;
 		}
 
-		var required = remaining + sizeHint;
-		var newSize = Math.Max(_buffer.Length * 2, required);
-		var newBuffer = ArrayPool<byte>.Shared.Rent(newSize);
-
-		if (remaining > 0)
-			System.Buffer.BlockCopy(_buffer, _offset, newBuffer, 0, remaining);
-
-		ArrayPool<byte>.Shared.Return(_buffer);
-		_buffer = newBuffer;
+		PooledArrays.Grow(ref _buffer, _offset, remaining, Math.Max(_buffer.Length * 2, remaining + sizeHint));
 		_filled = remaining;
 		_offset = 0;
 	}

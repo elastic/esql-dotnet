@@ -11,7 +11,7 @@ using Elastic.Esql.Core;
 namespace Elastic.Esql.Materialization;
 
 /// <summary>Raw JSON bytes captured for a single column value during phase-1 buffering.</summary>
-internal readonly record struct ValueSlice(int Start, int Length, JsonTokenType FirstToken, bool IsNull);
+internal readonly record struct ValueSlice(int Start, int Length, bool IsNull);
 
 /// <summary>
 /// A node in the pre-computed column tree. Leaf nodes (<see cref="ColumnIndex"/> >= 0) map to a
