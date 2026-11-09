@@ -19,7 +19,7 @@ internal sealed class RowAssemblyBuffers(int estimatedRowSize, bool isScalar, bo
 	/// <summary>The assembled row object, or the bare cell for scalar reads.</summary>
 	public PooledBufferWriter RowBuffer => _rowBuffer ??= new PooledBufferWriter(estimatedRowSize);
 
-	/// <summary>Per-cell scratch for nested layouts, whose cells are regrouped before assembly; null for flat and scalar reads.</summary>
+	/// <summary>Per-cell scratch for nested layouts, whose cells are regrouped before assembly. Null for flat and scalar reads.</summary>
 	public PooledBufferWriter? ValueBuffer => needsValueBuffer ? _valueBuffer ??= new PooledBufferWriter(estimatedRowSize) : null;
 
 	/// <summary>Whether rows are a single bare cell rather than an assembled JSON object.</summary>

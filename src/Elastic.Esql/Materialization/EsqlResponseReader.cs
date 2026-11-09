@@ -115,8 +115,8 @@ internal sealed partial class EsqlResponseReader
 	{
 		if (_optionsFrozen)
 			return;
-		// Mutable options re-resolve a fresh contract on every GetTypeInfo call;
-		// frozen options reuse the cache at near-zero cost. STJ requires a
+		// Mutable options re-resolve a fresh contract on every GetTypeInfo call,
+		// but frozen options reuse the cache at near-zero cost. STJ requires a
 		// TypeInfoResolver to be set before accepting MakeReadOnly.
 		if (!Options.IsReadOnly && Options.TypeInfoResolver is not null)
 			Options.MakeReadOnly();

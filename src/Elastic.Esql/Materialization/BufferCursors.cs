@@ -15,13 +15,13 @@ internal interface IBufferCursor
 	void AdvanceTo(SequencePosition consumed, SequencePosition examined);
 }
 
-/// <summary>Read-and-advance view over buffered response bytes, mirroring PipeReader.</summary>
+/// <summary>Buffer cursor whose refill awaits the underlying source.</summary>
 internal interface IAsyncBufferCursor : IBufferCursor
 {
 	ValueTask<bool> ReadAsync(CancellationToken cancellationToken);
 }
 
-/// <summary>Read-and-advance view over buffered response bytes, mirroring PipeReader.</summary>
+/// <summary>Buffer cursor whose refill blocks on the underlying source.</summary>
 internal interface ISyncBufferCursor : IBufferCursor
 {
 	bool Read();

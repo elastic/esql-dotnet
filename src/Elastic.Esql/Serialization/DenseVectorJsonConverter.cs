@@ -46,7 +46,7 @@ internal sealed class DenseVectorFloatJsonConverter : JsonConverter<DenseVector<
 		if (reader.TokenType != JsonTokenType.StartArray)
 			throw new JsonException("Expected start of array for DenseVector<float>.");
 
-		// Vectors are hundreds to a few thousand elements; a rented buffer grows without leaving List<T> arrays behind.
+		// Vectors are hundreds to a few thousand elements. A rented buffer grows without leaving List<T> arrays behind.
 		var scratch = ArrayPool<float>.Shared.Rent(256);
 		var count = 0;
 
@@ -114,7 +114,7 @@ internal sealed class DenseVectorByteJsonConverter : JsonConverter<DenseVector<b
 		if (reader.TokenType != JsonTokenType.StartArray)
 			throw new JsonException("Expected start of array for DenseVector<byte>.");
 
-		// Vectors are hundreds to a few thousand elements; a rented buffer grows without leaving List<T> arrays behind.
+		// Vectors are hundreds to a few thousand elements. A rented buffer grows without leaving List<T> arrays behind.
 		var scratch = ArrayPool<byte>.Shared.Rent(256);
 		var count = 0;
 

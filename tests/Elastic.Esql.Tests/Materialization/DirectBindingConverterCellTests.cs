@@ -19,7 +19,7 @@ public class DirectBindingConverterCellTests
 		var layout = BuildLayout<EnumModel>(("level", "integer"), ("name", "keyword"));
 
 		layout.DirectBinder.Should().NotBeNull();
-		layout.DirectBinder!.Kinds.Should().Equal([DirectBinderKind.Converter, DirectBinderKind.String]);
+		layout.DirectBinder.Kinds.Should().Equal([DirectBinderKind.Converter, DirectBinderKind.String]);
 	}
 
 	[Test]
@@ -41,7 +41,9 @@ public class DirectBindingConverterCellTests
 	[Test]
 	public void ReadRows_ListProperty_BindsArrayScalarAndNullCells()
 	{
-		const string json = """{"columns":[{"name":"tags","type":"keyword"},{"name":"name","type":"keyword"}],"values":[[["a","b"],"x"],["solo","y"],[null,"z"]]}""";
+		const string json =
+			"""{"columns":[{"name":"tags","type":"keyword"},""" +
+			"""{"name":"name","type":"keyword"}],"values":[[["a","b"],"x"],["solo","y"],[null,"z"]]}""";
 
 		var layout = BuildLayout<TagsModel>(("tags", "keyword"), ("name", "keyword"));
 		layout.DirectBinder.Should().NotBeNull();
@@ -61,7 +63,7 @@ public class DirectBindingConverterCellTests
 		// Eligible, but an array contract cannot take a wrapped single value, so the bare cell falls back per row.
 		var layout = BuildLayout<ArrayTagsModel>(("tags", "keyword"));
 		layout.DirectBinder.Should().NotBeNull();
-		layout.DirectBinder!.ElementTypeInfos[0].Should().BeNull();
+		layout.DirectBinder.ElementTypeInfos[0].Should().BeNull();
 
 		var rows = ReadRows<ArrayTagsModel>(json, CreateOptions());
 

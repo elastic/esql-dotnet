@@ -13,9 +13,9 @@ namespace Elastic.Esql.Materialization;
 internal sealed partial class EsqlResponseReader
 {
 	/// <summary>
-	/// Reads one row's cells directly off the reader and assigns them via cached
-	/// <see cref="JsonPropertyInfo.Set"/> delegates. The reader must have just consumed the row's
-	/// StartArray token. Returns false with <paramref name="incomplete"/> set when the buffer ends
+	/// Reads one row's cells directly off the reader and assigns them through the binder's typed setters, or through
+	/// the contract's <see cref="JsonPropertyInfo.Set"/> delegate where none was compiled. The reader must have just
+	/// consumed the row's StartArray token. Returns false with <paramref name="incomplete"/> set when the buffer ends
 	/// mid-row (caller re-reads with more data), or false with it unset when a cell's token shape
 	/// requires the serializer's coercion or error semantics (caller falls back for this row).
 	/// </summary>
@@ -84,7 +84,7 @@ internal sealed partial class EsqlResponseReader
 	}
 
 	/// <summary>
-	/// Deserializes one cell through its own contract and assigns it. A truncated cell reports incomplete; a cell
+	/// Deserializes one cell through its own contract and assigns it. A truncated cell reports incomplete, and a cell
 	/// the contract rejects returns false so the slow path re-reads the row and raises the canonical error.
 	/// </summary>
 	private static bool TryBindConverterCell(
@@ -124,7 +124,7 @@ internal sealed partial class EsqlResponseReader
 		{
 			if (elementTypeInfo is not null && tokenType != JsonTokenType.StartArray)
 			{
-				// ES|QL returns a single-valued multi-value field as a bare scalar; wrap it like the row path does.
+				// ES|QL returns a single-valued multi-value field as a bare scalar, so wrap it like the row path does.
 				var list = (IList)cellTypeInfo.CreateObject!();
 				_ = list.Add(JsonSerializer.Deserialize(ref reader, elementTypeInfo));
 				value = list;
@@ -176,7 +176,7 @@ internal sealed partial class EsqlResponseReader
 		return false;
 	}
 
-	// Mirrors TryBindDirectValue; keep both switches in sync when adding a new DirectBinderKind.
+	// Mirrors TryBindDirectValue, so keep both switches in sync when adding a new DirectBinderKind.
 	private static bool TryReadScalar<T>(ref Utf8JsonReader reader, DirectBinderKind kind, JsonTokenType tokenType, out T? item)
 	{
 		item = default;
@@ -254,13 +254,13 @@ internal sealed partial class EsqlResponseReader
 		if (typeof(T) == typeof(TValue))
 			return Unsafe.As<TValue, T>(ref value);
 
-		// TryClassifyScalar guarantees T is TValue or TValue?; anything else is a classification bug.
+		// TryClassifyScalar guarantees T is TValue or TValue?, so anything else is a classification bug.
 		Debug.Assert(typeof(T) == typeof(TValue?), $"Expected T to be {typeof(TValue)} or {typeof(TValue?)}, but got {typeof(T)}.");
 		TValue? nullable = value;
 		return Unsafe.As<TValue?, T>(ref nullable);
 	}
 
-	// Mirrors TryReadScalar; keep both switches in sync when adding a new DirectBinderKind.
+	// Mirrors TryReadScalar, so keep both switches in sync when adding a new DirectBinderKind.
 	private static bool TryBindDirectValue(
 		ref Utf8JsonReader reader,
 		DirectBinderKind kind,

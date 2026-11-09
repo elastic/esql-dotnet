@@ -6,11 +6,14 @@ using System.Buffers;
 
 namespace Elastic.Esql.Materialization;
 
-// The fill loop needs MinimumReadSize free bytes; a 16 KB rent regrew to 32 KB on the second read whenever a partial row remained, so start there.
 /// <summary>
 /// Lightweight synchronous buffer manager that wraps a <see cref="Stream"/> and provides
 /// a read-advance pattern analogous to <c>PipeReader</c> but fully synchronous.
 /// </summary>
+/// <remarks>
+/// The fill loop needs MinimumReadSize free bytes, and a 16 KB rent regrows to 32 KB on the second read
+/// whenever a partial row remains, so the default starts there.
+/// </remarks>
 internal sealed class SyncStreamBuffer(Stream stream, int initialBufferSize = 32768) : ISyncBufferCursor, IDisposable
 {
 	private const int MinimumReadSize = 16384;

@@ -11,8 +11,8 @@ namespace Elastic.Esql.Materialization;
 
 /// <summary>
 /// Compiles strongly typed property setters for the direct-binding fast path so value-type cells are assigned
-/// without boxing through <see cref="JsonPropertyInfo.Set"/>. Only used where the runtime can generate code;
-/// Native AOT keeps the object-typed setter.
+/// without boxing through <see cref="JsonPropertyInfo.Set"/>. Only used where the runtime can generate code,
+/// so Native AOT keeps the object-typed setter.
 /// </summary>
 /// <remarks>
 /// The compiled setter assigns the member directly, so a contract modifier that replaced
@@ -20,7 +20,7 @@ namespace Elastic.Esql.Materialization;
 /// </remarks>
 internal static class DirectSetterCompiler
 {
-	// netstandard2.0 has no RuntimeFeature.IsDynamicCodeSupported; every runtime it targets here compiles expression trees.
+	// netstandard2.0 has no RuntimeFeature.IsDynamicCodeSupported, but every runtime it targets here compiles expression trees.
 #if NETSTANDARD2_0
 	private const bool DynamicCodeSupported = true;
 #else
@@ -60,7 +60,7 @@ internal static class DirectSetterCompiler
 		var instance = Expression.Parameter(typeof(object), "instance");
 		var value = Expression.Parameter(typeof(TValue), "value");
 
-		// A contract modifier can point AttributeProvider at a member of an unrelated type; converting the row
+		// A contract modifier can point AttributeProvider at a member of an unrelated type. Converting the row
 		// instance to that type would throw at bind time, so such a column keeps the boxing setter.
 		MemberExpression target;
 		switch (property.AttributeProvider)

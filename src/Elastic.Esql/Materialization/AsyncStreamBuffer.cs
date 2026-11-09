@@ -7,11 +7,14 @@ using System.Runtime.CompilerServices;
 
 namespace Elastic.Esql.Materialization;
 
-// The fill loop needs MinimumReadSize free bytes; a 16 KB rent regrew to 32 KB on the second read whenever a partial row remained, so start there.
 /// <summary>
 /// Lightweight asynchronous buffer manager that wraps a <see cref="Stream"/> and provides
 /// a read-advance pattern analogous to <c>PipeReader</c> while remaining stream based.
 /// </summary>
+/// <remarks>
+/// The fill loop needs MinimumReadSize free bytes, and a 16 KB rent regrows to 32 KB on the second read
+/// whenever a partial row remains, so the default starts there.
+/// </remarks>
 internal sealed class AsyncStreamBuffer(Stream stream, int initialBufferSize = 32768) : IAsyncBufferCursor, IDisposable
 {
 	private const int MinimumReadSize = 16384;

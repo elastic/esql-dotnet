@@ -360,7 +360,7 @@ internal sealed class TransportEsqlAsyncResponse(ElasticsearchStreamResponse res
 
 	public async ValueTask DisposeAsync()
 	{
-		// The pipe leaves the stream open; the response owns the connection and releases it.
+		// The pipe leaves the stream open. The response owns the connection and releases it.
 		await Body.CompleteAsync().ConfigureAwait(false);
 		response.Dispose();
 	}

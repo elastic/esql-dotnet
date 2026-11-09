@@ -155,7 +155,7 @@ internal sealed partial class EsqlResponseReader
 
 	/// <summary>
 	/// Flat layouts list their leaves in column order, so every non-null cell is written into the row object as
-	/// it is read; no per-cell scratch or regrouping is needed.
+	/// it is read. No per-cell scratch or regrouping is needed.
 	/// </summary>
 	private static bool TryMaterializeFlatRow(
 		ref Utf8JsonReader reader,
@@ -193,7 +193,7 @@ internal sealed partial class EsqlResponseReader
 
 			WriteRawBytes(rowBuffer, leaf.PrefixBytes);
 
-			// ES|QL returns a single-valued multi-value field as a bare scalar; the target property is a collection.
+			// ES|QL returns a single-valued multi-value field as a bare scalar, but the target property is a collection.
 			var wrap = leaf.IsCollection && reader.TokenType != JsonTokenType.StartArray;
 			if (wrap)
 				WriteRawByte(rowBuffer, (byte)'[');
@@ -382,8 +382,8 @@ internal sealed partial class EsqlResponseReader
 		if (!reader.Read())
 			return false;
 
-		// ES|QL returns a single-valued multi-value field as a bare scalar, and the read target is a collection;
-		// wrap it the way TryMaterializeFlatRow wraps such a cell for a collection property. A null cell stays null.
+		// ES|QL returns a single-valued multi-value field as a bare scalar, and the read target is a collection,
+		// so wrap it the way TryMaterializeFlatRow wraps such a cell for a collection property. A null cell stays null.
 		var wrap = buffers.WrapScalarInArray && reader.TokenType is not (JsonTokenType.StartArray or JsonTokenType.Null);
 		if (wrap)
 			WriteRawByte(rowBuffer, (byte)'[');
@@ -458,7 +458,7 @@ internal sealed partial class EsqlResponseReader
 
 	/// <summary>
 	/// Skips the array or object and copies its source bytes, whitespace included, in one block. Returns false when
-	/// the buffer ends inside the value; the caller then retries with more data.
+	/// the buffer ends inside the value, and the caller then retries with more data.
 	/// </summary>
 	private static bool TryCopyComplexValue(ref Utf8JsonReader reader, in ReadOnlySequence<byte> source, PooledBufferWriter destination)
 	{

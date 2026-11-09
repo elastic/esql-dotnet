@@ -34,8 +34,8 @@ internal enum DirectBinderKind
 /// </summary>
 /// <remarks>
 /// Binding directly is a large net win over the assemble-and-deserialize pipeline, which tokenizes, re-writes and
-/// re-parses every cell. Built once per (target type, column schema) and cached on the <see cref="ColumnLayout"/>;
-/// immutable after construction because layouts are shared across threads.
+/// re-parses every cell. Built once per (target type, column schema) and cached on the <see cref="ColumnLayout"/>.
+/// Immutable after construction because layouts are shared across threads.
 /// </remarks>
 internal sealed class DirectRowBinder
 {
@@ -48,12 +48,12 @@ internal sealed class DirectRowBinder
 	/// </summary>
 	public required Delegate?[] TypedSetters { get; init; }
 
-	/// <summary>Contract used to deserialize a <see cref="DirectBinderKind.Converter"/> cell; null for the built-in kinds.</summary>
+	/// <summary>Contract used to deserialize a <see cref="DirectBinderKind.Converter"/> cell, or null for the built-in kinds.</summary>
 	public required JsonTypeInfo?[] CellTypeInfos { get; init; }
 
 	/// <summary>
-	/// Element contract for collection-typed converter cells whose contract creates an <see cref="System.Collections.IList"/>;
-	/// a bare scalar cell is deserialized as one element and wrapped, matching the row path's <c>[value]</c> rewrite.
+	/// Element contract for collection-typed converter cells whose contract creates an <see cref="System.Collections.IList"/>.
+	/// A bare scalar cell is deserialized as one element and wrapped, matching the row path's <c>[value]</c> rewrite.
 	/// </summary>
 	public required JsonTypeInfo?[] ElementTypeInfos { get; init; }
 
@@ -136,7 +136,7 @@ internal sealed class DirectRowBinder
 			elementTypeInfos[i] = leafNodes[i].IsCollection ? ResolveListElementTypeInfo(cellTypeInfo) : null;
 		}
 
-		// A required property without a column fails every row in the serializer; keep that behavior on the slow path.
+		// A required property without a column fails every row in the serializer, so keep that behavior on the slow path.
 		foreach (var property in typeInfo.Properties)
 		{
 			if (property.IsRequired && !bound.Contains(property))
@@ -182,7 +182,7 @@ internal sealed class DirectRowBinder
 
 		try
 		{
-			// Only list-shaped contracts can take a wrapped single value; arrays and sets fall back per row.
+			// Only list-shaped contracts can take a wrapped single value, so arrays and sets fall back per row.
 			// The probe runs the collection's own constructor, so a failure there also keeps the slow path.
 			if (collectionTypeInfo.CreateObject() is not IList)
 				return null;
@@ -272,8 +272,8 @@ internal sealed class DirectRowBinder
 				|| propertyTypeInfo.Converter.GetType().Assembly != typeof(JsonSerializerOptions).Assembly)
 				return false;
 
-			// For nullable value types the wrapper converter is always a built-in NullableConverter<T>;
-			// also check the underlying type so a user converter for T disqualifies T? as well.
+			// For nullable value types the wrapper converter is always a built-in NullableConverter<T>.
+			// Also check the underlying type so a user converter for T disqualifies T? as well.
 			var underlying = Nullable.GetUnderlyingType(propertyType);
 			if (underlying is null)
 				return true;
