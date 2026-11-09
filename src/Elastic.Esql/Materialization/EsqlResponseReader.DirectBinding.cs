@@ -5,6 +5,7 @@
 using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 
@@ -12,8 +13,44 @@ namespace Elastic.Esql.Materialization;
 
 internal sealed partial class EsqlResponseReader
 {
-	/// <summary>A validated cell's extent in the source, and whether its bare scalar is read as <c>[value]</c>.</summary>
-	private readonly record struct CellSpan(int Column, long Start, long Length, bool Wrap);
+	/// <summary>A validated cell's extent in the source, whether its bare scalar is read as <c>[value]</c>, and the value a built-in cell parsed to.</summary>
+	private readonly record struct CellSpan(int Column, long Start, long Length, bool Wrap, DirectValue Value);
+
+	/// <summary>The parsed value of a built-in cell, in the field its <see cref="DirectBinderKind"/> selects.</summary>
+	/// <remarks>
+	/// The fields overlap, so the struct stays 16 bytes and unmanaged and a stackalloc'd row of <see cref="CellSpan"/>
+	/// can carry each built-in cell from the validating pass to the assigning one without a second parse. Only primitives
+	/// overlap, because an auto-layout field such as DateTime inside an explicit layout is not guaranteed to load on every
+	/// runtime the netstandard2.0 build serves. A date lives in <see cref="Int64"/>, so offset 8 is free for the offset of
+	/// a DateTimeOffset whenever a date is the live kind.
+	/// </remarks>
+	[StructLayout(LayoutKind.Explicit)]
+	private struct DirectValue
+	{
+		[FieldOffset(0)]
+		public bool Bool;
+
+		[FieldOffset(0)]
+		public int Int32;
+
+		[FieldOffset(0)]
+		public long Int64;
+
+		[FieldOffset(0)]
+		public double Double;
+
+		[FieldOffset(0)]
+		public float Single;
+
+		[FieldOffset(0)]
+		public decimal Decimal;
+
+		[FieldOffset(0)]
+		public Guid Guid;
+
+		[FieldOffset(8)]
+		public short OffsetMinutes;
+	}
 
 	/// <summary>
 	/// Reads one row's cells directly off the reader and assigns them through the binder's typed setters, or through
@@ -125,8 +162,9 @@ internal sealed partial class EsqlResponseReader
 	}
 
 	/// <summary>
-	/// Checks every cell's token shape, skips over every converter cell, and records the extent of each non-null cell.
-	/// Returns false with <paramref name="incomplete"/> set when the buffer ends mid-row.
+	/// Checks every cell's token shape, skips over every converter cell, and records the extent of each non-null cell
+	/// with the parsed value of each built-in cell other than a string. Returns false with <paramref name="incomplete"/>
+	/// set when the buffer ends mid-row.
 	/// </summary>
 	private static bool TryValidateRow(ref Utf8JsonReader reader, DirectRowBinder binder, scoped Span<CellSpan> spans, out int recorded, out bool incomplete)
 	{
@@ -159,6 +197,7 @@ internal sealed partial class EsqlResponseReader
 
 			var start = reader.TokenStartIndex;
 			var wrap = binder.IsCollection[i] && tokenType != JsonTokenType.StartArray;
+			var value = default(DirectValue);
 
 			if (kinds[i] == DirectBinderKind.Converter)
 			{
@@ -168,10 +207,10 @@ internal sealed partial class EsqlResponseReader
 					return false;
 				}
 			}
-			else if (!TryValidateDirectValue(ref reader, kinds[i], tokenType))
+			else if (!TryReadDirectValue(ref reader, kinds[i], tokenType, out value))
 				return false;
 
-			spans[recorded++] = new CellSpan(i, start, reader.BytesConsumed - start, wrap);
+			spans[recorded++] = new CellSpan(i, start, reader.BytesConsumed - start, wrap, value);
 		}
 
 		if (!reader.Read())
@@ -203,6 +242,14 @@ internal sealed partial class EsqlResponseReader
 				continue;
 			}
 
+			if (kind != DirectBinderKind.String)
+			{
+				AssignDirectValue(kind, span.Value, binder.Properties[column], binder.TypedSetters[column], instance);
+				continue;
+			}
+
+			// A string has no slot in the unmanaged DirectValue, and decoding it in the first pass would allocate for a row
+			// that may still fall back.
 			var cellReader = new Utf8JsonReader(source.Slice(span.Start, span.Length), isFinalBlock: true, CellReaderState(binder));
 			_ = cellReader.Read();
 
@@ -305,7 +352,7 @@ internal sealed partial class EsqlResponseReader
 		return false;
 	}
 
-	// Mirrors TryBindDirectValue and TryValidateDirectValue, so keep the three switches in sync when adding a new DirectBinderKind.
+	// Mirrors TryBindDirectValue, TryReadDirectValue and AssignDirectValue, so keep the four switches in sync when adding a new DirectBinderKind.
 	private static bool TryReadScalar<T>(ref Utf8JsonReader reader, DirectBinderKind kind, JsonTokenType tokenType, out T? item)
 	{
 		item = default;
@@ -389,7 +436,7 @@ internal sealed partial class EsqlResponseReader
 		return Unsafe.As<TValue?, T>(ref nullable);
 	}
 
-	// Mirrors TryReadScalar and TryValidateDirectValue, so keep the three switches in sync when adding a new DirectBinderKind.
+	// Mirrors TryReadScalar, TryReadDirectValue and AssignDirectValue, so keep the four switches in sync when adding a new DirectBinderKind.
 	private static bool TryBindDirectValue(
 		ref Utf8JsonReader reader,
 		DirectBinderKind kind,
@@ -465,23 +512,110 @@ internal sealed partial class EsqlResponseReader
 		}
 	}
 
-	// Mirrors TryReadScalar and TryBindDirectValue without the assignment, so keep the three switches in sync when
-	// adding a new DirectBinderKind.
-	private static bool TryValidateDirectValue(ref Utf8JsonReader reader, DirectBinderKind kind, JsonTokenType tokenType) =>
-		kind switch
+	// Mirrors TryReadScalar and TryBindDirectValue, storing the value where AssignDirectValue reads it back, so keep the
+	// four switches in sync when adding a new DirectBinderKind. A string cell is only shape-checked here.
+	private static bool TryReadDirectValue(ref Utf8JsonReader reader, DirectBinderKind kind, JsonTokenType tokenType, out DirectValue value)
+	{
+		value = default;
+
+		switch (kind)
 		{
-			DirectBinderKind.String => tokenType == JsonTokenType.String,
-			DirectBinderKind.Bool => tokenType is JsonTokenType.True or JsonTokenType.False,
-			DirectBinderKind.Int32 => tokenType == JsonTokenType.Number && reader.TryGetInt32(out _),
-			DirectBinderKind.Int64 => tokenType == JsonTokenType.Number && reader.TryGetInt64(out _),
-			DirectBinderKind.Double => tokenType == JsonTokenType.Number && reader.TryGetDouble(out _),
-			DirectBinderKind.Single => tokenType == JsonTokenType.Number && reader.TryGetSingle(out _),
-			DirectBinderKind.Decimal => tokenType == JsonTokenType.Number && reader.TryGetDecimal(out _),
-			DirectBinderKind.DateTime => tokenType == JsonTokenType.String && reader.TryGetDateTime(out _),
-			DirectBinderKind.DateTimeOffset => tokenType == JsonTokenType.String && reader.TryGetDateTimeOffset(out _),
-			DirectBinderKind.Guid => tokenType == JsonTokenType.String && reader.TryGetGuid(out _),
-			_ => false
-		};
+			case DirectBinderKind.String:
+				return tokenType == JsonTokenType.String;
+
+			case DirectBinderKind.Bool:
+				if (tokenType is not (JsonTokenType.True or JsonTokenType.False))
+					return false;
+				value.Bool = reader.GetBoolean();
+				return true;
+
+			case DirectBinderKind.Int32:
+				return tokenType == JsonTokenType.Number && reader.TryGetInt32(out value.Int32);
+
+			case DirectBinderKind.Int64:
+				return tokenType == JsonTokenType.Number && reader.TryGetInt64(out value.Int64);
+
+			case DirectBinderKind.Double:
+				return tokenType == JsonTokenType.Number && reader.TryGetDouble(out value.Double);
+
+			case DirectBinderKind.Single:
+				return tokenType == JsonTokenType.Number && reader.TryGetSingle(out value.Single);
+
+			case DirectBinderKind.Decimal:
+				return tokenType == JsonTokenType.Number && reader.TryGetDecimal(out value.Decimal);
+
+			case DirectBinderKind.DateTime:
+				if (tokenType != JsonTokenType.String || !reader.TryGetDateTime(out var dateTime))
+					return false;
+				// The ticks and kind alone drop the flag that places a local time in the first pass through the hour a
+				// daylight saving change repeats, and ToBinary keeps it.
+				value.Int64 = dateTime.ToBinary();
+				return true;
+
+			case DirectBinderKind.DateTimeOffset:
+				if (tokenType != JsonTokenType.String || !reader.TryGetDateTimeOffset(out var dateTimeOffset))
+					return false;
+				value.Int64 = dateTimeOffset.Ticks;
+				value.OffsetMinutes = (short)dateTimeOffset.Offset.TotalMinutes;
+				return true;
+
+			case DirectBinderKind.Guid:
+				return tokenType == JsonTokenType.String && reader.TryGetGuid(out value.Guid);
+
+			default:
+				return false;
+		}
+	}
+
+	// Reads back the field TryReadDirectValue stored for the kind, so keep the four switches in sync when adding a new
+	// DirectBinderKind.
+	private static void AssignDirectValue(DirectBinderKind kind, in DirectValue value, JsonPropertyInfo property, Delegate? typedSetter, object instance)
+	{
+		switch (kind)
+		{
+			case DirectBinderKind.Bool:
+				Assign(typedSetter, property, instance, value.Bool);
+				break;
+
+			case DirectBinderKind.Int32:
+				Assign(typedSetter, property, instance, value.Int32);
+				break;
+
+			case DirectBinderKind.Int64:
+				Assign(typedSetter, property, instance, value.Int64);
+				break;
+
+			case DirectBinderKind.Double:
+				Assign(typedSetter, property, instance, value.Double);
+				break;
+
+			case DirectBinderKind.Single:
+				Assign(typedSetter, property, instance, value.Single);
+				break;
+
+			case DirectBinderKind.Decimal:
+				Assign(typedSetter, property, instance, value.Decimal);
+				break;
+
+			case DirectBinderKind.DateTime:
+				Assign(typedSetter, property, instance, DateTime.FromBinary(value.Int64));
+				break;
+
+			case DirectBinderKind.DateTimeOffset:
+				Assign(typedSetter, property, instance, new DateTimeOffset(value.Int64, TimeSpan.FromMinutes(value.OffsetMinutes)));
+				break;
+
+			case DirectBinderKind.Guid:
+				Assign(typedSetter, property, instance, value.Guid);
+				break;
+
+			default:
+				// TryAssignCells routes string and converter cells elsewhere, and TryReadDirectValue rejects any other kind in
+				// the first pass, so no recorded cell reaches this.
+				Debug.Fail($"No direct value is stored for {kind}.");
+				break;
+		}
+	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private static void Assign<TValue>(Delegate? typedSetter, JsonPropertyInfo property, object instance, TValue value)

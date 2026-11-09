@@ -328,6 +328,49 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
+	public void ReadRows_ConverterCellRowWithEveryScalarKind_BindsEachKind()
+	{
+		const string json =
+			"""{"columns":[{"name":"level","type":"integer"},{"name":"flag","type":"boolean"},{"name":"created","type":"date"},""" +
+			"""{"name":"seen","type":"date"},{"name":"id","type":"keyword"},{"name":"name","type":"keyword"},""" +
+			"""{"name":"small","type":"integer"},{"name":"big","type":"long"},{"name":"ratio","type":"double"},""" +
+			"""{"name":"weight","type":"double"},{"name":"amount","type":"double"}],"values":""" +
+			"""[[2,true,"2024-01-02T03:04:05Z","2024-05-06T07:08:09+02:00","0f8fad5b-d9cb-469f-a165-70867728950e","doc",""" +
+			"""123456,9000000000,2.5,1.25,12.345]]}""";
+
+		var binder = BuildLayout<EveryKindModel>(
+			("level", "integer"),
+			("flag", "boolean"),
+			("created", "date"),
+			("seen", "date"),
+			("id", "keyword"),
+			("name", "keyword"),
+			("small", "integer"),
+			("big", "long"),
+			("ratio", "double"),
+			("weight", "double"),
+			("amount", "double")
+		).DirectBinder;
+		binder.Should().NotBeNull();
+		binder.ConverterCellCount.Should().Be(1);
+
+		var row = ReadRows<EveryKindModel>(json, CreateOptions())[0];
+
+		row.Level.Should().Be(Level.High);
+		row.Flag.Should().BeTrue();
+		row.Created.Should().Be(new DateTime(2024, 1, 2, 3, 4, 5, DateTimeKind.Utc));
+		row.Created.Kind.Should().Be(DateTimeKind.Utc);
+		row.Seen.Should().BeExactly(new DateTimeOffset(2024, 5, 6, 7, 8, 9, TimeSpan.FromHours(2)));
+		row.Id.Should().Be(new Guid("0f8fad5b-d9cb-469f-a165-70867728950e"));
+		row.Name.Should().Be("doc");
+		row.Small.Should().Be(123456);
+		row.Big.Should().Be(9000000000L);
+		row.Ratio.Should().Be(2.5);
+		row.Weight.Should().Be(1.25f);
+		row.Amount.Should().Be(12.345m);
+	}
+
+	[Test]
 	public void ReadRows_ConverterCellBeyondMaxDepth_ThrowsLikeTheSerializer()
 	{
 		const string json = """{"columns":[{"name":"tags","type":"keyword"},{"name":"name","type":"keyword"}],"values":[[["a","b"],"x"]]}""";
@@ -453,6 +496,21 @@ public class DirectBindingConverterCellTests
 			get => Owner.Count;
 			set => Owner.Count = value;
 		}
+	}
+
+	private sealed class EveryKindModel
+	{
+		public Level Level { get; set; }
+		public bool Flag { get; set; }
+		public DateTime Created { get; set; }
+		public DateTimeOffset Seen { get; set; }
+		public Guid Id { get; set; }
+		public string Name { get; set; } = string.Empty;
+		public int Small { get; set; }
+		public long Big { get; set; }
+		public double Ratio { get; set; }
+		public float Weight { get; set; }
+		public decimal Amount { get; set; }
 	}
 
 	private sealed class AttributesModel
