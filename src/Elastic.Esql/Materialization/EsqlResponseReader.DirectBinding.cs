@@ -363,20 +363,9 @@ internal sealed partial class EsqlResponseReader
 		switch (kind)
 		{
 			case DirectBinderKind.String:
-				if (tokenType != JsonTokenType.String)
+				if (tokenType != JsonTokenType.String || !TryGetString(ref reader, out var stringValue))
 					return false;
-				// GetString throws InvalidOperationException for text that is not valid UTF-8 or an escape that is not
-				// valid UTF-16, such as a lone surrogate. The serializer raises a JsonException with the path once the
-				// row falls back.
-				try
-				{
-					item = (T)(object)reader.GetString()!;
-				}
-				catch (InvalidOperationException)
-				{
-					return false;
-				}
-
+				item = (T)(object)stringValue!;
 				return true;
 
 			case DirectBinderKind.Bool:
@@ -450,6 +439,22 @@ internal sealed partial class EsqlResponseReader
 		return Unsafe.As<TValue?, T>(ref nullable);
 	}
 
+	// GetString throws InvalidOperationException for text that is not valid UTF-8 or an escape that is not valid UTF-16,
+	// such as a lone surrogate. The serializer raises a JsonException with the path once the row falls back.
+	private static bool TryGetString(ref Utf8JsonReader reader, out string? value)
+	{
+		try
+		{
+			value = reader.GetString();
+			return true;
+		}
+		catch (InvalidOperationException)
+		{
+			value = null;
+			return false;
+		}
+	}
+
 	// Mirrors TryReadScalar, TryReadDirectValue and AssignDirectValue, so keep the four switches in sync when adding a new DirectBinderKind.
 	private static bool TryBindDirectValue(
 		ref Utf8JsonReader reader,
@@ -462,19 +467,8 @@ internal sealed partial class EsqlResponseReader
 		switch (kind)
 		{
 			case DirectBinderKind.String:
-				if (tokenType != JsonTokenType.String)
+				if (tokenType != JsonTokenType.String || !TryGetString(ref reader, out var stringValue))
 					return false;
-				string? stringValue;
-				// Text that GetString rejects falls back, as in TryReadScalar.
-				try
-				{
-					stringValue = reader.GetString();
-				}
-				catch (InvalidOperationException)
-				{
-					return false;
-				}
-
 				Assign<string?>(typedSetter, property, instance, stringValue);
 				return true;
 

@@ -169,7 +169,7 @@ internal sealed partial class EsqlResponseReader
 			// source-generated contexts that omit List<T>: this runs once per enumeration. A user
 			// converter for List<T> would see the internal batch wrapper instead of the caller's
 			// rows, so only the framework's own list converter keeps batching transparent.
-			return options.TryGetTypeInfo(typeof(List<T>), out var typeInfo) && DirectRowBinder.HasBuiltInConverter(typeInfo)
+			return options.TryGetTypeInfo(typeof(List<T>), out var typeInfo) && JsonMetadataManager.IsBuiltInConverter(typeInfo.Converter)
 				? typeInfo as JsonTypeInfo<List<T>>
 				: null;
 		}

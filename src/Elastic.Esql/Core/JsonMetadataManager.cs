@@ -43,18 +43,7 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 	/// not resolved a type yet can still gain a modifier after the options are read-only, while a part that resolved the
 	/// build's type is locked by then.
 	/// </remarks>
-	public bool ResolverIsModifierFree => AllModifierFree(options.TypeInfoResolverChain);
-
-	private static bool AllModifierFree(IList<IJsonTypeInfoResolver> chain)
-	{
-		foreach (var resolver in chain)
-		{
-			if (!IsModifierFreeResolver(resolver))
-				return false;
-		}
-
-		return true;
-	}
+	public bool ResolverIsModifierFree => options.TypeInfoResolverChain.All(IsModifierFreeResolver);
 
 	/// <summary>
 	/// Whether <paramref name="resolver"/> provably carries no contract modifier: a source-generated

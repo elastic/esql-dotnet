@@ -101,6 +101,14 @@ internal sealed class DirectRowBinder
 		var converterCellCount = 0;
 		var bound = new HashSet<JsonPropertyInfo>();
 		var resolverIsModifierFree = metadata.ResolverIsModifierFree;
+		var effectiveMaxDepth = ColumnLayout.EffectiveMaxDepth(options);
+
+		// Under a depth limit of one, a cell reader would get a depth limit of zero, which it reads as the default, so it
+		// could not reject a nested converter cell the way the serializer rejects the assembled row. The assemble path
+		// serves these rows instead.
+		// Each converter cell deserializes in a call of its own, so an $id or $ref that spans cells resolves differently
+		// than in the serializer's single call over the row. IgnoreCycles reads no metadata and keeps the direct path.
+		var converterCellsBind = effectiveMaxDepth >= 2 && (options.ReferenceHandler is not { } handler || handler == ReferenceHandler.IgnoreCycles);
 
 		for (var i = 0; i < count; i++)
 		{
@@ -124,6 +132,9 @@ internal sealed class DirectRowBinder
 				continue;
 			}
 
+			if (!converterCellsBind)
+				return null;
+
 			var cellTypeInfo = property.CustomConverter is { } customConverter
 				? metadata.GetOrCreatePropertyContract(property, customConverter)
 				: JsonMetadataManager.TryResolveTypeInfo(property.PropertyType, options);
@@ -141,18 +152,6 @@ internal sealed class DirectRowBinder
 			if (property.IsRequired && !bound.Contains(property))
 				return null;
 		}
-
-		var effectiveMaxDepth = ColumnLayout.EffectiveMaxDepth(options);
-
-		// A cell reader would get a depth limit of zero, which it reads as the default, so it could not reject a nested
-		// converter cell the way the serializer rejects the assembled row. The assemble path serves these rows instead.
-		if (converterCellCount > 0 && effectiveMaxDepth < 2)
-			return null;
-
-		// Each converter cell deserializes in a call of its own, so an $id or $ref that spans cells resolves differently
-		// than in the serializer's single call over the row. IgnoreCycles reads no metadata and keeps the direct path.
-		if (converterCellCount > 0 && options.ReferenceHandler is { } handler && handler != ReferenceHandler.IgnoreCycles)
-			return null;
 
 		return new DirectRowBinder
 		{
@@ -241,13 +240,14 @@ internal sealed class DirectRowBinder
 	{
 		try
 		{
-			if (!options.TryGetTypeInfo(propertyType, out var propertyTypeInfo) || !HasBuiltInConverter(propertyTypeInfo))
+			if (!options.TryGetTypeInfo(propertyType, out var propertyTypeInfo) || !JsonMetadataManager.IsBuiltInConverter(propertyTypeInfo.Converter))
 				return false;
 
 			// For nullable value types the wrapper converter is always a built-in NullableConverter<T>.
 			// Also check the underlying type so a user converter for T disqualifies T? as well.
 			var underlying = Nullable.GetUnderlyingType(propertyType);
-			return underlying is null || (options.TryGetTypeInfo(underlying, out var underlyingTypeInfo) && HasBuiltInConverter(underlyingTypeInfo));
+			return underlying is null
+				|| (options.TryGetTypeInfo(underlying, out var underlyingTypeInfo) && JsonMetadataManager.IsBuiltInConverter(underlyingTypeInfo.Converter));
 		}
 		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
 		{
@@ -256,7 +256,4 @@ internal sealed class DirectRowBinder
 			return false;
 		}
 	}
-
-	/// <summary>Whether <paramref name="typeInfo"/> reads through one of the serializer's own converters.</summary>
-	internal static bool HasBuiltInConverter(JsonTypeInfo typeInfo) => JsonMetadataManager.IsBuiltInConverter(typeInfo.Converter);
 }
