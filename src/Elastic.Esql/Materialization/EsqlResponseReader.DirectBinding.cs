@@ -360,6 +360,9 @@ internal sealed partial class EsqlResponseReader
 	{
 		item = default;
 
+		if (IsEscapedNonStringValue(ref reader, kind))
+			return false;
+
 		switch (kind)
 		{
 			case DirectBinderKind.String:
@@ -455,6 +458,13 @@ internal sealed partial class EsqlResponseReader
 		}
 	}
 
+	// TryGetDateTime, TryGetDateTimeOffset and TryGetGuid unescape an escaped value before they parse it, and the unescape
+	// throws InvalidOperationException for an escape that is not valid UTF-16, such as a lone surrogate. A valid date or
+	// guid needs no escape, so an escaped one sends the row to the fallback, where the serializer reads it or raises a
+	// JsonException with the path. A string cell decodes its own escapes through TryGetString.
+	private static bool IsEscapedNonStringValue(ref Utf8JsonReader reader, DirectBinderKind kind) =>
+		kind != DirectBinderKind.String && reader.ValueIsEscaped;
+
 	// Mirrors TryReadScalar, TryReadDirectValue and AssignDirectValue, so keep the four switches in sync when adding a new DirectBinderKind.
 	private static bool TryBindDirectValue(
 		ref Utf8JsonReader reader,
@@ -464,6 +474,9 @@ internal sealed partial class EsqlResponseReader
 		Delegate? typedSetter,
 		object instance)
 	{
+		if (IsEscapedNonStringValue(ref reader, kind))
+			return false;
+
 		switch (kind)
 		{
 			case DirectBinderKind.String:
@@ -536,6 +549,9 @@ internal sealed partial class EsqlResponseReader
 	private static bool TryReadDirectValue(ref Utf8JsonReader reader, DirectBinderKind kind, JsonTokenType tokenType, out DirectValue value)
 	{
 		value = default;
+
+		if (IsEscapedNonStringValue(ref reader, kind))
+			return false;
 
 		switch (kind)
 		{

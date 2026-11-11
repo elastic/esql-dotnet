@@ -228,6 +228,26 @@ public class DirectBindingCharacterizationTests
 	}
 
 	[Test]
+	public void ReadRows_LoneSurrogateGuidCell_ThrowsJsonException()
+	{
+		var json = """
+			{
+			  "columns": [
+			    { "name": "id", "type": "keyword" },
+			    { "name": "name", "type": "keyword" }
+			  ],
+			  "values": [
+			    ["\ud800", "item"]
+			  ]
+			}
+			""";
+
+		var act = () => ReadRows<GuidPropertyModel>(json);
+
+		_ = act.Should().Throw<JsonException>();
+	}
+
+	[Test]
 	public void ReadRows_DateTimeOffsetCell_Deserializes()
 	{
 		var json = """

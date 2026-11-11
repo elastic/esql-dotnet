@@ -108,6 +108,16 @@ public class DirectScalarBindingTests
 	}
 
 	[Test]
+	public void ReadRows_LoneSurrogateGuidCell_ThrowsJsonException()
+	{
+		const string json = """{"columns":[{"name":"g","type":"keyword"}],"values":[["\ud800"]]}""";
+
+		var act = () => ReadRows<Guid>(json);
+
+		act.Should().Throw<JsonException>();
+	}
+
+	[Test]
 	public void ReadRows_DateTimeWithRegisteredConverter_UsesConverter()
 	{
 		var options = CreateOptions();

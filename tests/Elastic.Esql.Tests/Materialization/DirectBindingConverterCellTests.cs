@@ -573,6 +573,19 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
+	public void ReadRows_ConverterCellRowWithLoneSurrogateDateTimeCell_ThrowsJsonException()
+	{
+		const string json = """{"columns":[{"name":"level","type":"integer"},{"name":"created","type":"date"}],"values":[[2,"2024-01-02\ud800"]]}""";
+
+		var binder = BuildLayout<EveryKindModel>(("level", "integer"), ("created", "date")).DirectBinder;
+		binder.Should().NotBeNull();
+		binder.Kinds.Should().Equal([DirectBinderKind.Converter, DirectBinderKind.DateTime]);
+		var act = () => ReadRows<EveryKindModel>(json, CreateOptions());
+
+		act.Should().Throw<JsonException>();
+	}
+
+	[Test]
 	public void ReadRows_SurrogatePairStringCell_BindsDirectly()
 	{
 		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"count","type":"integer"}],"values":[["\ud83d\ude00",1]]}""";
