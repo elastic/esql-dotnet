@@ -163,6 +163,8 @@ Note: `Math.E`, `Math.PI`, and `Math.Tau` are const fields that the C# compiler 
 
 Note: `ROUND` rounds a midpoint away from zero, so it matches `Math.Round` with `MidpointRounding.AwayFromZero`. `Math.Round` with the default `MidpointRounding.ToEven`, or with `ToZero`, `ToNegativeInfinity` or `ToPositiveInfinity`, is translated with `FLOOR` and `CEIL` so that the result is the same as in .NET: `Math.Round(2.5)` returns `2`.
 
+Note: a cast of an integer field to `double` is not translated, so with digits `Math.Round((double)l.StatusCode, 2)` gives a `CASE` whose branches have different types, and Elasticsearch rejects it in every mode except `AwayFromZero`. Use `Math.Round(EsqlFunctions.CastToDouble(l.StatusCode), 2)` instead.
+
 ## Dense vector functions
 
 Vector search and similarity functions for `dense_vector` fields. Vectors are passed as `DenseVector<T>` (with implicit conversion from `T[]` and `ReadOnlyMemory<T>`). Use `T = float` for `element_type: "float"` and `T = byte` for both `element_type: "byte"` and `element_type: "bit"`; the bundled JSON converter handles the signed-byte wire format for `byte` vectors so you can pass natural unsigned values.
