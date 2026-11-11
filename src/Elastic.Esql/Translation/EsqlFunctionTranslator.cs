@@ -393,7 +393,8 @@ internal static class EsqlFunctionTranslator
 		expression is MemberExpression { Member: { Name: nameof(DateTime.DayOfWeek), DeclaringType: var declaringType } }
 		&& (declaringType == typeof(DateTime) || declaringType == typeof(DateTimeOffset));
 
-	// ES|QL ROUND rounds a midpoint away from zero; the other .NET modes, ToEven being the default, are built from FLOOR and CEIL.
+	// ES|QL ROUND rounds a midpoint away from zero, as MidpointRounding.AwayFromZero does.
+	// The other .NET modes are built from FLOOR, CEIL and, for ToEven, the default, ROUND.
 	// With digits the value is scaled by a power of ten, rounded and scaled back, as Math.Round does.
 	private static string? TranslateRound(Func<Expression, string> translate, IReadOnlyList<Expression> args)
 	{
