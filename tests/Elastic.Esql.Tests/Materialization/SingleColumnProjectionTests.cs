@@ -140,6 +140,22 @@ public class SingleColumnProjectionTests
 	}
 
 	[Test]
+	public void ReadRows_SingleColumnJsonArrayTarget_BindsCell()
+	{
+		var rows = ReadRows<JsonArray>(ListJson);
+
+		rows.Should().ContainSingle().Which.Select(n => n!.GetValue<string>()).Should().Equal("a", "b");
+	}
+
+	[Test]
+	public void ReadRows_SingleColumnJsonValueTarget_BindsCell()
+	{
+		var rows = ReadRows<JsonValue>(NameJson);
+
+		rows.Should().ContainSingle().Which.GetValue<string>().Should().Be("a");
+	}
+
+	[Test]
 	public void ReadScalar_SingleDateColumn_BindsDateTime()
 	{
 		using var stream = new MemoryStream(Encoding.UTF8.GetBytes(DateJson));

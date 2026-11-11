@@ -387,6 +387,12 @@ register a custom converter for `List<T>`, stream rows one at a time instead. Wh
 batch is malformed or does not match the type, the rows before it are still delivered and the
 error surfaces at the faulty row, the same as for flat types.
 
+A single-column query such as `Select(l => l.Timestamp)` binds each cell to the result type when that type holds a value
+or a collection, for example `DateTime` or `List<string>`. A class or dictionary result type binds the whole row, as it
+does for a wider query. So do `JsonElement`, `JsonElement?`, `JsonNode`, `JsonObject` and `object`, which receive the
+row as an object with the column as its one property. `JsonArray` and `JsonValue` cannot hold an object, so they bind
+the cell.
+
 ## Raw response formats
 
 By default, every query path materialises rows into POCOs by streaming the JSON response through the typed reader. For scenarios where you want the unparsed, server-formatted bytes — piping to a file, feeding columnar consumers like Apache Arrow / DataFusion / DuckDB, or doing your own zero-copy decoding — every queryable also exposes raw-stream terminal methods.
