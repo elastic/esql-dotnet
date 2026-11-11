@@ -355,6 +355,9 @@ document. A type qualifies for this path when all of the following hold:
 - every `required` member has a column
 - no mapped property binds as a converter cell while the options' `MaxDepth` is 1, because a cell reader needs one level
   below the row
+- no mapped property binds as a converter cell while the options set a `ReferenceHandler` other than
+  `ReferenceHandler.IgnoreCycles`, because each converter cell is read on its own and would not see `$id` or `$ref`
+  metadata from another cell
 - no two columns map to the same property
 - every column is flat, so a dotted name such as `address.city` that resolves into a nested object keeps the type on the
   fallback

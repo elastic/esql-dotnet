@@ -70,7 +70,8 @@ internal sealed class DirectRowBinder
 	/// Builds a binder for a flat layout, or returns null when the type itself cannot be bound with exact serializer
 	/// fidelity: parameterized constructors, serialization callbacks, extension data, number handling on the type or
 	/// a property, a property-level converter no cell contract can be built for, populate-style object creation, a
-	/// required member without a column, two columns for one property, or a converter cell under a depth limit of one.
+	/// required member without a column, two columns for one property, a converter cell under a depth limit of one, or
+	/// a converter cell under options that read reference metadata.
 	/// Cells that are not one of the built-in scalar kinds deserialize through their own contract instead.
 	/// </summary>
 	public static DirectRowBinder? TryCreate(ColumnNode[] leafNodes, JsonTypeInfo typeInfo, JsonMetadataManager metadata)
@@ -145,6 +146,11 @@ internal sealed class DirectRowBinder
 		// A cell reader would get a depth limit of zero, which it reads as the default, so it could not reject a nested
 		// converter cell the way the serializer rejects the assembled row. The assemble path serves these rows instead.
 		if (converterCellCount > 0 && effectiveMaxDepth < 2)
+			return null;
+
+		// Each converter cell deserializes in a call of its own, so an $id or $ref that spans cells resolves differently
+		// than in the serializer's single call over the row. IgnoreCycles reads no metadata and keeps the direct path.
+		if (converterCellCount > 0 && options.ReferenceHandler is { } handler && handler != ReferenceHandler.IgnoreCycles)
 			return null;
 
 		return new DirectRowBinder

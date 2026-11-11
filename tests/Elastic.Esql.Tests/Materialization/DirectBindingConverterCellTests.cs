@@ -280,6 +280,18 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
+	public void Build_PropertyLevelCustomListConverter_UsesConverterKind()
+	{
+		if (!RuntimeFeature.IsDynamicCodeSupported)
+			return;
+
+		var layout = BuildLayout<CustomListModel>(("numbers", "integer"));
+
+		layout.DirectBinder.Should().NotBeNull();
+		layout.DirectBinder.Kinds.Should().Equal([DirectBinderKind.Converter]);
+	}
+
+	[Test]
 	public void ReadRows_PropertyLevelStringEnumFactory_BindsWithoutThrowing()
 	{
 		const string json = """{"columns":[{"name":"plain","type":"keyword"}],"values":[["high"]]}""";
@@ -472,6 +484,42 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
+	public void ReadRows_PreserveReferencesWithDuplicateIdAcrossCells_ThrowsJsonException()
+	{
+		const string json =
+			"""{"columns":[{"name":"owner","type":"object"},""" +
+			"""{"name":"other","type":"object"}],"values":[[{"$id":"1","name":"a"},{"$id":"1","name":"b"}]]}""";
+		var options = CreateOptions();
+		options.ReferenceHandler = ReferenceHandler.Preserve;
+
+		var act = () => ReadRows<TwoOwnersModel>(json, options);
+
+		act.Should().Throw<JsonException>();
+	}
+
+	[Test]
+	public void Build_IgnoreCyclesWithConverterCell_CreatesDirectBinder()
+	{
+		var options = CreateOptions();
+		options.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+
+		var layout = BuildLayout<CountingOwnerModel>(options, ("owner", "object"), ("count", "integer"));
+
+		layout.DirectBinder.Should().NotBeNull();
+	}
+
+	[Test]
+	public void Build_PreserveReferencesWithScalarCellsOnly_CreatesDirectBinder()
+	{
+		var options = CreateOptions();
+		options.ReferenceHandler = ReferenceHandler.Preserve;
+
+		var layout = BuildLayout<NonNullableNameModel>(options, ("name", "keyword"), ("count", "integer"));
+
+		layout.DirectBinder.Should().NotBeNull();
+	}
+
+	[Test]
 	public void ReadRows_ConverterReturnsNullForNonNullableProperty_ThrowsUnderRespectNullableAnnotations()
 	{
 		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"count","type":"integer"}],"values":[["a",1]]}""";
@@ -557,6 +605,12 @@ public class DirectBindingConverterCellTests
 	{
 		public Owner? Owner { get; set; }
 		public string Name { get; set; } = string.Empty;
+	}
+
+	private sealed class TwoOwnersModel
+	{
+		public Owner? Owner { get; set; }
+		public Owner? Other { get; set; }
 	}
 
 	private sealed class Owner
@@ -662,6 +716,12 @@ public class DirectBindingConverterCellTests
 		public List<int> Numbers { get; set; } = [];
 	}
 
+	private sealed class CustomListModel
+	{
+		[JsonConverter(typeof(ArrayOnlyIntListConverter))]
+		public List<int> Numbers { get; set; } = [];
+	}
+
 	private sealed class DateOnlyModel
 	{
 		public DateOnly Day { get; set; }
@@ -698,6 +758,29 @@ public class DirectBindingConverterCellTests
 
 		public override void Write(Utf8JsonWriter writer, DateTime value, JsonSerializerOptions options) =>
 			writer.WriteNumberValue((long)(value - DateTime.UnixEpoch).TotalSeconds);
+	}
+
+	private sealed class ArrayOnlyIntListConverter : JsonConverter<List<int>>
+	{
+		public override List<int> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+		{
+			if (reader.TokenType != JsonTokenType.StartArray)
+				throw new JsonException($"Expected an array, got {reader.TokenType}.");
+
+			var values = new List<int>();
+			while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+				values.Add(reader.GetInt32());
+
+			return values;
+		}
+
+		public override void Write(Utf8JsonWriter writer, List<int> value, JsonSerializerOptions options)
+		{
+			writer.WriteStartArray();
+			foreach (var number in value)
+				writer.WriteNumberValue(number);
+			writer.WriteEndArray();
+		}
 	}
 
 	private sealed class NullingStringConverter : JsonConverter<string>

@@ -53,7 +53,8 @@ internal static class PropertyConverterContracts
 
 		// A value contract carries no collection or object metadata, so a structured converter of the serializer's own
 		// reads only through the contract the serializer builds for the type, and that contract serves the cell only when
-		// its converter is of the same type.
+		// its converter is of the same type. A built-in value converter keeps a value contract of its own, because one
+		// converter type can carry other settings, such as the string enum converter beside the numeric one.
 		if (JsonMetadataManager.IsBuiltInConverter(converter)
 			&& JsonMetadataManager.TryResolveTypeInfo(propertyType, options) is { Kind: not JsonTypeInfoKind.None } own)
 			return own.Converter.GetType() == converter.GetType() ? own : null;
