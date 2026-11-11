@@ -520,6 +520,17 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
+	public void Build_CustomReferenceHandlerWithConverterCell_KeepsFallback()
+	{
+		var options = CreateOptions();
+		options.ReferenceHandler = new PreservingReferenceHandler();
+
+		var layout = BuildLayout<CountingOwnerModel>(options, ("owner", "object"), ("count", "integer"));
+
+		layout.DirectBinder.Should().BeNull();
+	}
+
+	[Test]
 	public void ReadRows_ConverterReturnsNullForNonNullableProperty_ThrowsUnderRespectNullableAnnotations()
 	{
 		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"count","type":"integer"}],"values":[["a",1]]}""";
@@ -533,6 +544,53 @@ public class DirectBindingConverterCellTests
 		var act = () => ReadRows<NonNullableNameModel>(json, options);
 
 		act.Should().Throw<JsonException>();
+	}
+
+	[Test]
+	public void ReadRows_LoneSurrogateStringCell_ThrowsJsonException()
+	{
+		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"count","type":"integer"}],"values":[["\ud800",1]]}""";
+
+		var binder = BuildLayout<NonNullableNameModel>(("name", "keyword"), ("count", "integer")).DirectBinder;
+		binder.Should().NotBeNull();
+		binder.Kinds[0].Should().Be(DirectBinderKind.String);
+		var act = () => ReadRows<NonNullableNameModel>(json, CreateOptions());
+
+		act.Should().Throw<JsonException>();
+	}
+
+	[Test]
+	public void ReadRows_SurrogatePairStringCell_BindsDirectly()
+	{
+		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"count","type":"integer"}],"values":[["\ud83d\ude00",1]]}""";
+
+		var binder = BuildLayout<NonNullableNameModel>(("name", "keyword"), ("count", "integer")).DirectBinder;
+		binder.Should().NotBeNull();
+		binder.Kinds[0].Should().Be(DirectBinderKind.String);
+
+		// The handler runs on the throwing thread, so counting only this thread's exceptions keeps the
+		// process-wide event from picking up other tests running in parallel.
+		var testThreadId = Environment.CurrentManagedThreadId;
+		var firstChanceCount = 0;
+		void Count(object? sender, FirstChanceExceptionEventArgs args)
+		{
+			if (Environment.CurrentManagedThreadId == testThreadId)
+				Interlocked.Increment(ref firstChanceCount);
+		}
+
+		AppDomain.CurrentDomain.FirstChanceException += Count;
+		List<NonNullableNameModel> rows;
+		try
+		{
+			rows = ReadRows<NonNullableNameModel>(json, CreateOptions());
+		}
+		finally
+		{
+			AppDomain.CurrentDomain.FirstChanceException -= Count;
+		}
+
+		firstChanceCount.Should().Be(0);
+		rows.Should().ContainSingle().Which.Name.Should().Be("\ud83d\ude00");
 	}
 
 	private static ColumnLayout BuildLayout<T>(params (string Name, string Type)[] columns) => BuildLayout<T>(CreateOptions(), columns);
@@ -793,5 +851,10 @@ public class DirectBindingConverterCellTests
 
 		public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options) =>
 			writer.WriteStringValue(value);
+	}
+
+	private sealed class PreservingReferenceHandler : ReferenceHandler
+	{
+		public override ReferenceResolver CreateResolver() => ReferenceHandler.Preserve.CreateResolver();
 	}
 }

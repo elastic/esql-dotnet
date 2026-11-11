@@ -98,6 +98,16 @@ public class DirectScalarBindingTests
 		ReadRows<string>(EscapedStringJson).Should().Equal("a\"b\\c");
 
 	[Test]
+	public void ReadRows_LoneSurrogateStringCell_ThrowsJsonException()
+	{
+		const string json = """{"columns":[{"name":"name","type":"keyword"}],"values":[["\ud800"]]}""";
+
+		var act = () => ReadRows<string>(json);
+
+		act.Should().Throw<JsonException>();
+	}
+
+	[Test]
 	public void ReadRows_DateTimeWithRegisteredConverter_UsesConverter()
 	{
 		var options = CreateOptions();

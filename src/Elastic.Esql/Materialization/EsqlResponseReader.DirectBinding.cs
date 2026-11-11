@@ -362,7 +362,17 @@ internal sealed partial class EsqlResponseReader
 			case DirectBinderKind.String:
 				if (tokenType != JsonTokenType.String)
 					return false;
-				item = (T)(object)reader.GetString()!;
+				// GetString throws InvalidOperationException for an escape that is not valid UTF-16, such as a lone
+				// surrogate. The serializer raises a JsonException with the path once the row falls back.
+				try
+				{
+					item = (T)(object)reader.GetString()!;
+				}
+				catch (InvalidOperationException)
+				{
+					return false;
+				}
+
 				return true;
 
 			case DirectBinderKind.Bool:
@@ -450,7 +460,18 @@ internal sealed partial class EsqlResponseReader
 			case DirectBinderKind.String:
 				if (tokenType != JsonTokenType.String)
 					return false;
-				Assign<string?>(typedSetter, property, instance, reader.GetString());
+				string? stringValue;
+				// An invalid UTF-16 escape falls back, as in TryReadScalar.
+				try
+				{
+					stringValue = reader.GetString();
+				}
+				catch (InvalidOperationException)
+				{
+					return false;
+				}
+
+				Assign<string?>(typedSetter, property, instance, stringValue);
 				return true;
 
 			case DirectBinderKind.Bool:
