@@ -105,7 +105,8 @@ context with the reflection resolver. Each part of a chain is judged on its own,
 whole chain on `Set`. A hand-written `JsonSerializerContext` and a subclass of the default resolver count like a custom
 resolver, since either can replace `JsonPropertyInfo.Set` in its own `GetTypeInfo`. Converter cells, and every cell
 under any other resolver, go through the contract's own `JsonPropertyInfo.Set`, so a modifier that replaces it is
-honored on every row. The decision is made when the first result is materialized, with the options already read-only.
+honored on every row. The decision is made for each result type when its layout is built, with the options already
+read-only.
 
 A cell that its own contract rejects, a converter result of null for a property that does not accept null, or a string
 the reader cannot decode, is read again by the serializer so the error carries the property path. A deserialization

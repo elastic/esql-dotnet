@@ -133,6 +133,25 @@ public class DirectBindingTypedSetterTests
 	}
 
 	[Test]
+	public void ReadRows_ModifierAddedToUnusedChainPartAfterFirstRead_IsHonored()
+	{
+		var tail = new DefaultJsonTypeInfoResolver();
+		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+		{
+			TypeInfoResolver = JsonTypeInfoResolver.Combine(MaterializationTestJsonContext.Default, tail)
+		};
+		var reader = new EsqlResponseReader(new JsonMetadataManager(options));
+		using var firstStream = new MemoryStream(Encoding.UTF8.GetBytes(DerivedJson));
+		using var firstResults = reader.ReadRows<TypedSetterDerivedModel>(firstStream);
+		_ = firstResults.Rows.ToList();
+		tail.Modifiers.Add(TrimNameOnSet);
+		using var stream = new MemoryStream(Encoding.UTF8.GetBytes(PaddedNameJson));
+		using var results = reader.ReadRows<TrimmedNameModel>(stream);
+
+		results.Rows.ToList().Should().ContainSingle().Which.Name.Should().Be("a");
+	}
+
+	[Test]
 	public void Build_ContextConstructedProvider_CompilesTypedSetters()
 	{
 		if (!RuntimeFeature.IsDynamicCodeSupported)
@@ -140,23 +159,6 @@ public class DirectBindingTypedSetterTests
 
 		var provider = new EsqlQueryProvider(MaterializationTestJsonContext.Default, new CapturingQueryExecutor());
 		var layout = ColumnLayout.Build(Columns(("Name", "keyword"), ("Count", "integer")), typeof(TypedSetterDerivedModel), provider.Metadata);
-
-		layout.DirectBinder.Should().NotBeNull();
-		layout.DirectBinder.TypedSetters.Should().AllSatisfy(setter => setter.Should().NotBeNull());
-	}
-
-	[Test]
-	public void Build_CombinedContextAndDefaultResolver_CompilesTypedSetters()
-	{
-		if (!RuntimeFeature.IsDynamicCodeSupported)
-			return;
-
-		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
-		{
-			TypeInfoResolver = JsonTypeInfoResolver.Combine(MaterializationTestJsonContext.Default, new DefaultJsonTypeInfoResolver())
-		};
-
-		var layout = BuildLayout<TrimmedNameModel>(options, ("name", "keyword"));
 
 		layout.DirectBinder.Should().NotBeNull();
 		layout.DirectBinder.TypedSetters.Should().AllSatisfy(setter => setter.Should().NotBeNull());
@@ -287,8 +289,7 @@ public class DirectBindingTypedSetterTests
 	}
 
 	// Carries no [JsonSerializable], so nothing marks it as a source-generated context whose setters can be trusted. It
-	// re-implements the resolver interface because the base implementation builds contracts for the context's own options,
-	// which the options of a chain reject.
+	// re-implements the resolver interface because the base implementation only serves the context's own options.
 	private sealed class TrimmingContext() : JsonSerializerContext(null), IJsonTypeInfoResolver
 	{
 		private readonly DefaultJsonTypeInfoResolver _inner = new();

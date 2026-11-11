@@ -100,6 +100,7 @@ internal sealed class DirectRowBinder
 		var isCollection = new bool[count];
 		var converterCellCount = 0;
 		var bound = new HashSet<JsonPropertyInfo>();
+		var resolverIsModifierFree = metadata.ResolverIsModifierFree;
 
 		for (var i = 0; i < count; i++)
 		{
@@ -119,7 +120,7 @@ internal sealed class DirectRowBinder
 			{
 				kinds[i] = kind;
 				// A compiled setter writes the member directly and would skip a modifier's replacement Set.
-				typedSetters[i] = metadata.ResolverIsModifierFree ? metadata.GetOrCompileSetter(property, kind) : null;
+				typedSetters[i] = resolverIsModifierFree ? metadata.GetOrCompileSetter(property, kind) : null;
 				continue;
 			}
 

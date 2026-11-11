@@ -29,8 +29,6 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 	private readonly ConcurrentDictionary<JsonPropertyInfo, Delegate?> _compiledSetterCache = [];
 	private readonly ConcurrentDictionary<JsonPropertyInfo, JsonTypeInfo?> _propertyContractCache = [];
 
-	private bool? _resolverIsModifierFree;
-
 	/// <summary>The underlying <see cref="JsonSerializerOptions"/>.</summary>
 	public JsonSerializerOptions Options => options;
 
@@ -39,14 +37,13 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 	/// exactly what <see cref="JsonPropertyInfo.Set"/> would.
 	/// </summary>
 	/// <remarks>
-	/// The resolver chain exposes the parts of a combined resolver, so each part is judged on its own and the combination
-	/// the library builds from a context needs no vouching for. An empty chain counts as modifier-free because the
-	/// serializer fills in its own reflection resolver without adding it to the chain. The answer is computed on the first
-	/// read and cached: a caller can still add a modifier between constructing the provider and the first query, and the
-	/// first layout build reads this after the options are read-only. Concurrent first reads compute the same answer, so
-	/// the cache needs no lock.
+	/// The resolver chain exposes the parts of a combined resolver, so each part is judged on its own, the combination the
+	/// library builds from a context included. An empty chain counts as modifier-free because the serializer fills in its
+	/// own reflection resolver without adding it to the chain. The answer is read at each layout build: a part that has not
+	/// resolved a type yet can still gain a modifier after the options are read-only, while a part that resolved the
+	/// build's type is locked by then.
 	/// </remarks>
-	public bool ResolverIsModifierFree => _resolverIsModifierFree ??= AllModifierFree(options.TypeInfoResolverChain);
+	public bool ResolverIsModifierFree => AllModifierFree(options.TypeInfoResolverChain);
 
 	private static bool AllModifierFree(IList<IJsonTypeInfoResolver> chain)
 	{
