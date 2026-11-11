@@ -97,12 +97,15 @@ Whichever options the client ends up with are made read-only when the first resu
 `JsonSerializer` freezes options on its own first use. Register every converter, naming policy and resolver before
 running the first query; changing them on an instance that has already been used throws.
 
-On runtimes that support dynamic code, and when the resolver cannot carry a contract modifier (a
-`DefaultJsonTypeInfoResolver` without modifiers, a `JsonSerializerContext`, or the client's own combination of a context
-with the reflection resolver), the built-in scalar cells of a directly bound row are assigned through setters compiled
-for the target member. Converter cells, and every cell under any other resolver, go through the contract's own
-`JsonPropertyInfo.Set`, so a modifier that replaces it is honored on every row. The decision is made when the first
-result is materialized, with the options already read-only.
+On runtimes that support dynamic code, and when no part of the resolver can carry a contract modifier, the built-in
+scalar cells of a directly bound row are assigned through setters compiled for the target member. That holds for a
+source-generated `JsonSerializerContext`, a plain `DefaultJsonTypeInfoResolver` without modifiers, and a chain of these
+built with `JsonTypeInfoResolver.Combine` or the options' `TypeInfoResolverChain`, such as the client's combination of a
+context with the reflection resolver. Each part of a chain is judged on its own, so one part with a modifier keeps the
+whole chain on `Set`. A hand-written `JsonSerializerContext` and a subclass of the default resolver count like a custom
+resolver, since either can replace `JsonPropertyInfo.Set` in its own `GetTypeInfo`. Converter cells, and every cell
+under any other resolver, go through the contract's own `JsonPropertyInfo.Set`, so a modifier that replaces it is
+honored on every row. The decision is made when the first result is materialized, with the options already read-only.
 
 A cell that its own contract rejects, a converter result of null for a property that does not accept null, or a string
 the reader cannot decode, is read again by the serializer so the error carries the property path. A deserialization

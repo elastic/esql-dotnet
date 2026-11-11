@@ -42,16 +42,7 @@ public class EsqlClient : IDisposable
 		var jsonOptions = settings.ResolveJsonOptions();
 		var executor = new EsqlTransportExecutor(settings);
 
-		// With a context, ResolveJsonOptions builds the resolver from the context and a fresh reflection resolver, and
-		// neither can carry a contract modifier.
-		_provider = new EsqlQueryProvider(
-			jsonOptions,
-			executor,
-			resolverIsModifierFree: settings.JsonSerializerContext is not null ? true : null
-		)
-		{
-			Interceptor = settings.Interceptor
-		};
+		_provider = new EsqlQueryProvider(jsonOptions, executor) { Interceptor = settings.Interceptor };
 	}
 
 	/// <summary>

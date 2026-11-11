@@ -5,6 +5,7 @@
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Elastic.Esql.Materialization;
 using Elastic.Esql.Tests.Execution;
@@ -28,6 +29,8 @@ public class DirectBindingTypedSetterTests
 		""";
 
 	private const string StructJson = """{"columns":[{"name":"x","type":"integer"},{"name":"y","type":"keyword"}],"values":[[7,"s"]]}""";
+
+	private const string PaddedNameJson = """{"columns":[{"name":"name","type":"keyword"},{"name":"count","type":"integer"}],"values":[["  a  ",1]]}""";
 
 	[Test]
 	public void Build_ReferenceModel_CompilesTypedSetterForEveryColumn()
@@ -110,9 +113,8 @@ public class DirectBindingTypedSetterTests
 		{
 			TypeInfoResolver = new DefaultJsonTypeInfoResolver { Modifiers = { TrimNameOnSet } }
 		};
-		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"count","type":"integer"}],"values":[["  a  ",1]]}""";
 
-		var rows = ReadRows<TrimmedNameModel>(json, options);
+		var rows = ReadRows<TrimmedNameModel>(PaddedNameJson, options);
 
 		rows.Should().ContainSingle().Which.Name.Should().Be("a");
 	}
@@ -124,8 +126,7 @@ public class DirectBindingTypedSetterTests
 		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web) { TypeInfoResolver = resolver };
 		var reader = new EsqlResponseReader(new JsonMetadataManager(options));
 		resolver.Modifiers.Add(TrimNameOnSet);
-		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"count","type":"integer"}],"values":[["  a  ",1]]}""";
-		using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+		using var stream = new MemoryStream(Encoding.UTF8.GetBytes(PaddedNameJson));
 		using var results = reader.ReadRows<TrimmedNameModel>(stream);
 
 		results.Rows.ToList().Should().ContainSingle().Which.Name.Should().Be("a");
@@ -142,6 +143,76 @@ public class DirectBindingTypedSetterTests
 
 		layout.DirectBinder.Should().NotBeNull();
 		layout.DirectBinder.TypedSetters.Should().AllSatisfy(setter => setter.Should().NotBeNull());
+	}
+
+	[Test]
+	public void Build_CombinedContextAndDefaultResolver_CompilesTypedSetters()
+	{
+		if (!RuntimeFeature.IsDynamicCodeSupported)
+			return;
+
+		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+		{
+			TypeInfoResolver = JsonTypeInfoResolver.Combine(MaterializationTestJsonContext.Default, new DefaultJsonTypeInfoResolver())
+		};
+
+		var layout = BuildLayout<TrimmedNameModel>(options, ("name", "keyword"));
+
+		layout.DirectBinder.Should().NotBeNull();
+		layout.DirectBinder.TypedSetters.Should().AllSatisfy(setter => setter.Should().NotBeNull());
+	}
+
+	[Test]
+	public void ReadRows_CombinedResolverWithModifierInSecondPart_IsHonored()
+	{
+		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+		{
+			TypeInfoResolver = JsonTypeInfoResolver.Combine(
+				MaterializationTestJsonContext.Default,
+				new DefaultJsonTypeInfoResolver { Modifiers = { TrimNameOnSet } }
+			)
+		};
+
+		var rows = ReadRows<TrimmedNameModel>(PaddedNameJson, options);
+
+		rows.Should().ContainSingle().Which.Name.Should().Be("a");
+	}
+
+	[Test]
+	public void Build_CombinedResolverWithCustomPart_KeepsBoxingSetters()
+	{
+		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+		{
+			TypeInfoResolver = JsonTypeInfoResolver.Combine(new PassThroughResolver(), new DefaultJsonTypeInfoResolver())
+		};
+
+		var layout = BuildLayout<TrimmedNameModel>(options, ("name", "keyword"));
+
+		layout.DirectBinder.Should().NotBeNull();
+		layout.DirectBinder.TypedSetters.Should().AllSatisfy(setter => setter.Should().BeNull());
+	}
+
+	[Test]
+	public void ReadRows_CombinedHandWrittenContextWithReplacedSetter_IsHonored()
+	{
+		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+		{
+			TypeInfoResolver = JsonTypeInfoResolver.Combine(new TrimmingContext(), new DefaultJsonTypeInfoResolver())
+		};
+
+		var rows = ReadRows<TrimmedNameModel>(PaddedNameJson, options);
+
+		rows.Should().ContainSingle().Which.Name.Should().Be("a");
+	}
+
+	[Test]
+	public void ReadRows_DefaultResolverSubclassReplacingSetter_IsHonored()
+	{
+		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web) { TypeInfoResolver = new TrimmingResolver() };
+
+		var rows = ReadRows<TrimmedNameModel>(PaddedNameJson, options);
+
+		rows.Should().ContainSingle().Which.Name.Should().Be("a");
 	}
 
 	private static void TrimNameOnSet(JsonTypeInfo typeInfo)
@@ -178,9 +249,7 @@ public class DirectBindingTypedSetterTests
 		return columnInfos;
 	}
 
-	// The combined test contexts carry no modifier, so vouching for them keeps the setter tests independent of the resolver check.
-	private static JsonMetadataManager CreateMetadata(JsonSerializerOptions? options) =>
-		options is null ? new JsonMetadataManager(CreateOptions(), resolverIsModifierFree: true) : new JsonMetadataManager(options);
+	private static JsonMetadataManager CreateMetadata(JsonSerializerOptions? options) => new(options ?? CreateOptions());
 
 	private static JsonSerializerOptions CreateOptions() =>
 		new(JsonSerializerDefaults.Web)
@@ -198,5 +267,41 @@ public class DirectBindingTypedSetterTests
 	{
 		public string Name { get; set; } = string.Empty;
 		public int Count { get; set; }
+	}
+
+	private sealed class PassThroughResolver : IJsonTypeInfoResolver
+	{
+		private readonly DefaultJsonTypeInfoResolver _inner = new();
+
+		public JsonTypeInfo? GetTypeInfo(Type type, JsonSerializerOptions options) => _inner.GetTypeInfo(type, options);
+	}
+
+	private sealed class TrimmingResolver : DefaultJsonTypeInfoResolver
+	{
+		public override JsonTypeInfo GetTypeInfo(Type type, JsonSerializerOptions options)
+		{
+			var typeInfo = base.GetTypeInfo(type, options);
+			TrimNameOnSet(typeInfo);
+			return typeInfo;
+		}
+	}
+
+	// Carries no [JsonSerializable], so nothing marks it as a source-generated context whose setters can be trusted. It
+	// re-implements the resolver interface because the base implementation builds contracts for the context's own options,
+	// which the options of a chain reject.
+	private sealed class TrimmingContext() : JsonSerializerContext(null), IJsonTypeInfoResolver
+	{
+		private readonly DefaultJsonTypeInfoResolver _inner = new();
+
+		protected override JsonSerializerOptions? GeneratedSerializerOptions => null;
+
+		public override JsonTypeInfo? GetTypeInfo(Type type) => ((IJsonTypeInfoResolver)this).GetTypeInfo(type, Options);
+
+		JsonTypeInfo? IJsonTypeInfoResolver.GetTypeInfo(Type type, JsonSerializerOptions options)
+		{
+			var typeInfo = _inner.GetTypeInfo(type, options);
+			TrimNameOnSet(typeInfo);
+			return typeInfo;
+		}
 	}
 }

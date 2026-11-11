@@ -16,7 +16,7 @@ namespace Elastic.Esql.Core;
 /// Centralizes all <see cref="System.Text.Json"/> metadata operations (type info resolution,
 /// property name lookup, converter discovery) behind a provider-scoped, thread-safe cache.
 /// </summary>
-internal sealed class JsonMetadataManager(JsonSerializerOptions options, bool? resolverIsModifierFree = null)
+internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 {
 	private readonly ConcurrentDictionary<Type, JsonTypeInfo> _typeInfoCache = [];
 	private readonly ConcurrentDictionary<Type, HashSet<string>> _propertyNamesCache = [];
@@ -29,35 +29,50 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options, bool? r
 	private readonly ConcurrentDictionary<JsonPropertyInfo, Delegate?> _compiledSetterCache = [];
 	private readonly ConcurrentDictionary<JsonPropertyInfo, JsonTypeInfo?> _propertyContractCache = [];
 
-	private bool? _resolverIsModifierFree = resolverIsModifierFree;
+	private bool? _resolverIsModifierFree;
 
 	/// <summary>The underlying <see cref="JsonSerializerOptions"/>.</summary>
 	public JsonSerializerOptions Options => options;
 
 	/// <summary>
-	/// Whether the options' resolver cannot carry a contract modifier, so a setter compiled for a member assigns exactly
-	/// what <see cref="JsonPropertyInfo.Set"/> would.
+	/// Whether no part of the options' resolver can carry a contract modifier, so a setter compiled for a member assigns
+	/// exactly what <see cref="JsonPropertyInfo.Set"/> would.
 	/// </summary>
 	/// <remarks>
-	/// A creator that built the resolver itself passes <see langword="true"/> to the constructor. Otherwise the resolver
-	/// is inspected on the first read and the answer cached: a caller can still add a modifier between constructing the
-	/// provider and the first query, and the first layout build reads this after the options are read-only. Concurrent
-	/// first reads compute the same answer, so the cache needs no lock.
+	/// The resolver chain exposes the parts of a combined resolver, so each part is judged on its own and the combination
+	/// the library builds from a context needs no vouching for. An empty chain counts as modifier-free because the
+	/// serializer fills in its own reflection resolver without adding it to the chain. The answer is computed on the first
+	/// read and cached: a caller can still add a modifier between constructing the provider and the first query, and the
+	/// first layout build reads this after the options are read-only. Concurrent first reads compute the same answer, so
+	/// the cache needs no lock.
 	/// </remarks>
-	public bool ResolverIsModifierFree => _resolverIsModifierFree ??= IsModifierFreeResolver(options.TypeInfoResolver);
+	public bool ResolverIsModifierFree => _resolverIsModifierFree ??= AllModifierFree(options.TypeInfoResolverChain);
+
+	private static bool AllModifierFree(IList<IJsonTypeInfoResolver> chain)
+	{
+		foreach (var resolver in chain)
+		{
+			if (!IsModifierFreeResolver(resolver))
+				return false;
+		}
+
+		return true;
+	}
 
 	/// <summary>
-	/// Whether <paramref name="resolver"/> provably carries no contract modifier: no resolver at all, a source-generated
+	/// Whether <paramref name="resolver"/> provably carries no contract modifier: a source-generated
 	/// <see cref="JsonSerializerContext"/>, or a <see cref="DefaultJsonTypeInfoResolver"/> without modifiers.
 	/// </summary>
 	/// <remarks>
-	/// A subclass of the default resolver can rewrite contracts in its own <c>GetTypeInfo</c> without a modifier entry,
-	/// and a combined or custom resolver can wrap one that carries a modifier, so neither counts.
+	/// <see cref="JsonSerializableAttribute"/> declared on the context's own type marks a source-generated context, whose
+	/// contracts carry no replaced setter. A hand-written context, a subclass of a generated one included, can replace
+	/// <see cref="JsonPropertyInfo.Set"/> in its own <c>GetTypeInfo</c>, and so can a subclass of the default resolver
+	/// without a modifier entry, so neither counts.
 	/// </remarks>
-	public static bool IsModifierFreeResolver(IJsonTypeInfoResolver? resolver) =>
+	private static bool IsModifierFreeResolver(IJsonTypeInfoResolver resolver) =>
 		resolver switch
 		{
-			null or JsonSerializerContext => true,
+			JsonSerializerContext context => context.GetType().IsDefined(typeof(JsonSerializableAttribute), inherit: false),
 			DefaultJsonTypeInfoResolver { Modifiers.Count: 0 } => resolver.GetType() == typeof(DefaultJsonTypeInfoResolver),
 			_ => false
 		};
