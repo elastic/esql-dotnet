@@ -560,36 +560,31 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
+	public void ReadRows_ConverterCellRowWithLoneSurrogateStringCell_ThrowsJsonException()
+	{
+		const string json = """{"columns":[{"name":"level","type":"integer"},{"name":"name","type":"keyword"}],"values":[[2,"\ud800"]]}""";
+
+		var binder = BuildLayout<EnumModel>(("level", "integer"), ("name", "keyword")).DirectBinder;
+		binder.Should().NotBeNull();
+		binder.Kinds.Should().Equal([DirectBinderKind.Converter, DirectBinderKind.String]);
+		var act = () => ReadRows<EnumModel>(json, CreateOptions());
+
+		act.Should().Throw<JsonException>();
+	}
+
+	[Test]
 	public void ReadRows_SurrogatePairStringCell_BindsDirectly()
 	{
 		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"count","type":"integer"}],"values":[["\ud83d\ude00",1]]}""";
+		CountingNameModel.Constructed = 0;
 
-		var binder = BuildLayout<NonNullableNameModel>(("name", "keyword"), ("count", "integer")).DirectBinder;
+		var binder = BuildLayout<CountingNameModel>(("name", "keyword"), ("count", "integer")).DirectBinder;
 		binder.Should().NotBeNull();
 		binder.Kinds[0].Should().Be(DirectBinderKind.String);
+		var rows = ReadRows<CountingNameModel>(json, CreateOptions());
 
-		// The handler runs on the throwing thread, so counting only this thread's exceptions keeps the
-		// process-wide event from picking up other tests running in parallel.
-		var testThreadId = Environment.CurrentManagedThreadId;
-		var firstChanceCount = 0;
-		void Count(object? sender, FirstChanceExceptionEventArgs args)
-		{
-			if (Environment.CurrentManagedThreadId == testThreadId)
-				Interlocked.Increment(ref firstChanceCount);
-		}
-
-		AppDomain.CurrentDomain.FirstChanceException += Count;
-		List<NonNullableNameModel> rows;
-		try
-		{
-			rows = ReadRows<NonNullableNameModel>(json, CreateOptions());
-		}
-		finally
-		{
-			AppDomain.CurrentDomain.FirstChanceException -= Count;
-		}
-
-		firstChanceCount.Should().Be(0);
+		// The direct path constructs the row before it reads the cells, and a fallback constructs it again.
+		CountingNameModel.Constructed.Should().Be(1);
 		rows.Should().ContainSingle().Which.Name.Should().Be("\ud83d\ude00");
 	}
 
@@ -738,6 +733,17 @@ public class DirectBindingConverterCellTests
 
 	private sealed class NonNullableNameModel
 	{
+		public string Name { get; set; } = string.Empty;
+		public int Count { get; set; }
+	}
+
+	private sealed class CountingNameModel
+	{
+		[ThreadStatic]
+		public static int Constructed;
+
+		public CountingNameModel() => Constructed++;
+
 		public string Name { get; set; } = string.Empty;
 		public int Count { get; set; }
 	}

@@ -122,9 +122,12 @@ internal sealed partial class EsqlResponseReader
 	}
 
 	/// <summary>
-	/// Binds a row with converter cells in two passes. The first validates every cell and assigns nothing, so a row
-	/// that falls back or ends mid-buffer has run no nested type's deserialization callback. The second assigns the
-	/// cells in column order, the order the serializer's setters see.
+	/// Binds a row with converter cells in two passes. The first checks every cell's shape, parses each built-in cell other
+	/// than a string, and assigns nothing, so a row that fails the first pass or ends mid-buffer has run no nested type's
+	/// deserialization callback. The second assigns the cells in column order, the order the serializer's setters see. A
+	/// cell that only the second pass decodes can still send the row to the fallback (a converter cell its contract
+	/// rejects, a null converter result for a property that does not accept null, a string the reader cannot decode) after
+	/// the converter cells in that cell or before it have run their callbacks.
 	/// </summary>
 	private static bool TryBindValidatedRow<T>(
 		ref Utf8JsonReader reader,
@@ -362,8 +365,9 @@ internal sealed partial class EsqlResponseReader
 			case DirectBinderKind.String:
 				if (tokenType != JsonTokenType.String)
 					return false;
-				// GetString throws InvalidOperationException for an escape that is not valid UTF-16, such as a lone
-				// surrogate. The serializer raises a JsonException with the path once the row falls back.
+				// GetString throws InvalidOperationException for text that is not valid UTF-8 or an escape that is not
+				// valid UTF-16, such as a lone surrogate. The serializer raises a JsonException with the path once the
+				// row falls back.
 				try
 				{
 					item = (T)(object)reader.GetString()!;
@@ -461,7 +465,7 @@ internal sealed partial class EsqlResponseReader
 				if (tokenType != JsonTokenType.String)
 					return false;
 				string? stringValue;
-				// An invalid UTF-16 escape falls back, as in TryReadScalar.
+				// Text that GetString rejects falls back, as in TryReadScalar.
 				try
 				{
 					stringValue = reader.GetString();

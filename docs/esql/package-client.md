@@ -104,9 +104,9 @@ for the target member. Converter cells, and every cell under any other resolver,
 `JsonPropertyInfo.Set`, so a modifier that replaces it is honored on every row. The decision is made when the first
 result is materialized, with the options already read-only.
 
-A cell that its own contract rejects, or a converter result of null for a property that does not accept null, is read
-again by the serializer so the error carries the property path. A deserialization callback on a nested type therefore
-runs twice before such a row fails.
+A cell that its own contract rejects, a converter result of null for a property that does not accept null, or a string
+the reader cannot decode, is read again by the serializer so the error carries the property path. A deserialization
+callback on a nested type in that cell or an earlier cell of the row therefore runs twice before such a row fails.
 
 ## Querying
 
