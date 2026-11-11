@@ -201,7 +201,7 @@ internal sealed partial class EsqlResponseReader
 
 		// A collection target takes the whole cell, so a single-valued multi-value column needs the same
 		// wrap the row path applies to a collection property.
-		var wrapScalarInArray = isScalar && ColumnLayout.IsCollectionContract(typeof(T), typeInfo);
+		var wrapScalarInArray = isScalar && ColumnLayout.IsCollectionContract(typeof(T), typeInfo, propertyConverter: null, options);
 
 		return new RowMaterializationPlan<T>(estimatedRowSize, isScalar, typeInfo as JsonTypeInfo<T>, options, scalarKind, wrapScalarInArray);
 	}

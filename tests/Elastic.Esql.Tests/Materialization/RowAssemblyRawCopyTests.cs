@@ -55,6 +55,30 @@ public class RowAssemblyRawCopyTests
 	}
 
 	[Test]
+	public void ReadRows_ByteArrayPropertyWithArrayConverter_WrapsSingleValuedCell()
+	{
+		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"data","type":"integer"}],"values":[["a",7],["b",[8,9]]]}""";
+
+		var rows = ReadRows<NumberArrayBinaryRecord>(json);
+
+		rows.Should().HaveCount(2);
+		rows[0].Data.Should().Equal([7]);
+		rows[1].Data.Should().Equal([8, 9]);
+	}
+
+	[Test]
+	public void ReadRows_ByteArrayPropertyWithDeferringFactory_StaysALeaf()
+	{
+		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"data","type":"keyword"}],"values":[["a","aGk="]]}""";
+		// Reflection metadata keeps the factory in CustomConverter, where source generation stores the converter the factory creates.
+		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web) { TypeInfoResolver = new DefaultJsonTypeInfoResolver() };
+
+		var rows = ReadRows<FactoryBinaryRecord>(json, new EsqlResponseReader(new JsonMetadataManager(options)));
+
+		rows.Should().ContainSingle().Which.Data.Should().Equal([0x68, 0x69]);
+	}
+
+	[Test]
 	public void ReadRows_JsonArrayMemberWithScalarCell_IsWrapped()
 	{
 		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"tags","type":"keyword"}],"values":[["a","solo"]]}""";
@@ -147,10 +171,12 @@ public class RowAssemblyRawCopyTests
 	}
 #endif
 
-	private static List<T> ReadRows<T>(string json)
+	private static List<T> ReadRows<T>(string json) => ReadRows<T>(json, CreateReader());
+
+	private static List<T> ReadRows<T>(string json, EsqlResponseReader reader)
 	{
 		using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
-		using var results = CreateReader().ReadRows<T>(stream);
+		using var results = reader.ReadRows<T>(stream);
 		return results.Rows.ToList();
 	}
 

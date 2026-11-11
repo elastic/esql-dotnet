@@ -782,6 +782,7 @@ public record SpecialCharacterProjection([property: JsonPropertyName("user-agent
 [JsonSerializable(typeof(NullableCellsRecord))]
 [JsonSerializable(typeof(BinaryRecord))]
 [JsonSerializable(typeof(JsonArrayRecord))]
+[JsonSerializable(typeof(NumberArrayBinaryRecord))]
 [JsonSerializable(typeof(int))]
 [JsonSerializable(typeof(int?))]
 [JsonSerializable(typeof(long))]
@@ -830,6 +831,44 @@ public record BinaryRecord(string Name, byte[] Data);
 
 /// <summary>Positional record with a JsonArray member, forcing a single-valued cell through the JSON assembly path.</summary>
 public record JsonArrayRecord(string Name, JsonArray? Tags);
+
+/// <summary>Positional record whose byte array member reads through a converter that takes only a JSON number array.</summary>
+public record NumberArrayBinaryRecord(string Name, [property: JsonConverter(typeof(NumberArrayByteConverter))] byte[] Data);
+
+/// <summary>Positional record whose byte array member names a factory that hands back the serializer's own converter.</summary>
+public record FactoryBinaryRecord(string Name, [property: JsonConverter(typeof(DeferringConverterFactory))] byte[] Data);
+
+/// <summary>Reads a JSON number array into bytes and rejects any other token, so a bare number cell must arrive wrapped.</summary>
+public class NumberArrayByteConverter : JsonConverter<byte[]>
+{
+	public override byte[] Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+	{
+		if (reader.TokenType != JsonTokenType.StartArray)
+			throw new JsonException($"Expected a number array, got {reader.TokenType}.");
+
+		var bytes = new List<byte>();
+		while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+			bytes.Add(reader.GetByte());
+
+		return [.. bytes];
+	}
+
+	public override void Write(Utf8JsonWriter writer, byte[] value, JsonSerializerOptions options)
+	{
+		writer.WriteStartArray();
+		foreach (var b in value)
+			writer.WriteNumberValue(b);
+		writer.WriteEndArray();
+	}
+}
+
+/// <summary>Hands back the converter the options already resolve, so a member that names it reads as if it named none.</summary>
+public class DeferringConverterFactory : JsonConverterFactory
+{
+	public override bool CanConvert(Type typeToConvert) => typeToConvert == typeof(byte[]) || typeToConvert == typeof(List<int>);
+
+	public override JsonConverter? CreateConverter(Type typeToConvert, JsonSerializerOptions options) => options.GetConverter(typeToConvert);
+}
 
 public class TypedSetterBaseModel
 {

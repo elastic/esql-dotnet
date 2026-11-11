@@ -251,5 +251,5 @@ internal sealed class DirectRowBinder
 	}
 
 	/// <summary>Whether <paramref name="typeInfo"/> reads through one of the serializer's own converters.</summary>
-	internal static bool HasBuiltInConverter(JsonTypeInfo typeInfo) => typeInfo.Converter.GetType().Assembly == typeof(JsonSerializerOptions).Assembly;
+	internal static bool HasBuiltInConverter(JsonTypeInfo typeInfo) => JsonMetadataManager.IsBuiltInConverter(typeInfo.Converter);
 }

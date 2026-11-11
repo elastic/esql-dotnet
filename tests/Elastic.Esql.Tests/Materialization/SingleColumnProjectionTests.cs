@@ -5,6 +5,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Elastic.Esql.Materialization;
 using Elastic.Esql.Tests.Execution;
@@ -61,6 +62,20 @@ public class SingleColumnProjectionTests
 		rows[0].Should().Equal("only");
 		rows[1].Should().Equal("a", "b");
 		rows[2].Should().BeNull();
+	}
+
+	[Test]
+	public void ReadRows_SingleMultiValueColumnWithGlobalArrayConverter_WrapsSingleValuedCell()
+	{
+		const string json = """{"columns":[{"name":"n","type":"integer"}],"values":[[7],[[8,9]]]}""";
+		var options = CreateOptions();
+		options.Converters.Add(new ArrayOnlyIntListConverter());
+
+		var rows = ReadRows<List<int>>(json, options);
+
+		rows.Should().HaveCount(2);
+		rows[0].Should().Equal(7);
+		rows[1].Should().Equal(8, 9);
 	}
 
 	[Test]
@@ -142,9 +157,12 @@ public class SingleColumnProjectionTests
 	[Test]
 	public void ReadRows_SingleColumnJsonArrayTarget_BindsCell()
 	{
-		var rows = ReadRows<JsonArray>(ListJson);
+		var rows = ReadRows<JsonArray>(MixedListJson);
 
-		rows.Should().ContainSingle().Which.Select(n => n!.GetValue<string>()).Should().Equal("a", "b");
+		rows.Should().HaveCount(3);
+		rows[0]!.Select(n => n!.GetValue<string>()).Should().Equal("only");
+		rows[1]!.Select(n => n!.GetValue<string>()).Should().Equal("a", "b");
+		rows[2].Should().BeNull();
 	}
 
 	[Test]
@@ -199,10 +217,12 @@ public class SingleColumnProjectionTests
 		value.Year.Should().Be(2024);
 	}
 
-	private static List<T> ReadRows<T>(string json)
+	private static List<T> ReadRows<T>(string json) => ReadRows<T>(json, CreateOptions());
+
+	private static List<T> ReadRows<T>(string json, JsonSerializerOptions options)
 	{
 		using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
-		using var results = CreateReader().ReadRows<T>(stream);
+		using var results = new EsqlResponseReader(new JsonMetadataManager(options)).ReadRows<T>(stream);
 		return results.Rows.ToList();
 	}
 
@@ -219,4 +239,27 @@ public class SingleColumnProjectionTests
 
 	private static EsqlResponseReader CreateReader() =>
 		new(new JsonMetadataManager(CreateOptions()));
+
+	private sealed class ArrayOnlyIntListConverter : JsonConverter<List<int>>
+	{
+		public override List<int> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+		{
+			if (reader.TokenType != JsonTokenType.StartArray)
+				throw new JsonException($"Expected an array, got {reader.TokenType}.");
+
+			var values = new List<int>();
+			while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+				values.Add(reader.GetInt32());
+
+			return values;
+		}
+
+		public override void Write(Utf8JsonWriter writer, List<int> value, JsonSerializerOptions options)
+		{
+			writer.WriteStartArray();
+			foreach (var v in value)
+				writer.WriteNumberValue(v);
+			writer.WriteEndArray();
+		}
+	}
 }

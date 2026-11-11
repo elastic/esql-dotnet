@@ -5,6 +5,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Elastic.Esql.Core;
 
@@ -226,7 +227,12 @@ internal sealed class ColumnLayout
 				return false;
 
 			if (i == segments.Length - 1)
-				return IsCollectionContract(matchedProp.PropertyType, JsonMetadataManager.TryResolveTypeInfo(matchedProp.PropertyType, options));
+				return IsCollectionContract(
+					matchedProp.PropertyType,
+					JsonMetadataManager.TryResolveTypeInfo(matchedProp.PropertyType, options),
+					matchedProp.CustomConverter,
+					options
+				);
 
 			var propType = Nullable.GetUnderlyingType(matchedProp.PropertyType) ?? matchedProp.PropertyType;
 
@@ -241,9 +247,17 @@ internal sealed class ColumnLayout
 	}
 
 	/// <summary>Determines if the serializer reads <paramref name="type"/> from a JSON array, so a bare single-valued cell needs wrapping.</summary>
-	internal static bool IsCollectionContract(Type type, JsonTypeInfo? typeInfo) =>
+	internal static bool IsCollectionContract(Type type, JsonTypeInfo? typeInfo, JsonConverter? propertyConverter, JsonSerializerOptions options)
+	{
 		// JsonArray's contract kind is None, but its converter takes only an array, so a bare cell still needs the wrap.
-		typeof(JsonArray).IsAssignableFrom(type) || typeInfo?.Kind == JsonTypeInfoKind.Enumerable;
+		if (typeof(JsonArray).IsAssignableFrom(type) || typeInfo?.Kind == JsonTypeInfoKind.Enumerable)
+			return true;
+
+		// A custom converter's contract kind is always None, so the token shape it reads is unknown and the CLR type
+		// decides: a collection type gets the wrap.
+		var converter = (propertyConverter is null ? null : JsonMetadataManager.ExpandConverter(propertyConverter, type, options)) ?? typeInfo?.Converter;
+		return converter is not null && !JsonMetadataManager.IsBuiltInConverter(converter) && TypeHelper.IsEnumerableType(type);
+	}
 
 	private static void InsertIntoTree(ColumnNode parent, string[] segments, int columnIndex, bool isCollection)
 	{

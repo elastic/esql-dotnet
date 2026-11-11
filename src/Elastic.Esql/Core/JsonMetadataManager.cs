@@ -87,6 +87,20 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options, bool? r
 	}
 
 	/// <summary>
+	/// Whether <paramref name="converter"/> comes from the serializer's own assembly, so it reads the token shapes its
+	/// contract kind describes.
+	/// </summary>
+	internal static bool IsBuiltInConverter(JsonConverter converter) => converter.GetType().Assembly == typeof(JsonSerializerOptions).Assembly;
+
+	/// <summary>
+	/// Returns the converter that reads <paramref name="type"/> when a member names <paramref name="converter"/>. Reflection
+	/// metadata keeps a property's factory in <see cref="JsonPropertyInfo.CustomConverter"/>, so the converter that reads the
+	/// cell is the one the factory creates.
+	/// </summary>
+	internal static JsonConverter? ExpandConverter(JsonConverter converter, Type type, JsonSerializerOptions options) =>
+		converter is JsonConverterFactory factory && factory.CanConvert(type) ? factory.CreateConverter(type, options) : converter;
+
+	/// <summary>
 	/// Returns the <see cref="JsonTypeInfo"/> for <paramref name="type"/>, validating that the
 	/// type uses property-based serialization. Types with a type-level <see cref="JsonConverterAttribute"/>
 	/// have <see cref="JsonTypeInfoKind.None"/> and cannot be used as ES|QL entity types.
