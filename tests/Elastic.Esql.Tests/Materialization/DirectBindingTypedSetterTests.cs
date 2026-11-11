@@ -208,6 +208,19 @@ public class DirectBindingTypedSetterTests
 	}
 
 	[Test]
+	public void ReadRows_DerivedGeneratedContextReplacingSetter_IsHonored()
+	{
+		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+		{
+			TypeInfoResolver = JsonTypeInfoResolver.Combine(new TrimmingDerivedContext(), new DefaultJsonTypeInfoResolver())
+		};
+
+		var rows = ReadRows<TrimmedNameModel>(PaddedNameJson, options);
+
+		rows.Should().ContainSingle().Which.Name.Should().Be("a");
+	}
+
+	[Test]
 	public void ReadRows_DefaultResolverSubclassReplacingSetter_IsHonored()
 	{
 		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web) { TypeInfoResolver = new TrimmingResolver() };
@@ -283,6 +296,20 @@ public class DirectBindingTypedSetterTests
 		public override JsonTypeInfo GetTypeInfo(Type type, JsonSerializerOptions options)
 		{
 			var typeInfo = base.GetTypeInfo(type, options);
+			TrimNameOnSet(typeInfo);
+			return typeInfo;
+		}
+	}
+
+	// Inherits [JsonSerializable] from its generated base, so only a lookup on its own type tells it from a generated context.
+	// It re-lists the resolver interface because the base implements it explicitly, which a subclass cannot override.
+	private sealed class TrimmingDerivedContext : UnsealedTestJsonContext, IJsonTypeInfoResolver
+	{
+		private readonly DefaultJsonTypeInfoResolver _inner = new();
+
+		JsonTypeInfo? IJsonTypeInfoResolver.GetTypeInfo(Type type, JsonSerializerOptions options)
+		{
+			var typeInfo = _inner.GetTypeInfo(type, options);
 			TrimNameOnSet(typeInfo);
 			return typeInfo;
 		}

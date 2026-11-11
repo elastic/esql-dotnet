@@ -39,8 +39,8 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 	/// <remarks>
 	/// The resolver chain exposes the parts of a combined resolver, so each part is judged on its own, the combination the
 	/// library builds from a context included. An empty chain counts as modifier-free because the serializer fills in its
-	/// own reflection resolver without adding it to the chain. The answer is read at each layout build: a part that has not
-	/// resolved a type yet can still gain a modifier after the options are read-only, while a part that resolved the
+	/// own reflection resolver without adding it to the chain. The answer is read at each layout build: a part that has
+	/// not resolved a type yet can still gain a modifier after the options are read-only, while a part that resolved the
 	/// build's type is locked by then.
 	/// </remarks>
 	public bool ResolverIsModifierFree => AllModifierFree(options.TypeInfoResolverChain);

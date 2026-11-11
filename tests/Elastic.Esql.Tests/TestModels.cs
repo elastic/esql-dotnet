@@ -791,6 +791,10 @@ public record SpecialCharacterProjection([property: JsonPropertyName("user-agent
 [JsonSerializable(typeof(string))]
 public sealed partial class MaterializationTestJsonContext : JsonSerializerContext;
 
+// Unsealed so a test can derive a hand-written context that inherits the generated one's [JsonSerializable].
+[JsonSerializable(typeof(string))]
+internal partial class UnsealedTestJsonContext : JsonSerializerContext;
+
 public class ArrayStringPropertyModel
 {
 	public string[] Tags { get; set; } = [];
