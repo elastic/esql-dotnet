@@ -181,17 +181,16 @@ public class DirectBindingTypedSetterTests
 	}
 
 	[Test]
-	public void Build_CombinedResolverWithCustomPart_KeepsBoxingSetters()
+	public void ReadRows_CombinedResolverWithCustomPart_IsHonored()
 	{
 		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
 		{
-			TypeInfoResolver = JsonTypeInfoResolver.Combine(new PassThroughResolver(), new DefaultJsonTypeInfoResolver())
+			TypeInfoResolver = JsonTypeInfoResolver.Combine(new TrimmingCustomResolver(), new DefaultJsonTypeInfoResolver())
 		};
 
-		var layout = BuildLayout<TrimmedNameModel>(options, ("name", "keyword"));
+		var rows = ReadRows<TrimmedNameModel>(PaddedNameJson, options);
 
-		layout.DirectBinder.Should().NotBeNull();
-		layout.DirectBinder.TypedSetters.Should().AllSatisfy(setter => setter.Should().BeNull());
+		rows.Should().ContainSingle().Which.Name.Should().Be("a");
 	}
 
 	[Test]
@@ -284,11 +283,16 @@ public class DirectBindingTypedSetterTests
 		public int Count { get; set; }
 	}
 
-	private sealed class PassThroughResolver : IJsonTypeInfoResolver
+	private sealed class TrimmingCustomResolver : IJsonTypeInfoResolver
 	{
 		private readonly DefaultJsonTypeInfoResolver _inner = new();
 
-		public JsonTypeInfo? GetTypeInfo(Type type, JsonSerializerOptions options) => _inner.GetTypeInfo(type, options);
+		public JsonTypeInfo? GetTypeInfo(Type type, JsonSerializerOptions options)
+		{
+			var typeInfo = _inner.GetTypeInfo(type, options);
+			TrimNameOnSet(typeInfo);
+			return typeInfo;
+		}
 	}
 
 	private sealed class TrimmingResolver : DefaultJsonTypeInfoResolver

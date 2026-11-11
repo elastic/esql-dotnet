@@ -270,6 +270,9 @@ public class DirectBindingConverterCellTests
 	[Test]
 	public void ReadRows_PropertyLevelFactoryReturningBuiltInListConverter_BindsArrayCell()
 	{
+		if (!RuntimeFeature.IsDynamicCodeSupported)
+			return;
+
 		const string json = """{"columns":[{"name":"numbers","type":"integer"}],"values":[[[7,8]]]}""";
 		var layout = BuildLayout<DeferredListModel>(("numbers", "integer"));
 		layout.DirectBinder.Should().NotBeNull();
@@ -294,6 +297,9 @@ public class DirectBindingConverterCellTests
 	[Test]
 	public void ReadRows_PropertyLevelStringEnumFactory_BindsWithoutThrowing()
 	{
+		if (!RuntimeFeature.IsDynamicCodeSupported)
+			return;
+
 		const string json = """{"columns":[{"name":"plain","type":"keyword"}],"values":[["high"]]}""";
 
 		BuildLayout<PlainLevelModel>(("plain", "keyword")).DirectBinder.Should().NotBeNull();
@@ -835,29 +841,6 @@ public class DirectBindingConverterCellTests
 
 		public override void Write(Utf8JsonWriter writer, DateTime value, JsonSerializerOptions options) =>
 			writer.WriteNumberValue((long)(value - DateTime.UnixEpoch).TotalSeconds);
-	}
-
-	private sealed class ArrayOnlyIntListConverter : JsonConverter<List<int>>
-	{
-		public override List<int> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-		{
-			if (reader.TokenType != JsonTokenType.StartArray)
-				throw new JsonException($"Expected an array, got {reader.TokenType}.");
-
-			var values = new List<int>();
-			while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
-				values.Add(reader.GetInt32());
-
-			return values;
-		}
-
-		public override void Write(Utf8JsonWriter writer, List<int> value, JsonSerializerOptions options)
-		{
-			writer.WriteStartArray();
-			foreach (var number in value)
-				writer.WriteNumberValue(number);
-			writer.WriteEndArray();
-		}
 	}
 
 	private sealed class NullingStringConverter : JsonConverter<string>

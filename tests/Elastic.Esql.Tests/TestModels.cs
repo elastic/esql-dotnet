@@ -866,6 +866,30 @@ public class NumberArrayByteConverter : JsonConverter<byte[]>
 	}
 }
 
+/// <summary>Reads a JSON number array into a list and rejects any other token, so a bare number cell must arrive wrapped.</summary>
+public class ArrayOnlyIntListConverter : JsonConverter<List<int>>
+{
+	public override List<int> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+	{
+		if (reader.TokenType != JsonTokenType.StartArray)
+			throw new JsonException($"Expected an array, got {reader.TokenType}.");
+
+		var values = new List<int>();
+		while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+			values.Add(reader.GetInt32());
+
+		return values;
+	}
+
+	public override void Write(Utf8JsonWriter writer, List<int> value, JsonSerializerOptions options)
+	{
+		writer.WriteStartArray();
+		foreach (var number in value)
+			writer.WriteNumberValue(number);
+		writer.WriteEndArray();
+	}
+}
+
 /// <summary>Hands back the converter the options already resolve, so a member that names it reads as if it named none.</summary>
 public class DeferringConverterFactory : JsonConverterFactory
 {

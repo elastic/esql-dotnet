@@ -5,7 +5,6 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Elastic.Esql.Materialization;
 using Elastic.Esql.Tests.Execution;
@@ -239,27 +238,4 @@ public class SingleColumnProjectionTests
 
 	private static EsqlResponseReader CreateReader() =>
 		new(new JsonMetadataManager(CreateOptions()));
-
-	private sealed class ArrayOnlyIntListConverter : JsonConverter<List<int>>
-	{
-		public override List<int> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-		{
-			if (reader.TokenType != JsonTokenType.StartArray)
-				throw new JsonException($"Expected an array, got {reader.TokenType}.");
-
-			var values = new List<int>();
-			while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
-				values.Add(reader.GetInt32());
-
-			return values;
-		}
-
-		public override void Write(Utf8JsonWriter writer, List<int> value, JsonSerializerOptions options)
-		{
-			writer.WriteStartArray();
-			foreach (var v in value)
-				writer.WriteNumberValue(v);
-			writer.WriteEndArray();
-		}
-	}
 }
