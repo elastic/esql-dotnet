@@ -268,6 +268,50 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
+	public void ReadRows_PropertyLevelFactoryReturningBuiltInListConverter_BindsArrayCell()
+	{
+		const string json = """{"columns":[{"name":"numbers","type":"integer"}],"values":[[[7,8]]]}""";
+		var layout = BuildLayout<DeferredListModel>(("numbers", "integer"));
+		layout.DirectBinder.Should().NotBeNull();
+
+		var rows = ReadRows<DeferredListModel>(json, CreateOptions());
+
+		rows.Should().ContainSingle().Which.Numbers.Should().Equal(7, 8);
+	}
+
+	[Test]
+	public void ReadRows_PropertyLevelStringEnumFactory_BindsWithoutThrowing()
+	{
+		const string json = """{"columns":[{"name":"plain","type":"keyword"}],"values":[["high"]]}""";
+
+		BuildLayout<PlainLevelModel>(("plain", "keyword")).DirectBinder.Should().NotBeNull();
+
+		// The handler runs on the throwing thread, so counting only this thread's exceptions keeps the
+		// process-wide event from picking up other tests running in parallel.
+		var testThreadId = Environment.CurrentManagedThreadId;
+		var firstChanceCount = 0;
+		void Count(object? sender, FirstChanceExceptionEventArgs args)
+		{
+			if (Environment.CurrentManagedThreadId == testThreadId)
+				Interlocked.Increment(ref firstChanceCount);
+		}
+
+		AppDomain.CurrentDomain.FirstChanceException += Count;
+		List<PlainLevelModel> rows;
+		try
+		{
+			rows = ReadRows<PlainLevelModel>(json, CreateOptions());
+		}
+		finally
+		{
+			AppDomain.CurrentDomain.FirstChanceException -= Count;
+		}
+
+		firstChanceCount.Should().Be(0);
+		rows.Should().ContainSingle().Which.Plain.Should().Be(Level.High);
+	}
+
+	[Test]
 	public void ReadRows_DateOnlyProperty_Binds()
 	{
 		const string json = """{"columns":[{"name":"day","type":"date"}],"values":[["2024-01-02"]]}""";
@@ -610,6 +654,12 @@ public class DirectBindingConverterCellTests
 	{
 		[JsonConverter(typeof(JsonStringEnumConverter))]
 		public Level Plain { get; set; }
+	}
+
+	private sealed class DeferredListModel
+	{
+		[JsonConverter(typeof(DeferringConverterFactory))]
+		public List<int> Numbers { get; set; } = [];
 	}
 
 	private sealed class DateOnlyModel

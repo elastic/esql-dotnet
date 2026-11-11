@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
+using Elastic.Esql.Core;
 
 namespace Elastic.Esql.Materialization;
 
@@ -39,19 +40,23 @@ internal static class PropertyConverterContracts
 		if (!DynamicCode.IsSupported)
 			return null;
 
-		if (converter is JsonConverterFactory factory)
-		{
-			if (!factory.CanConvert(propertyType) || factory.CreateConverter(propertyType, options) is not { } created || created is JsonConverterFactory)
-				return null;
+		if (JsonMetadataManager.ExpandConverter(converter, propertyType, options) is not { } expanded || expanded is JsonConverterFactory)
+			return null;
 
-			converter = created;
-		}
+		converter = expanded;
 
 		// The serializer wraps a converter for T around a T? property when it builds the contract. A converter of any
 		// other type reaches the property through the serializer's casting converter, so the slow path handles it the
 		// way the serializer does.
 		if (converter.Type != propertyType)
 			return null;
+
+		// A value contract carries no collection or object metadata, so a structured converter of the serializer's own
+		// reads only through the contract the serializer builds for the type, and that contract serves the cell only when
+		// its converter is of the same type.
+		if (JsonMetadataManager.IsBuiltInConverter(converter)
+			&& JsonMetadataManager.TryResolveTypeInfo(propertyType, options) is { Kind: not JsonTypeInfoKind.None } own)
+			return own.Converter.GetType() == converter.GetType() ? own : null;
 
 		try
 		{

@@ -95,7 +95,8 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options, bool? r
 	/// <summary>
 	/// Returns the converter that reads <paramref name="type"/> when a member names <paramref name="converter"/>. Reflection
 	/// metadata keeps a property's factory in <see cref="JsonPropertyInfo.CustomConverter"/>, so the converter that reads the
-	/// cell is the one the factory creates.
+	/// cell is the one the factory creates. A factory that creates no converter gives null, and a factory that cannot
+	/// convert <paramref name="type"/> comes back unchanged.
 	/// </summary>
 	internal static JsonConverter? ExpandConverter(JsonConverter converter, Type type, JsonSerializerOptions options) =>
 		converter is JsonConverterFactory factory && factory.CanConvert(type) ? factory.CreateConverter(type, options) : converter;
