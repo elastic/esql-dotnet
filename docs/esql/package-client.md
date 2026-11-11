@@ -103,10 +103,10 @@ source-generated `JsonSerializerContext`, a plain `DefaultJsonTypeInfoResolver` 
 built with `JsonTypeInfoResolver.Combine` or the options' `TypeInfoResolverChain`, such as the client's combination of a
 context with the reflection resolver. Each part of a chain is judged on its own, so one part with a modifier keeps the
 whole chain on `Set`. A hand-written `JsonSerializerContext` and a subclass of the default resolver count like a custom
-resolver, since either can replace `JsonPropertyInfo.Set` in its own `GetTypeInfo`. Converter cells, and every cell
-under any other resolver, go through the contract's own `JsonPropertyInfo.Set`, so a modifier that replaces it is
-honored on every row. The decision is made for each result type when its layout is built, with the options already
-read-only.
+resolver, since either can replace `JsonPropertyInfo.Set` in its own `GetTypeInfo`. A subclass of a source-generated
+context counts as hand-written. Converter cells, and every cell under any other resolver, go through the contract's own
+`JsonPropertyInfo.Set`, so a modifier that replaces it is honored on every row. The decision is made for each result
+type when its layout is built, with the options already read-only.
 
 A cell that its own contract rejects, a converter result of null for a property that does not accept null, or a string
 the reader cannot decode, is read again by the serializer so the error carries the property path. A deserialization
@@ -376,6 +376,10 @@ a type with one stays on the fallback. It must also be a converter for the prope
 expanded. A converter declared for a base type keeps the type on the fallback, where the serializer applies it through
 its casting converter. The compiled setters described under AOT-safe configuration need dynamic code too, and without it
 a directly bound row assigns its cells through the contract's own `JsonPropertyInfo.Set`.
+
+When a converter that does not come from `System.Text.Json` reads a property whose type is a collection, `byte[]`
+included, a single-valued cell reaches it wrapped in an array, the shape a multi-valued cell has, so the converter must
+accept an array.
 
 A type that misses any condition in the list falls back to assembling each row as a JSON object and deserializing it
 with `System.Text.Json`. The fallback is correct but slower, and nothing signals which path is active. If throughput

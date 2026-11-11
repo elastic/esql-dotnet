@@ -246,7 +246,7 @@ internal sealed class ColumnLayout
 		return false;
 	}
 
-	/// <summary>Determines if the serializer reads <paramref name="type"/> from a JSON array, so a bare single-valued cell needs wrapping.</summary>
+	/// <summary>Determines whether a bare single-valued cell for <paramref name="type"/> is wrapped in an array before its converter reads it.</summary>
 	internal static bool IsCollectionContract(Type type, JsonTypeInfo? typeInfo, JsonConverter? propertyConverter, JsonSerializerOptions options)
 	{
 		// JsonArray's contract kind is None, but its converter takes only an array, so a bare cell still needs the wrap.
