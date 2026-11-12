@@ -313,6 +313,36 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
+	public void ReadRows_StructuredFactoryOfAnotherKind_BindsLikeTheSerializer()
+	{
+		if (!RuntimeFeature.IsDynamicCodeSupported)
+			return;
+
+		const string json = """{"columns":[{"name":"values","type":"object"}],"values":[[{}]]}""";
+
+		var rows = ReadRows<ObjectFactoryDictionaryModel>(json, CreateOptions());
+
+		rows.Should().ContainSingle().Which.Values.Should().NotBeNull().And.BeEmpty();
+	}
+
+	[Test]
+	public void ReadRows_NullableWrapperOfAnotherKind_ThrowsLikeTheSerializer()
+	{
+		if (!RuntimeFeature.IsDynamicCodeSupported)
+			return;
+
+		const string json = """{"columns":[{"name":"tags","type":"integer"}],"values":[[[1,2]]]}""";
+		var options = CreateOptions();
+		var serializerRead = () => JsonSerializer.Deserialize<ObjectWrapperTagsModel>("""{"tags":[1,2]}""", options);
+
+		// Fails here, and not on the read below, once the serializer reads an array through the wrapped object converter.
+		serializerRead.Should().Throw<JsonException>();
+		var act = () => ReadRows<ObjectWrapperTagsModel>(json, options);
+
+		act.Should().Throw<JsonException>();
+	}
+
+	[Test]
 	public void Build_PropertyLevelCustomListConverter_UsesConverterKind()
 	{
 		if (!RuntimeFeature.IsDynamicCodeSupported)
@@ -882,6 +912,18 @@ public class DirectBindingConverterCellTests
 		public ImmutableArray<int>? Tags { get; set; }
 	}
 
+	private sealed class ObjectFactoryDictionaryModel
+	{
+		[JsonConverter(typeof(ObjectInfoDictionaryFactory))]
+		public Dictionary<string, int>? Values { get; set; }
+	}
+
+	private sealed class ObjectWrapperTagsModel
+	{
+		[JsonConverter(typeof(ObjectInfoNullableArrayFactory))]
+		public ImmutableArray<int>? Tags { get; set; }
+	}
+
 	private sealed class DateOnlyModel
 	{
 		public DateOnly Day { get; set; }
@@ -963,6 +1005,30 @@ public class DirectBindingConverterCellTests
 
 		public override JsonConverter? CreateConverter(Type typeToConvert, JsonSerializerOptions options) =>
 			JsonMetadataServices.GetNullableConverter<ImmutableArray<int>>(options);
+	}
+
+	private sealed class ObjectInfoDictionaryFactory : JsonConverterFactory
+	{
+		public override bool CanConvert(Type typeToConvert) => typeToConvert == typeof(Dictionary<string, int>);
+
+		public override JsonConverter? CreateConverter(Type typeToConvert, JsonSerializerOptions options) =>
+			JsonMetadataServices.CreateObjectInfo<Dictionary<string, int>>(
+				options,
+				new JsonObjectInfoValues<Dictionary<string, int>> { ObjectCreator = static () => [] }
+			).Converter;
+	}
+
+	private sealed class ObjectInfoNullableArrayFactory : JsonConverterFactory
+	{
+		public override bool CanConvert(Type typeToConvert) => typeToConvert == typeof(ImmutableArray<int>?);
+
+		public override JsonConverter? CreateConverter(Type typeToConvert, JsonSerializerOptions options) =>
+			JsonMetadataServices.GetNullableConverter<ImmutableArray<int>>(
+				JsonMetadataServices.CreateObjectInfo<ImmutableArray<int>>(
+					options,
+					new JsonObjectInfoValues<ImmutableArray<int>> { ObjectCreator = static () => [] }
+				)
+			);
 	}
 
 	private sealed class PreservingReferenceHandler : ReferenceHandler

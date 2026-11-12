@@ -41,21 +41,25 @@ internal static class PropertyConverterContracts
 		if (converter.Type != propertyType)
 			return null;
 
-		// A value contract carries no collection or object metadata, so a structured converter of the serializer's own
-		// reads only through the contract the serializer builds for the type. The built-in nullable wrapper takes its
-		// kind from the converter it wraps and calls that converter directly, so a value contract of another kind than
-		// the type's own contract means a custom converter inside the wrapper, which only the value contract applies.
-		// When the kinds match, the converter reads its elements through the root options' metadata, which the own
-		// contract carries, so the own contract stands in when its converter has the same runtime type. A built-in
-		// value converter keeps a value contract of its own, because one converter type can carry other settings, such
-		// as the string enum converter beside the numeric one.
+		// A value contract carries no collection or object metadata, so it serves only a converter of the value kind: a
+		// built-in value converter, or a custom converter, alone or inside the built-in nullable wrapper, which takes its
+		// kind from the converter it wraps and calls that converter directly. A built-in value converter keeps a value
+		// contract of its own, because one converter type can carry other settings, such as the string enum converter
+		// beside the numeric one. A structured converter reads against the metadata of the type's own contract. When
+		// its kind differs from that contract's, the own contract carries a converter of the other kind, so only the
+		// serializer can pair the property's converter with that metadata. With matching kinds, the converter reads its
+		// elements through the root options' metadata, which the own contract carries, so the own contract stands in
+		// when its converter has the same runtime type.
 		var own = JsonMetadataManager.IsBuiltInConverter(converter) ? JsonMetadataManager.TryResolveTypeInfo(propertyType, options) : null;
 
 		if (TryCreateValueContract(propertyType, converter, options) is not { } valueContract)
 			return null;
 
-		if (own is null || valueContract.Kind == JsonTypeInfoKind.None || valueContract.Kind != own.Kind)
+		if (own is null || valueContract.Kind == JsonTypeInfoKind.None)
 			return valueContract;
+
+		if (valueContract.Kind != own.Kind)
+			return null;
 
 		return own.Converter.GetType() == converter.GetType() ? own : null;
 	}
