@@ -107,6 +107,24 @@ public class DirectBindingTypedSetterTests
 	}
 
 	[Test]
+	public void ReadRows_GeneratedContextWithPrivateSetter_ThrowsLikeTheSerializer()
+	{
+		if (!RuntimeFeature.IsDynamicCodeSupported)
+			return;
+
+		const string json = """{"columns":[{"name":"count","type":"integer"}],"values":[[5]]}""";
+		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web) { TypeInfoResolver = MaterializationTestJsonContext.Default };
+		var serializerRead = () => JsonSerializer.Deserialize<PrivateSetterModel>("""{"count":5}""", options);
+
+		// Fails here, and not on the read below, once a generator reaches private members and the serializer binds the row.
+		serializerRead.Should().Throw<InvalidOperationException>();
+		BuildLayout<PrivateSetterModel>(options, ("count", "integer")).DirectBinder.Should().NotBeNull();
+		var act = () => ReadRows<PrivateSetterModel>(json, options);
+
+		act.Should().Throw<InvalidOperationException>();
+	}
+
+	[Test]
 	public void ReadRows_ModifierReplacesSetter_IsHonored()
 	{
 		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)

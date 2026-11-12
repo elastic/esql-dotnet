@@ -789,6 +789,7 @@ public record SpecialCharacterProjection([property: JsonPropertyName("user-agent
 [JsonSerializable(typeof(double))]
 [JsonSerializable(typeof(bool))]
 [JsonSerializable(typeof(string))]
+[JsonSerializable(typeof(PrivateSetterModel))]
 public sealed partial class MaterializationTestJsonContext : JsonSerializerContext;
 
 // Unsealed so a test can derive a hand-written context that inherits the generated one's [JsonSerializable].
@@ -913,6 +914,13 @@ public struct TypedSetterStructModel
 {
 	public int X { get; set; }
 	public string Y { get; set; }
+}
+
+/// <summary>A generated context cannot reach the private setter, so its <c>Set</c> throws like the serializer.</summary>
+public sealed class PrivateSetterModel
+{
+	[JsonInclude]
+	public int Count { get; private set; }
 }
 
 public class ScalarDoubleModel

@@ -11,7 +11,9 @@ namespace Elastic.Esql.Materialization;
 /// <summary>
 /// Compiles strongly typed property setters for the direct-binding fast path so value-type cells are assigned
 /// without boxing through <see cref="JsonPropertyInfo.Set"/>. Only used where the runtime can generate code,
-/// so Native AOT keeps the object-typed setter.
+/// so Native AOT keeps the object-typed setter. Only a public setter or a public field gets one, because a public
+/// member is the only kind a source-generated context always reaches, and for a member it cannot reach the context
+/// emits a <see cref="JsonPropertyInfo.Set"/> that throws, as the serializer does.
 /// </summary>
 /// <remarks>
 /// The compiled setter assigns the member directly and bypasses <see cref="JsonPropertyInfo.Set"/>, so the binder asks
@@ -21,8 +23,9 @@ internal static class DirectSetterCompiler
 {
 	/// <summary>
 	/// Returns a compiled <c>Action&lt;object, TValue&gt;</c> for the exact value type of <paramref name="kind"/>,
-	/// or null when the runtime does not support dynamic code, the declaring type is a struct, or the member
-	/// cannot be resolved via <see cref="JsonPropertyInfo.AttributeProvider"/>.
+	/// or null when the runtime does not support dynamic code, the declaring type is a struct, the member
+	/// cannot be resolved via <see cref="JsonPropertyInfo.AttributeProvider"/>, or the member is not a property with a
+	/// public setter or a public writable field.
 	/// </summary>
 	public static Delegate? TryCreate(JsonPropertyInfo property, DirectBinderKind kind)
 	{
@@ -54,10 +57,10 @@ internal static class DirectSetterCompiler
 		// A struct instance would be unboxed by copy inside the lambda and the assignment lost.
 		switch (property.AttributeProvider)
 		{
-			case PropertyInfo { SetMethod: not null, DeclaringType: { IsValueType: false } propertyDeclaringType } propertyInfo:
+			case PropertyInfo { SetMethod.IsPublic: true, DeclaringType: { IsValueType: false } propertyDeclaringType } propertyInfo:
 				target = Expression.Property(Expression.Convert(instance, propertyDeclaringType), propertyInfo);
 				break;
-			case FieldInfo { IsInitOnly: false, DeclaringType: { IsValueType: false } fieldDeclaringType } fieldInfo:
+			case FieldInfo { IsPublic: true, IsInitOnly: false, DeclaringType: { IsValueType: false } fieldDeclaringType } fieldInfo:
 				target = Expression.Field(Expression.Convert(instance, fieldDeclaringType), fieldInfo);
 				break;
 			default:

@@ -104,9 +104,11 @@ built with `JsonTypeInfoResolver.Combine` or the options' `TypeInfoResolverChain
 context with the reflection resolver. Each part of a chain is judged on its own, so one part with a modifier keeps the
 whole chain on `Set`. A hand-written `JsonSerializerContext` and a subclass of the default resolver count like a custom
 resolver, since either can replace `JsonPropertyInfo.Set` in its own `GetTypeInfo`. A subclass of a source-generated
-context counts as hand-written. Converter cells, and every cell under any other resolver, go through the contract's own
-`JsonPropertyInfo.Set`, so a modifier that replaces it is honored on every row. The decision is made for each result
-type when its layout is built, with the options already read-only.
+context counts as hand-written. Only a public setter or a public field gets a compiled setter, and any other member
+keeps the contract's `JsonPropertyInfo.Set`, which throws for a member a source-generated context cannot reach.
+Converter cells, and every cell under any other resolver, go through the contract's own `JsonPropertyInfo.Set`, so a
+modifier that replaces it is honored on every row. The decision is made for each result type when its layout is built,
+with the options already read-only.
 
 A cell that its own contract rejects, a converter result of null for a property that does not accept null, or a string
 the reader cannot decode, is read again by the serializer so the error carries the property path. A deserialization

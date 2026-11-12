@@ -6,6 +6,10 @@
     <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
     <SignAssembly>true</SignAssembly>
     <AssemblyOriginatorKeyFile>$(SolutionRoot)/build/keys/keypair.snk</AssemblyOriginatorKeyFile>
+    <!-- PrivateSetterModel needs a private setter the System.Text.Json source generator cannot reach. The generator's
+         diagnostics ignore #pragma, [SuppressMessage] and per-file .editorconfig severity, so only a compilation-wide
+         setting such as NoWarn silences it. -->
+    <NoWarn>$(NoWarn);SYSLIB1038</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
