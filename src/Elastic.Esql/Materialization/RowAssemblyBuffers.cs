@@ -31,8 +31,8 @@ internal sealed class RowAssemblyBuffers(int estimatedRowSize, bool isScalar, bo
 	public bool WrapScalarInArray { get; } = wrapScalarInArray;
 
 	/// <summary>
-	/// The string cells of a directly bound row with converter cells, decoded by the validating pass and indexed by column.
-	/// The first call sizes the array and later calls return it.
+	/// The string cells of a directly bound row with converter cells, indexed by column and decoded once the validating
+	/// pass has seen the whole row. The first call sizes the array and later calls return it.
 	/// </summary>
 	public string?[] StringCells(int columnCount) => _stringCells ??= new string?[columnCount];
 
