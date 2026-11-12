@@ -51,7 +51,7 @@ public class ScalarSelectTests : EsqlTestBase
 		_ = esql.Should().Be(
 			"""
             FROM logs-*
-            | EVAL result = ROUND(duration)
+            | EVAL result = CASE(duration - FLOOR(duration) == 0.5, FLOOR(duration) + ABS(FLOOR(duration) % 2), ROUND(duration))
             | KEEP result
             """.NativeLineEndings());
 	}

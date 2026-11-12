@@ -148,7 +148,7 @@ Standard `Math.*` methods translate to their ES|QL equivalents in both Where and
 | [`LOG10`](elasticsearch://reference/query-languages/esql/functions-operators/math-functions.md#esql-log10) | | `Math.Log10(n)` |
 | [`PI`](elasticsearch://reference/query-languages/esql/functions-operators/math-functions.md#esql-pi) | `EsqlFunctions.Pi()` | |
 | [`POW`](elasticsearch://reference/query-languages/esql/functions-operators/math-functions.md#esql-pow) | | `Math.Pow(base, exp)` |
-| [`ROUND`](elasticsearch://reference/query-languages/esql/functions-operators/math-functions.md#esql-round) | `EsqlFunctions.Round(n, decimals)` | `Math.Round(n)` |
+| [`ROUND`](elasticsearch://reference/query-languages/esql/functions-operators/math-functions.md#esql-round) | `EsqlFunctions.Round(n, decimals)` | `Math.Round(n, MidpointRounding.AwayFromZero)` |
 | [`ROUND_TO`](elasticsearch://reference/query-languages/esql/functions-operators/math-functions.md#esql-round_to) | `EsqlFunctions.RoundTo(n, dp)` | |
 | [`SCALB`](elasticsearch://reference/query-languages/esql/functions-operators/math-functions.md#esql-scalb) | `EsqlFunctions.ScaleB(n, exp)` | `Math.ScaleB(n, exp)` |
 | [`SIGNUM`](elasticsearch://reference/query-languages/esql/functions-operators/math-functions.md#esql-signum) | `EsqlFunctions.Signum(n)` | `Math.Sign(n)` |
@@ -160,6 +160,10 @@ Standard `Math.*` methods translate to their ES|QL equivalents in both Where and
 | [`TAU`](elasticsearch://reference/query-languages/esql/functions-operators/math-functions.md#esql-tau) | `EsqlFunctions.Tau()` | |
 
 Note: `Math.E`, `Math.PI`, and `Math.Tau` are const fields that the C# compiler inlines as numeric literals. Use `EsqlFunctions.E()`, `.Pi()`, `.Tau()` instead to generate the ES|QL function calls.
+
+Note: `ROUND` rounds a midpoint away from zero, so it matches `Math.Round` with `MidpointRounding.AwayFromZero`. The other modes are translated so that the result is the same as in .NET: the default `MidpointRounding.ToEven` with `FLOOR` and `ROUND` inside a `CASE`, and `ToZero`, `ToNegativeInfinity` and `ToPositiveInfinity` with `FLOOR` and `CEIL`. `Math.Round(2.5)` returns `2`. With digits, `AwayFromZero` passes them to `ROUND`, and the other modes scale the value by `POW(10, digits)` before rounding and scale it back after. On a `double`, the result is also wrapped in a `CASE` that returns a value of `1e16` or more unchanged, as .NET does. So the `ROUND` row in the table is the whole translation only without digits, or for a `decimal`.
+
+Note: a cast of an integer field to `double` is not translated, so with digits `Math.Round((double)l.StatusCode, 2)` gives a `CASE` whose branches have different types, and Elasticsearch rejects it in every mode except `AwayFromZero`. Use `Math.Round(EsqlFunctions.CastToDouble(l.StatusCode), 2)` instead.
 
 ## Dense vector functions
 
