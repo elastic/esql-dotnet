@@ -453,6 +453,20 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
+	[NotInParallel(nameof(CountingOwner))]
+	public void ReadRows_ConverterCellRowWithLoneSurrogateStringCell_RunsNestedCallbackOnce()
+	{
+		const string json = """{"columns":[{"name":"owner","type":"object"},{"name":"name","type":"keyword"}],"values":[[{"name":"ada"},"\ud800"]]}""";
+		CountingOwner.Deserialized = 0;
+
+		BuildLayout<CountingOwnerStringModel>(("owner", "object"), ("name", "keyword")).DirectBinder.Should().NotBeNull();
+		var act = () => ReadRows<CountingOwnerStringModel>(json, CreateOptions());
+
+		act.Should().Throw<JsonException>();
+		CountingOwner.Deserialized.Should().Be(1);
+	}
+
+	[Test]
 	public void ReadRows_ScalarSetterAfterConverterCell_AssignsInColumnOrder()
 	{
 		const string json = """{"columns":[{"name":"owner","type":"object"},{"name":"count","type":"integer"}],"values":[[{"name":"ada"},7]]}""";
@@ -622,6 +636,17 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
+	public void ReadRows_ConverterCellRowWithNullCellBeforeStringCell_BindsTheString()
+	{
+		const string json = """{"columns":[{"name":"level","type":"integer"},{"name":"name","type":"keyword"}],"values":[[null,"b"]]}""";
+
+		BuildLayout<EnumModel>(("level", "integer"), ("name", "keyword")).DirectBinder.Should().NotBeNull();
+		var rows = ReadRows<EnumModel>(json, CreateOptions());
+
+		rows[0].Name.Should().Be("b");
+	}
+
+	[Test]
 	public void ReadRows_SurrogatePairStringCell_BindsDirectly()
 	{
 		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"count","type":"integer"}],"values":[["\ud83d\ude00",1]]}""";
@@ -725,6 +750,12 @@ public class DirectBindingConverterCellTests
 	{
 		public CountingOwner? Owner { get; set; }
 		public int Count { get; set; }
+	}
+
+	private sealed class CountingOwnerStringModel
+	{
+		public CountingOwner? Owner { get; set; }
+		public string? Name { get; set; }
 	}
 
 	private sealed class CountingOwner : IJsonOnDeserialized

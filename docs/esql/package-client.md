@@ -110,9 +110,9 @@ Converter cells, and every cell under any other resolver, go through the contrac
 modifier that replaces it is honored on every row. The decision is made for each result type when its layout is built,
 with the options already read-only.
 
-A cell that its own contract rejects, a converter result of null for a property that does not accept null, or a string
-the reader cannot decode, is read again by the serializer so the error carries the property path. A deserialization
-callback on a nested type in that cell or an earlier cell of the row therefore runs twice before such a row fails.
+A cell that its own contract rejects, or a converter result of null for a property that does not accept null, is read
+again by the serializer so the error carries the property path. A deserialization callback on a nested type in that cell
+or an earlier cell of the row therefore runs twice before such a row fails.
 
 ## Querying
 

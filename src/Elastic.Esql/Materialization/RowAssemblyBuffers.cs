@@ -5,8 +5,8 @@
 namespace Elastic.Esql.Materialization;
 
 /// <summary>
-/// Scratch space one response enumeration reuses for every row that goes through JSON assembly. Buffers are
-/// created on first use, so an enumeration whose rows all bind directly never allocates them.
+/// Scratch space one response enumeration reuses across its rows: the buffers of a row that goes through JSON assembly,
+/// and the string cells of a directly bound row with converter cells. Each is created on first use.
 /// </summary>
 internal sealed class RowAssemblyBuffers(int estimatedRowSize, bool isScalar, bool wrapScalarInArray) : IDisposable
 {
@@ -14,6 +14,7 @@ internal sealed class RowAssemblyBuffers(int estimatedRowSize, bool isScalar, bo
 #pragma warning disable IDE0032
 	private PooledBufferWriter? _rowBuffer;
 	private PooledBufferWriter? _valueBuffer;
+	private string?[]? _stringCells;
 #pragma warning restore IDE0032
 
 	/// <summary>The assembled row object, or the bare cell for scalar reads.</summary>
@@ -27,6 +28,12 @@ internal sealed class RowAssemblyBuffers(int estimatedRowSize, bool isScalar, bo
 
 	/// <summary>Whether a bare scalar cell is wrapped into a one-element array, for a scalar read whose target is a collection.</summary>
 	public bool WrapScalarInArray { get; } = wrapScalarInArray;
+
+	/// <summary>
+	/// The string cells of a directly bound row with converter cells, decoded by the validating pass and indexed by column.
+	/// The first call sizes the array and later calls return it.
+	/// </summary>
+	public string?[] StringCells(int columnCount) => _stringCells ??= new string?[columnCount];
 
 	public void Dispose()
 	{

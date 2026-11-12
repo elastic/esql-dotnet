@@ -122,12 +122,12 @@ internal sealed partial class EsqlResponseReader
 	}
 
 	/// <summary>
-	/// Binds a row with converter cells in two passes. The first checks every cell's shape, parses each built-in cell other
-	/// than a string, and assigns nothing, so a row that fails the first pass or ends mid-buffer has run no nested type's
-	/// deserialization callback. The second assigns the cells in column order, the order the serializer's setters see. A
-	/// cell that only the second pass decodes can still send the row to the fallback (a converter cell its contract
-	/// rejects, a null converter result for a property that does not accept null, a string the reader cannot decode) after
-	/// the converter cells in that cell or before it have run their callbacks.
+	/// Binds a row with converter cells in two passes. The first checks every cell's shape, parses each built-in cell, and
+	/// assigns nothing, so a row that fails the first pass or ends mid-buffer has run no nested type's deserialization
+	/// callback. The second assigns the cells in column order, the order the serializer's setters see. A cell that only the
+	/// second pass decodes can still send the row to the fallback (a converter cell its contract rejects, a null converter
+	/// result for a property that does not accept null) after the converter cells in that cell or before it have run their
+	/// callbacks.
 	/// </summary>
 	private static bool TryBindValidatedRow<T>(
 		ref Utf8JsonReader reader,
@@ -147,11 +147,12 @@ internal sealed partial class EsqlResponseReader
 
 		try
 		{
-			if (!TryValidateRow(ref reader, binder, spans, out var recorded, out incomplete))
+			var strings = buffers.StringCells(columnCount);
+			if (!TryValidateRow(ref reader, binder, spans, strings, out var recorded, out incomplete))
 				return false;
 
 			var instance = binder.CreateObject();
-			if (!TryAssignCells(source, binder, buffers, spans[..recorded], instance))
+			if (!TryAssignCells(source, binder, buffers, spans[..recorded], strings, instance))
 				return false;
 
 			item = (T)instance;
@@ -165,11 +166,17 @@ internal sealed partial class EsqlResponseReader
 	}
 
 	/// <summary>
-	/// Checks every cell's token shape, skips over every converter cell, and records the extent of each non-null cell
-	/// with the parsed value of each built-in cell other than a string. Returns false with <paramref name="incomplete"/>
-	/// set when the buffer ends mid-row.
+	/// Checks every cell's token shape, skips over every converter cell, decodes each string cell into
+	/// <paramref name="strings"/> at its column, and records the extent of each non-null cell with the parsed value of each
+	/// other built-in cell. Returns false with <paramref name="incomplete"/> set when the buffer ends mid-row.
 	/// </summary>
-	private static bool TryValidateRow(ref Utf8JsonReader reader, DirectRowBinder binder, scoped Span<CellSpan> spans, out int recorded, out bool incomplete)
+	private static bool TryValidateRow(
+		ref Utf8JsonReader reader,
+		DirectRowBinder binder,
+		scoped Span<CellSpan> spans,
+		string?[] strings,
+		out int recorded,
+		out bool incomplete)
 	{
 		recorded = 0;
 		incomplete = false;
@@ -210,6 +217,14 @@ internal sealed partial class EsqlResponseReader
 					return false;
 				}
 			}
+			else if (kinds[i] == DirectBinderKind.String)
+			{
+				// A string the reader cannot decode sends the row to the fallback from this pass, before any converter cell
+				// has run a nested callback. A row that fails later in this pass or ends mid-buffer has then decoded its
+				// strings for nothing.
+				if (tokenType != JsonTokenType.String || !TryGetString(ref reader, out strings[i]))
+					return false;
+			}
 			else if (!TryReadDirectValue(ref reader, kinds[i], tokenType, out value))
 				return false;
 
@@ -231,6 +246,7 @@ internal sealed partial class EsqlResponseReader
 		DirectRowBinder binder,
 		RowAssemblyBuffers buffers,
 		ReadOnlySpan<CellSpan> spans,
+		string?[] strings,
 		object instance)
 	{
 		foreach (var span in spans)
@@ -245,19 +261,10 @@ internal sealed partial class EsqlResponseReader
 				continue;
 			}
 
-			if (kind != DirectBinderKind.String)
-			{
+			if (kind == DirectBinderKind.String)
+				Assign<string?>(binder.TypedSetters[column], binder.Properties[column], instance, strings[column]);
+			else
 				AssignDirectValue(kind, span.Value, binder.Properties[column], binder.TypedSetters[column], instance);
-				continue;
-			}
-
-			// A string has no slot in the unmanaged DirectValue, and decoding it in the first pass would allocate for a row
-			// that may still fall back.
-			var cellReader = new Utf8JsonReader(source.Slice(span.Start, span.Length), isFinalBlock: true, CellReaderState(binder));
-			_ = cellReader.Read();
-
-			if (!TryBindDirectValue(ref cellReader, kind, cellReader.TokenType, binder.Properties[column], binder.TypedSetters[column], instance))
-				return false;
 		}
 
 		return true;
@@ -545,7 +552,8 @@ internal sealed partial class EsqlResponseReader
 	}
 
 	// Mirrors TryReadScalar and TryBindDirectValue, storing the value where AssignDirectValue reads it back, so keep the
-	// four switches in sync when adding a new DirectBinderKind. A string cell is only shape-checked here.
+	// four switches in sync when adding a new DirectBinderKind. A string has no slot in the unmanaged DirectValue, so
+	// TryValidateRow decodes a string cell itself.
 	private static bool TryReadDirectValue(ref Utf8JsonReader reader, DirectBinderKind kind, JsonTokenType tokenType, out DirectValue value)
 	{
 		value = default;
@@ -555,9 +563,6 @@ internal sealed partial class EsqlResponseReader
 
 		switch (kind)
 		{
-			case DirectBinderKind.String:
-				return tokenType == JsonTokenType.String;
-
 			case DirectBinderKind.Bool:
 				if (tokenType is not (JsonTokenType.True or JsonTokenType.False))
 					return false;
