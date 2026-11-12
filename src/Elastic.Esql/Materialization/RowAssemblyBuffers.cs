@@ -5,8 +5,9 @@
 namespace Elastic.Esql.Materialization;
 
 /// <summary>
-/// Scratch space one response enumeration reuses across its rows: the buffers of a row that goes through JSON assembly,
-/// and the string cells of a directly bound row with converter cells. Each is created on first use.
+/// Scratch space one response enumeration reuses across its rows: the buffers of a row that goes through JSON assembly
+/// or wraps a bare scalar converter cell, and the string cells of a directly bound row with converter cells. Each is
+/// created on first use.
 /// </summary>
 internal sealed class RowAssemblyBuffers(int estimatedRowSize, bool isScalar, bool wrapScalarInArray) : IDisposable
 {
@@ -14,8 +15,8 @@ internal sealed class RowAssemblyBuffers(int estimatedRowSize, bool isScalar, bo
 #pragma warning disable IDE0032
 	private PooledBufferWriter? _rowBuffer;
 	private PooledBufferWriter? _valueBuffer;
-	private string?[]? _stringCells;
 #pragma warning restore IDE0032
+	private string?[]? _stringCells;
 
 	/// <summary>The assembled row object, or the bare cell for scalar reads.</summary>
 	public PooledBufferWriter RowBuffer => _rowBuffer ??= new PooledBufferWriter(estimatedRowSize);

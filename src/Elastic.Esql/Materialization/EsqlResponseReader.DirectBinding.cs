@@ -13,16 +13,21 @@ namespace Elastic.Esql.Materialization;
 
 internal sealed partial class EsqlResponseReader
 {
-	/// <summary>A validated cell's extent in the source, whether its bare scalar is read as <c>[value]</c>, and the value a built-in cell parsed to.</summary>
+	/// <summary>
+	/// A validated cell's extent in the source, whether its bare scalar is read as <c>[value]</c>, and the value a built-in cell
+	/// other than a string parsed to.
+	/// </summary>
 	private readonly record struct CellSpan(int Column, long Start, long Length, bool Wrap, DirectValue Value);
 
 	/// <summary>The parsed value of a built-in cell, in the field its <see cref="DirectBinderKind"/> selects.</summary>
 	/// <remarks>
 	/// The fields overlap, so the struct stays 16 bytes and unmanaged and a stackalloc'd row of <see cref="CellSpan"/>
-	/// can carry each built-in cell from the validating pass to the assigning one without a second parse. Only
-	/// sequential-layout fields overlap, because an auto-layout field such as DateTime inside an explicit layout is not
-	/// guaranteed to load on every runtime the netstandard2.0 build serves. A date lives in <see cref="Int64"/>, so
-	/// offset 8 is free for the offset of a DateTimeOffset whenever a date is the live kind.
+	/// can carry each built-in cell other than a string from the validating pass to the assigning one without a second
+	/// parse. A string is a reference, which cannot overlap the value fields and would make the row managed, so it travels
+	/// in the per-enumeration scratch instead. Only sequential-layout fields overlap, because an auto-layout field such as
+	/// DateTime inside an explicit layout is not guaranteed to load on every runtime the netstandard2.0 build serves. A
+	/// date lives in <see cref="Int64"/>, so offset 8 is free for the offset of a DateTimeOffset whenever a date is the
+	/// live kind.
 	/// </remarks>
 	[StructLayout(LayoutKind.Explicit)]
 	private struct DirectValue

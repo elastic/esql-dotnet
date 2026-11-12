@@ -399,7 +399,7 @@ public class DirectBindingConverterCellTests
 	[Test]
 	public async Task ReadRowsAsync_ConverterCellRowAcrossPipeSegments_BindsEachCell()
 	{
-		// Longer than a pipe segment, so the assigning pass reads the name from a slice that spans segments.
+		// Longer than a pipe segment, so the validating pass decodes a name that spans segments.
 		var longName = new string('x', 9000);
 		var json = $$"""{"columns":[{"name":"level","type":"integer"},{"name":"name","type":"keyword"}],"values":[[2,"{{longName}}"]]}""";
 
