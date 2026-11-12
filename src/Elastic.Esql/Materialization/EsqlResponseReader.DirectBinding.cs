@@ -168,7 +168,9 @@ internal sealed partial class EsqlResponseReader
 	/// <summary>
 	/// Checks every cell's token shape, skips over every converter cell, decodes each string cell into
 	/// <paramref name="strings"/> at its column, and records the extent of each non-null cell with the parsed value of each
-	/// other built-in cell. Returns false with <paramref name="incomplete"/> set when the buffer ends mid-row.
+	/// other built-in cell. Returns false with <paramref name="incomplete"/> set when the buffer ends mid-row. A string the
+	/// reader cannot decode sends the row to the fallback from this pass, before any converter cell has run a nested
+	/// callback. A row that fails later in this pass or ends mid-buffer has then decoded its strings for nothing.
 	/// </summary>
 	private static bool TryValidateRow(
 		ref Utf8JsonReader reader,
@@ -217,15 +219,7 @@ internal sealed partial class EsqlResponseReader
 					return false;
 				}
 			}
-			else if (kinds[i] == DirectBinderKind.String)
-			{
-				// A string the reader cannot decode sends the row to the fallback from this pass, before any converter cell
-				// has run a nested callback. A row that fails later in this pass or ends mid-buffer has then decoded its
-				// strings for nothing.
-				if (tokenType != JsonTokenType.String || !TryGetString(ref reader, out strings[i]))
-					return false;
-			}
-			else if (!TryReadDirectValue(ref reader, kinds[i], tokenType, out value))
+			else if (!TryReadDirectValue(ref reader, kinds[i], tokenType, out value, out strings[i]))
 				return false;
 
 			spans[recorded++] = new CellSpan(i, start, reader.BytesConsumed - start, wrap, value);
@@ -261,10 +255,10 @@ internal sealed partial class EsqlResponseReader
 				continue;
 			}
 
-			if (kind == DirectBinderKind.String)
-				Assign<string?>(binder.TypedSetters[column], binder.Properties[column], instance, strings[column]);
-			else
-				AssignDirectValue(kind, span.Value, binder.Properties[column], binder.TypedSetters[column], instance);
+			AssignDirectValue(kind, span.Value, strings[column], binder.Properties[column], binder.TypedSetters[column], instance);
+
+			// A decoded string left in the slot stays reachable until a later row overwrites it or the enumeration ends.
+			strings[column] = null;
 		}
 
 		return true;
@@ -373,7 +367,7 @@ internal sealed partial class EsqlResponseReader
 		switch (kind)
 		{
 			case DirectBinderKind.String:
-				if (tokenType != JsonTokenType.String || !TryGetString(ref reader, out var stringValue))
+				if (!TryGetString(ref reader, tokenType, out var stringValue))
 					return false;
 				item = (T)(object)stringValue!;
 				return true;
@@ -451,8 +445,13 @@ internal sealed partial class EsqlResponseReader
 
 	// GetString throws InvalidOperationException for text that is not valid UTF-8 or an escape that is not valid UTF-16,
 	// such as a lone surrogate. The serializer raises a JsonException with the path once the row falls back.
-	private static bool TryGetString(ref Utf8JsonReader reader, out string? value)
+	private static bool TryGetString(ref Utf8JsonReader reader, JsonTokenType tokenType, out string? value)
 	{
+		value = null;
+
+		if (tokenType != JsonTokenType.String)
+			return false;
+
 		try
 		{
 			value = reader.GetString();
@@ -460,7 +459,6 @@ internal sealed partial class EsqlResponseReader
 		}
 		catch (InvalidOperationException)
 		{
-			value = null;
 			return false;
 		}
 	}
@@ -487,7 +485,7 @@ internal sealed partial class EsqlResponseReader
 		switch (kind)
 		{
 			case DirectBinderKind.String:
-				if (tokenType != JsonTokenType.String || !TryGetString(ref reader, out var stringValue))
+				if (!TryGetString(ref reader, tokenType, out var stringValue))
 					return false;
 				Assign<string?>(typedSetter, property, instance, stringValue);
 				return true;
@@ -552,17 +550,25 @@ internal sealed partial class EsqlResponseReader
 	}
 
 	// Mirrors TryReadScalar and TryBindDirectValue, storing the value where AssignDirectValue reads it back, so keep the
-	// four switches in sync when adding a new DirectBinderKind. A string has no slot in the unmanaged DirectValue, so
-	// TryValidateRow decodes a string cell itself.
-	private static bool TryReadDirectValue(ref Utf8JsonReader reader, DirectBinderKind kind, JsonTokenType tokenType, out DirectValue value)
+	// four switches in sync when adding a new DirectBinderKind.
+	private static bool TryReadDirectValue(
+		ref Utf8JsonReader reader,
+		DirectBinderKind kind,
+		JsonTokenType tokenType,
+		out DirectValue value,
+		out string? text)
 	{
 		value = default;
+		text = null;
 
 		if (IsEscapedNonStringValue(ref reader, kind))
 			return false;
 
 		switch (kind)
 		{
+			case DirectBinderKind.String:
+				return TryGetString(ref reader, tokenType, out text);
+
 			case DirectBinderKind.Bool:
 				if (tokenType is not (JsonTokenType.True or JsonTokenType.False))
 					return false;
@@ -607,12 +613,22 @@ internal sealed partial class EsqlResponseReader
 		}
 	}
 
-	// Reads back the field TryReadDirectValue stored for the kind, so keep the four switches in sync when adding a new
+	// Reads back the value TryReadDirectValue stored for the kind, so keep the four switches in sync when adding a new
 	// DirectBinderKind.
-	private static void AssignDirectValue(DirectBinderKind kind, in DirectValue value, JsonPropertyInfo property, Delegate? typedSetter, object instance)
+	private static void AssignDirectValue(
+		DirectBinderKind kind,
+		in DirectValue value,
+		string? text,
+		JsonPropertyInfo property,
+		Delegate? typedSetter,
+		object instance)
 	{
 		switch (kind)
 		{
+			case DirectBinderKind.String:
+				Assign<string?>(typedSetter, property, instance, text);
+				break;
+
 			case DirectBinderKind.Bool:
 				Assign(typedSetter, property, instance, value.Bool);
 				break;
@@ -650,8 +666,8 @@ internal sealed partial class EsqlResponseReader
 				break;
 
 			default:
-				// TryAssignCells routes string and converter cells elsewhere and TryReadDirectValue rejects any other kind, so
-				// only a kind stored there and missed here lands on this arm. Throwing fails such a row rather than bind the
+				// TryAssignCells routes converter cells elsewhere and TryReadDirectValue rejects any other kind, so only a
+				// kind stored there and missed here lands on this arm. Throwing fails such a row rather than bind the
 				// property at its initializer.
 				throw new InvalidOperationException($"No direct value is stored for {kind}.");
 		}

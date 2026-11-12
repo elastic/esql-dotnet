@@ -49,19 +49,15 @@ internal static class PropertyConverterContracts
 		// contract carries, so the own contract stands in when its converter has the same runtime type. A built-in
 		// value converter keeps a value contract of its own, because one converter type can carry other settings, such
 		// as the string enum converter beside the numeric one.
-		if (JsonMetadataManager.IsBuiltInConverter(converter)
-			&& JsonMetadataManager.TryResolveTypeInfo(propertyType, options) is { Kind: not JsonTypeInfoKind.None } own)
-		{
-			if (TryCreateValueContract(propertyType, converter, options) is not { } valueContract)
-				return null;
+		var own = JsonMetadataManager.IsBuiltInConverter(converter) ? JsonMetadataManager.TryResolveTypeInfo(propertyType, options) : null;
 
-			if (valueContract.Kind != own.Kind)
-				return valueContract;
+		if (TryCreateValueContract(propertyType, converter, options) is not { } valueContract)
+			return null;
 
-			return own.Converter.GetType() == converter.GetType() ? own : null;
-		}
+		if (own is null || valueContract.Kind == JsonTypeInfoKind.None || valueContract.Kind != own.Kind)
+			return valueContract;
 
-		return TryCreateValueContract(propertyType, converter, options);
+		return own.Converter.GetType() == converter.GetType() ? own : null;
 	}
 
 	[UnconditionalSuppressMessage(
