@@ -373,9 +373,11 @@ type. Any other property binds as a converter cell, deserialized from the cell a
 nested objects, types with a converter registered on the `JsonSerializerOptions` and properties with a `[JsonConverter]`
 attribute all bind this way. A property-level converter needs a runtime that supports dynamic code, so under Native AOT
 a type with one stays on the fallback. It must also be a converter for the property type itself, after a factory is
-expanded. A converter declared for a base type keeps the type on the fallback, where the serializer applies it through
-its casting converter. The compiled setters described under AOT-safe configuration need dynamic code too, and without it
-a directly bound row assigns its cells through the contract's own `JsonPropertyInfo.Set`.
+expanded. A factory-made converter of the serializer's own keeps a collection, dictionary or nested-object type on the
+fallback when its runtime type differs from that of the converter the type's own contract carries, and the serializer
+applies it there. A converter declared for a base type keeps the type on the fallback, where the serializer applies it
+through its casting converter. The compiled setters described under AOT-safe configuration need dynamic code too, and
+without it a directly bound row assigns its cells through the contract's own `JsonPropertyInfo.Set`.
 
 When a converter that does not come from `System.Text.Json` reads a property whose type is a collection, `byte[]`
 included, a single-valued cell reaches it wrapped in an array, the shape a multi-valued cell has, so the converter must

@@ -25,16 +25,6 @@ internal static class PropertyConverterContracts
 			.GetGenericMethodDefinition();
 
 	/// <summary>Returns a contract that reads <paramref name="propertyType"/> through <paramref name="converter"/>, or null when none can be built.</summary>
-	[UnconditionalSuppressMessage(
-		"AOT",
-		"IL3050",
-		Justification = "The method returns null before any generic instantiation when dynamic code is unsupported, and Native AOT keeps the slow path for the type."
-	)]
-	[UnconditionalSuppressMessage(
-		"Trimming",
-		"IL2060",
-		Justification = "CreateValueInfo<T> places no DynamicallyAccessedMembers requirement on T, so no instantiation depends on members the trimmer could remove."
-	)]
 	public static JsonTypeInfo? TryCreate(Type propertyType, JsonConverter converter, JsonSerializerOptions options)
 	{
 		if (!DynamicCode.IsSupported)
@@ -52,13 +42,40 @@ internal static class PropertyConverterContracts
 			return null;
 
 		// A value contract carries no collection or object metadata, so a structured converter of the serializer's own
-		// reads only through the contract the serializer builds for the type, and that contract serves the cell only when
-		// its converter is of the same type. A built-in value converter keeps a value contract of its own, because one
-		// converter type can carry other settings, such as the string enum converter beside the numeric one.
+		// reads only through the contract the serializer builds for the type. The built-in nullable wrapper takes its
+		// kind from the converter it wraps and calls that converter directly, so a value contract of another kind than
+		// the type's own contract means a custom converter inside the wrapper, which only the value contract applies.
+		// When the kinds match, the converter reads its elements through the root options' metadata, which the own
+		// contract carries, so the own contract stands in when its converter has the same runtime type. A built-in
+		// value converter keeps a value contract of its own, because one converter type can carry other settings, such
+		// as the string enum converter beside the numeric one.
 		if (JsonMetadataManager.IsBuiltInConverter(converter)
 			&& JsonMetadataManager.TryResolveTypeInfo(propertyType, options) is { Kind: not JsonTypeInfoKind.None } own)
-			return own.Converter.GetType() == converter.GetType() ? own : null;
+		{
+			if (TryCreateValueContract(propertyType, converter, options) is not { } valueContract)
+				return null;
 
+			if (valueContract.Kind != own.Kind)
+				return valueContract;
+
+			return own.Converter.GetType() == converter.GetType() ? own : null;
+		}
+
+		return TryCreateValueContract(propertyType, converter, options);
+	}
+
+	[UnconditionalSuppressMessage(
+		"AOT",
+		"IL3050",
+		Justification = "TryCreate returns null before any generic instantiation when dynamic code is unsupported, and Native AOT keeps the slow path for the type."
+	)]
+	[UnconditionalSuppressMessage(
+		"Trimming",
+		"IL2060",
+		Justification = "CreateValueInfo<T> places no DynamicallyAccessedMembers requirement on T, so no instantiation depends on members the trimmer could remove."
+	)]
+	private static JsonTypeInfo? TryCreateValueContract(Type propertyType, JsonConverter converter, JsonSerializerOptions options)
+	{
 		try
 		{
 			return (JsonTypeInfo?)CreateValueInfoDefinition.MakeGenericMethod(propertyType).Invoke(null, [options, converter]);

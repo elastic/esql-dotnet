@@ -2,6 +2,7 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Collections.Immutable;
 #if NET10_0_OR_GREATER
 using System.IO.Pipelines;
 #endif
@@ -280,6 +281,35 @@ public class DirectBindingConverterCellTests
 		var rows = ReadRows<DeferredListModel>(json, CreateOptions());
 
 		rows.Should().ContainSingle().Which.Numbers.Should().Equal(7, 8);
+	}
+
+	[Test]
+	public void ReadRows_NullableCollectionFactoryWrappingCustomConverter_ThrowsLikeTheSerializer()
+	{
+		if (!RuntimeFeature.IsDynamicCodeSupported)
+			return;
+
+		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"tags","type":"integer"}],"values":[["ada",[-1]]]}""";
+
+		BuildLayout<NullableTagsModel>(("name", "keyword"), ("tags", "integer")).DirectBinder.Should().NotBeNull();
+		var act = () => ReadRows<NullableTagsModel>(json, CreateOptions());
+
+		act.Should().Throw<JsonException>();
+	}
+
+	[Test]
+	public void ReadRows_NullableCollectionFactoryReturningOwnWrapper_BindsArrayCell()
+	{
+		if (!RuntimeFeature.IsDynamicCodeSupported)
+			return;
+
+		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"tags","type":"integer"}],"values":[["ada",[1,2]]]}""";
+
+		BuildLayout<OwnTagsModel>(("name", "keyword"), ("tags", "integer")).DirectBinder.Should().NotBeNull();
+		var row = ReadRows<OwnTagsModel>(json, CreateOptions())[0];
+
+		row.Tags.Should().NotBeNull();
+		row.Tags.Value.Should().Equal([1, 2]);
 	}
 
 	[Test]
@@ -805,6 +835,22 @@ public class DirectBindingConverterCellTests
 		public List<int> Numbers { get; set; } = [];
 	}
 
+	private sealed class NullableTagsModel
+	{
+		public string Name { get; set; } = string.Empty;
+
+		[JsonConverter(typeof(WrappingTagsFactory))]
+		public ImmutableArray<int>? Tags { get; set; }
+	}
+
+	private sealed class OwnTagsModel
+	{
+		public string Name { get; set; } = string.Empty;
+
+		[JsonConverter(typeof(OwnWrapperFactory))]
+		public ImmutableArray<int>? Tags { get; set; }
+	}
+
 	private sealed class DateOnlyModel
 	{
 		public DateOnly Day { get; set; }
@@ -853,6 +899,39 @@ public class DirectBindingConverterCellTests
 
 		public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options) =>
 			writer.WriteStringValue(value);
+	}
+
+	private sealed class RejectingNegativeConverter : JsonConverter<ImmutableArray<int>>
+	{
+		public override ImmutableArray<int> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+		{
+			var values = JsonSerializer.Deserialize<List<int>>(ref reader, options) ?? [];
+			if (values.Exists(value => value < 0))
+				throw new JsonException("A tag must not be negative.");
+
+			return [.. values];
+		}
+
+		public override void Write(Utf8JsonWriter writer, ImmutableArray<int> value, JsonSerializerOptions options) =>
+			JsonSerializer.Serialize(writer, value.ToArray(), options);
+	}
+
+	private sealed class WrappingTagsFactory : JsonConverterFactory
+	{
+		public override bool CanConvert(Type typeToConvert) => typeToConvert == typeof(ImmutableArray<int>?);
+
+		public override JsonConverter? CreateConverter(Type typeToConvert, JsonSerializerOptions options) =>
+			JsonMetadataServices.GetNullableConverter<ImmutableArray<int>>(
+				JsonMetadataServices.CreateValueInfo<ImmutableArray<int>>(options, new RejectingNegativeConverter())
+			);
+	}
+
+	private sealed class OwnWrapperFactory : JsonConverterFactory
+	{
+		public override bool CanConvert(Type typeToConvert) => typeToConvert == typeof(ImmutableArray<int>?);
+
+		public override JsonConverter? CreateConverter(Type typeToConvert, JsonSerializerOptions options) =>
+			JsonMetadataServices.GetNullableConverter<ImmutableArray<int>>(options);
 	}
 
 	private sealed class PreservingReferenceHandler : ReferenceHandler
