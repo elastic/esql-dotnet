@@ -257,7 +257,7 @@ internal sealed partial class EsqlResponseReader
 			if (binder.Kinds[span.Column] != DirectBinderKind.String)
 				continue;
 
-			var cellReader = new Utf8JsonReader(source.Slice(span.Start, span.Length), isFinalBlock: true, CellReaderState(binder));
+			var cellReader = new Utf8JsonReader(source.Slice(span.Start, span.Length));
 			_ = cellReader.Read();
 
 			if (!TryGetString(ref cellReader, cellReader.TokenType, out strings[span.Column]))

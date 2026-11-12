@@ -50,18 +50,16 @@ internal static class PropertyConverterContracts
 		// serializer can pair the property's converter with that metadata. With matching kinds, the converter reads its
 		// elements through the root options' metadata, which the own contract carries, so the own contract stands in
 		// when its converter has the same runtime type.
-		var own = JsonMetadataManager.IsBuiltInConverter(converter) ? JsonMetadataManager.TryResolveTypeInfo(propertyType, options) : null;
-
 		if (TryCreateValueContract(propertyType, converter, options) is not { } valueContract)
 			return null;
 
-		if (own is null || valueContract.Kind == JsonTypeInfoKind.None)
+		if (valueContract.Kind == JsonTypeInfoKind.None)
 			return valueContract;
 
-		if (valueContract.Kind != own.Kind)
-			return null;
+		if (!JsonMetadataManager.IsBuiltInConverter(converter) || JsonMetadataManager.TryResolveTypeInfo(propertyType, options) is not { } own)
+			return valueContract;
 
-		return own.Converter.GetType() == converter.GetType() ? own : null;
+		return own.Kind == valueContract.Kind && own.Converter.GetType() == converter.GetType() ? own : null;
 	}
 
 	[UnconditionalSuppressMessage(
