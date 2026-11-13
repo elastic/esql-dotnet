@@ -63,7 +63,12 @@ internal static class DirectSetterCompiler
 		};
 	}
 
-	private static Action<object, TValue>? TryCreate<TValue>(JsonPropertyInfo property)
+	/// <summary>
+	/// Returns a compiled <c>Action&lt;object, TValue&gt;</c> under the member rules of
+	/// <see cref="TryCreate(JsonPropertyInfo, DirectBinderKind)"/>. It does not check
+	/// <see cref="DynamicCode.IsSupported"/>, so a caller checks it first.
+	/// </summary>
+	public static Action<object, TValue>? TryCreate<TValue>(JsonPropertyInfo property)
 	{
 		var instance = Expression.Parameter(typeof(object), "instance");
 		var value = Expression.Parameter(typeof(TValue), "value");

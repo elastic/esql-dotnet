@@ -119,6 +119,25 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
+	public void ReadRows_EnumPropertyUnderNumericThenKeywordColumn_BindsBoth()
+	{
+		var reader = new EsqlResponseReader(new JsonMetadataManager(CreateOptions()));
+
+		var numeric = Read(reader, LevelColumnsJson + """[[2,"a"]]}""");
+		var keyword = Read(reader, """{"columns":[{"name":"level","type":"keyword"},{"name":"name","type":"keyword"}],"values":[[1,"b"]]}""");
+
+		numeric.Single().Level.Should().Be(Level.High);
+		keyword.Single().Level.Should().Be(Level.Medium);
+
+		static List<EnumModel> Read(EsqlResponseReader reader, string json)
+		{
+			using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+			using var results = reader.ReadRows<EnumModel>(stream);
+			return results.Rows.ToList();
+		}
+	}
+
+	[Test]
 	public void ReadRows_ListProperty_BindsArrayScalarAndNullCells()
 	{
 		const string json =

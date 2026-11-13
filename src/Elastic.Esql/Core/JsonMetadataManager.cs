@@ -29,9 +29,12 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 	private readonly ConcurrentDictionary<Type, Dictionary<MemberInfo, JsonPropertyInfo>> _memberPropertyMapCache = [];
 
 	// Keyed by property rather than by column layout: a type read under several column schemas would otherwise compile
-	// every setter and build every converter contract once per schema.
+	// every setter and build every converter contract once per schema. A converter cell keeps its setter apart from the
+	// compiled setters, because one enum property takes the enum kind under a numeric column and a converter cell under
+	// a keyword column, and the two setters take different value types.
 	private readonly ConcurrentDictionary<JsonPropertyInfo, Delegate?> _compiledSetterCache = [];
 	private readonly ConcurrentDictionary<JsonPropertyInfo, JsonTypeInfo?> _propertyContractCache = [];
+	private readonly ConcurrentDictionary<JsonPropertyInfo, ConverterCell?> _converterCellCache = [];
 
 	// The serializer keeps its chain type internal, and Combine with no resolvers returns an instance of it where a single
 	// resolver would come back unwrapped.
@@ -273,6 +276,13 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 			property,
 			p => p.CustomConverter is { } converter ? PropertyConverterContracts.TryCreate(p.PropertyType, converter, options) : null
 		);
+
+	/// <summary>
+	/// Returns the typed cell that reads <paramref name="property"/> through <paramref name="cellTypeInfo"/>, or null
+	/// where the runtime does not support dynamic code.
+	/// </summary>
+	public ConverterCell? GetOrCreateConverterCell(JsonPropertyInfo property, JsonTypeInfo cellTypeInfo) =>
+		Cached(_converterCellCache, property, p => ConverterCell.TryCreate(p, cellTypeInfo));
 
 	private Dictionary<MemberInfo, JsonPropertyInfo> GetMemberPropertyMap(Type type) =>
 		Cached(_memberPropertyMapCache, type, t =>

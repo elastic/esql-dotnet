@@ -431,10 +431,14 @@ internal sealed partial class EsqlResponseReader
 			? new Utf8JsonReader(WrapInArray(slice, buffers.RowBuffer), isFinalBlock: true, CellReaderState(binder))
 			: new Utf8JsonReader(slice, isFinalBlock: true, CellReaderState(binder));
 
+		_ = cellReader.Read();
+
+		if (binder.ConverterCells[span.Column] is { } cell)
+			return cell.TryBind(ref cellReader, property, instance);
+
 		object? value;
 		try
 		{
-			_ = cellReader.Read();
 			value = JsonSerializer.Deserialize(ref cellReader, cellTypeInfo);
 		}
 		catch (JsonException)

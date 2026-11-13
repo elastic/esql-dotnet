@@ -50,14 +50,23 @@ internal sealed class DirectRowBinder
 	/// <summary>
 	/// Per-column <c>Action&lt;object, TValue&gt;</c> compiled for the exact cell type, or null where the column
 	/// assigns through the boxing <see cref="JsonPropertyInfo.Set"/> (Native AOT, struct targets, unresolvable members).
+	/// A <see cref="DirectBinderKind.Converter"/> column keeps its setter in <see cref="ConverterCells"/>.
 	/// </summary>
 	public required Delegate?[] TypedSetters { get; init; }
 
 	/// <summary>
 	/// Contract used to deserialize a <see cref="DirectBinderKind.Converter"/> cell, the list contract that creates the list
-	/// of a <see cref="DirectBinderKind.StringList"/> cell, or null for the built-in kinds.
+	/// of a <see cref="DirectBinderKind.StringList"/> cell, or null for the built-in kinds and the
+	/// <see cref="DirectBinderKind.Enum"/> kind.
 	/// </summary>
 	public required JsonTypeInfo?[] CellTypeInfos { get; init; }
+
+	/// <summary>
+	/// The typed cell that reads and assigns a <see cref="DirectBinderKind.Converter"/> column, or null for every other
+	/// kind. A converter column with a null entry, as under Native AOT, reads through <see cref="CellTypeInfos"/> and
+	/// assigns through <see cref="JsonPropertyInfo.Set"/>.
+	/// </summary>
+	public required ConverterCell?[] ConverterCells { get; init; }
 
 	/// <summary>
 	/// The type code of a <see cref="DirectBinderKind.Enum"/> column's enum, which is the code of its underlying integer
@@ -129,6 +138,7 @@ internal sealed class DirectRowBinder
 		var properties = new JsonPropertyInfo[count];
 		var typedSetters = new Delegate?[count];
 		var cellTypeInfos = new JsonTypeInfo?[count];
+		var converterCells = new ConverterCell?[count];
 		var enumTypeCodes = new TypeCode[count];
 		var isCollection = new bool[count];
 		var validatedCellCount = 0;
@@ -194,6 +204,7 @@ internal sealed class DirectRowBinder
 
 			kinds[i] = DirectBinderKind.Converter;
 			cellTypeInfos[i] = cellTypeInfo;
+			converterCells[i] = metadata.GetOrCreateConverterCell(property, cellTypeInfo);
 			validatedCellCount++;
 		}
 
@@ -210,6 +221,7 @@ internal sealed class DirectRowBinder
 			Properties = properties,
 			TypedSetters = typedSetters,
 			CellTypeInfos = cellTypeInfos,
+			ConverterCells = converterCells,
 			EnumTypeCodes = enumTypeCodes,
 			IsCollection = isCollection,
 			CreateObject = typeInfo.CreateObject,
