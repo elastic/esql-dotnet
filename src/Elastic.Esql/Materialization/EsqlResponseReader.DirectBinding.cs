@@ -76,7 +76,7 @@ internal sealed partial class EsqlResponseReader
 		item = default;
 		incomplete = false;
 
-		if (binder.ConverterCellCount > 0)
+		if (binder.ValidatedCellCount > 0)
 			return TryBindValidatedRow(ref reader, source, binder, buffers, out item, out incomplete);
 
 		var kinds = binder.Kinds;
@@ -127,13 +127,14 @@ internal sealed partial class EsqlResponseReader
 	}
 
 	/// <summary>
-	/// Binds a row with converter cells in three steps. The validating pass checks every cell's shape, parses each built-in
-	/// cell other than a string, and assigns nothing, so a row that fails it or ends mid-buffer has run no nested type's
-	/// deserialization callback. Once that pass has seen the closing bracket, each string cell decodes into the scratch, and
-	/// a string the reader cannot decode sends the row to the fallback before any converter cell runs. The assigning pass
-	/// then assigns the cells in column order, the order the serializer's setters see. A cell that only the assigning pass
-	/// decodes can still send the row to the fallback (a converter cell its contract rejects, a null converter result for a
-	/// property that does not accept null) after the converter cells in that cell or before it have run their callbacks.
+	/// Binds a row with converter cells or string list cells in three steps. The validating pass checks every cell's shape,
+	/// parses each built-in cell other than a string, and assigns nothing, so a row that fails it or ends mid-buffer has run
+	/// no nested type's deserialization callback. Once that pass has seen the closing bracket, each string cell and each
+	/// string list cell decodes into the scratch, and a string the reader cannot decode sends the row to the fallback before
+	/// any converter cell runs. The assigning pass then assigns the cells in column order, the order the serializer's
+	/// setters see. A cell that only the assigning pass decodes can still send the row to the fallback (a converter cell its
+	/// contract rejects, a null converter result for a property that does not accept null) after the converter cells in
+	/// that cell or before it have run their callbacks.
 	/// </summary>
 	private static bool TryBindValidatedRow<T>(
 		ref Utf8JsonReader reader,
@@ -146,6 +147,7 @@ internal sealed partial class EsqlResponseReader
 		item = default;
 		var columnCount = binder.Kinds.Length;
 		var strings = buffers.StringCells(columnCount);
+		var lists = buffers.ListCells(columnCount);
 
 		CellSpan[]? rentedSpans = null;
 		var spans = columnCount <= 64
@@ -160,7 +162,7 @@ internal sealed partial class EsqlResponseReader
 			// A row that ends mid-buffer is read again from its start after each fill of the stream buffer, so its strings
 			// decode once the validating pass has seen the whole row. An undecodable string must reach the fallback before a
 			// converter cell runs a callback.
-			if (!TryDecodeStringCells(source, binder, spans[..recorded], strings))
+			if (!TryDecodeStringCells(source, binder, buffers, spans[..recorded]))
 				return false;
 
 			var instance = binder.CreateObject();
@@ -172,8 +174,9 @@ internal sealed partial class EsqlResponseReader
 		}
 		finally
 		{
-			// A string left in the scratch stays reachable until a later row overwrites it or the enumeration ends.
+			// A string or a list left in the scratch stays reachable until a later row overwrites it or the enumeration ends.
 			Array.Clear(strings, 0, columnCount);
+			Array.Clear(lists, 0, columnCount);
 			if (rentedSpans is not null)
 				ArrayPool<CellSpan>.Shared.Return(rentedSpans);
 		}
@@ -230,6 +233,11 @@ internal sealed partial class EsqlResponseReader
 					return false;
 				}
 			}
+			else if (kinds[i] == DirectBinderKind.StringList)
+			{
+				if (!TryValidateStringList(ref reader, tokenType, binder.IsCollection[i], out incomplete))
+					return false;
+			}
 			else if (!TryReadDirectValue(ref reader, kinds[i], tokenType, out value))
 				return false;
 
@@ -246,22 +254,110 @@ internal sealed partial class EsqlResponseReader
 		return reader.TokenType == JsonTokenType.EndArray;
 	}
 
+	/// <summary>
+	/// Checks that a string list cell is an array of strings and nulls, or a bare string the list takes as its only
+	/// element. Returns false with <paramref name="incomplete"/> set when the buffer ends inside the array.
+	/// </summary>
+	private static bool TryValidateStringList(ref Utf8JsonReader reader, JsonTokenType tokenType, bool bareStringIsList, out bool incomplete)
+	{
+		incomplete = false;
+
+		// A bare string reads as a list only where the layout wraps it for the assembly path, because elsewhere the fallback
+		// hands it to the serializer unwrapped and the serializer rejects it.
+		if (tokenType == JsonTokenType.String)
+			return bareStringIsList;
+
+		if (tokenType != JsonTokenType.StartArray)
+			return false;
+
+		while (reader.Read())
+		{
+			if (reader.TokenType == JsonTokenType.EndArray)
+				return true;
+
+			// The serializer's list converter rejects any other element, and the fallback raises its error.
+			if (reader.TokenType is not (JsonTokenType.String or JsonTokenType.Null))
+				return false;
+		}
+
+		incomplete = true;
+		return false;
+	}
+
 	private static bool TryDecodeStringCells(
 		in ReadOnlySequence<byte> source,
 		DirectRowBinder binder,
-		ReadOnlySpan<CellSpan> spans,
-		string?[] strings)
+		RowAssemblyBuffers buffers,
+		ReadOnlySpan<CellSpan> spans)
 	{
+		var strings = buffers.StringCells(binder.Kinds.Length);
+		var lists = buffers.ListCells(binder.Kinds.Length);
+
 		foreach (var span in spans)
 		{
-			if (binder.Kinds[span.Column] != DirectBinderKind.String)
+			var column = span.Column;
+			var kind = binder.Kinds[column];
+			if (kind is not (DirectBinderKind.String or DirectBinderKind.StringList))
 				continue;
 
 			var cellReader = new Utf8JsonReader(source.Slice(span.Start, span.Length));
 			_ = cellReader.Read();
 
-			if (!TryGetString(ref cellReader, cellReader.TokenType, out strings[span.Column]))
+			if (kind == DirectBinderKind.String)
+			{
+				if (!TryGetString(ref cellReader, cellReader.TokenType, out strings[column]))
+					return false;
+			}
+			else if (binder.Properties[column].PropertyType == typeof(string[]))
+			{
+				var scratch = buffers.StringListScratch;
+				scratch.Clear();
+				if (!TryDecodeStringList(ref cellReader, scratch))
+					return false;
+				lists[column] = scratch.ToArray();
+			}
+			else
+			{
+				var list = (List<string?>)binder.CellTypeInfos[column]!.CreateObject!();
+				if (!TryDecodeStringList(ref cellReader, list))
+					return false;
+				lists[column] = list;
+			}
+		}
+
+		return true;
+	}
+
+	/// <summary>
+	/// Adds a validated string list cell's elements to <paramref name="target"/>, or returns false for an element the reader
+	/// cannot decode.
+	/// </summary>
+	private static bool TryDecodeStringList(ref Utf8JsonReader cellReader, List<string?> target)
+	{
+		string? element;
+
+		if (cellReader.TokenType != JsonTokenType.StartArray)
+		{
+			if (!TryGetString(ref cellReader, cellReader.TokenType, out element))
 				return false;
+
+			target.Add(element);
+			return true;
+		}
+
+		while (cellReader.Read() && cellReader.TokenType != JsonTokenType.EndArray)
+		{
+			// The serializer adds a null element as null, because nullable annotations do not reach collection elements.
+			if (cellReader.TokenType == JsonTokenType.Null)
+			{
+				target.Add(null);
+				continue;
+			}
+
+			if (!TryGetString(ref cellReader, cellReader.TokenType, out element))
+				return false;
+
+			target.Add(element);
 		}
 
 		return true;
@@ -275,6 +371,8 @@ internal sealed partial class EsqlResponseReader
 		string?[] strings,
 		object instance)
 	{
+		var lists = buffers.ListCells(binder.Kinds.Length);
+
 		foreach (var span in spans)
 		{
 			var column = span.Column;
@@ -284,6 +382,15 @@ internal sealed partial class EsqlResponseReader
 			{
 				if (!TryBindConverterCell(source, span, binder, buffers, instance))
 					return false;
+				continue;
+			}
+
+			if (kind == DirectBinderKind.StringList)
+			{
+				if (lists[column] is string[] array)
+					Assign(binder.TypedSetters[column], binder.Properties[column], instance, array);
+				else
+					Assign(binder.TypedSetters[column], binder.Properties[column], instance, (List<string?>)lists[column]!);
 				continue;
 			}
 
@@ -694,9 +801,9 @@ internal sealed partial class EsqlResponseReader
 				break;
 
 			default:
-				// TryAssignCells routes converter cells elsewhere and TryReadDirectValue rejects any other kind, so only a
-				// kind stored there and missed here lands on this arm. Throwing fails such a row rather than bind the
-				// property at its initializer.
+				// TryAssignCells routes converter cells and string list cells elsewhere and TryReadDirectValue rejects any
+				// other kind, so only a kind stored there and missed here lands on this arm. Throwing fails such a row rather
+				// than bind the property at its initializer.
 				throw new InvalidOperationException($"No direct value is stored for {kind}.");
 		}
 	}

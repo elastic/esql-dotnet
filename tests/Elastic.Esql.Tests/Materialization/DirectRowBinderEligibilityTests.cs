@@ -81,12 +81,12 @@ public class DirectRowBinderEligibilityTests
 	}
 
 	[Test]
-	public void Build_CollectionProperty_UsesConverterKind()
+	public void Build_StringArrayProperty_UsesStringListKind()
 	{
 		var layout = BuildLayout<ArrayStringPropertyModel>(("name", "keyword"), ("tags", "keyword"));
 
 		layout.DirectBinder.Should().NotBeNull();
-		layout.DirectBinder.Kinds.Should().Equal([DirectBinderKind.String, DirectBinderKind.Converter]);
+		layout.DirectBinder.Kinds.Should().Equal([DirectBinderKind.String, DirectBinderKind.StringList]);
 	}
 
 	[Test]

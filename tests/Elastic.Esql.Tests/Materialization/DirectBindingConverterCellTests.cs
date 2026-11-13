@@ -18,6 +18,8 @@ namespace Elastic.Esql.Tests.Materialization;
 
 public class DirectBindingConverterCellTests
 {
+	private const string TagsColumnsJson = """{"columns":[{"name":"tags","type":"keyword"},{"name":"name","type":"keyword"}],"values":""";
+
 	[Test]
 	public void Build_EnumProperty_UsesConverterKind()
 	{
@@ -91,6 +93,85 @@ public class DirectBindingConverterCellTests
 		firstChanceCount.Should().Be(0);
 		rows[0].Tags.Should().Equal("a");
 		rows[1].Tags.Should().Equal("solo");
+	}
+
+	[Test]
+	public void ReadRows_StringListCellWithNullElement_KeepsTheNull()
+	{
+		var options = CreateOptions();
+		JsonSerializer.Deserialize<TagsModel>("""{"tags":["a",null],"name":"x"}""", options)!.Tags.Should().Equal("a", null);
+
+		var rows = ReadRows<TagsModel>(TagsColumnsJson + """[[["a",null],"x"]]}""", options);
+
+		rows.Single().Tags.Should().Equal("a", null);
+	}
+
+	[Test]
+	public void ReadRows_StringListCellWithEscapedElement_BindsTheUnescapedText()
+	{
+		var rows = ReadRows<TagsModel>(TagsColumnsJson + """[[["a\"b","é"],"x"]]}""", CreateOptions());
+
+		rows.Single().Tags.Should().Equal("a\"b", "é");
+	}
+
+	[Test]
+	public void ReadRows_StringListCellWithLoneSurrogate_ThrowsJsonException()
+	{
+		var act = () => ReadRows<TagsModel>(TagsColumnsJson + """[[["\ud800"],"x"]]}""", CreateOptions());
+
+		act.Should().Throw<JsonException>();
+	}
+
+	[Test]
+	public void ReadRows_StringSetCell_BindsLikeTheSerializer()
+	{
+		var options = CreateOptions();
+		JsonSerializer.Deserialize<StringSetModel>("""{"tags":["a","b","a"]}""", options)!.Tags.Should().BeEquivalentTo("a", "b");
+
+		var rows = ReadRows<StringSetModel>("""{"columns":[{"name":"tags","type":"keyword"}],"values":[[["a","b","a"]]]}""", options);
+
+		rows.Single().Tags.Should().BeEquivalentTo("a", "b");
+	}
+
+	[Test]
+	public void ReadRows_StringListWithPropertyConverter_BindsLikeTheSerializer()
+	{
+		var options = CreateOptions();
+		JsonSerializer.Deserialize<ReversedTagsModel>("""{"tags":["a","b"]}""", options)!.Tags.Should().Equal("b", "a");
+
+		var rows = ReadRows<ReversedTagsModel>("""{"columns":[{"name":"tags","type":"keyword"}],"values":[[["a","b"]]]}""", options);
+
+		rows.Single().Tags.Should().Equal("b", "a");
+	}
+
+	[Test]
+	public void ReadRows_StringListWithGlobalStringConverter_BindsLikeTheSerializer()
+	{
+		var options = CreateOptions();
+		options.Converters.Add(new UpperCaseStringConverter());
+		JsonSerializer.Deserialize<TagsModel>("""{"tags":["a","b"],"name":"x"}""", options)!.Tags.Should().Equal("A", "B");
+
+		var rows = ReadRows<TagsModel>(TagsColumnsJson + """[[["a","b"],"x"]]}""", options);
+
+		rows.Single().Tags.Should().Equal("A", "B");
+	}
+
+	[Test]
+	public void ReadRows_BareStringOnUnmarkedStringListColumn_ThrowsLikeTheSerializer()
+	{
+		const string json =
+			"""{"columns":[{"name":"TAGS","type":"keyword"},{"name":"name","type":"keyword"}],"values":[["solo","x"]]}""";
+		var options = CreateOptions();
+		var serializerRead = () => JsonSerializer.Deserialize<TagsModel>("""{"TAGS":"solo","name":"x"}""", options);
+		serializerRead.Should().Throw<JsonException>();
+		// The property matches TAGS only case-insensitively, and the layout marks a collection column on an exact match only.
+		var binder = BuildLayout<TagsModel>(("TAGS", "keyword"), ("name", "keyword")).DirectBinder;
+		binder!.Kinds[0].Should().Be(DirectBinderKind.StringList);
+		binder.IsCollection[0].Should().BeFalse();
+
+		var act = () => ReadRows<TagsModel>(json, options);
+
+		act.Should().Throw<JsonException>();
 	}
 
 	[Test]
@@ -570,6 +651,21 @@ public class DirectBindingConverterCellTests
 		rows[1].Tags.Should().Equal("c");
 	}
 
+	[Test]
+	public void ReadRows_StringListRowSplitAcrossReads_ConstructsOncePerRow()
+	{
+		var binder = BuildLayout<CountingTagsModel>(("tags", "keyword"), ("name", "keyword")).DirectBinder;
+		binder!.Kinds.Should().Equal([DirectBinderKind.StringList, DirectBinderKind.String]);
+		CountingTagsModel.Constructed = 0;
+		using var stream = new ChunkedReadStream(Encoding.UTF8.GetBytes(TagsColumnsJson + """[[["a","b"],"x"],[["c"],"y"]]}"""), maxBytesPerRead: 1);
+		using var results = new EsqlResponseReader(new JsonMetadataManager(CreateOptions())).ReadRows<CountingTagsModel>(stream);
+
+		var rows = results.Rows.ToList();
+
+		rows.Should().HaveCount(2);
+		CountingTagsModel.Constructed.Should().Be(2);
+	}
+
 #if NET10_0_OR_GREATER
 	[Test]
 	public async Task ReadRowsAsync_ConverterCellRowAcrossPipeSegments_BindsEachCell()
@@ -678,7 +774,7 @@ public class DirectBindingConverterCellTests
 			("amount", "double")
 		).DirectBinder;
 		binder.Should().NotBeNull();
-		binder.ConverterCellCount.Should().Be(1);
+		binder.ValidatedCellCount.Should().Be(1);
 
 		var row = ReadRows<EveryKindModel>(json, CreateOptions())[0];
 
@@ -909,6 +1005,28 @@ public class DirectBindingConverterCellTests
 	{
 		public List<string> Tags { get; set; } = [];
 		public string Name { get; set; } = string.Empty;
+	}
+
+	private sealed class CountingTagsModel
+	{
+		[ThreadStatic]
+		public static int Constructed;
+
+		public CountingTagsModel() => Constructed++;
+
+		public List<string> Tags { get; set; } = [];
+		public string Name { get; set; } = string.Empty;
+	}
+
+	private sealed class ReversedTagsModel
+	{
+		[JsonConverter(typeof(ReversingStringListConverter))]
+		public List<string> Tags { get; set; } = [];
+	}
+
+	private sealed class StringSetModel
+	{
+		public HashSet<string> Tags { get; set; } = [];
 	}
 
 	private sealed class ArrayTagsModel
@@ -1174,6 +1292,28 @@ public class DirectBindingConverterCellTests
 
 		public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options) =>
 			writer.WriteStringValue(value);
+	}
+
+	private sealed class UpperCaseStringConverter : JsonConverter<string>
+	{
+		public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+			reader.GetString()!.ToUpperInvariant();
+
+		public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options) =>
+			writer.WriteStringValue(value);
+	}
+
+	private sealed class ReversingStringListConverter : JsonConverter<List<string>>
+	{
+		public override List<string> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+		{
+			var values = JsonSerializer.Deserialize<List<string>>(ref reader, options)!;
+			values.Reverse();
+			return values;
+		}
+
+		public override void Write(Utf8JsonWriter writer, List<string> value, JsonSerializerOptions options) =>
+			JsonSerializer.Serialize(writer, value, options);
 	}
 
 	private sealed class RejectingNegativeConverter : JsonConverter<ImmutableArray<int>>

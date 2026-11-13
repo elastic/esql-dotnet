@@ -22,8 +22,12 @@ internal enum DirectBinderKind
 	DateTime,
 	DateTimeOffset,
 	Guid,
+	StringList,
 
-	/// <summary>Cell deserialized through its own contract (enums, dates without a built-in kind, collections, dictionaries, nested objects).</summary>
+	/// <summary>
+	/// Cell deserialized through its own contract (enums, dates without a built-in kind, collections other than a
+	/// <see cref="StringList"/>, dictionaries, nested objects).
+	/// </summary>
 	Converter
 }
 
@@ -48,7 +52,10 @@ internal sealed class DirectRowBinder
 	/// </summary>
 	public required Delegate?[] TypedSetters { get; init; }
 
-	/// <summary>Contract used to deserialize a <see cref="DirectBinderKind.Converter"/> cell, or null for the built-in kinds.</summary>
+	/// <summary>
+	/// Contract used to deserialize a <see cref="DirectBinderKind.Converter"/> cell, the list contract that creates the list
+	/// of a <see cref="DirectBinderKind.StringList"/> cell, or null for the built-in kinds.
+	/// </summary>
 	public required JsonTypeInfo?[] CellTypeInfos { get; init; }
 
 	/// <summary>
@@ -59,8 +66,11 @@ internal sealed class DirectRowBinder
 
 	public required Func<object> CreateObject { get; init; }
 
-	/// <summary>Number of <see cref="DirectBinderKind.Converter"/> columns. A row with any validates every cell before it deserializes one.</summary>
-	public required int ConverterCellCount { get; init; }
+	/// <summary>
+	/// Number of <see cref="DirectBinderKind.Converter"/> and <see cref="DirectBinderKind.StringList"/> columns. A row with
+	/// any validates every cell before it decodes a string list or deserializes a converter cell.
+	/// </summary>
+	public required int ValidatedCellCount { get; init; }
 
 	/// <summary>Depth limit for a cell read on its own reader: the options' limit less the level the assembled row object adds.</summary>
 	public required int CellMaxDepth { get; init; }
@@ -70,9 +80,10 @@ internal sealed class DirectRowBinder
 	/// metadata the binder cannot see, or when the type itself cannot be bound with exact serializer fidelity:
 	/// parameterized constructors, serialization callbacks, extension data, number handling on the type or a property, a
 	/// property-level converter no cell contract can be built for, populate-style object creation, a required member
-	/// without a column, two columns for one property, a converter cell under a depth limit of one, or a converter cell
-	/// under options that read reference metadata.
-	/// Cells that are not one of the built-in scalar kinds deserialize through their own contract instead.
+	/// without a column, two columns for one property, a converter cell or a string list cell under a depth limit of one,
+	/// or either under options that read reference metadata.
+	/// A <c>List&lt;string&gt;</c> or <c>string[]</c> cell that the serializer reads with its own converters is read as a
+	/// string list, and any other cell that is not one of the built-in scalar kinds deserializes through its own contract.
 	/// </summary>
 	public static DirectRowBinder? TryCreate(ColumnNode[] leafNodes, JsonTypeInfo typeInfo, JsonMetadataManager metadata)
 	{
@@ -105,7 +116,7 @@ internal sealed class DirectRowBinder
 		var typedSetters = new Delegate?[count];
 		var cellTypeInfos = new JsonTypeInfo?[count];
 		var isCollection = new bool[count];
-		var converterCellCount = 0;
+		var validatedCellCount = 0;
 		var bound = new HashSet<JsonPropertyInfo>();
 		var effectiveMaxDepth = ColumnLayout.EffectiveMaxDepth(options);
 
@@ -141,6 +152,15 @@ internal sealed class DirectRowBinder
 			if (!converterCellsBind)
 				return null;
 
+			if (property.CustomConverter is null && TryResolveStringListContract(property.PropertyType, options) is { } listTypeInfo)
+			{
+				kinds[i] = DirectBinderKind.StringList;
+				cellTypeInfos[i] = listTypeInfo;
+				typedSetters[i] = metadata.GetOrCompileSetter(property, DirectBinderKind.StringList);
+				validatedCellCount++;
+				continue;
+			}
+
 			var cellTypeInfo = property.CustomConverter is not null
 				? metadata.GetOrCreatePropertyContract(property)
 				: JsonMetadataManager.TryResolveTypeInfo(property.PropertyType, options);
@@ -149,7 +169,7 @@ internal sealed class DirectRowBinder
 
 			kinds[i] = DirectBinderKind.Converter;
 			cellTypeInfos[i] = cellTypeInfo;
-			converterCellCount++;
+			validatedCellCount++;
 		}
 
 		// A required property without a column fails every row in the serializer, so keep that behavior on the slow path.
@@ -167,7 +187,7 @@ internal sealed class DirectRowBinder
 			CellTypeInfos = cellTypeInfos,
 			IsCollection = isCollection,
 			CreateObject = typeInfo.CreateObject,
-			ConverterCellCount = converterCellCount,
+			ValidatedCellCount = validatedCellCount,
 			CellMaxDepth = effectiveMaxDepth - 1
 		};
 	}
@@ -261,5 +281,28 @@ internal sealed class DirectRowBinder
 			// else is a resolver bug and must surface.
 			return false;
 		}
+	}
+
+	/// <summary>
+	/// Returns the contract of a <c>List&lt;string&gt;</c> or <c>string[]</c> property that the serializer reads with its own
+	/// collection converter and its own converter for string, or null when the property binds as a converter cell.
+	/// </summary>
+	private static JsonTypeInfo? TryResolveStringListContract(Type propertyType, JsonSerializerOptions options)
+	{
+		// The decode creates and assigns the list itself, so only the two types it builds qualify. The serializer's list
+		// converter reads each element through the options' converter for string, so a converter registered for string
+		// keeps the list on a converter cell.
+		if (propertyType != typeof(List<string>) && propertyType != typeof(string[]))
+			return null;
+
+		if (JsonMetadataManager.TryResolveTypeInfo(propertyType, options) is not { Kind: JsonTypeInfoKind.Enumerable } typeInfo
+			|| typeInfo.ElementType != typeof(string)
+			|| !JsonMetadataManager.IsBuiltInConverter(typeInfo.Converter))
+			return null;
+
+		if (propertyType == typeof(List<string>) && typeInfo.CreateObject is null)
+			return null;
+
+		return UsesBuiltInConverter(typeof(string), options) ? typeInfo : null;
 	}
 }

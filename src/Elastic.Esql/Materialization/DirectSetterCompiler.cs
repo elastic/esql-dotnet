@@ -22,10 +22,10 @@ namespace Elastic.Esql.Materialization;
 internal static class DirectSetterCompiler
 {
 	/// <summary>
-	/// Returns a compiled <c>Action&lt;object, TValue&gt;</c> for the exact value type of <paramref name="kind"/>,
-	/// or null when the runtime does not support dynamic code, the declaring type is a struct, the member
-	/// cannot be resolved via <see cref="JsonPropertyInfo.AttributeProvider"/>, or the member is not a property with a
-	/// public setter or a public writable field.
+	/// Returns a compiled <c>Action&lt;object, TValue&gt;</c> for the exact value type of <paramref name="kind"/>, or for
+	/// the property's own list type on a string list, or null when the runtime does not support dynamic code, the
+	/// declaring type is a struct, the member cannot be resolved via <see cref="JsonPropertyInfo.AttributeProvider"/>,
+	/// or the member is not a property with a public setter or a public writable field.
 	/// </summary>
 	public static Delegate? TryCreate(JsonPropertyInfo property, DirectBinderKind kind)
 	{
@@ -44,6 +44,8 @@ internal static class DirectSetterCompiler
 			DirectBinderKind.DateTime => TryCreate<DateTime>(property),
 			DirectBinderKind.DateTimeOffset => TryCreate<DateTimeOffset>(property),
 			DirectBinderKind.Guid => TryCreate<Guid>(property),
+			DirectBinderKind.StringList when property.PropertyType == typeof(string[]) => TryCreate<string[]>(property),
+			DirectBinderKind.StringList => TryCreate<List<string>>(property),
 			_ => null
 		};
 	}

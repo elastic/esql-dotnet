@@ -100,13 +100,13 @@ camelCase defaults and the copy it makes from a `JsonSerializerContext`, are rea
 converter, naming policy and resolver before running the first query; changing them on an instance that has already been
 used throws.
 
-On runtimes that support dynamic code, a directly bound row assigns its built-in scalar cells through setters compiled
-for the target member. Only a public setter or a public field gets a compiled setter, and any other member is assigned
-through the contract's `JsonPropertyInfo.Set`, which throws for a member a source-generated context cannot reach. A
-struct target gets no compiled setter, so each of its members is assigned through the contract's `JsonPropertyInfo.Set`.
-Converter cells are assigned through `JsonPropertyInfo.Set` too. A row is bound directly only when every part of the
-resolver is a `JsonSerializerContext` produced by the source generator, which marks it with a `GeneratedCode` attribute,
-or a plain `DefaultJsonTypeInfoResolver` without modifiers, alone or in a chain built with
+On runtimes that support dynamic code, a directly bound row assigns its built-in scalar cells and its string list cells
+through setters compiled for the target member. Only a public setter or a public field gets a compiled setter, and any
+other member is assigned through the contract's `JsonPropertyInfo.Set`, which throws for a member a source-generated
+context cannot reach. A struct target gets no compiled setter, so each of its members is assigned through the contract's
+`JsonPropertyInfo.Set`. Converter cells are assigned through `JsonPropertyInfo.Set` too. A row is bound directly only
+when every part of the resolver is a `JsonSerializerContext` produced by the source generator, which marks it with a
+`GeneratedCode` attribute, or a plain `DefaultJsonTypeInfoResolver` without modifiers, alone or in a chain built with
 `JsonTypeInfoResolver.Combine` or the options' `TypeInfoResolverChain`, such as the client's combination of a context
 with the reflection resolver. A resolver built with `JsonTypeInfoResolver.Combine` and added to `TypeInfoResolverChain`
 stays one entry of the chain, and its parts are judged the same way. The `TypeInfoResolverChain` of another options
@@ -390,22 +390,26 @@ document. A type qualifies for this path when all of the following hold:
 
 A mapped `string`, `bool`, `int`, `long`, `double`, `float`, `decimal`, `DateTime`, `DateTimeOffset` or `Guid` property,
 or the nullable form of one of these, is parsed straight off the reader when the serializer's own converter reads that
-type. Any other property binds as a converter cell, deserialized from the cell alone through the property's
-`[JsonConverter]` when it has one and through the contract of its type otherwise. Enums, collections, dictionaries,
-nested objects, types with a converter registered on the `JsonSerializerOptions` and properties with a `[JsonConverter]`
-attribute all bind this way. A property-level converter needs a runtime that supports dynamic code, so under Native AOT
-a type with one stays on the fallback. It must also be a converter for the property type itself, after a factory is
-expanded. A factory-made collection, dictionary or nested-object converter of the serializer's own reads on the direct
-path only when it is the converter instance the type's own contract carries, the one a factory that returns
-`options.GetConverter(type)` hands back on read-only options. The reader makes the options read-only before it binds the
-first row, and a contract resolved earlier, by a query that names a member of the type, is not kept, so the direct path
-reads the contracts the serializer uses. Any other such converter keeps the type on the fallback, where the serializer
-applies it. That includes a new instance of the serializer's nullable wrapper or of a converter that
-`JsonMetadataServices` creates, because only the instance the own contract carries is known to read as that contract
-does. A property whose type the resolver does not resolve keeps the type on the fallback as well when it has such a
-converter. A converter declared for a base type keeps the type on the fallback, where the serializer applies it through
-its casting converter. The compiled setters described under AOT-safe configuration need dynamic code too, and without it
-a directly bound row assigns its cells through the contract's own `JsonPropertyInfo.Set`.
+type. A `List<string>` or `string[]` property without a `[JsonConverter]` attribute is read off the reader as well when
+the serializer's own collection and string converters read it and the `MaxDepth` and `ReferenceHandler` conditions above
+for a converter cell hold. A bare string cell becomes a one-element list where the column name matches the property's
+JSON name exactly, as on the fallback, and a null element stays null. Any other property binds as a converter cell,
+deserialized from the cell alone through the property's `[JsonConverter]` when it has one and through the contract of
+its type otherwise. Enums, other collections, dictionaries, nested objects, types with a converter registered on the
+`JsonSerializerOptions` and properties with a `[JsonConverter]` attribute all bind this way. A property-level converter
+needs a runtime that supports dynamic code, so under Native AOT a type with one stays on the fallback. It must also be a
+converter for the property type itself, after a factory is expanded. A factory-made collection, dictionary or
+nested-object converter of the serializer's own reads on the direct path only when it is the converter instance the
+type's own contract carries, the one a factory that returns `options.GetConverter(type)` hands back on read-only
+options. The reader makes the options read-only before it binds the first row, and a contract resolved earlier, by a
+query that names a member of the type, is not kept, so the direct path reads the contracts the serializer uses. Any
+other such converter keeps the type on the fallback, where the serializer applies it. That includes a new instance of
+the serializer's nullable wrapper or of a converter that `JsonMetadataServices` creates, because only the instance the
+own contract carries is known to read as that contract does. A property whose type the resolver does not resolve keeps
+the type on the fallback as well when it has such a converter. A converter declared for a base type keeps the type on
+the fallback, where the serializer applies it through its casting converter. The compiled setters described under
+AOT-safe configuration need dynamic code too, and without it a directly bound row assigns its cells through the
+contract's own `JsonPropertyInfo.Set`.
 
 When a converter that does not come from `System.Text.Json` reads a property whose type is a collection, `byte[]`
 included, a single-valued cell reaches it wrapped in an array, the shape a multi-valued cell has, so the converter must
@@ -415,10 +419,10 @@ A type that misses any condition in the list falls back to assembling each row a
 with `System.Text.Json`. The fallback is correct but slower, and nothing signals which path is active. If throughput
 matters, shape the result type to the list above. A row whose cell does not match the property type is retried through
 the fallback, so the serializer produces the same value coercion or error either way. A streamed row cut by a chunk
-boundary is read again on the direct path once it completes. For a type without converter cells, each retried or re-read
-row allocates and discards one partially bound instance, so a constructor or property setter with side effects runs more
-than once for such rows. A type with converter cells checks the whole row before it creates the instance, so it discards
-one only when a converter cell fails after that check.
+boundary is read again on the direct path once it completes. For a type without converter cells or string list cells,
+each retried or re-read row allocates and discards one partially bound instance, so a constructor or property setter
+with side effects runs more than once for such rows. A type with converter cells or string list cells checks the whole
+row before it creates the instance, so it discards one only when a converter cell fails after that check.
 
 Nested result types are deserialized in batches of up to 64 rows or 64 KB, so the first row
 becomes available after the first batch rather than immediately. Batching also requires the

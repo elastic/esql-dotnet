@@ -6,17 +6,20 @@ namespace Elastic.Esql.Materialization;
 
 /// <summary>
 /// Scratch space one response enumeration reuses across its rows: the buffers of a row that goes through JSON assembly
-/// or wraps a bare scalar converter cell, and the string cells of a directly bound row with converter cells. Each is
-/// created on first use.
+/// or wraps a bare scalar converter cell, and the string cells and string list cells of a directly bound row with
+/// converter cells or string list cells. Each is created on first use.
 /// </summary>
 internal sealed class RowAssemblyBuffers(int estimatedRowSize, bool isScalar, bool wrapScalarInArray) : IDisposable
 {
-	// IDE0032 suggests auto-properties, but the fields exist to defer allocation until a row needs assembly.
+	// IDE0032 suggests auto-properties, but the fields exist to defer allocation until a row needs assembly or a string
+	// array cell.
 #pragma warning disable IDE0032
 	private PooledBufferWriter? _rowBuffer;
 	private PooledBufferWriter? _valueBuffer;
+	private List<string?>? _stringListScratch;
 #pragma warning restore IDE0032
 	private string?[]? _stringCells;
+	private object?[]? _listCells;
 
 	/// <summary>The assembled row object, or the bare cell for scalar reads.</summary>
 	public PooledBufferWriter RowBuffer => _rowBuffer ??= new PooledBufferWriter(estimatedRowSize);
@@ -31,10 +34,19 @@ internal sealed class RowAssemblyBuffers(int estimatedRowSize, bool isScalar, bo
 	public bool WrapScalarInArray { get; } = wrapScalarInArray;
 
 	/// <summary>
-	/// The string cells of a directly bound row with converter cells, indexed by column and decoded once the validating
-	/// pass has seen the whole row. The first call sizes the array and later calls return it.
+	/// The string cells of a directly bound row with converter cells or string list cells, indexed by column and decoded
+	/// once the validating pass has seen the whole row. The first call sizes the array and later calls return it.
 	/// </summary>
 	public string?[] StringCells(int columnCount) => _stringCells ??= new string?[columnCount];
+
+	/// <summary>
+	/// The decoded <c>List&lt;string&gt;</c> or <c>string[]</c> of each string list cell of a directly bound row, indexed by
+	/// column like <see cref="StringCells"/>. The first call sizes the array and later calls return it.
+	/// </summary>
+	public object?[] ListCells(int columnCount) => _listCells ??= new object?[columnCount];
+
+	/// <summary>Collects the elements of a <c>string[]</c> cell, whose array is sized once they are all read.</summary>
+	public List<string?> StringListScratch => _stringListScratch ??= [];
 
 	public void Dispose()
 	{
