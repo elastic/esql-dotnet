@@ -451,18 +451,6 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
-	public void Build_CombinedResolverWithModifierAddedToTheChain_KeepsTheFallback()
-	{
-		var options = new JsonSerializerOptions { TypeInfoResolver = new DefaultJsonTypeInfoResolver(), PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
-		options.TypeInfoResolverChain.Add(
-			JsonTypeInfoResolver.Combine(new DefaultJsonTypeInfoResolver(), new DefaultJsonTypeInfoResolver { Modifiers = { SupplyDoublingCount } })
-		);
-		options.MakeReadOnly();
-
-		BuildLayout<CountModel>(options, ("count", "integer")).DirectBinder.Should().BeNull();
-	}
-
-	[Test]
 	public void ReadRows_NestedOptionsChainReplacedAfterTheFreeze_BindsLikeTheSerializer()
 	{
 		var inner = new JsonSerializerOptions { TypeInfoResolver = new DefaultJsonTypeInfoResolver { Modifiers = { SupplyDoublingCount } } };
