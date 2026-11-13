@@ -95,10 +95,11 @@ If neither `JsonSerializerContext` nor `JsonSerializerOptions` is provided, `Esq
 
 The options you pass are made read-only when the first result is materialized, the same way `JsonSerializer` freezes
 options on its own first use. Translation makes them read-only earlier when it serializes a named parameter or a literal
-through the serializer, such as an integer, decimal, enum or `Guid` literal. The options the client builds itself, the
-camelCase defaults and the copy it makes from a `JsonSerializerContext`, are read-only from construction. Register every
-converter, naming policy and resolver before running the first query; changing them on an instance that has already been
-used throws.
+through the serializer, such as an integer, decimal, enum or `Guid` literal. Options without a `TypeInfoResolver` are
+made read-only, with the reflection-based default resolver, when the first query is translated, because translation
+reads their metadata to name the members a query uses. The options the client builds itself, the camelCase defaults and
+the copy it makes from a `JsonSerializerContext`, are read-only from construction. Register every converter, naming
+policy and resolver before running the first query; changing them on an instance that has already been used throws.
 
 On runtimes that support dynamic code, a directly bound row assigns every cell through a setter compiled for the target
 member. Only a public setter or a public field gets a compiled setter, and any other member is assigned through the
@@ -369,9 +370,9 @@ Flat result types are bound directly from the response reader, property by prope
 document. A type qualifies for this path when all of the following hold:
 
 - every part of the options' resolver chain is a source-generated `JsonSerializerContext` or a plain
-  `DefaultJsonTypeInfoResolver` without modifiers, which options without a resolver get at the first read, judged the
-  first time a result type is read with a given set of columns, because any other part can supply property metadata the
-  direct path cannot see (AOT-safe configuration lists which resolvers count)
+  `DefaultJsonTypeInfoResolver` without modifiers, which options without a resolver get at the first translation or
+  read, judged the first time a result type is read with a given set of columns, because any other part can supply
+  property metadata the direct path cannot see (AOT-safe configuration lists which resolvers count)
 - it is a class or struct that the serializer creates through a parameterless constructor
 - it has no `OnDeserializing` or `OnDeserialized` callback of its own
 - every result column maps to a settable property that is not the extension data property

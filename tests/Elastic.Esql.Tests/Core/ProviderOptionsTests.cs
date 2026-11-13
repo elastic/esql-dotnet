@@ -26,4 +26,33 @@ public class ProviderOptionsTests
 
 		options.IsReadOnly.Should().BeFalse();
 	}
+
+	[Test]
+	public void Translate_OptionsWithoutResolver_ResolvesNestedMember()
+	{
+		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+
+		var query = new EsqlQueryable<NestedHostLookup>(new EsqlQueryProvider(options))
+			.From("logs")
+			.Where(l => l.Host.Name == "ada");
+
+		query.ToString().Should().Be(
+			"""
+			FROM logs
+			| WHERE host.name == "ada"
+			""".NativeLineEndings());
+	}
+
+	[Test]
+	public void Translate_CallerOptions_StayMutable()
+	{
+		var options = new JsonSerializerOptions { TypeInfoResolver = new DefaultJsonTypeInfoResolver() };
+
+		_ = new EsqlQueryable<NestedHostLookup>(new EsqlQueryProvider(options))
+			.From("logs")
+			.Where(l => l.Host.Name == "ada")
+			.ToString();
+
+		options.IsReadOnly.Should().BeFalse();
+	}
 }

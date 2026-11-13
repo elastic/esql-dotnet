@@ -184,6 +184,11 @@ public sealed class EsqlQueryProvider : IQueryProvider
 	{
 		Verify.NotNull(expression);
 
+		// Options without a resolver resolve no member until they are made read-only with the reflection resolver, which
+		// the reader does at the first read. Translation names the members of a query before any read.
+		if (Metadata.Options.TypeInfoResolver is null)
+			JsonMetadataManager.TryMakeReadOnly(Metadata.Options);
+
 		var visitor = new EsqlExpressionVisitor(this, inlineParameters);
 
 		return visitor.Translate(expression);
