@@ -429,7 +429,7 @@ public sealed class EsqlQueryProvider : IQueryProvider
 
 	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Default options are a convenience for non-trimmed apps; Native AOT callers pass a JsonSerializerContext, and the reflection fallback is deliberately retained for converter-attributed types.")]
 	[UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Default options are a convenience for non-trimmed apps; Native AOT callers pass a JsonSerializerContext, and the reflection fallback is deliberately retained for converter-attributed types.")]
-	private static JsonSerializerOptions CreateDefaultJsonOptions()
+	internal static JsonSerializerOptions CreateDefaultJsonOptions()
 	{
 		var options = new JsonSerializerOptions(JsonSerializerOptions.Default)
 		{

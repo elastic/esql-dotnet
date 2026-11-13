@@ -107,27 +107,11 @@ public class EsqlClientSettings
 				PropertyNamingPolicy = JsonSerializerContext.Options.PropertyNamingPolicy ?? JsonNamingPolicy.CamelCase
 			};
 
-			// No caller reaches these and the manager caches only on read-only options. Without a resolver they stay mutable and the serializer fails the read.
-			if (options.TypeInfoResolver is not null)
-				options.MakeReadOnly();
+			// No caller reaches these and the manager caches only on read-only options.
+			JsonMetadataManager.TryMakeReadOnly(options);
 			return options;
 		}
 
-		return JsonSerializerOptions ?? CreateDefaultJsonOptions();
-	}
-
-	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Default options are a convenience for non-trimmed apps; Native AOT callers pass a JsonSerializerContext, and the reflection fallback is deliberately retained for converter-attributed types.")]
-	[UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Default options are a convenience for non-trimmed apps; Native AOT callers pass a JsonSerializerContext, and the reflection fallback is deliberately retained for converter-attributed types.")]
-	private static JsonSerializerOptions CreateDefaultJsonOptions()
-	{
-		var options = new JsonSerializerOptions(JsonSerializerOptions.Default)
-		{
-			PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-		};
-
-		// No caller reaches these and the manager caches only on read-only options. Without a resolver they stay mutable and the serializer fails the read.
-		if (options.TypeInfoResolver is not null)
-			options.MakeReadOnly();
-		return options;
+		return JsonSerializerOptions ?? EsqlQueryProvider.CreateDefaultJsonOptions();
 	}
 }

@@ -111,19 +111,12 @@ internal sealed partial class EsqlResponseReader
 	}
 #endif
 
-	private void EnsureOptionsReadOnly()
-	{
-		// The options' own state is the guard, because a flag set by one attempt could stop a retry the state still allows.
-		if (!Options.IsReadOnly)
-			JsonMetadataManager.TryMakeReadOnly(Options);
-	}
-
 	/// <summary>
 	/// Builds a <see cref="ColumnLayout"/> for the target type and the ES|QL columns.
 	/// </summary>
 	private ColumnLayout GetColumnLayout<T>(ColumnInfo[] columns)
 	{
-		EnsureOptionsReadOnly();
+		JsonMetadataManager.TryMakeReadOnly(Options);
 		var targetType = typeof(T);
 		var schemaHash = ComputeSchemaHash(columns);
 		var key = new ColumnLayoutCacheKey(targetType, schemaHash, columns.Length);

@@ -115,6 +115,10 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 	)]
 	internal static void TryMakeReadOnly(JsonSerializerOptions options)
 	{
+		// The options' own state is the guard, because a flag set by one attempt could stop a retry the state still allows.
+		if (options.IsReadOnly)
+			return;
+
 		// The serializer freezes the options on its first call, giving options without a resolver its reflection resolver,
 		// and shares one contract per type only from then on, so a layout or a cached contract on mutable options would read
 		// contracts the serializer never uses. With reflection disabled, options without a resolver cannot be frozen, and

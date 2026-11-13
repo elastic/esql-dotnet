@@ -166,23 +166,18 @@ internal sealed class EsqlTranslationContext
 	/// is present, the value is serialized through <see cref="JsonSerializer"/> to honour that converter;
 	/// otherwise it is formatted via <see cref="EsqlFormatting.FormatValue"/>.
 	/// </summary>
-	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Serialization delegates to the user-provided JsonSerializerOptions/JsonSerializerContext which is expected to include an AOT-safe TypeInfoResolver.")]
-	[UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Serialization delegates to the user-provided JsonSerializerOptions/JsonSerializerContext which is expected to include an AOT-safe TypeInfoResolver.")]
-	public string FormatValue(object? value, MemberInfo? propertyContext = null)
-	{
-		if (value is not null && Metadata.GetOptionsWithPropertyConverter(propertyContext) is { } converterOptions)
-			return EsqlFormatting.FormatJsonElement(JsonSerializer.SerializeToElement(value, value.GetType(), converterOptions));
-
-		return EsqlFormatting.FormatValue(value, SerializerOptions);
-	}
+	public string FormatValue(object? value, MemberInfo? propertyContext = null) =>
+		SerializeWithPropertyConverter(value, propertyContext) is { } element
+			? EsqlFormatting.FormatJsonElement(element)
+			: EsqlFormatting.FormatValue(value, SerializerOptions);
 
 	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Serialization delegates to the user-provided JsonSerializerOptions/JsonSerializerContext which is expected to include an AOT-safe TypeInfoResolver.")]
 	[UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Serialization delegates to the user-provided JsonSerializerOptions/JsonSerializerContext which is expected to include an AOT-safe TypeInfoResolver.")]
 	private JsonElement SerializeToElement(object? value, MemberInfo? propertyContext = null)
 	{
 		// A property-level converter receives the original value; the duration literal is only the default for members without one.
-		if (value is not null && Metadata.GetOptionsWithPropertyConverter(propertyContext) is { } converterOptions)
-			return JsonSerializer.SerializeToElement(value, value.GetType(), converterOptions);
+		if (SerializeWithPropertyConverter(value, propertyContext) is { } converted)
+			return converted;
 
 		if (value is TimeSpan ts)
 			value = EsqlFormatting.FormatTimeSpanRaw(ts);
@@ -208,6 +203,13 @@ internal sealed class EsqlTranslationContext
 
 		return JsonSerializer.SerializeToElement(value, value?.GetType() ?? typeof(object), SerializerOptions);
 	}
+
+	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Serialization delegates to the user-provided JsonSerializerOptions/JsonSerializerContext which is expected to include an AOT-safe TypeInfoResolver.")]
+	[UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Serialization delegates to the user-provided JsonSerializerOptions/JsonSerializerContext which is expected to include an AOT-safe TypeInfoResolver.")]
+	private JsonElement? SerializeWithPropertyConverter(object? value, MemberInfo? propertyContext) =>
+		value is not null && Metadata.GetOptionsWithPropertyConverter(propertyContext) is { } converterOptions
+			? JsonSerializer.SerializeToElement(value, value.GetType(), converterOptions)
+			: null;
 
 	private bool UsesDefaultNumericSerialization(Type elementType, object collection) =>
 		!HasRegisteredConverter(elementType)
