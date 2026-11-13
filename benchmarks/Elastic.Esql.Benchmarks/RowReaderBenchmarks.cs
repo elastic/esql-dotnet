@@ -28,6 +28,8 @@ public class RowReaderBenchmarks
 	private byte[] _rawJsonMixedPayload = null!;
 	private byte[] _esqlRichPayload = null!;
 	private byte[] _rawJsonRichPayload = null!;
+	private byte[] _esqlStringEnumPayload = null!;
+	private byte[] _rawJsonStringEnumPayload = null!;
 	private byte[] _esqlScalarStringPayload = null!;
 	private byte[] _esqlScalarIntPayload = null!;
 
@@ -61,6 +63,9 @@ public class RowReaderBenchmarks
 
 		_esqlRichPayload = BuildEsqlRichPayload();
 		_rawJsonRichPayload = BuildRawJsonRichPayload();
+
+		_esqlStringEnumPayload = BuildEsqlStringEnumPayload();
+		_rawJsonStringEnumPayload = BuildRawJsonStringEnumPayload();
 
 		_esqlScalarStringPayload = BuildEsqlPayload(["name:keyword"], (w, i) => w.WriteStringValue($"item-{i}"));
 		_esqlScalarIntPayload = BuildEsqlPayload(["count:integer"], (w, i) => w.WriteNumberValue(i));
@@ -161,6 +166,22 @@ public class RowReaderBenchmarks
 	[Benchmark]
 	public List<RichDocument> RawJson_FlatWithEnumAndList() =>
 		JsonSerializer.Deserialize<List<RichDocument>>(_rawJsonRichPayload, _options)!;
+
+	// =========================================================================
+	// Flat with a string enum (a converter cell on a keyword column)
+	// =========================================================================
+
+	[Benchmark]
+	public List<StringEnumDocument> Esql_FlatWithStringEnum()
+	{
+		using var stream = new MemoryStream(_esqlStringEnumPayload, writable: false);
+		using var result = _reader.ReadRows<StringEnumDocument>(stream);
+		return result.Rows.ToList();
+	}
+
+	[Benchmark]
+	public List<StringEnumDocument> RawJson_FlatWithStringEnum() =>
+		JsonSerializer.Deserialize<List<StringEnumDocument>>(_rawJsonStringEnumPayload, _options)!;
 
 	// =========================================================================
 	// Scalar (single column)
@@ -381,5 +402,24 @@ public class RowReaderBenchmarks
 			Count = i,
 			Level = (Priority)(i % 3),
 			Tags = [$"t{i}", "shared"]
+		}, _options);
+
+	private static byte[] BuildEsqlStringEnumPayload() =>
+		BuildEsqlPayload(
+			["name:keyword", "count:integer", "level:keyword"],
+			(w, i) =>
+			{
+				w.WriteStringValue($"item-{i}");
+				w.WriteNumberValue(i);
+				w.WriteStringValue(((Priority)(i % 3)).ToString());
+			}
+		);
+
+	private byte[] BuildRawJsonStringEnumPayload() =>
+		BuildRawJsonPayload(i => new StringEnumDocument
+		{
+			Name = $"item-{i}",
+			Count = i,
+			Level = (Priority)(i % 3)
 		}, _options);
 }
