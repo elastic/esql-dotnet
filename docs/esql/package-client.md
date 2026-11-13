@@ -97,18 +97,18 @@ Whichever options the client ends up with are made read-only when the first resu
 `JsonSerializer` freezes options on its own first use. Register every converter, naming policy and resolver before
 running the first query; changing them on an instance that has already been used throws.
 
-On runtimes that support dynamic code, and when no part of the resolver can carry a contract modifier, the built-in
-scalar cells of a directly bound row are assigned through setters compiled for the target member. That holds for a
-source-generated `JsonSerializerContext`, a plain `DefaultJsonTypeInfoResolver` without modifiers, and a chain of these
-built with `JsonTypeInfoResolver.Combine` or the options' `TypeInfoResolverChain`, such as the client's combination of a
-context with the reflection resolver. Each part of a chain is judged on its own, so one part with a modifier keeps the
-whole chain on `Set`. A hand-written `JsonSerializerContext` and a subclass of the default resolver count like a custom
-resolver, since either can replace `JsonPropertyInfo.Set` in its own `GetTypeInfo`. A subclass of a source-generated
-context counts as hand-written. Only a public setter or a public field gets a compiled setter, and any other member
-keeps the contract's `JsonPropertyInfo.Set`, which throws for a member a source-generated context cannot reach.
-Converter cells, and every cell under any other resolver, go through the contract's own `JsonPropertyInfo.Set`, so a
-modifier that replaces it is honored on every row. The decision is made for each result type when its layout is built,
-with the options already read-only.
+On runtimes that support dynamic code, a directly bound row assigns its built-in scalar cells through setters compiled
+for the target member. Only a public setter or a public field gets a compiled setter, and any other member is assigned
+through the contract's `JsonPropertyInfo.Set`, which throws for a member a source-generated context cannot reach.
+Converter cells are assigned through `JsonPropertyInfo.Set` too. A row is bound directly only when every part of the
+resolver is a source-generated `JsonSerializerContext` or a plain `DefaultJsonTypeInfoResolver` without modifiers, alone
+or in a chain built with `JsonTypeInfoResolver.Combine` or the options' `TypeInfoResolverChain`, such as the client's
+combination of a context with the reflection resolver. A hand-written `JsonSerializerContext` and a subclass of the
+default resolver do not count, since either can supply property metadata or replace `JsonPropertyInfo.Set` in its own
+`GetTypeInfo`, and a subclass of a source-generated context counts as hand-written. Any other resolver keeps every
+result type on the fallback described under How rows are materialized. That includes a context or a default resolver
+wrapped by `JsonTypeInfoResolver.WithAddedModifier`. The decision is made the first time a result type is read with a
+given set of columns, with the options already read-only.
 
 A cell that its own contract rejects, or a converter result of null for a property that does not accept null, is read
 again by the serializer so the error carries the property path. A deserialization callback on a nested type in that cell
@@ -353,6 +353,10 @@ await foreach (var entry in query.AsAsyncEnumerable())
 Flat result types are bound directly from the response reader, property by property, without an intermediate JSON
 document. A type qualifies for this path when all of the following hold:
 
+- every part of the options' resolver chain is a source-generated `JsonSerializerContext` or a plain
+  `DefaultJsonTypeInfoResolver` without modifiers, which options without a resolver get at the first read, judged the
+  first time a result type is read with a given set of columns, because any other part can supply property metadata the
+  direct path cannot see (AOT-safe configuration lists which resolvers count)
 - it is a class or struct that the serializer creates through a parameterless constructor
 - it has no `OnDeserializing` or `OnDeserialized` callback of its own
 - every result column maps to a settable property that is not the extension data property

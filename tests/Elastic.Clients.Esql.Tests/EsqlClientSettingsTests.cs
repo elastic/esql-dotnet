@@ -5,6 +5,8 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Elastic.Clients.Esql.Tests.Infrastructure;
+using Elastic.Esql.Core;
+using Elastic.Esql.Materialization;
 using Elastic.Transport;
 
 namespace Elastic.Clients.Esql.Tests;
@@ -110,5 +112,27 @@ public class EsqlClientSettingsTests
 
 		_ = resolved.Should().NotBeSameAs(custom);
 		_ = resolved.PropertyNamingPolicy.Should().Be(JsonNamingPolicy.CamelCase);
+	}
+	[Test]
+	public void ResolveJsonOptions_NoConfiguration_KeepsTheDirectBinder()
+	{
+		var resolved = CreateSettings().ResolveJsonOptions();
+
+		_ = BuildNameLayout(resolved).DirectBinder.Should().NotBeNull();
+	}
+
+	[Test]
+	public void ResolveJsonOptions_Context_KeepsTheDirectBinder()
+	{
+		var resolved = CreateSettings(context: ClientTestJsonContext.Default).ResolveJsonOptions();
+
+		_ = BuildNameLayout(resolved).DirectBinder.Should().NotBeNull();
+	}
+
+	private static ColumnLayout BuildNameLayout(JsonSerializerOptions options)
+	{
+		// The reader freezes the options before it binds the first row, so the layout here sees the same state.
+		options.MakeReadOnly(populateMissingResolver: true);
+		return ColumnLayout.Build([new EsqlResponseReader.ColumnInfo("name", "keyword")], typeof(ClientTestDocument), new JsonMetadataManager(options));
 	}
 }

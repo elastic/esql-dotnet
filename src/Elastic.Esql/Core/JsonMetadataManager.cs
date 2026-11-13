@@ -33,8 +33,9 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 	public JsonSerializerOptions Options => options;
 
 	/// <summary>
-	/// Whether no part of the options' resolver can carry a contract modifier, so a setter compiled for a member assigns
-	/// exactly what <see cref="JsonPropertyInfo.Set"/> would.
+	/// Whether no part of the options' resolver can carry a contract modifier, so no property carries a type info the
+	/// resolver supplied or a replaced <see cref="JsonPropertyInfo.Set"/>, and a row bound directly reads and assigns its
+	/// cells as the serializer does.
 	/// </summary>
 	/// <remarks>
 	/// The resolver chain exposes the parts of a combined resolver, so each part is judged on its own, the combination the
@@ -51,9 +52,9 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 	/// </summary>
 	/// <remarks>
 	/// <see cref="JsonSerializableAttribute"/> declared on the context's own type marks a source-generated context, whose
-	/// contracts carry no replaced setter. A hand-written context, a subclass of a generated one included, can replace
-	/// <see cref="JsonPropertyInfo.Set"/> in its own <c>GetTypeInfo</c>, and so can a subclass of the default resolver
-	/// without a modifier entry, so neither counts.
+	/// contracts carry no replaced setter and supply no property type info. A hand-written context, a subclass of a
+	/// generated one included, can replace <see cref="JsonPropertyInfo.Set"/> or supply a property's type info in its own
+	/// <c>GetTypeInfo</c>, and so can a subclass of the default resolver without a modifier entry, so neither counts.
 	/// </remarks>
 	private static bool IsModifierFreeResolver(IJsonTypeInfoResolver resolver) =>
 		resolver switch

@@ -387,17 +387,43 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
-	public void ReadRows_StructuredFactoryWithoutOwnContract_BindsLikeTheSerializer()
+	public void Build_DefaultProviderOptions_KeepTheDirectBinder()
 	{
-		if (!RuntimeFeature.IsDynamicCodeSupported)
-			return;
+		var metadata = new EsqlQueryProvider().Metadata;
+		// The reader freezes the options before it builds the first layout, so the layout here sees the same state.
+		metadata.Options.MakeReadOnly(populateMissingResolver: true);
 
-		const string json = """{"columns":[{"name":"value","type":"object"}],"values":[[{"x":7,"y":0}]]}""";
+		BuildLayout<CountModel>(metadata, ("count", "integer")).DirectBinder.Should().NotBeNull();
+	}
+
+	[Test]
+	public void ReadRows_HandWrittenResolverWithSuppliedPropertyMetadata_ThrowsLikeTheSerializer()
+	{
+		const string json = """{"columns":[{"name":"value","type":"object"}],"values":[[{}]]}""";
 		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web) { TypeInfoResolver = new SuppliedPairResolver() };
+		var serializerRead = () => JsonSerializer.Deserialize<SuppliedPairModel>("""{"value":{}}""", options);
 
-		var rows = ReadRows<SuppliedPairModel>(json, options);
+		// Fails here, and not on the read below, once the serializer reads the pair through its own contract instead of
+		// the property's metadata.
+		serializerRead.Should().Throw<JsonException>();
+		var act = () => ReadRows<SuppliedPairModel>(json, options);
 
-		rows.Should().ContainSingle().Which.Value.X.Should().Be(7);
+		act.Should().Throw<JsonException>();
+	}
+
+	[Test]
+	public void ReadRows_ModifierWithSuppliedScalarContract_BindsLikeTheSerializer()
+	{
+		const string json = """{"columns":[{"name":"count","type":"integer"}],"values":[[21]]}""";
+		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+		{
+			TypeInfoResolver = new DefaultJsonTypeInfoResolver { Modifiers = { SupplyDoublingCount } }
+		};
+
+		JsonSerializer.Deserialize<CountModel>("""{"count":21}""", options)!.Count.Should().Be(42);
+		var rows = ReadRows<CountModel>(json, options);
+
+		rows.Should().ContainSingle().Which.Count.Should().Be(42);
 	}
 
 	[Test]
@@ -774,6 +800,33 @@ public class DirectBindingConverterCellTests
 	private static JsonSerializerOptions CreateOptions() =>
 		new(JsonSerializerDefaults.Web) { TypeInfoResolver = new DefaultJsonTypeInfoResolver() };
 
+	// Swaps the reflected count for a property that carries a doubling contract of its own, which only the serializer,
+	// reading through the property's metadata, applies.
+	private static void SupplyDoublingCount(JsonTypeInfo typeInfo)
+	{
+		if (typeInfo.Type != typeof(CountModel))
+			return;
+
+		var reflected = typeInfo.Properties.First(property => property.Name == "count");
+		_ = typeInfo.Properties.Remove(reflected);
+		typeInfo.Properties.Add(
+			JsonMetadataServices.CreatePropertyInfo<int>(
+				typeInfo.Options,
+				new JsonPropertyInfoValues<int>
+				{
+					IsProperty = true,
+					IsPublic = true,
+					DeclaringType = typeof(CountModel),
+					PropertyName = nameof(CountModel.Count),
+					JsonPropertyName = "count",
+					PropertyTypeInfo = JsonMetadataServices.CreateValueInfo<int>(typeInfo.Options, new DoublingIntConverter()),
+					Getter = static model => ((CountModel)model).Count,
+					Setter = static (model, count) => ((CountModel)model).Count = count
+				}
+			)
+		);
+	}
+
 	private enum Level { Low, Medium, High }
 
 	private sealed class EnumModel
@@ -1003,6 +1056,11 @@ public class DirectBindingConverterCellTests
 		public int Y { get; } = y;
 	}
 
+	private sealed class CountModel
+	{
+		public int Count { get; set; }
+	}
+
 	private sealed class DateOnlyModel
 	{
 		public DateOnly Day { get; set; }
@@ -1123,19 +1181,8 @@ public class DirectBindingConverterCellTests
 			);
 	}
 
-	private sealed class DefaultObjectPairFactory : JsonConverterFactory
-	{
-		public override bool CanConvert(Type typeToConvert) => typeToConvert == typeof(ConstructedPair);
-
-		public override JsonConverter? CreateConverter(Type typeToConvert, JsonSerializerOptions options) =>
-			JsonMetadataServices.CreateObjectInfo<ConstructedPair>(
-				options,
-				new JsonObjectInfoValues<ConstructedPair> { ObjectCreator = static () => default }
-			).Converter;
-	}
-
-	// Hands the pair's metadata to the model's property alone and resolves no contract for the pair itself, so only the
-	// serializer, which reads through the property's metadata, can bind the value.
+	// Resolves a contract of its own for the pair and hands the model's property a stricter one that requires x, so only
+	// the serializer, which reads through the property's metadata, rejects a pair without x.
 	private sealed class SuppliedPairResolver : IJsonTypeInfoResolver
 	{
 		private readonly DefaultJsonTypeInfoResolver _inner = new();
@@ -1145,7 +1192,7 @@ public class DirectBindingConverterCellTests
 			if (type == typeof(SuppliedPairModel))
 				return CreateModelInfo(options);
 
-			return type == typeof(ConstructedPair) ? null : _inner.GetTypeInfo(type, options);
+			return type == typeof(ConstructedPair) ? CreatePairInfo(options, requireX: false) : _inner.GetTypeInfo(type, options);
 		}
 
 		private static JsonTypeInfo<SuppliedPairModel> CreateModelInfo(JsonSerializerOptions options)
@@ -1175,26 +1222,27 @@ public class DirectBindingConverterCellTests
 					DeclaringType = typeof(SuppliedPairModel),
 					PropertyName = nameof(SuppliedPairModel.Value),
 					JsonPropertyName = "value",
-					PropertyTypeInfo = CreatePairInfo(options),
-					Converter = (JsonConverter<ConstructedPair>)new DefaultObjectPairFactory().CreateConverter(typeof(ConstructedPair), options)!,
+					PropertyTypeInfo = CreatePairInfo(options, requireX: true),
+					Converter = (JsonConverter<ConstructedPair>)options.GetConverter(typeof(ConstructedPair)),
 					Getter = static model => ((SuppliedPairModel)model).Value,
 					Setter = static (model, value) => ((SuppliedPairModel)model).Value = value
 				}
 			);
 
-		private static JsonTypeInfo<ConstructedPair> CreatePairInfo(JsonSerializerOptions options) =>
+		private static JsonTypeInfo<ConstructedPair> CreatePairInfo(JsonSerializerOptions options, bool requireX) =>
 			JsonMetadataServices.CreateObjectInfo<ConstructedPair>(
 				options,
 				new JsonObjectInfoValues<ConstructedPair>
 				{
 					ObjectCreator = static () => default,
-					PropertyMetadataInitializer = _ => [CreatePairXProperty(options)]
+					PropertyMetadataInitializer = _ => [CreatePairXProperty(options, isRequired: requireX)]
 				}
 			);
 
 		// The serializer sets a struct's members on a boxed copy, so the setter replaces the pair inside that box.
-		private static JsonPropertyInfo CreatePairXProperty(JsonSerializerOptions options) =>
-			JsonMetadataServices.CreatePropertyInfo<int>(
+		private static JsonPropertyInfo CreatePairXProperty(JsonSerializerOptions options, bool isRequired)
+		{
+			var property = JsonMetadataServices.CreatePropertyInfo<int>(
 				options,
 				new JsonPropertyInfoValues<int>
 				{
@@ -1207,6 +1255,9 @@ public class DirectBindingConverterCellTests
 					Setter = static (pair, x) => Unsafe.Unbox<ConstructedPair>(pair) = new ConstructedPair(x, ((ConstructedPair)pair).Y)
 				}
 			);
+			property.IsRequired = isRequired;
+			return property;
+		}
 	}
 
 	private sealed class PreservingReferenceHandler : ReferenceHandler

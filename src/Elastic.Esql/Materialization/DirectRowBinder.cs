@@ -44,8 +44,7 @@ internal sealed class DirectRowBinder
 
 	/// <summary>
 	/// Per-column <c>Action&lt;object, TValue&gt;</c> compiled for the exact cell type, or null where the column
-	/// assigns through the boxing <see cref="JsonPropertyInfo.Set"/> (Native AOT, resolvers that can carry a contract
-	/// modifier, struct targets, unresolvable members).
+	/// assigns through the boxing <see cref="JsonPropertyInfo.Set"/> (Native AOT, struct targets, unresolvable members).
 	/// </summary>
 	public required Delegate?[] TypedSetters { get; init; }
 
@@ -67,11 +66,12 @@ internal sealed class DirectRowBinder
 	public required int CellMaxDepth { get; init; }
 
 	/// <summary>
-	/// Builds a binder for a flat layout, or returns null when the type itself cannot be bound with exact serializer
-	/// fidelity: parameterized constructors, serialization callbacks, extension data, number handling on the type or
-	/// a property, a property-level converter no cell contract can be built for, populate-style object creation, a
-	/// required member without a column, two columns for one property, a converter cell under a depth limit of one, or
-	/// a converter cell under options that read reference metadata.
+	/// Builds a binder for a flat layout, or returns null when a part of the options' resolver chain can supply property
+	/// metadata the binder cannot see, or when the type itself cannot be bound with exact serializer fidelity:
+	/// parameterized constructors, serialization callbacks, extension data, number handling on the type or a property, a
+	/// property-level converter no cell contract can be built for, populate-style object creation, a required member
+	/// without a column, two columns for one property, a converter cell under a depth limit of one, or a converter cell
+	/// under options that read reference metadata.
 	/// Cells that are not one of the built-in scalar kinds deserialize through their own contract instead.
 	/// </summary>
 	public static DirectRowBinder? TryCreate(ColumnNode[] leafNodes, JsonTypeInfo typeInfo, JsonMetadataManager metadata)
@@ -92,6 +92,13 @@ internal sealed class DirectRowBinder
 		if (typeInfo.NumberHandling is not null)
 			return null;
 
+		// A scalar cell reads from the options' contract for its type and a converter cell through the contract the options
+		// resolve for the property's type, while the serializer reads a property through any type info the resolver supplied
+		// for it, which no public member of JsonPropertyInfo exposes. Only a chain of source-generated contexts and plain
+		// default resolvers without modifiers is known to supply none.
+		if (!metadata.ResolverIsModifierFree)
+			return null;
+
 		var count = leafNodes.Length;
 		var kinds = new DirectBinderKind[count];
 		var properties = new JsonPropertyInfo[count];
@@ -100,7 +107,6 @@ internal sealed class DirectRowBinder
 		var isCollection = new bool[count];
 		var converterCellCount = 0;
 		var bound = new HashSet<JsonPropertyInfo>();
-		var resolverIsModifierFree = metadata.ResolverIsModifierFree;
 		var effectiveMaxDepth = ColumnLayout.EffectiveMaxDepth(options);
 
 		// Under a depth limit of one, a cell reader would get a depth limit of zero, which it reads as the default, so it
@@ -127,8 +133,8 @@ internal sealed class DirectRowBinder
 			if (property.CustomConverter is null && TryClassifyScalar(property.PropertyType, options, out var kind))
 			{
 				kinds[i] = kind;
-				// A compiled setter writes the member directly and would skip a modifier's replacement Set.
-				typedSetters[i] = resolverIsModifierFree ? metadata.GetOrCompileSetter(property, kind) : null;
+				// The modifier-free chain carries no replaced Set, so a setter compiled for the member assigns what Set would.
+				typedSetters[i] = metadata.GetOrCompileSetter(property, kind);
 				continue;
 			}
 
