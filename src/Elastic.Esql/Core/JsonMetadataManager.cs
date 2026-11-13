@@ -2,6 +2,7 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.CodeDom.Compiler;
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
@@ -32,6 +33,10 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 	private readonly ConcurrentDictionary<JsonPropertyInfo, Delegate?> _compiledSetterCache = [];
 	private readonly ConcurrentDictionary<JsonPropertyInfo, JsonTypeInfo?> _propertyContractCache = [];
 
+	// The serializer keeps its chain type internal, and Combine with no resolvers returns an instance of it where a single
+	// resolver would come back unwrapped.
+	private static readonly Type CombinedChainType = JsonTypeInfoResolver.Combine().GetType();
+
 	/// <summary>The underlying <see cref="JsonSerializerOptions"/>.</summary>
 	public JsonSerializerOptions Options => options;
 
@@ -41,29 +46,44 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 	/// cells as the serializer does.
 	/// </summary>
 	/// <remarks>
-	/// The resolver chain exposes the parts of a combined resolver, so each part is judged on its own, the combination the
-	/// library builds from a context included. An empty chain counts as modifier-free because the serializer fills in its
-	/// own reflection resolver without adding it to the chain. The answer is read at each layout build: a part that has
-	/// not resolved a type yet can still gain a modifier after the options are read-only, while a part that resolved the
-	/// build's type is locked by then.
+	/// The resolver chain exposes the parts of a combined resolver assigned to the options, so each part is judged on
+	/// its own, the combination the library builds from a context included. An empty chain counts as modifier-free
+	/// because the serializer fills in its own reflection resolver without adding it to the chain. The answer is read
+	/// at each layout build: a part that has not resolved a type yet can still gain a modifier after the options are
+	/// read-only, while a part that resolved the build's type is locked by then.
 	/// </remarks>
 	public bool ResolverIsModifierFree => options.TypeInfoResolverChain.All(IsModifierFreeResolver);
 
 	/// <summary>
 	/// Whether <paramref name="resolver"/> provably carries no contract modifier: a source-generated
-	/// <see cref="JsonSerializerContext"/>, or a <see cref="DefaultJsonTypeInfoResolver"/> without modifiers.
+	/// <see cref="JsonSerializerContext"/>, a <see cref="DefaultJsonTypeInfoResolver"/> without modifiers, or the
+	/// serializer's own combination of such resolvers.
 	/// </summary>
 	/// <remarks>
-	/// <see cref="JsonSerializableAttribute"/> declared on the context's own type marks a source-generated context, whose
-	/// contracts carry no replaced setter and supply no property type info. A hand-written context, a subclass of a
-	/// generated one included, can replace <see cref="JsonPropertyInfo.Set"/> or supply a property's type info in its own
-	/// <c>GetTypeInfo</c>, and so can a subclass of the default resolver without a modifier entry, so neither counts.
+	/// <para>
+	/// A source-generated context's contracts carry no replaced setter and supply no property type info. Its own type
+	/// declares both <see cref="JsonSerializableAttribute"/> and the <see cref="GeneratedCodeAttribute"/> marker of the
+	/// source generator, and both are required: a hand-written class can carry the serializable attribute, and only the
+	/// generator writes the marker. A hand-written context, a subclass of a generated one included, can replace
+	/// <see cref="JsonPropertyInfo.Set"/> or supply a property's type info in its own <c>GetTypeInfo</c>, and so can a
+	/// subclass of the default resolver without a modifier entry, so neither counts.
+	/// </para>
+	/// <para>
+	/// A combined resolver added to the options' chain, rather than assigned, stays one entry of it. An entry of the
+	/// exact chain type <see cref="JsonTypeInfoResolver.Combine(IJsonTypeInfoResolver[])"/> builds is judged by its
+	/// parts, because it is read-only from its creation and only dispatches to its parts in order. The exact type is
+	/// required because the bound chain of another options object is a subclass of it that stays mutable until its own
+	/// options freeze, so its parts can change after these options cached a contract through them.
+	/// </para>
 	/// </remarks>
 	private static bool IsModifierFreeResolver(IJsonTypeInfoResolver resolver) =>
 		resolver switch
 		{
-			JsonSerializerContext context => context.GetType().IsDefined(typeof(JsonSerializableAttribute), inherit: false),
+			JsonSerializerContext context =>
+				context.GetType().IsDefined(typeof(JsonSerializableAttribute), inherit: false)
+				&& context.GetType().GetCustomAttribute<GeneratedCodeAttribute>(inherit: false) is { Tool: "System.Text.Json.SourceGeneration" },
 			DefaultJsonTypeInfoResolver { Modifiers.Count: 0 } => resolver.GetType() == typeof(DefaultJsonTypeInfoResolver),
+			IList<IJsonTypeInfoResolver> parts when resolver.GetType() == CombinedChainType => parts.All(IsModifierFreeResolver),
 			_ => false
 		};
 

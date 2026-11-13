@@ -9,7 +9,8 @@
     <!-- PrivateSetterModel needs a private setter the System.Text.Json source generator cannot reach. The generator's
          diagnostics ignore #pragma, [SuppressMessage] and per-file .editorconfig severity, so only a compilation-wide
          setting such as NoWarn silences it. -->
-    <NoWarn>$(NoWarn);SYSLIB1038</NoWarn>
+    <!-- AttributedHandWrittenContext carries [JsonSerializable] without being partial, which the generator reports. -->
+    <NoWarn>$(NoWarn);SYSLIB1032;SYSLIB1038</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

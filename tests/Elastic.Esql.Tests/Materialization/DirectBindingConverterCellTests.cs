@@ -427,6 +427,63 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
+	public void ReadRows_HandWrittenContextWithSerializableAttribute_BindsLikeTheSerializer()
+	{
+		var options = new JsonSerializerOptions
+		{
+			TypeInfoResolver = JsonTypeInfoResolver.Combine(new AttributedHandWrittenContext(), new DefaultJsonTypeInfoResolver()),
+			PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+		};
+		// The serializer reads through the supplied contract, which doubles the cell.
+		JsonSerializer.Deserialize<CountModel>("""{"count":21}""", options)!.Count.Should().Be(42);
+
+		var rows = ReadRows<CountModel>("""{"columns":[{"name":"count","type":"integer"}],"values":[[21]]}""", options);
+
+		rows.Single().Count.Should().Be(42);
+	}
+
+	[Test]
+	public void Build_CombinedResolverAddedToTheChain_KeepsTheDirectBinder()
+	{
+		var options = new JsonSerializerOptions { TypeInfoResolver = new DefaultJsonTypeInfoResolver(), PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+		options.TypeInfoResolverChain.Add(JsonTypeInfoResolver.Combine(MaterializationTestJsonContext.Default, new DefaultJsonTypeInfoResolver()));
+		options.MakeReadOnly();
+
+		BuildLayout<CountModel>(options, ("count", "integer")).DirectBinder.Should().NotBeNull();
+	}
+
+	[Test]
+	public void Build_CombinedResolverWithModifierAddedToTheChain_KeepsTheFallback()
+	{
+		var options = new JsonSerializerOptions { TypeInfoResolver = new DefaultJsonTypeInfoResolver(), PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+		options.TypeInfoResolverChain.Add(
+			JsonTypeInfoResolver.Combine(new DefaultJsonTypeInfoResolver(), new DefaultJsonTypeInfoResolver { Modifiers = { SupplyDoublingCount } })
+		);
+		options.MakeReadOnly();
+
+		BuildLayout<CountModel>(options, ("count", "integer")).DirectBinder.Should().BeNull();
+	}
+
+	[Test]
+	public void ReadRows_NestedOptionsChainReplacedAfterTheFreeze_BindsLikeTheSerializer()
+	{
+		var inner = new JsonSerializerOptions { TypeInfoResolver = new DefaultJsonTypeInfoResolver { Modifiers = { SupplyDoublingCount } } };
+		inner.TypeInfoResolverChain.Add(new DefaultJsonTypeInfoResolver());
+		var outer = new JsonSerializerOptions { TypeInfoResolver = MaterializationTestJsonContext.Default, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+		outer.TypeInfoResolverChain.Add(inner.TypeInfoResolver!);
+		outer.MakeReadOnly();
+		// The serializer caches the doubled contract on the outer options before the inner parts change.
+		JsonSerializer.Deserialize<CountModel>("""{"count":21}""", outer)!.Count.Should().Be(42);
+		inner.TypeInfoResolverChain.Clear();
+		inner.TypeInfoResolverChain.Add(new DefaultJsonTypeInfoResolver());
+		inner.MakeReadOnly();
+
+		var rows = ReadRows<CountModel>("""{"columns":[{"name":"count","type":"integer"}],"values":[[21]]}""", outer);
+
+		rows.Single().Count.Should().Be(42);
+	}
+
+	[Test]
 	public void Build_PropertyLevelCustomListConverter_UsesConverterKind()
 	{
 		if (!RuntimeFeature.IsDynamicCodeSupported)
@@ -809,23 +866,32 @@ public class DirectBindingConverterCellTests
 
 		var reflected = typeInfo.Properties.First(property => property.Name == "count");
 		_ = typeInfo.Properties.Remove(reflected);
-		typeInfo.Properties.Add(
-			JsonMetadataServices.CreatePropertyInfo<int>(
-				typeInfo.Options,
-				new JsonPropertyInfoValues<int>
-				{
-					IsProperty = true,
-					IsPublic = true,
-					DeclaringType = typeof(CountModel),
-					PropertyName = nameof(CountModel.Count),
-					JsonPropertyName = "count",
-					PropertyTypeInfo = JsonMetadataServices.CreateValueInfo<int>(typeInfo.Options, new DoublingIntConverter()),
-					Getter = static model => ((CountModel)model).Count,
-					Setter = static (model, count) => ((CountModel)model).Count = count
-				}
-			)
-		);
+		typeInfo.Properties.Add(CreateDoublingCountProperty(typeInfo.Options));
 	}
+
+	internal static JsonTypeInfo CreateDoublingCountInfo(JsonSerializerOptions options)
+	{
+		var typeInfo = JsonTypeInfo.CreateJsonTypeInfo<CountModel>(options);
+		typeInfo.CreateObject = static () => new CountModel();
+		typeInfo.Properties.Add(CreateDoublingCountProperty(options));
+		return typeInfo;
+	}
+
+	private static JsonPropertyInfo CreateDoublingCountProperty(JsonSerializerOptions options) =>
+		JsonMetadataServices.CreatePropertyInfo<int>(
+			options,
+			new JsonPropertyInfoValues<int>
+			{
+				IsProperty = true,
+				IsPublic = true,
+				DeclaringType = typeof(CountModel),
+				PropertyName = nameof(CountModel.Count),
+				JsonPropertyName = "count",
+				PropertyTypeInfo = JsonMetadataServices.CreateValueInfo<int>(options, new DoublingIntConverter()),
+				Getter = static model => ((CountModel)model).Count,
+				Setter = static (model, count) => ((CountModel)model).Count = count
+			}
+		);
 
 	private enum Level { Low, Medium, High }
 
@@ -1056,11 +1122,6 @@ public class DirectBindingConverterCellTests
 		public int Y { get; } = y;
 	}
 
-	private sealed class CountModel
-	{
-		public int Count { get; set; }
-	}
-
 	private sealed class DateOnlyModel
 	{
 		public DateOnly Day { get; set; }
@@ -1277,3 +1338,20 @@ internal sealed class TranslatedListModel
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(TranslatedListModel))]
 internal sealed partial class TranslatedListContext : JsonSerializerContext;
+
+internal sealed class CountModel
+{
+	public int Count { get; set; }
+}
+
+// Carries the serializable attribute without the generator, which the compiler reports and the generator skips.
+[JsonSerializable(typeof(CountModel))]
+internal sealed class AttributedHandWrittenContext() : JsonSerializerContext(null), IJsonTypeInfoResolver
+{
+	protected override JsonSerializerOptions? GeneratedSerializerOptions => null;
+
+	public override JsonTypeInfo? GetTypeInfo(Type type) => null;
+
+	JsonTypeInfo? IJsonTypeInfoResolver.GetTypeInfo(Type type, JsonSerializerOptions options) =>
+		type == typeof(CountModel) ? DirectBindingConverterCellTests.CreateDoublingCountInfo(options) : null;
+}
