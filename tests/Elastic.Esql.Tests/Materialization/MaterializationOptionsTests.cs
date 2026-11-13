@@ -28,6 +28,19 @@ public class MaterializationOptionsTests
 	}
 
 	[Test]
+	public void ReadRows_OptionsWithoutResolver_BindsNestedColumn()
+	{
+		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+		const string json = """{"columns":[{"name":"host.name","type":"keyword"}],"values":[["ada"]]}""";
+
+		using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+		using var results = CreateReader(options).ReadRows<NestedHostLookup>(stream);
+		var rows = results.Rows.ToList();
+
+		rows.Single().Host.Name.Should().Be("ada");
+	}
+
+	[Test]
 	public void ReadScalar_WarmReader_AllocatesUnderOneKilobyte()
 	{
 		var options = CreateOptions();

@@ -288,6 +288,26 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
+	public void Build_ContractResolvedBeforeTheFreeze_KeepsTheDirectBinder()
+	{
+		if (!RuntimeFeature.IsDynamicCodeSupported)
+			return;
+
+		var options = new JsonSerializerOptions
+		{
+			TypeInfoResolver = JsonTypeInfoResolver.Combine(TranslatedListContext.Default, new DefaultJsonTypeInfoResolver()),
+			PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+		};
+		var metadata = new JsonMetadataManager(options);
+		_ = metadata.ResolvePropertyName(typeof(TranslatedListModel), typeof(TranslatedListModel).GetProperty(nameof(TranslatedListModel.Name))!);
+		options.MakeReadOnly();
+
+		var layout = BuildLayout<TranslatedListModel>(metadata, ("name", "keyword"), ("numbers", "integer"));
+
+		layout.DirectBinder.Should().NotBeNull();
+	}
+
+	[Test]
 	public void ReadRows_NullableCollectionFactoryWrappingCustomConverter_ThrowsLikeTheSerializer()
 	{
 		if (!RuntimeFeature.IsDynamicCodeSupported)
@@ -732,13 +752,16 @@ public class DirectBindingConverterCellTests
 
 	private static ColumnLayout BuildLayout<T>(params (string Name, string Type)[] columns) => BuildLayout<T>(CreateOptions(), columns);
 
-	private static ColumnLayout BuildLayout<T>(JsonSerializerOptions options, params (string Name, string Type)[] columns)
+	private static ColumnLayout BuildLayout<T>(JsonSerializerOptions options, params (string Name, string Type)[] columns) =>
+		BuildLayout<T>(new JsonMetadataManager(options), columns);
+
+	private static ColumnLayout BuildLayout<T>(JsonMetadataManager metadata, params (string Name, string Type)[] columns)
 	{
 		var columnInfos = new EsqlResponseReader.ColumnInfo[columns.Length];
 		for (var i = 0; i < columns.Length; i++)
 			columnInfos[i] = new EsqlResponseReader.ColumnInfo(columns[i].Name, columns[i].Type);
 
-		return ColumnLayout.Build(columnInfos, typeof(T), new JsonMetadataManager(options));
+		return ColumnLayout.Build(columnInfos, typeof(T), metadata);
 	}
 
 	private static List<T> ReadRows<T>(string json, JsonSerializerOptions options)
@@ -1191,3 +1214,15 @@ public class DirectBindingConverterCellTests
 		public override ReferenceResolver CreateResolver() => ReferenceHandler.Preserve.CreateResolver();
 	}
 }
+
+internal sealed class TranslatedListModel
+{
+	public string Name { get; set; } = string.Empty;
+
+	[JsonConverter(typeof(DeferringConverterFactory))]
+	public List<int> Numbers { get; set; } = [];
+}
+
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+[JsonSerializable(typeof(TranslatedListModel))]
+internal sealed partial class TranslatedListContext : JsonSerializerContext;

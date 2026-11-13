@@ -4,6 +4,7 @@
 
 using System.Buffers;
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 #if NET10_0_OR_GREATER
 using System.IO.Pipelines;
 #endif
@@ -112,15 +113,30 @@ internal sealed partial class EsqlResponseReader
 	}
 #endif
 
+	[UnconditionalSuppressMessage(
+		"AOT",
+		"IL3050",
+		Justification = "The trimmer reads IsReflectionEnabledByDefault as a constant, off in trimmed and AOT publishing, so this call is removed there."
+	)]
+	[UnconditionalSuppressMessage(
+		"Trimming",
+		"IL2026",
+		Justification = "The trimmer reads IsReflectionEnabledByDefault as a constant, off in trimmed and AOT publishing, so this call is removed there."
+	)]
 	private void EnsureOptionsReadOnly()
 	{
 		if (_optionsFrozen)
 			return;
-		// Mutable options re-resolve a fresh contract on every GetTypeInfo call,
-		// but frozen options reuse the cache at near-zero cost. STJ requires a
-		// TypeInfoResolver to be set before accepting MakeReadOnly.
+
+		// The serializer freezes the options on its first call, giving options without a resolver its reflection resolver,
+		// and shares one contract per type only from then on, so a layout built on mutable options would read contracts the
+		// serializer never uses. With reflection disabled, options without a resolver cannot be frozen, and the serializer
+		// fails the read itself.
 		if (!Options.IsReadOnly && Options.TypeInfoResolver is not null)
 			Options.MakeReadOnly();
+		else if (!Options.IsReadOnly && JsonSerializer.IsReflectionEnabledByDefault)
+			Options.MakeReadOnly(populateMissingResolver: true);
+
 		_optionsFrozen = true;
 	}
 
@@ -138,7 +154,9 @@ internal sealed partial class EsqlResponseReader
 			return cachedEntry.Layout;
 
 		var layout = ColumnLayout.Build(columns, targetType, _metadata);
-		_columnLayoutCache[key] = new ColumnLayoutCacheEntry(columns, layout);
+		// Mutable options resolve contracts the serializer does not keep, so a layout built on them is not reused.
+		if (Options.IsReadOnly)
+			_columnLayoutCache[key] = new ColumnLayoutCacheEntry(columns, layout);
 		return layout;
 	}
 

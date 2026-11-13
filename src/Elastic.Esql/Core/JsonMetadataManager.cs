@@ -108,7 +108,7 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 	/// have <see cref="JsonTypeInfoKind.None"/> and cannot be used as ES|QL entity types.
 	/// </summary>
 	public JsonTypeInfo GetPropertyBasedTypeInfo(Type type) =>
-		_typeInfoCache.GetOrAdd(type, t =>
+		Cached(_typeInfoCache, type, t =>
 		{
 			var typeInfo = options.GetTypeInfo(t);
 
@@ -132,10 +132,10 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 	}
 
 	/// <summary>
-	/// Returns all JSON property names for a type, cached for the provider lifetime.
+	/// Returns all JSON property names for a type, cached once the options are read-only.
 	/// </summary>
 	public HashSet<string> GetAllPropertyNames(Type type) =>
-		_propertyNamesCache.GetOrAdd(type, t =>
+		Cached(_propertyNamesCache, type, t =>
 		{
 			var typeInfo = GetPropertyBasedTypeInfo(t);
 			var names = new HashSet<string>(StringComparer.Ordinal);
@@ -147,11 +147,11 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 
 	/// <summary>
 	/// Returns a case-insensitive CLR-member-name to <see cref="JsonPropertyInfo"/> map for
-	/// <paramref name="type"/>, cached for the provider lifetime. Used to resolve constructor
+	/// <paramref name="type"/>, cached once the options are read-only. Used to resolve constructor
 	/// parameter names to their corresponding JSON property metadata.
 	/// </summary>
 	public Dictionary<string, JsonPropertyInfo> GetConstructorPropertyMap(Type type) =>
-		_ctorPropertyMapCache.GetOrAdd(type, t =>
+		Cached(_ctorPropertyMapCache, type, t =>
 		{
 			var typeInfo = GetPropertyBasedTypeInfo(t);
 			var map = new Dictionary<string, JsonPropertyInfo>(StringComparer.OrdinalIgnoreCase);
@@ -187,10 +187,10 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 
 	/// <summary>
 	/// Returns <see cref="JsonSerializerOptions"/> with the specified <paramref name="converter"/>
-	/// inserted at highest priority. Results are cached by converter runtime type.
+	/// inserted at highest priority. Results are cached by converter runtime type once the options are read-only.
 	/// </summary>
 	public JsonSerializerOptions GetOptionsWithConverter(JsonConverter converter) =>
-		_converterOptionsCache.GetOrAdd(converter.GetType(), _ =>
+		Cached(_converterOptionsCache, converter.GetType(), _ =>
 		{
 			var result = new JsonSerializerOptions(options);
 			result.Converters.Insert(0, converter);
@@ -199,14 +199,14 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 
 	/// <summary>Returns the typed setter compiled for <paramref name="property"/>, or null where none can be compiled.</summary>
 	public Delegate? GetOrCompileSetter(JsonPropertyInfo property, DirectBinderKind kind) =>
-		_compiledSetterCache.GetOrAdd(property, p => DirectSetterCompiler.TryCreate(p, kind));
+		Cached(_compiledSetterCache, property, p => DirectSetterCompiler.TryCreate(p, kind));
 
 	/// <summary>Returns the contract that reads <paramref name="property"/> through <paramref name="converter"/>, or null when none can be built.</summary>
 	public JsonTypeInfo? GetOrCreatePropertyContract(JsonPropertyInfo property, JsonConverter converter) =>
-		_propertyContractCache.GetOrAdd(property, p => PropertyConverterContracts.TryCreate(p.PropertyType, converter, options));
+		Cached(_propertyContractCache, property, p => PropertyConverterContracts.TryCreate(p.PropertyType, converter, options));
 
 	private Dictionary<MemberInfo, JsonPropertyInfo> GetMemberPropertyMap(Type type) =>
-		_memberPropertyMapCache.GetOrAdd(type, t =>
+		Cached(_memberPropertyMapCache, type, t =>
 		{
 			var typeInfo = GetPropertyBasedTypeInfo(t);
 			var result = new Dictionary<MemberInfo, JsonPropertyInfo>();
@@ -219,4 +219,9 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 
 			return result;
 		});
+
+	// The serializer resolves a fresh contract on every lookup while the options are mutable and shares one per type once
+	// they are read-only, so a contract kept from before the freeze is one the serializer never uses again.
+	private TValue Cached<TKey, TValue>(ConcurrentDictionary<TKey, TValue> cache, TKey key, Func<TKey, TValue> factory) where TKey : notnull =>
+		options.IsReadOnly ? cache.GetOrAdd(key, factory) : factory(key);
 }

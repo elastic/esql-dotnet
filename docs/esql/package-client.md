@@ -377,15 +377,15 @@ attribute all bind this way. A property-level converter needs a runtime that sup
 a type with one stays on the fallback. It must also be a converter for the property type itself, after a factory is
 expanded. A factory-made collection, dictionary or nested-object converter of the serializer's own reads on the direct
 path only when it is the converter instance the type's own contract carries, the one a factory that returns
-`options.GetConverter(type)` hands back on read-only options. The reader makes the options read-only before it builds a
-layout, but a source-generated contract runs a property's factory when the contract is first built, which a query that
-names a member of the type can do earlier, and the type then takes the fallback. Any other such converter keeps the type
-on the fallback too, where the serializer applies it. That includes a new instance of the serializer's nullable wrapper
-or of a converter that `JsonMetadataServices` creates, because only the instance the own contract carries is known to
-read as that contract does. A property whose type the resolver does not resolve keeps the type on the fallback as well
-when it has such a converter. A converter declared for a base type keeps the type on the fallback, where the serializer
-applies it through its casting converter. The compiled setters described under AOT-safe configuration need dynamic code
-too, and without it a directly bound row assigns its cells through the contract's own `JsonPropertyInfo.Set`.
+`options.GetConverter(type)` hands back on read-only options. The reader makes the options read-only before it binds the
+first row, and a contract resolved earlier, by a query that names a member of the type, is not kept, so the direct path
+reads the contracts the serializer uses. Any other such converter keeps the type on the fallback, where the serializer
+applies it. That includes a new instance of the serializer's nullable wrapper or of a converter that
+`JsonMetadataServices` creates, because only the instance the own contract carries is known to read as that contract
+does. A property whose type the resolver does not resolve keeps the type on the fallback as well when it has such a
+converter. A converter declared for a base type keeps the type on the fallback, where the serializer applies it through
+its casting converter. The compiled setters described under AOT-safe configuration need dynamic code too, and without it
+a directly bound row assigns its cells through the contract's own `JsonPropertyInfo.Set`.
 
 When a converter that does not come from `System.Text.Json` reads a property whose type is a collection, `byte[]`
 included, a single-valued cell reaches it wrapped in an array, the shape a multi-valued cell has, so the converter must

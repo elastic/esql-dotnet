@@ -50,10 +50,9 @@ internal static class PropertyConverterContracts
 		// metadata API's converter wrapper keep one runtime type whatever they wrap and expose no wrapped converter, so
 		// only the instance the own contract carries is known to read as that contract does. A factory reaches that instance
 		// through options.GetConverter on read-only options only, because mutable options resolve a fresh contract on every
-		// lookup. The reader freezes options that carry a resolver before it builds a layout, but a source-generated
-		// contract runs a property's factory when the contract is first built, which query translation can do earlier,
-		// and the type then takes the fallback. Without an own contract, the serializer reads the property through
-		// metadata the caller supplied, which the direct path has no access to.
+		// lookup. The reader freezes the options before it builds a layout, and the metadata manager keeps no contract it
+		// resolved before that. Without an own contract, the serializer reads the property through metadata the caller
+		// supplied, which the direct path has no access to.
 		if (TryCreateValueContract(propertyType, converter, options) is not { } valueContract)
 			return null;
 
