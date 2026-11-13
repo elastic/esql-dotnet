@@ -116,10 +116,15 @@ Assigning `JsonTypeInfoResolver.Combine` over the copied parts as the copy's res
 `Combine` takes a snapshot of a chain argument's parts. A hand-written `JsonSerializerContext` and a subclass of the
 default resolver do not count, since either can supply property metadata or replace `JsonPropertyInfo.Set` in its own
 `GetTypeInfo`. A context that carries `[JsonSerializable]` without the generator's marker, such as one not declared
-`partial`, counts as hand-written, and so does a subclass of a source-generated context. Any other resolver keeps every
-result type on the fallback described under How rows are materialized. That includes a context or a default resolver
-wrapped by `JsonTypeInfoResolver.WithAddedModifier`. The decision is made the first time a result type is read with a
-given set of columns, with the options already read-only.
+`partial`, counts as hand-written, and so does a subclass of a source-generated context. Those attributes are the sign
+the library reads, and they are the contract: a context admitted to the direct path is one the source generator
+produced. A hand-written class that declares the generator's attributes itself is outside that contract, because every
+member the generator emits can be declared by hand and nothing else tells the two apart. The direct path then reads each
+cell through the contract the options resolve for the property's type, whatever type info such a class supplies for the
+property, and the row can differ from what the serializer reads. Any other resolver keeps every result type on the
+fallback described under How rows are materialized. That includes a context or a default resolver wrapped by
+`JsonTypeInfoResolver.WithAddedModifier`. The decision is made the first time a result type is read with a given set of
+columns, with the options already read-only.
 
 A cell that its own contract rejects, or a converter result of null for a property that does not accept null, is read
 again by the serializer so the error carries the property path. A deserialization callback on a nested type in that cell
