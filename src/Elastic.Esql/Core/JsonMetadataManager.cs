@@ -48,15 +48,17 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 	/// <remarks>
 	/// The serializer resolves through the object in <see cref="JsonSerializerOptions.TypeInfoResolver"/>, so that
 	/// object is judged. <see cref="JsonSerializerOptions.TypeInfoResolverChain"/> is a flattened copy of its parts,
-	/// taken at the property's first read, and a bound chain of another options object assigned as the resolver stays
-	/// live behind that copy: its parts can change after these options cached a contract through them, and the copy
-	/// then looks clean while the cached contract still carries a modifier. The options' own chain, which becomes the
-	/// resolver once an entry is added to it, is judged by its parts because it turns read-only with these options. Any
-	/// other resolver goes through the same judgment as a chain entry, so a combined resolver assigned to the options
-	/// is judged by its parts, the combination the library builds from a context included. A missing resolver counts as
-	/// modifier-free because the serializer fills in its own reflection resolver without adding it to the chain. The
-	/// answer is read at each layout build: a part that has not resolved a type yet can still gain a modifier after the
-	/// options are read-only, while a part that resolved the build's type is locked by then.
+	/// taken at the property's first read. The bound chain of another options object does not count, whether it is
+	/// assigned as the resolver, added to the chain or carried into a copy made with the
+	/// <see cref="JsonSerializerOptions"/> copy constructor, because its parts can change after these options cached a
+	/// contract through them. As the resolver it stays live behind the flattened copy, which then looks clean while the
+	/// cached contract still carries a modifier. The options' own chain, which becomes the resolver once an entry is
+	/// added to it, is judged by its parts because it turns read-only with these options. Any other resolver goes
+	/// through the same judgment as a chain entry, so a combined resolver assigned to the options is judged by its
+	/// parts, the combination the library builds from a context included. A missing resolver counts as modifier-free
+	/// because the serializer fills in its own reflection resolver when it first configures the options. The answer is
+	/// read at each layout build: a part that has not resolved a type yet can still gain a modifier after the options
+	/// are read-only, while a part that resolved the build's type is locked by then.
 	/// </remarks>
 	public bool ResolverIsModifierFree =>
 		options.TypeInfoResolver switch
@@ -81,11 +83,11 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 	/// subclass of the default resolver without a modifier entry, so neither counts.
 	/// </para>
 	/// <para>
-	/// A combined resolver added to the options' chain, rather than assigned, stays one entry of it. An entry of the
-	/// exact chain type <see cref="JsonTypeInfoResolver.Combine(IJsonTypeInfoResolver[])"/> builds is judged by its
-	/// parts, because it is read-only from its creation and only dispatches to its parts in order. The exact type is
-	/// required because the bound chain of another options object is a subclass of it that stays mutable until its own
-	/// options freeze, so its parts can change after these options cached a contract through them.
+	/// A combined resolver, assigned as the resolver or added to the options' chain as one entry, is judged by its
+	/// parts when it has the exact chain type <see cref="JsonTypeInfoResolver.Combine(IJsonTypeInfoResolver[])"/>
+	/// builds, because that type is read-only from its creation and only dispatches to its parts in order. The exact
+	/// type is required because the bound chain of another options object is a subclass of it that stays mutable until
+	/// its own options freeze, so its parts can change after these options cached a contract through them.
 	/// </para>
 	/// </remarks>
 	private static bool IsModifierFreeResolver(IJsonTypeInfoResolver resolver) =>
