@@ -482,6 +482,24 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
+	public void ReadRows_AssignedOptionsChainReplacedAfterTheFreeze_BindsLikeTheSerializer()
+	{
+		var inner = new JsonSerializerOptions { TypeInfoResolver = new DefaultJsonTypeInfoResolver { Modifiers = { SupplyDoublingCount } } };
+		inner.TypeInfoResolverChain.Add(new DefaultJsonTypeInfoResolver());
+		var outer = new JsonSerializerOptions { TypeInfoResolver = inner.TypeInfoResolver, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+		outer.MakeReadOnly();
+		// The serializer caches the doubled contract on the outer options before the inner parts change.
+		JsonSerializer.Deserialize<CountModel>("""{"count":21}""", outer)!.Count.Should().Be(42);
+		inner.TypeInfoResolverChain.Clear();
+		inner.TypeInfoResolverChain.Add(new DefaultJsonTypeInfoResolver());
+		inner.MakeReadOnly();
+
+		var rows = ReadRows<CountModel>("""{"columns":[{"name":"count","type":"integer"}],"values":[[21]]}""", outer);
+
+		rows.Single().Count.Should().Be(42);
+	}
+
+	[Test]
 	public void Build_PropertyLevelCustomListConverter_UsesConverterKind()
 	{
 		if (!RuntimeFeature.IsDynamicCodeSupported)

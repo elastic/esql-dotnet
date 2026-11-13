@@ -46,13 +46,25 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 	/// cells as the serializer does.
 	/// </summary>
 	/// <remarks>
-	/// The resolver chain exposes the parts of a combined resolver assigned to the options, so each part is judged on
-	/// its own, the combination the library builds from a context included. An empty chain counts as modifier-free
-	/// because the serializer fills in its own reflection resolver without adding it to the chain. The answer is read
-	/// at each layout build: a part that has not resolved a type yet can still gain a modifier after the options are
-	/// read-only, while a part that resolved the build's type is locked by then.
+	/// The serializer resolves through the object in <see cref="JsonSerializerOptions.TypeInfoResolver"/>, so that
+	/// object is judged. <see cref="JsonSerializerOptions.TypeInfoResolverChain"/> is a flattened copy of its parts,
+	/// taken at the property's first read, and a bound chain of another options object assigned as the resolver stays
+	/// live behind that copy: its parts can change after these options cached a contract through them, and the copy
+	/// then looks clean while the cached contract still carries a modifier. The options' own chain, which becomes the
+	/// resolver once an entry is added to it, is judged by its parts because it turns read-only with these options. Any
+	/// other resolver goes through the same judgment as a chain entry, so a combined resolver assigned to the options
+	/// is judged by its parts, the combination the library builds from a context included. A missing resolver counts as
+	/// modifier-free because the serializer fills in its own reflection resolver without adding it to the chain. The
+	/// answer is read at each layout build: a part that has not resolved a type yet can still gain a modifier after the
+	/// options are read-only, while a part that resolved the build's type is locked by then.
 	/// </remarks>
-	public bool ResolverIsModifierFree => options.TypeInfoResolverChain.All(IsModifierFreeResolver);
+	public bool ResolverIsModifierFree =>
+		options.TypeInfoResolver switch
+		{
+			null => true,
+			IList<IJsonTypeInfoResolver> chain when ReferenceEquals(chain, options.TypeInfoResolverChain) => chain.All(IsModifierFreeResolver),
+			var resolver => IsModifierFreeResolver(resolver)
+		};
 
 	/// <summary>
 	/// Whether <paramref name="resolver"/> provably carries no contract modifier: a source-generated

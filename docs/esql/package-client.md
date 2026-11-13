@@ -109,13 +109,15 @@ resolver is a `JsonSerializerContext` produced by the source generator, which ma
 or a plain `DefaultJsonTypeInfoResolver` without modifiers, alone or in a chain built with
 `JsonTypeInfoResolver.Combine` or the options' `TypeInfoResolverChain`, such as the client's combination of a context
 with the reflection resolver. A resolver built with `JsonTypeInfoResolver.Combine` and added to `TypeInfoResolverChain`
-stays one entry of the chain, and its parts are judged the same way. A hand-written `JsonSerializerContext` and a
-subclass of the default resolver do not count, since either can supply property metadata or replace
-`JsonPropertyInfo.Set` in its own `GetTypeInfo`. A context that carries `[JsonSerializable]` without the generator's
-marker, such as one not declared `partial`, counts as hand-written, and so does a subclass of a source-generated
-context. Any other resolver keeps every result type on the fallback described under How rows are materialized. That
-includes a context or a default resolver wrapped by `JsonTypeInfoResolver.WithAddedModifier`. The decision is made the
-first time a result type is read with a given set of columns, with the options already read-only.
+stays one entry of the chain, and its parts are judged the same way. The `TypeInfoResolverChain` of another options
+instance does not count when it is assigned as the resolver, because its parts can change after a contract is cached
+through them. A hand-written `JsonSerializerContext` and a subclass of the default resolver do not count, since either
+can supply property metadata or replace `JsonPropertyInfo.Set` in its own `GetTypeInfo`. A context that carries
+`[JsonSerializable]` without the generator's marker, such as one not declared `partial`, counts as hand-written, and so
+does a subclass of a source-generated context. Any other resolver keeps every result type on the fallback described
+under How rows are materialized. That includes a context or a default resolver wrapped by
+`JsonTypeInfoResolver.WithAddedModifier`. The decision is made the first time a result type is read with a given set of
+columns, with the options already read-only.
 
 A cell that its own contract rejects, or a converter result of null for a property that does not accept null, is read
 again by the serializer so the error carries the property path. A deserialization callback on a nested type in that cell
