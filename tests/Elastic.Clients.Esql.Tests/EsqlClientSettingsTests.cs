@@ -4,6 +4,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using Elastic.Clients.Esql.Tests.Infrastructure;
 using Elastic.Esql.Core;
 using Elastic.Esql.Materialization;
@@ -113,6 +114,25 @@ public class EsqlClientSettingsTests
 		_ = resolved.Should().NotBeSameAs(custom);
 		_ = resolved.PropertyNamingPolicy.Should().Be(JsonNamingPolicy.CamelCase);
 	}
+
+	[Test]
+	public void ResolveJsonOptions_NoConfiguration_ReturnsReadOnlyOptions() =>
+		CreateSettings().ResolveJsonOptions().IsReadOnly.Should().BeTrue();
+
+	[Test]
+	public void ResolveJsonOptions_Context_ReturnsReadOnlyOptions() =>
+		CreateSettings(context: ClientTestJsonContext.Default).ResolveJsonOptions().IsReadOnly.Should().BeTrue();
+
+	[Test]
+	public void ResolveJsonOptions_ExplicitOptions_LeavesThemMutable()
+	{
+		var custom = new JsonSerializerOptions { TypeInfoResolver = new DefaultJsonTypeInfoResolver() };
+
+		_ = CreateSettings(options: custom).ResolveJsonOptions();
+
+		custom.IsReadOnly.Should().BeFalse();
+	}
+
 	[Test]
 	public void ResolveJsonOptions_NoConfiguration_KeepsTheDirectBinder()
 	{
@@ -129,10 +149,6 @@ public class EsqlClientSettingsTests
 		_ = BuildNameLayout(resolved).DirectBinder.Should().NotBeNull();
 	}
 
-	private static ColumnLayout BuildNameLayout(JsonSerializerOptions options)
-	{
-		// The reader freezes the options before it binds the first row, so the layout here sees the same state.
-		options.MakeReadOnly(populateMissingResolver: true);
-		return ColumnLayout.Build([new EsqlResponseReader.ColumnInfo("name", "keyword")], typeof(ClientTestDocument), new JsonMetadataManager(options));
-	}
+	private static ColumnLayout BuildNameLayout(JsonSerializerOptions options) =>
+		ColumnLayout.Build([new EsqlResponseReader.ColumnInfo("name", "keyword")], typeof(ClientTestDocument), new JsonMetadataManager(options));
 }

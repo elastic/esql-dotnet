@@ -87,6 +87,32 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 			_ => false
 		};
 
+	/// <summary>
+	/// Makes <paramref name="options"/> read-only the way the serializer's first call does, and leaves options without a
+	/// resolver mutable when reflection is disabled.
+	/// </summary>
+	[UnconditionalSuppressMessage(
+		"AOT",
+		"IL3050",
+		Justification = "The trimmer reads IsReflectionEnabledByDefault as a constant, off in trimmed and AOT publishing, so this call is removed there."
+	)]
+	[UnconditionalSuppressMessage(
+		"Trimming",
+		"IL2026",
+		Justification = "The trimmer reads IsReflectionEnabledByDefault as a constant, off in trimmed and AOT publishing, so this call is removed there."
+	)]
+	internal static void TryMakeReadOnly(JsonSerializerOptions options)
+	{
+		// The serializer freezes the options on its first call, giving options without a resolver its reflection resolver,
+		// and shares one contract per type only from then on, so a layout or a cached contract on mutable options would read
+		// contracts the serializer never uses. With reflection disabled, options without a resolver cannot be frozen, and
+		// the serializer fails the read itself.
+		if (options.TypeInfoResolver is not null)
+			options.MakeReadOnly();
+		else if (JsonSerializer.IsReflectionEnabledByDefault)
+			options.MakeReadOnly(populateMissingResolver: true);
+	}
+
 	/// <summary>Returns the contract <paramref name="options"/> resolve for <paramref name="type"/>, or null when the type has no usable metadata.</summary>
 	[UnconditionalSuppressMessage(
 		"AOT",

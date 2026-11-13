@@ -390,8 +390,6 @@ public class DirectBindingConverterCellTests
 	public void Build_DefaultProviderOptions_KeepTheDirectBinder()
 	{
 		var metadata = new EsqlQueryProvider().Metadata;
-		// The reader freezes the options before it builds the first layout, so the layout here sees the same state.
-		metadata.Options.MakeReadOnly(populateMissingResolver: true);
 
 		BuildLayout<CountModel>(metadata, ("count", "integer")).DirectBinder.Should().NotBeNull();
 	}

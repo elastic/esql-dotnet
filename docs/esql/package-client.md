@@ -94,12 +94,16 @@ attribute; any other type must be declared in the context, or materialization fa
 If neither `JsonSerializerContext` nor `JsonSerializerOptions` is provided, `EsqlClient` defaults to camelCase naming.
 
 Whichever options the client ends up with are made read-only when the first result is materialized, the same way
-`JsonSerializer` freezes options on its own first use. Register every converter, naming policy and resolver before
-running the first query; changing them on an instance that has already been used throws.
+`JsonSerializer` freezes options on its own first use. Translation makes them read-only earlier when it serializes an
+integer, decimal, enum or `Guid` literal or a named parameter through the serializer. The options the client builds
+itself, the camelCase defaults and the copy it makes from a `JsonSerializerContext`, are read-only from construction.
+Register every converter, naming policy and resolver before running the first query; changing them on an instance that
+has already been used throws.
 
 On runtimes that support dynamic code, a directly bound row assigns its built-in scalar cells through setters compiled
 for the target member. Only a public setter or a public field gets a compiled setter, and any other member is assigned
-through the contract's `JsonPropertyInfo.Set`, which throws for a member a source-generated context cannot reach.
+through the contract's `JsonPropertyInfo.Set`, which throws for a member a source-generated context cannot reach. A
+struct target gets no compiled setter, so each of its members is assigned through the contract's `JsonPropertyInfo.Set`.
 Converter cells are assigned through `JsonPropertyInfo.Set` too. A row is bound directly only when every part of the
 resolver is a `JsonSerializerContext` produced by the source generator, which marks it with a `GeneratedCode` attribute,
 or a plain `DefaultJsonTypeInfoResolver` without modifiers, alone or in a chain built with

@@ -4,7 +4,6 @@
 
 using System.Buffers;
 using System.Collections.Concurrent;
-using System.Diagnostics.CodeAnalysis;
 #if NET10_0_OR_GREATER
 using System.IO.Pipelines;
 #endif
@@ -23,7 +22,6 @@ internal sealed partial class EsqlResponseReader
 {
 	private readonly JsonMetadataManager _metadata;
 	private readonly ConcurrentDictionary<ColumnLayoutCacheKey, ColumnLayoutCacheEntry> _columnLayoutCache = [];
-	private bool _optionsFrozen;
 
 	/// <summary>The <see cref="JsonSerializerOptions"/> used for deserialization.</summary>
 	public JsonSerializerOptions Options => _metadata.Options;
@@ -113,31 +111,11 @@ internal sealed partial class EsqlResponseReader
 	}
 #endif
 
-	[UnconditionalSuppressMessage(
-		"AOT",
-		"IL3050",
-		Justification = "The trimmer reads IsReflectionEnabledByDefault as a constant, off in trimmed and AOT publishing, so this call is removed there."
-	)]
-	[UnconditionalSuppressMessage(
-		"Trimming",
-		"IL2026",
-		Justification = "The trimmer reads IsReflectionEnabledByDefault as a constant, off in trimmed and AOT publishing, so this call is removed there."
-	)]
 	private void EnsureOptionsReadOnly()
 	{
-		if (_optionsFrozen)
-			return;
-
-		// The serializer freezes the options on its first call, giving options without a resolver its reflection resolver,
-		// and shares one contract per type only from then on, so a layout built on mutable options would read contracts the
-		// serializer never uses. With reflection disabled, options without a resolver cannot be frozen, and the serializer
-		// fails the read itself.
-		if (!Options.IsReadOnly && Options.TypeInfoResolver is not null)
-			Options.MakeReadOnly();
-		else if (!Options.IsReadOnly && JsonSerializer.IsReflectionEnabledByDefault)
-			Options.MakeReadOnly(populateMissingResolver: true);
-
-		_optionsFrozen = true;
+		// The options' own state is the guard, because a flag set by one attempt could stop a retry the state still allows.
+		if (!Options.IsReadOnly)
+			JsonMetadataManager.TryMakeReadOnly(Options);
 	}
 
 	/// <summary>
