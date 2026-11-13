@@ -18,7 +18,6 @@ namespace Elastic.Esql.Core;
 /// </summary>
 internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 {
-	private readonly ConcurrentDictionary<Type, JsonTypeInfo> _typeInfoCache = [];
 	private readonly ConcurrentDictionary<Type, HashSet<string>> _propertyNamesCache = [];
 	private readonly ConcurrentDictionary<Type, JsonSerializerOptions> _converterOptionsCache = [];
 	private readonly ConcurrentDictionary<Type, Dictionary<string, JsonPropertyInfo>> _ctorPropertyMapCache = [];
@@ -108,18 +107,17 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 	/// type uses property-based serialization. Types with a type-level <see cref="JsonConverterAttribute"/>
 	/// have <see cref="JsonTypeInfoKind.None"/> and cannot be used as ES|QL entity types.
 	/// </summary>
-	public JsonTypeInfo GetPropertyBasedTypeInfo(Type type) =>
-		Cached(_typeInfoCache, type, t =>
-		{
-			var typeInfo = options.GetTypeInfo(t);
+	public JsonTypeInfo GetPropertyBasedTypeInfo(Type type)
+	{
+		var typeInfo = options.GetTypeInfo(type);
 
-			if (typeInfo.Kind == JsonTypeInfoKind.None)
-				throw new NotSupportedException(
-					$"Type '{t.Name}' uses a custom JsonConverter and cannot be used as an ES|QL entity type. " +
-					"ES|QL requires property-based serialization.");
+		if (typeInfo.Kind == JsonTypeInfoKind.None)
+			throw new NotSupportedException(
+				$"Type '{type.Name}' uses a custom JsonConverter and cannot be used as an ES|QL entity type. " +
+				"ES|QL requires property-based serialization.");
 
-			return typeInfo;
-		});
+		return typeInfo;
+	}
 
 	/// <summary>
 	/// Resolves the JSON property name for a concrete type member via <see cref="JsonTypeInfo"/> metadata.
@@ -202,9 +200,13 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 	public Delegate? GetOrCompileSetter(JsonPropertyInfo property, DirectBinderKind kind) =>
 		Cached(_compiledSetterCache, property, p => DirectSetterCompiler.TryCreate(p, kind));
 
-	/// <summary>Returns the contract that reads <paramref name="property"/> through <paramref name="converter"/>, or null when none can be built.</summary>
-	public JsonTypeInfo? GetOrCreatePropertyContract(JsonPropertyInfo property, JsonConverter converter) =>
-		Cached(_propertyContractCache, property, p => PropertyConverterContracts.TryCreate(p.PropertyType, converter, options));
+	/// <summary>Returns the contract that reads <paramref name="property"/> through its custom converter, or null when none can be built.</summary>
+	public JsonTypeInfo? GetOrCreatePropertyContract(JsonPropertyInfo property) =>
+		Cached(
+			_propertyContractCache,
+			property,
+			p => p.CustomConverter is { } converter ? PropertyConverterContracts.TryCreate(p.PropertyType, converter, options) : null
+		);
 
 	private Dictionary<MemberInfo, JsonPropertyInfo> GetMemberPropertyMap(Type type) =>
 		Cached(_memberPropertyMapCache, type, t =>

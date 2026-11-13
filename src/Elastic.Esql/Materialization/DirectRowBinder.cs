@@ -141,8 +141,8 @@ internal sealed class DirectRowBinder
 			if (!converterCellsBind)
 				return null;
 
-			var cellTypeInfo = property.CustomConverter is { } customConverter
-				? metadata.GetOrCreatePropertyContract(property, customConverter)
+			var cellTypeInfo = property.CustomConverter is not null
+				? metadata.GetOrCreatePropertyContract(property)
 				: JsonMetadataManager.TryResolveTypeInfo(property.PropertyType, options);
 			if (cellTypeInfo is null)
 				return null;
