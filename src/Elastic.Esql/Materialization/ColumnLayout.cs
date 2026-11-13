@@ -128,7 +128,7 @@ internal sealed class ColumnLayout
 		// The binder is cached together with this layout in the reader's column layout cache, so
 		// eligibility is decided once per (target type, column schema).
 		var directBinder = branchNodeCount == 0 && maxDepth <= 1 && columnCount > 0 && typeInfo is not null
-			? DirectRowBinder.TryCreate(leafNodesByColumnIndex, typeInfo, metadata)
+			? DirectRowBinder.TryCreate(leafNodesByColumnIndex, columns, typeInfo, metadata)
 			: null;
 
 		return new ColumnLayout(root, columnCount, maxDepth, leafNodesByColumnIndex, branchNodeCount, directBinder);

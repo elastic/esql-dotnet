@@ -127,14 +127,14 @@ internal sealed partial class EsqlResponseReader
 	}
 
 	/// <summary>
-	/// Binds a row with converter cells or string list cells in three steps. The validating pass checks every cell's shape,
-	/// parses each built-in cell other than a string, and assigns nothing, so a row that fails it or ends mid-buffer has run
-	/// no nested type's deserialization callback. Once that pass has seen the closing bracket, each string cell and each
-	/// string list cell decodes into the scratch, and a string the reader cannot decode sends the row to the fallback before
-	/// any converter cell runs. The assigning pass then assigns the cells in column order, the order the serializer's
-	/// setters see. A cell that only the assigning pass decodes can still send the row to the fallback (a converter cell its
-	/// contract rejects, a null converter result for a property that does not accept null) after the converter cells in
-	/// that cell or before it have run their callbacks.
+	/// Binds a row with converter, string list or enum cells in three steps. The validating pass checks every cell's shape,
+	/// parses each built-in cell other than a string and each enum cell, and assigns nothing, so a row that fails it or ends
+	/// mid-buffer has run no nested type's deserialization callback. Once that pass has seen the closing bracket, each string
+	/// cell and each string list cell decodes into the scratch, and a string the reader cannot decode sends the row to the
+	/// fallback before any converter cell runs. The assigning pass then assigns the cells in column order, the order the
+	/// serializer's setters see. A cell that only the assigning pass decodes can still send the row to the fallback (a
+	/// converter cell its contract rejects, a null converter result for a property that does not accept null) after the
+	/// converter cells in that cell or before it have run their callbacks.
 	/// </summary>
 	private static bool TryBindValidatedRow<T>(
 		ref Utf8JsonReader reader,
@@ -184,8 +184,8 @@ internal sealed partial class EsqlResponseReader
 
 	/// <summary>
 	/// Checks every cell's token shape, skips over every converter cell, and records the extent of each non-null cell
-	/// with the parsed value of each built-in cell other than a string. Returns false with <paramref name="incomplete"/>
-	/// set when the buffer ends mid-row.
+	/// with the parsed value of each built-in cell other than a string and the bits of each enum cell. Returns false with
+	/// <paramref name="incomplete"/> set when the buffer ends mid-row.
 	/// </summary>
 	private static bool TryValidateRow(
 		ref Utf8JsonReader reader,
@@ -236,6 +236,11 @@ internal sealed partial class EsqlResponseReader
 			else if (kinds[i] == DirectBinderKind.StringList)
 			{
 				if (!TryValidateStringList(ref reader, tokenType, binder.IsCollection[i], out incomplete))
+					return false;
+			}
+			else if (kinds[i] == DirectBinderKind.Enum)
+			{
+				if (!TryReadEnumBits(ref reader, tokenType, binder.EnumTypeCodes[i], out value.Int64))
 					return false;
 			}
 			else if (!TryReadDirectValue(ref reader, kinds[i], tokenType, out value))
@@ -391,6 +396,12 @@ internal sealed partial class EsqlResponseReader
 					Assign(binder.TypedSetters[column], binder.Properties[column], instance, array);
 				else
 					Assign(binder.TypedSetters[column], binder.Properties[column], instance, (List<string?>)lists[column]!);
+				continue;
+			}
+
+			if (kind == DirectBinderKind.Enum)
+			{
+				AssignEnum(binder, column, span.Value.Int64, instance);
 				continue;
 			}
 
@@ -748,6 +759,111 @@ internal sealed partial class EsqlResponseReader
 		}
 	}
 
+	/// <summary>
+	/// Reads an enum cell's number as the bits of the enum's underlying integer type, or returns false for any other token
+	/// and for a number outside that type's range.
+	/// </summary>
+	private static bool TryReadEnumBits(ref Utf8JsonReader reader, JsonTokenType tokenType, TypeCode typeCode, out long bits)
+	{
+		bits = 0;
+
+		// The serializer's enum converter reads a number through the underlying type's own TryGet method and returns it
+		// whether or not the enum defines it. Number handling changes only how a string token reads, so a quoted number
+		// goes to the fallback.
+		if (tokenType != JsonTokenType.Number)
+			return false;
+
+		switch (typeCode)
+		{
+			case TypeCode.SByte when reader.TryGetSByte(out var sbyteValue):
+				bits = sbyteValue;
+				return true;
+
+			case TypeCode.Byte when reader.TryGetByte(out var byteValue):
+				bits = byteValue;
+				return true;
+
+			case TypeCode.Int16 when reader.TryGetInt16(out var int16Value):
+				bits = int16Value;
+				return true;
+
+			case TypeCode.UInt16 when reader.TryGetUInt16(out var uint16Value):
+				bits = uint16Value;
+				return true;
+
+			case TypeCode.Int32 when reader.TryGetInt32(out var int32Value):
+				bits = int32Value;
+				return true;
+
+			case TypeCode.UInt32 when reader.TryGetUInt32(out var uint32Value):
+				bits = uint32Value;
+				return true;
+
+			case TypeCode.Int64:
+				return reader.TryGetInt64(out bits);
+
+			case TypeCode.UInt64 when reader.TryGetUInt64(out var uint64Value):
+				bits = unchecked((long)uint64Value);
+				return true;
+
+			default:
+				return false;
+		}
+	}
+
+	/// <summary>
+	/// Assigns the bits <see cref="TryReadEnumBits"/> read through the column's typed setter, or as the enum through
+	/// <see cref="JsonPropertyInfo.Set"/> where none was compiled.
+	/// </summary>
+	private static void AssignEnum(DirectRowBinder binder, int column, long bits, object instance)
+	{
+		var typeCode = binder.EnumTypeCodes[column];
+		var property = binder.Properties[column];
+
+		if (binder.TypedSetters[column] is not { } typedSetter)
+		{
+			// Set unboxes its value as the property type, so the bits are boxed as the enum rather than as its integer type.
+			var enumType = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
+			property.Set!(instance, typeCode == TypeCode.UInt64 ? Enum.ToObject(enumType, unchecked((ulong)bits)) : Enum.ToObject(enumType, bits));
+			return;
+		}
+
+		switch (typeCode)
+		{
+			case TypeCode.SByte:
+				((Action<object, sbyte>)typedSetter)(instance, (sbyte)bits);
+				break;
+
+			case TypeCode.Byte:
+				((Action<object, byte>)typedSetter)(instance, (byte)bits);
+				break;
+
+			case TypeCode.Int16:
+				((Action<object, short>)typedSetter)(instance, (short)bits);
+				break;
+
+			case TypeCode.UInt16:
+				((Action<object, ushort>)typedSetter)(instance, (ushort)bits);
+				break;
+
+			case TypeCode.Int32:
+				((Action<object, int>)typedSetter)(instance, (int)bits);
+				break;
+
+			case TypeCode.UInt32:
+				((Action<object, uint>)typedSetter)(instance, (uint)bits);
+				break;
+
+			case TypeCode.Int64:
+				((Action<object, long>)typedSetter)(instance, bits);
+				break;
+
+			default:
+				((Action<object, ulong>)typedSetter)(instance, unchecked((ulong)bits));
+				break;
+		}
+	}
+
 	// Reads back the value TryReadDirectValue stored for the kind, or the string TryDecodeStringCells decoded, so keep the
 	// four switches in sync when adding a new DirectBinderKind.
 	private static void AssignDirectValue(
@@ -801,7 +917,7 @@ internal sealed partial class EsqlResponseReader
 				break;
 
 			default:
-				// TryAssignCells routes converter cells and string list cells elsewhere and TryReadDirectValue rejects any
+				// TryAssignCells routes converter, string list and enum cells elsewhere and TryReadDirectValue rejects any
 				// other kind, so only a kind stored there and missed here lands on this arm. Throwing fails such a row rather
 				// than bind the property at its initializer.
 				throw new InvalidOperationException($"No direct value is stored for {kind}.");

@@ -186,9 +186,9 @@ public class DirectRowBinderEligibilityTests
 	}
 
 	[Test]
-	public void Build_EnumProperty_UsesConverterKind()
+	public void Build_EnumPropertyOnKeywordColumn_UsesConverterKind()
 	{
-		var layout = BuildLayout<OrdinalEnumDocument>(("priority", "integer"), ("name", "keyword"));
+		var layout = BuildLayout<OrdinalEnumDocument>(("priority", "keyword"), ("name", "keyword"));
 
 		layout.DirectBinder.Should().NotBeNull();
 		layout.DirectBinder.Kinds.Should().Equal([DirectBinderKind.Converter, DirectBinderKind.String]);

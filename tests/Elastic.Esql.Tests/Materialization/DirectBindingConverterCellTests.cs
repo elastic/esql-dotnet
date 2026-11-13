@@ -19,14 +19,15 @@ namespace Elastic.Esql.Tests.Materialization;
 public class DirectBindingConverterCellTests
 {
 	private const string TagsColumnsJson = """{"columns":[{"name":"tags","type":"keyword"},{"name":"name","type":"keyword"}],"values":""";
+	private const string LevelColumnsJson = """{"columns":[{"name":"level","type":"integer"},{"name":"name","type":"keyword"}],"values":""";
 
 	[Test]
-	public void Build_EnumProperty_UsesConverterKind()
+	public void Build_EnumPropertyOnNumericColumn_UsesEnumKind()
 	{
 		var layout = BuildLayout<EnumModel>(("level", "integer"), ("name", "keyword"));
 
 		layout.DirectBinder.Should().NotBeNull();
-		layout.DirectBinder.Kinds.Should().Equal([DirectBinderKind.Converter, DirectBinderKind.String]);
+		layout.DirectBinder.Kinds.Should().Equal([DirectBinderKind.Enum, DirectBinderKind.String]);
 	}
 
 	[Test]
@@ -43,6 +44,78 @@ public class DirectBindingConverterCellTests
 		options.Converters.Add(new JsonStringEnumConverter());
 
 		ReadRows<EnumModel>(stringJson, options)[0].Level.Should().Be(Level.High);
+	}
+
+	[Test]
+	public void ReadRows_QuotedNumberInEnumCell_ThrowsLikeTheSerializer()
+	{
+		var options = CreateOptions();
+		// Strict keeps the serializer's answer independent of whether its number handling reaches the enum converter.
+		options.NumberHandling = JsonNumberHandling.Strict;
+		var serializerRead = () => JsonSerializer.Deserialize<EnumModel>("""{"level":"2","name":"a"}""", options);
+		serializerRead.Should().Throw<JsonException>();
+
+		var act = () => ReadRows<EnumModel>(LevelColumnsJson + """[["2","a"]]}""", options);
+
+		act.Should().Throw<JsonException>();
+	}
+
+	[Test]
+	public void ReadRows_EnumConverterRejectingNumbers_ThrowsLikeTheSerializer()
+	{
+		var options = CreateOptions();
+		options.Converters.Add(new JsonStringEnumConverter(namingPolicy: null, allowIntegerValues: false));
+		var serializerRead = () => JsonSerializer.Deserialize<EnumModel>("""{"level":2,"name":"a"}""", options);
+		serializerRead.Should().Throw<JsonException>();
+
+		var act = () => ReadRows<EnumModel>(LevelColumnsJson + """[[2,"a"]]}""", options);
+
+		act.Should().Throw<JsonException>();
+	}
+
+	[Test]
+	public void ReadRows_EnumCellOutsideTheUnderlyingRange_ThrowsLikeTheSerializer()
+	{
+		var options = CreateOptions();
+		var serializerRead = () => JsonSerializer.Deserialize<TinyModel>("""{"value":256}""", options);
+		serializerRead.Should().Throw<JsonException>();
+
+		var act = () => ReadRows<TinyModel>("""{"columns":[{"name":"value","type":"integer"}],"values":[[256]]}""", options);
+
+		act.Should().Throw<JsonException>();
+	}
+
+	[Test]
+	public void ReadRows_NullableEnumOnNumericColumn_BindsTheValue()
+	{
+		BuildLayout<NullableLevelModel>(("level", "integer")).DirectBinder!.Kinds.Should().Equal([DirectBinderKind.Enum]);
+
+		var rows = ReadRows<NullableLevelModel>("""{"columns":[{"name":"level","type":"integer"}],"values":[[2]]}""", CreateOptions());
+
+		rows.Single().Level.Should().Be(Level.High);
+	}
+
+	[Test]
+	public void ReadRows_NullableEnumUnderWrappedPropertyConverter_BindsLikeTheSerializer()
+	{
+		var options = CreateOptions();
+		JsonSerializer.Deserialize<WrappedLevelModel>("""{"level":1}""", options)!.Level.Should().Be(Level.High);
+
+		var rows = ReadRows<WrappedLevelModel>("""{"columns":[{"name":"level","type":"integer"}],"values":[[1]]}""", options);
+
+		rows.Single().Level.Should().Be(Level.High);
+	}
+
+	[Test]
+	public void ReadRows_NullableEnumUnderGlobalCustomConverter_BindsLikeTheSerializer()
+	{
+		var options = CreateOptions();
+		options.Converters.Add(new DoublingLevelConverter());
+		JsonSerializer.Deserialize<NullableLevelModel>("""{"level":1}""", options)!.Level.Should().Be(Level.High);
+
+		var rows = ReadRows<NullableLevelModel>("""{"columns":[{"name":"level","type":"integer"}],"values":[[1]]}""", options);
+
+		rows.Single().Level.Should().Be(Level.High);
 	}
 
 	[Test]
@@ -267,9 +340,9 @@ public class DirectBindingConverterCellTests
 	[Test]
 	public void ReadRows_ConverterCellRowWithNullRequiredMember_ThrowsJsonException()
 	{
-		const string json = """{"columns":[{"name":"level","type":"integer"},{"name":"name","type":"keyword"}],"values":[[2,null]]}""";
+		const string json = """{"columns":[{"name":"level","type":"keyword"},{"name":"name","type":"keyword"}],"values":[[2,null]]}""";
 
-		var binder = BuildLayout<RequiredNameLevelModel>(("level", "integer"), ("name", "keyword")).DirectBinder;
+		var binder = BuildLayout<RequiredNameLevelModel>(("level", "keyword"), ("name", "keyword")).DirectBinder;
 		binder.Should().NotBeNull();
 		binder.Kinds.Should().Equal([DirectBinderKind.Converter, DirectBinderKind.String]);
 		var act = () => ReadRows<RequiredNameLevelModel>(json, CreateOptions());
@@ -282,9 +355,9 @@ public class DirectBindingConverterCellTests
 	{
 		// A bind that stops before the first row's closing bracket makes the next read take that bracket for the end of
 		// values, which drops the second row.
-		const string json = """{"columns":[{"name":"level","type":"integer"},{"name":"name","type":"keyword"}],"values":[[2,"a",3],[1,"b"]]}""";
+		const string json = """{"columns":[{"name":"level","type":"keyword"},{"name":"name","type":"keyword"}],"values":[[2,"a",3],[1,"b"]]}""";
 
-		var binder = BuildLayout<RequiredNameLevelModel>(("level", "integer"), ("name", "keyword")).DirectBinder;
+		var binder = BuildLayout<RequiredNameLevelModel>(("level", "keyword"), ("name", "keyword")).DirectBinder;
 		binder.Should().NotBeNull();
 		binder.Kinds.Should().Equal([DirectBinderKind.Converter, DirectBinderKind.String]);
 		var act = () => ReadRows<RequiredNameLevelModel>(json, CreateOptions());
@@ -666,15 +739,30 @@ public class DirectBindingConverterCellTests
 		CountingTagsModel.Constructed.Should().Be(2);
 	}
 
+	[Test]
+	public void ReadRows_EnumRowSplitAcrossReads_ConstructsOncePerRow()
+	{
+		var binder = BuildLayout<CountingLevelModel>(("level", "integer"), ("name", "keyword")).DirectBinder;
+		binder!.Kinds.Should().Equal([DirectBinderKind.Enum, DirectBinderKind.String]);
+		CountingLevelModel.Constructed = 0;
+		using var stream = new ChunkedReadStream(Encoding.UTF8.GetBytes(LevelColumnsJson + """[[2,"x"],[1,"y"]]}"""), maxBytesPerRead: 1);
+		using var results = new EsqlResponseReader(new JsonMetadataManager(CreateOptions())).ReadRows<CountingLevelModel>(stream);
+
+		var rows = results.Rows.ToList();
+
+		rows.Should().HaveCount(2);
+		CountingLevelModel.Constructed.Should().Be(2);
+	}
+
 #if NET10_0_OR_GREATER
 	[Test]
 	public async Task ReadRowsAsync_ConverterCellRowAcrossPipeSegments_BindsEachCell()
 	{
 		// Longer than a pipe segment, so the string decode reads a name whose slice spans segments.
 		var longName = new string('x', 9000);
-		var json = $$"""{"columns":[{"name":"level","type":"integer"},{"name":"name","type":"keyword"}],"values":[[2,"{{longName}}"]]}""";
+		var json = $$"""{"columns":[{"name":"level","type":"keyword"},{"name":"name","type":"keyword"}],"values":[[2,"{{longName}}"]]}""";
 
-		var binder = BuildLayout<EnumModel>(("level", "integer"), ("name", "keyword")).DirectBinder;
+		var binder = BuildLayout<EnumModel>(("level", "keyword"), ("name", "keyword")).DirectBinder;
 		binder.Should().NotBeNull();
 		binder.Kinds.Should().Equal([DirectBinderKind.Converter, DirectBinderKind.String]);
 		var pipe = new Pipe();
@@ -753,7 +841,7 @@ public class DirectBindingConverterCellTests
 	public void ReadRows_ConverterCellRowWithEveryScalarKind_BindsEachKind()
 	{
 		const string json =
-			"""{"columns":[{"name":"level","type":"integer"},{"name":"flag","type":"boolean"},{"name":"created","type":"date"},""" +
+			"""{"columns":[{"name":"level","type":"keyword"},{"name":"flag","type":"boolean"},{"name":"created","type":"date"},""" +
 			"""{"name":"seen","type":"date"},{"name":"id","type":"keyword"},{"name":"name","type":"keyword"},""" +
 			"""{"name":"small","type":"integer"},{"name":"big","type":"long"},{"name":"ratio","type":"double"},""" +
 			"""{"name":"weight","type":"double"},{"name":"amount","type":"double"}],"values":""" +
@@ -761,7 +849,7 @@ public class DirectBindingConverterCellTests
 			"""123456,9000000000,2.5,1.25,12.345]]}""";
 
 		var binder = BuildLayout<EveryKindModel>(
-			("level", "integer"),
+			("level", "keyword"),
 			("flag", "boolean"),
 			("created", "date"),
 			("seen", "date"),
@@ -883,9 +971,9 @@ public class DirectBindingConverterCellTests
 	[Test]
 	public void ReadRows_ConverterCellRowWithLoneSurrogateStringCell_ThrowsJsonException()
 	{
-		const string json = """{"columns":[{"name":"level","type":"integer"},{"name":"name","type":"keyword"}],"values":[[2,"\ud800"]]}""";
+		const string json = """{"columns":[{"name":"level","type":"keyword"},{"name":"name","type":"keyword"}],"values":[[2,"\ud800"]]}""";
 
-		var binder = BuildLayout<EnumModel>(("level", "integer"), ("name", "keyword")).DirectBinder;
+		var binder = BuildLayout<EnumModel>(("level", "keyword"), ("name", "keyword")).DirectBinder;
 		binder.Should().NotBeNull();
 		binder.Kinds.Should().Equal([DirectBinderKind.Converter, DirectBinderKind.String]);
 		var act = () => ReadRows<EnumModel>(json, CreateOptions());
@@ -896,9 +984,9 @@ public class DirectBindingConverterCellTests
 	[Test]
 	public void ReadRows_ConverterCellRowWithLoneSurrogateDateTimeCell_ThrowsJsonException()
 	{
-		const string json = """{"columns":[{"name":"level","type":"integer"},{"name":"created","type":"date"}],"values":[[2,"2024-01-02\ud800"]]}""";
+		const string json = """{"columns":[{"name":"level","type":"keyword"},{"name":"created","type":"date"}],"values":[[2,"2024-01-02\ud800"]]}""";
 
-		var binder = BuildLayout<EveryKindModel>(("level", "integer"), ("created", "date")).DirectBinder;
+		var binder = BuildLayout<EveryKindModel>(("level", "keyword"), ("created", "date")).DirectBinder;
 		binder.Should().NotBeNull();
 		binder.Kinds.Should().Equal([DirectBinderKind.Converter, DirectBinderKind.DateTime]);
 		var act = () => ReadRows<EveryKindModel>(json, CreateOptions());
@@ -997,6 +1085,35 @@ public class DirectBindingConverterCellTests
 
 	private sealed class EnumModel
 	{
+		public Level Level { get; set; }
+		public string Name { get; set; } = string.Empty;
+	}
+
+	private sealed class NullableLevelModel
+	{
+		public Level? Level { get; set; }
+	}
+
+	private sealed class WrappedLevelModel
+	{
+		[JsonConverter(typeof(NullableDoublingLevelFactory))]
+		public Level? Level { get; set; }
+	}
+
+	private enum Tiny : byte { Zero, One }
+
+	private sealed class TinyModel
+	{
+		public Tiny Value { get; set; }
+	}
+
+	private sealed class CountingLevelModel
+	{
+		[ThreadStatic]
+		public static int Constructed;
+
+		public CountingLevelModel() => Constructed++;
+
 		public Level Level { get; set; }
 		public string Name { get; set; } = string.Empty;
 	}
@@ -1273,6 +1390,15 @@ public class DirectBindingConverterCellTests
 			writer.WriteNumberValue(value);
 	}
 
+	private sealed class DoublingLevelConverter : JsonConverter<Level>
+	{
+		public override Level Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+			(Level)(reader.GetInt32() * 2);
+
+		public override void Write(Utf8JsonWriter writer, Level value, JsonSerializerOptions options) =>
+			writer.WriteNumberValue((int)value);
+	}
+
 	private sealed class UnixEpochDateTimeConverter : JsonConverter<DateTime>
 	{
 		public override DateTime Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
@@ -1339,6 +1465,14 @@ public class DirectBindingConverterCellTests
 			JsonMetadataServices.GetNullableConverter<ImmutableArray<int>>(
 				JsonMetadataServices.CreateValueInfo<ImmutableArray<int>>(options, new RejectingNegativeConverter())
 			);
+	}
+
+	private sealed class NullableDoublingLevelFactory : JsonConverterFactory
+	{
+		public override bool CanConvert(Type typeToConvert) => typeToConvert == typeof(Level?);
+
+		public override JsonConverter? CreateConverter(Type typeToConvert, JsonSerializerOptions options) =>
+			JsonMetadataServices.GetNullableConverter<Level>(JsonMetadataServices.CreateValueInfo<Level>(options, new DoublingLevelConverter()));
 	}
 
 	private sealed class OwnWrapperFactory : JsonConverterFactory
