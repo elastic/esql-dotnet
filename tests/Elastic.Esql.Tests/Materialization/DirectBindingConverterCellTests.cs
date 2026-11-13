@@ -367,6 +367,20 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
+	public void ReadRows_StructuredFactoryWithoutOwnContract_BindsLikeTheSerializer()
+	{
+		if (!RuntimeFeature.IsDynamicCodeSupported)
+			return;
+
+		const string json = """{"columns":[{"name":"value","type":"object"}],"values":[[{"x":7,"y":0}]]}""";
+		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web) { TypeInfoResolver = new SuppliedPairResolver() };
+
+		var rows = ReadRows<SuppliedPairModel>(json, options);
+
+		rows.Should().ContainSingle().Which.Value.X.Should().Be(7);
+	}
+
+	[Test]
 	public void Build_PropertyLevelCustomListConverter_UsesConverterKind()
 	{
 		if (!RuntimeFeature.IsDynamicCodeSupported)
@@ -954,6 +968,11 @@ public class DirectBindingConverterCellTests
 		public ConstructedPair? Value { get; set; }
 	}
 
+	private sealed class SuppliedPairModel
+	{
+		public ConstructedPair Value { get; set; }
+	}
+
 	[method: JsonConstructor]
 	private readonly struct ConstructedPair(int x, int y)
 	{
@@ -1078,6 +1097,92 @@ public class DirectBindingConverterCellTests
 					options,
 					new JsonObjectInfoValues<ConstructedPair> { ObjectCreator = static () => default }
 				)
+			);
+	}
+
+	private sealed class DefaultObjectPairFactory : JsonConverterFactory
+	{
+		public override bool CanConvert(Type typeToConvert) => typeToConvert == typeof(ConstructedPair);
+
+		public override JsonConverter? CreateConverter(Type typeToConvert, JsonSerializerOptions options) =>
+			JsonMetadataServices.CreateObjectInfo<ConstructedPair>(
+				options,
+				new JsonObjectInfoValues<ConstructedPair> { ObjectCreator = static () => default }
+			).Converter;
+	}
+
+	// Hands the pair's metadata to the model's property alone and resolves no contract for the pair itself, so only the
+	// serializer, which reads through the property's metadata, can bind the value.
+	private sealed class SuppliedPairResolver : IJsonTypeInfoResolver
+	{
+		private readonly DefaultJsonTypeInfoResolver _inner = new();
+
+		public JsonTypeInfo? GetTypeInfo(Type type, JsonSerializerOptions options)
+		{
+			if (type == typeof(SuppliedPairModel))
+				return CreateModelInfo(options);
+
+			return type == typeof(ConstructedPair) ? null : _inner.GetTypeInfo(type, options);
+		}
+
+		private static JsonTypeInfo<SuppliedPairModel> CreateModelInfo(JsonSerializerOptions options)
+		{
+			var modelInfo = JsonMetadataServices.CreateObjectInfo<SuppliedPairModel>(
+				options,
+				new JsonObjectInfoValues<SuppliedPairModel>
+				{
+					ObjectCreator = static () => new SuppliedPairModel(),
+					PropertyMetadataInitializer = _ => [CreateValueProperty(options)]
+				}
+			);
+
+			// The metadata API marks the type strict for numbers, which would keep the type off the direct path. A
+			// generated context leaves the type's number handling unset, as here.
+			modelInfo.NumberHandling = null;
+			return modelInfo;
+		}
+
+		private static JsonPropertyInfo CreateValueProperty(JsonSerializerOptions options) =>
+			JsonMetadataServices.CreatePropertyInfo<ConstructedPair>(
+				options,
+				new JsonPropertyInfoValues<ConstructedPair>
+				{
+					IsProperty = true,
+					IsPublic = true,
+					DeclaringType = typeof(SuppliedPairModel),
+					PropertyName = nameof(SuppliedPairModel.Value),
+					JsonPropertyName = "value",
+					PropertyTypeInfo = CreatePairInfo(options),
+					Converter = (JsonConverter<ConstructedPair>)new DefaultObjectPairFactory().CreateConverter(typeof(ConstructedPair), options)!,
+					Getter = static model => ((SuppliedPairModel)model).Value,
+					Setter = static (model, value) => ((SuppliedPairModel)model).Value = value
+				}
+			);
+
+		private static JsonTypeInfo<ConstructedPair> CreatePairInfo(JsonSerializerOptions options) =>
+			JsonMetadataServices.CreateObjectInfo<ConstructedPair>(
+				options,
+				new JsonObjectInfoValues<ConstructedPair>
+				{
+					ObjectCreator = static () => default,
+					PropertyMetadataInitializer = _ => [CreatePairXProperty(options)]
+				}
+			);
+
+		// The serializer sets a struct's members on a boxed copy, so the setter replaces the pair inside that box.
+		private static JsonPropertyInfo CreatePairXProperty(JsonSerializerOptions options) =>
+			JsonMetadataServices.CreatePropertyInfo<int>(
+				options,
+				new JsonPropertyInfoValues<int>
+				{
+					IsProperty = true,
+					IsPublic = true,
+					DeclaringType = typeof(ConstructedPair),
+					PropertyName = nameof(ConstructedPair.X),
+					JsonPropertyName = "x",
+					Getter = static pair => ((ConstructedPair)pair).X,
+					Setter = static (pair, x) => Unsafe.Unbox<ConstructedPair>(pair) = new ConstructedPair(x, ((ConstructedPair)pair).Y)
+				}
 			);
 	}
 
