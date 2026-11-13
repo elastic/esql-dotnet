@@ -375,9 +375,15 @@ type. Any other property binds as a converter cell, deserialized from the cell a
 nested objects, types with a converter registered on the `JsonSerializerOptions` and properties with a `[JsonConverter]`
 attribute all bind this way. A property-level converter needs a runtime that supports dynamic code, so under Native AOT
 a type with one stays on the fallback. It must also be a converter for the property type itself, after a factory is
-expanded. A factory-made collection, dictionary or nested-object converter of the serializer's own keeps the type on the
-fallback when it is of another kind or another runtime type than the converter the type's own contract carries, and the
-serializer applies it there. A converter declared for a base type keeps the type on the fallback, where the serializer
+expanded. A factory-made collection, dictionary or nested-object converter of the serializer's own reads on the direct
+path only when it is the converter instance the type's own contract carries, the one a factory that returns
+`options.GetConverter(type)` hands back on read-only options. The reader makes the options read-only before it builds a
+layout, but a source-generated contract runs a property's factory when the contract is first built, which a query that
+names a member of the type can do earlier, and the type then takes the fallback. Any other such converter keeps the type
+on the fallback too, where the serializer applies it. That includes a new instance of the serializer's nullable wrapper
+or of a converter that `JsonMetadataServices` creates, because only the instance the own contract carries is known to
+read as that contract does. A property whose type the resolver does not resolve keeps the type on the fallback as well
+when it has such a converter. A converter declared for a base type keeps the type on the fallback, where the serializer
 applies it through its casting converter. The compiled setters described under AOT-safe configuration need dynamic code
 too, and without it a directly bound row assigns its cells through the contract's own `JsonPropertyInfo.Set`.
 

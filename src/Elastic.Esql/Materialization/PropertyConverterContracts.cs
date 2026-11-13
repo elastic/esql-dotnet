@@ -45,21 +45,22 @@ internal static class PropertyConverterContracts
 		// built-in value converter, or a custom converter, alone or inside the built-in nullable wrapper, which takes its
 		// kind from the converter it wraps and calls that converter directly. A built-in value converter keeps a value
 		// contract of its own, because one converter type can carry other settings, such as the string enum converter
-		// beside the numeric one. A structured converter reads against the metadata of the type's own contract. When
-		// its kind differs from that contract's, the own contract carries a converter of the other kind, so only the
-		// serializer can pair the property's converter with that metadata. With matching kinds, the converter reads its
-		// elements through the root options' metadata, which the own contract carries, so the own contract stands in
-		// when its converter has the same runtime type.
+		// beside the numeric one. A structured kind comes only from a converter of the serializer's own, and such a
+		// converter reads against the metadata of the type's own contract. The serializer's nullable wrapper and the
+		// metadata API's converter wrapper keep one runtime type whatever they wrap and expose no wrapped converter, so
+		// only the instance the own contract carries is known to read as that contract does. A factory reaches that instance
+		// through options.GetConverter on read-only options only, because mutable options resolve a fresh contract on every
+		// lookup. The reader freezes options that carry a resolver before it builds a layout, but a source-generated
+		// contract runs a property's factory when the contract is first built, which query translation can do earlier,
+		// and the type then takes the fallback. Without an own contract, the serializer reads the property through
+		// metadata the caller supplied, which the direct path has no access to.
 		if (TryCreateValueContract(propertyType, converter, options) is not { } valueContract)
 			return null;
 
 		if (valueContract.Kind == JsonTypeInfoKind.None)
 			return valueContract;
 
-		if (!JsonMetadataManager.IsBuiltInConverter(converter) || JsonMetadataManager.TryResolveTypeInfo(propertyType, options) is not { } own)
-			return valueContract;
-
-		return own.Kind == valueContract.Kind && own.Converter.GetType() == converter.GetType() ? own : null;
+		return JsonMetadataManager.TryResolveTypeInfo(propertyType, options) is { } own && ReferenceEquals(own.Converter, converter) ? own : null;
 	}
 
 	[UnconditionalSuppressMessage(

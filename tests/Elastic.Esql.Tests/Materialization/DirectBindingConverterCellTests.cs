@@ -275,7 +275,11 @@ public class DirectBindingConverterCellTests
 			return;
 
 		const string json = """{"columns":[{"name":"numbers","type":"integer"}],"values":[[[7,8]]]}""";
-		var layout = BuildLayout<DeferredListModel>(("numbers", "integer"));
+		var options = CreateOptions();
+		// The reader makes the options read-only before it builds a layout, and only read-only options cache the contract
+		// whose converter the factory's GetConverter call hands back.
+		options.MakeReadOnly();
+		var layout = BuildLayout<DeferredListModel>(options, ("numbers", "integer"));
 		layout.DirectBinder.Should().NotBeNull();
 
 		var rows = ReadRows<DeferredListModel>(json, CreateOptions());
@@ -305,7 +309,9 @@ public class DirectBindingConverterCellTests
 
 		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"tags","type":"integer"}],"values":[["ada",[1,2]]]}""";
 
-		BuildLayout<OwnTagsModel>(("name", "keyword"), ("tags", "integer")).DirectBinder.Should().NotBeNull();
+		// GetNullableConverter builds a new wrapper, not the instance the type's own contract carries, so the type takes the
+		// fallback and binds the same values there.
+		BuildLayout<OwnTagsModel>(("name", "keyword"), ("tags", "integer")).DirectBinder.Should().BeNull();
 		var row = ReadRows<OwnTagsModel>(json, CreateOptions())[0];
 
 		row.Tags.Should().NotBeNull();
@@ -340,6 +346,24 @@ public class DirectBindingConverterCellTests
 		var act = () => ReadRows<ObjectWrapperTagsModel>(json, options);
 
 		act.Should().Throw<JsonException>();
+	}
+
+	[Test]
+	public void ReadRows_NullableWrapperAroundAnotherInnerConverter_ThrowsLikeTheSerializer()
+	{
+		if (!RuntimeFeature.IsDynamicCodeSupported)
+			return;
+
+		const string json = """{"columns":[{"name":"value","type":"object"}],"values":[[{"x":1,"y":2}]]}""";
+		var options = CreateOptions();
+		var serializerRead = () => JsonSerializer.Deserialize<ConstructedPairModel>("""{"value":{"x":1,"y":2}}""", options);
+
+		// Fails here, and not on the read below, once the serializer reads the wrapped converter against the metadata the
+		// factory built instead of the type's own.
+		serializerRead.Should().Throw<NotSupportedException>();
+		var act = () => ReadRows<ConstructedPairModel>(json, options);
+
+		act.Should().Throw<NotSupportedException>();
 	}
 
 	[Test]
@@ -924,6 +948,19 @@ public class DirectBindingConverterCellTests
 		public ImmutableArray<int>? Tags { get; set; }
 	}
 
+	private sealed class ConstructedPairModel
+	{
+		[JsonConverter(typeof(DefaultObjectNullablePairFactory))]
+		public ConstructedPair? Value { get; set; }
+	}
+
+	[method: JsonConstructor]
+	private readonly struct ConstructedPair(int x, int y)
+	{
+		public int X { get; } = x;
+		public int Y { get; } = y;
+	}
+
 	private sealed class DateOnlyModel
 	{
 		public DateOnly Day { get; set; }
@@ -1027,6 +1064,19 @@ public class DirectBindingConverterCellTests
 				JsonMetadataServices.CreateObjectInfo<ImmutableArray<int>>(
 					options,
 					new JsonObjectInfoValues<ImmutableArray<int>> { ObjectCreator = static () => [] }
+				)
+			);
+	}
+
+	private sealed class DefaultObjectNullablePairFactory : JsonConverterFactory
+	{
+		public override bool CanConvert(Type typeToConvert) => typeToConvert == typeof(ConstructedPair?);
+
+		public override JsonConverter? CreateConverter(Type typeToConvert, JsonSerializerOptions options) =>
+			JsonMetadataServices.GetNullableConverter<ConstructedPair>(
+				JsonMetadataServices.CreateObjectInfo<ConstructedPair>(
+					options,
+					new JsonObjectInfoValues<ConstructedPair> { ObjectCreator = static () => default }
 				)
 			);
 	}
