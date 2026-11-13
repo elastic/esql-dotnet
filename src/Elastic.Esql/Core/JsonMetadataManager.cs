@@ -19,7 +19,11 @@ namespace Elastic.Esql.Core;
 internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 {
 	private readonly ConcurrentDictionary<Type, HashSet<string>> _propertyNamesCache = [];
-	private readonly ConcurrentDictionary<Type, JsonSerializerOptions> _converterOptionsCache = [];
+
+	// Keyed by member with the converter resolved in the factory, so the cache never holds a converter resolved before the
+	// options froze, and two members whose converters share a runtime type get their own copies.
+	private readonly ConcurrentDictionary<MemberInfo, JsonSerializerOptions?> _converterOptionsCache = [];
+
 	private readonly ConcurrentDictionary<Type, Dictionary<string, JsonPropertyInfo>> _ctorPropertyMapCache = [];
 	private readonly ConcurrentDictionary<Type, Dictionary<MemberInfo, JsonPropertyInfo>> _memberPropertyMapCache = [];
 
@@ -163,38 +167,36 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 		});
 
 	/// <summary>
-	/// Returns the <see cref="JsonConverter"/> explicitly set on the property identified by
-	/// <paramref name="member"/>, or <see langword="null"/> if none is configured.
-	/// Falls back gracefully when the declaring type is not registered in the serializer context.
+	/// Returns a copy of the options with the <see cref="JsonConverter"/> explicitly set on the property identified by
+	/// <paramref name="member"/> inserted at highest priority, or <see langword="null"/> if none is configured. Falls back
+	/// gracefully when the declaring type is not registered in the serializer context. The copy is cached by member once
+	/// the options are read-only.
 	/// </summary>
-	public JsonConverter? FindPropertyConverter(MemberInfo? member)
+	public JsonSerializerOptions? GetOptionsWithPropertyConverter(MemberInfo? member)
 	{
-		if (member?.DeclaringType is not { } declaringType)
+		if (member is null)
 			return null;
 
-		try
+		return Cached(_converterOptionsCache, member, m =>
 		{
-			var propertyMap = GetMemberPropertyMap(declaringType);
-			return propertyMap.TryGetValue(member, out var property) ? property.CustomConverter : null;
-		}
-		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
-		{
-			// Declaring type not registered: no per-property converter can apply.
-			return null;
-		}
-	}
+			try
+			{
+				if (m.DeclaringType is not { } declaringType
+					|| !GetMemberPropertyMap(declaringType).TryGetValue(m, out var property)
+					|| property.CustomConverter is not { } converter)
+					return null;
 
-	/// <summary>
-	/// Returns <see cref="JsonSerializerOptions"/> with the specified <paramref name="converter"/>
-	/// inserted at highest priority. Results are cached by converter runtime type once the options are read-only.
-	/// </summary>
-	public JsonSerializerOptions GetOptionsWithConverter(JsonConverter converter) =>
-		Cached(_converterOptionsCache, converter.GetType(), _ =>
-		{
-			var result = new JsonSerializerOptions(options);
-			result.Converters.Insert(0, converter);
-			return result;
+				var result = new JsonSerializerOptions(options);
+				result.Converters.Insert(0, converter);
+				return result;
+			}
+			catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
+			{
+				// Declaring type not registered: no per-property converter can apply.
+				return null;
+			}
 		});
+	}
 
 	/// <summary>Returns the typed setter compiled for <paramref name="property"/>, or null where none can be compiled.</summary>
 	public Delegate? GetOrCompileSetter(JsonPropertyInfo property, DirectBinderKind kind) =>
