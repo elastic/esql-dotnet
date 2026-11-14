@@ -31,6 +31,18 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
+	public void Build_NullableEnumUnderGlobalStringEnumConverter_UsesEnumKind()
+	{
+		var options = CreateOptions();
+		options.Converters.Add(new JsonStringEnumConverter());
+
+		var layout = BuildLayout<NullableLevelModel>(options, ("level", "integer"));
+
+		layout.DirectBinder.Should().NotBeNull();
+		layout.DirectBinder.Kinds.Should().Equal([DirectBinderKind.Enum]);
+	}
+
+	[Test]
 	public void ReadRows_EnumCells_BindNumericAndStringForms()
 	{
 		const string json = """{"columns":[{"name":"level","type":"integer"},{"name":"name","type":"keyword"}],"values":[[2,"a"],[null,"b"]]}""";
@@ -147,6 +159,43 @@ public class DirectBindingConverterCellTests
 		var rows = ReadRows<NullableLevelModel>("""{"columns":[{"name":"level","type":"integer"}],"values":[[1]]}""", options);
 
 		rows.Single().Level.Should().Be(Level.High);
+	}
+
+	[Test]
+	public void ReadRows_NullableEnumUnderRegisteredWrappingFactory_BindsLikeTheSerializer()
+	{
+		var options = CreateOptions();
+		options.Converters.Add(new NullableDoublingLevelFactory());
+		JsonSerializer.Deserialize<NullableLevelModel>("""{"level":1}""", options)!.Level.Should().Be(Level.High);
+
+		var rows = ReadRows<NullableLevelModel>("""{"columns":[{"name":"level","type":"integer"}],"values":[[1]]}""", options);
+
+		rows.Single().Level.Should().Be(Level.High);
+	}
+
+	[Test]
+	public void ReadRows_NullableIntUnderFactoryThatChangesItsAnswer_BindsLikeTheSerializer()
+	{
+		var options = CreateOptions();
+		options.Converters.Add(new FlippingNullableDoublingIntFactory());
+		// The serializer resolves the int? contract here, on the factory's one true answer, and keeps it.
+		JsonSerializer.Deserialize<NullableCountModel>("""{"count":21}""", options)!.Count.Should().Be(42);
+
+		var rows = ReadRows<NullableCountModel>("""{"columns":[{"name":"count","type":"integer"}],"values":[[21]]}""", options);
+
+		rows.Single().Count.Should().Be(42);
+	}
+
+	[Test]
+	public void ReadRows_SingleNullableIntColumnUnderRegisteredWrappingFactory_BindsLikeTheSerializer()
+	{
+		var options = CreateOptions();
+		options.Converters.Add(new NullableDoublingIntFactory());
+		JsonSerializer.Deserialize<int?>("21", options).Should().Be(42);
+
+		var rows = ReadRows<int?>("""{"columns":[{"name":"count","type":"integer"}],"values":[[21]]}""", options);
+
+		rows.Should().Equal(42);
 	}
 
 	[Test]
@@ -294,6 +343,33 @@ public class DirectBindingConverterCellTests
 		var rows = ReadRows<TagsModel>(TagsColumnsJson + """[[["a","b"],"x"]]}""", options);
 
 		rows.Single().Tags.Should().Equal("A", "B");
+	}
+
+	[Test]
+	public void ReadRows_StringListUnderObjectConverterForString_ThrowsLikeTheSerializer()
+	{
+		var options = CreateOptions();
+		options.Converters.Add(new ObjectInfoStringFactory());
+		var serializerRead = () => JsonSerializer.Deserialize<PlainTagsModel>("""{"tags":["a"]}""", options);
+		serializerRead.Should().Throw<JsonException>();
+
+		var act = () => ReadRows<PlainTagsModel>("""{"columns":[{"name":"tags","type":"keyword"}],"values":[[["a"]]]}""", options);
+
+		act.Should().Throw<JsonException>();
+	}
+
+	[Test]
+	public void ReadRows_StringUnderObjectConverterForString_ThrowsLikeTheSerializer()
+	{
+		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"count","type":"integer"}],"values":[["a",1]]}""";
+		var options = CreateOptions();
+		options.Converters.Add(new ObjectInfoStringFactory());
+		var serializerRead = () => JsonSerializer.Deserialize<NonNullableNameModel>("""{"name":"a","count":1}""", options);
+		serializerRead.Should().Throw<JsonException>();
+
+		var act = () => ReadRows<NonNullableNameModel>(json, options);
+
+		act.Should().Throw<JsonException>();
 	}
 
 	[Test]
@@ -1238,6 +1314,11 @@ public class DirectBindingConverterCellTests
 		public string Name { get; set; } = string.Empty;
 	}
 
+	private sealed class PlainTagsModel
+	{
+		public List<string> Tags { get; set; } = [];
+	}
+
 	private sealed class CountingTagsModel
 	{
 		[ThreadStatic]
@@ -1395,6 +1476,11 @@ public class DirectBindingConverterCellTests
 	{
 		public string Name { get; set; } = string.Empty;
 		public int Count { get; set; }
+	}
+
+	private sealed class NullableCountModel
+	{
+		public int? Count { get; set; }
 	}
 
 	private sealed class CountingNameModel
@@ -1606,6 +1692,25 @@ public class DirectBindingConverterCellTests
 			JsonMetadataServices.GetNullableConverter<Level>(JsonMetadataServices.CreateValueInfo<Level>(options, new DoublingLevelConverter()));
 	}
 
+	private sealed class NullableDoublingIntFactory : JsonConverterFactory
+	{
+		public override bool CanConvert(Type typeToConvert) => typeToConvert == typeof(int?);
+
+		public override JsonConverter? CreateConverter(Type typeToConvert, JsonSerializerOptions options) =>
+			JsonMetadataServices.GetNullableConverter<int>(JsonMetadataServices.CreateValueInfo<int>(options, new DoublingIntConverter()));
+	}
+
+	// Answers true for int? on its first call only, so the serializer resolves the contract on an answer a later call does not repeat.
+	private sealed class FlippingNullableDoublingIntFactory : JsonConverterFactory
+	{
+		private int _calls;
+
+		public override bool CanConvert(Type typeToConvert) => typeToConvert == typeof(int?) && Interlocked.Increment(ref _calls) == 1;
+
+		public override JsonConverter? CreateConverter(Type typeToConvert, JsonSerializerOptions options) =>
+			JsonMetadataServices.GetNullableConverter<int>(JsonMetadataServices.CreateValueInfo<int>(options, new DoublingIntConverter()));
+	}
+
 	private sealed class OwnWrapperFactory : JsonConverterFactory
 	{
 		public override bool CanConvert(Type typeToConvert) => typeToConvert == typeof(ImmutableArray<int>?);
@@ -1623,6 +1728,14 @@ public class DirectBindingConverterCellTests
 				options,
 				new JsonObjectInfoValues<Dictionary<string, int>> { ObjectCreator = static () => [] }
 			).Converter;
+	}
+
+	private sealed class ObjectInfoStringFactory : JsonConverterFactory
+	{
+		public override bool CanConvert(Type typeToConvert) => typeToConvert == typeof(string);
+
+		public override JsonConverter? CreateConverter(Type typeToConvert, JsonSerializerOptions options) =>
+			JsonMetadataServices.CreateObjectInfo<string>(options, new JsonObjectInfoValues<string>()).Converter;
 	}
 
 	private sealed class ObjectInfoNullableArrayFactory : JsonConverterFactory

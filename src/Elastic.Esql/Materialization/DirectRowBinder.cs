@@ -46,6 +46,30 @@ internal enum DirectBinderKind
 /// </remarks>
 internal sealed class DirectRowBinder
 {
+	// The reflection resolver and the source generator hand each of these types the converter JsonMetadataServices exposes.
+	// Another converter of the serializer's assembly, such as the object converter a factory can return for string, reads
+	// other tokens than the inline read accepts, so the assembly alone proves nothing.
+	private static readonly Dictionary<Type, Type> StockConverterTypes = new()
+	{
+		[typeof(bool)] = JsonMetadataServices.BooleanConverter.GetType(),
+		[typeof(DateTime)] = JsonMetadataServices.DateTimeConverter.GetType(),
+		[typeof(DateTimeOffset)] = JsonMetadataServices.DateTimeOffsetConverter.GetType(),
+		[typeof(decimal)] = JsonMetadataServices.DecimalConverter.GetType(),
+		[typeof(double)] = JsonMetadataServices.DoubleConverter.GetType(),
+		[typeof(float)] = JsonMetadataServices.SingleConverter.GetType(),
+		[typeof(Guid)] = JsonMetadataServices.GuidConverter.GetType(),
+		[typeof(int)] = JsonMetadataServices.Int32Converter.GetType(),
+		[typeof(long)] = JsonMetadataServices.Int64Converter.GetType(),
+		[typeof(string)] = JsonMetadataServices.StringConverter.GetType()
+	};
+
+	// The serializer keeps its nullable wrapper type internal, and GetNullableConverter creates the wrapper the resolvers
+	// create, so a sample's generic definition names it for every underlying type.
+	private static readonly Type NullableConverterDefinition = JsonMetadataServices
+		.GetNullableConverter(JsonMetadataServices.CreateValueInfo<int>(new JsonSerializerOptions(), JsonMetadataServices.Int32Converter))
+		.GetType()
+		.GetGenericTypeDefinition();
+
 	public required DirectBinderKind[] Kinds { get; init; }
 	public required JsonPropertyInfo[] Properties { get; init; }
 
@@ -105,10 +129,11 @@ internal sealed class DirectRowBinder
 	/// property-level converter no cell contract can be built for, populate-style object creation, a required member
 	/// without a column, two columns for one property, a converter cell or a string list cell under a depth limit of one,
 	/// or either under options that read reference metadata.
-	/// A <c>List&lt;string&gt;</c> or <c>string[]</c> cell that the serializer reads with its own converters is read as a
-	/// string list, an enum cell on a numeric column that the serializer reads with its own converters, which accept
-	/// numbers, is read as an enum, and any other cell that is not one of the built-in scalar kinds deserializes through
-	/// its own contract. <paramref name="columns"/> holds the ES|QL type of the column each leaf node reads.
+	/// A <c>List&lt;string&gt;</c> or <c>string[]</c> cell that the serializer reads with its own collection converter and
+	/// its stock converter for string is read as a string list, an enum cell on a numeric column that the serializer reads
+	/// with its own converters, which accept numbers, is read as an enum, and any other cell that is not one of the built-in
+	/// scalar kinds deserializes through its own contract. <paramref name="columns"/> holds the ES|QL type of the column
+	/// each leaf node reads.
 	/// </summary>
 	public static DirectRowBinder? TryCreate(
 		ColumnNode[] leafNodes,
@@ -278,8 +303,9 @@ internal sealed class DirectRowBinder
 
 	/// <summary>
 	/// Classifies an enum property, or the nullable form of one, on a numeric column as an enum cell when the serializer
-	/// reads it with its own converters and those accept a number. <paramref name="enumType"/> is the enum type without
-	/// its nullable wrapper.
+	/// reads it with its own converters and those accept a number. The nullable form also needs options that hold no
+	/// user-written converter factory and no converter for the nullable type. <paramref name="enumType"/> is the enum type
+	/// without its nullable wrapper.
 	/// </summary>
 	private static bool TryClassifyEnum(JsonPropertyInfo property, string columnType, JsonSerializerOptions options, out Type enumType)
 	{
@@ -341,22 +367,36 @@ internal sealed class DirectRowBinder
 	}
 
 	/// <summary>
-	/// The fast path replicates only the stock converters for the supported scalar kinds; a
-	/// converter resolved from any other assembly (user converters registered on the options or
-	/// via the resolver) disqualifies the layout.
+	/// Whether the options read <paramref name="propertyType"/> with the serializer's stock converter for it, and a nullable
+	/// value type with the serializer's own nullable wrapper around the stock converter of the type under it.
 	/// </summary>
 	private static bool UsesBuiltInConverter(Type propertyType, JsonSerializerOptions options)
 	{
 		try
 		{
-			if (!options.TryGetTypeInfo(propertyType, out var propertyTypeInfo) || !JsonMetadataManager.IsBuiltInConverter(propertyTypeInfo.Converter))
+			if (!options.TryGetTypeInfo(propertyType, out var propertyTypeInfo) || !IsStockConverter(propertyType, propertyTypeInfo.Converter))
 				return false;
 
-			// For nullable value types the wrapper converter is always a built-in NullableConverter<T>.
-			// Also check the underlying type so a user converter for T disqualifies T? as well.
 			var underlying = Nullable.GetUnderlyingType(propertyType);
-			return underlying is null
-				|| (options.TryGetTypeInfo(underlying, out var underlyingTypeInfo) && JsonMetadataManager.IsBuiltInConverter(underlyingTypeInfo.Converter));
+			if (underlying is null)
+				return true;
+
+			// A converter or factory the serializer chose for the nullable type when it resolved the contract replaced the
+			// default wrapper with its own product, which can be the serializer's wrapper around a custom converter, so the
+			// wrapper's type tells nothing about what it holds. A converter names its target through Type, which
+			// JsonConverter<T> seals, so reading it runs no user code. A user factory answers through CanConvert, whose
+			// answer now need not be the one the serializer got, so its presence alone counts, while the serializer's own
+			// factories keep a pure predicate. Under the modifier-free chain the options' converters are the one place such
+			// a converter comes from.
+			var mayReplaceWrapper = options.Converters.Any(
+				converter => converter.Type == propertyType || (converter is JsonConverterFactory && !JsonMetadataManager.IsBuiltInConverter(converter))
+			);
+			if (mayReplaceWrapper)
+				return false;
+
+			// The default wrapper reads through the converter for the type under it, so a user converter for T disqualifies
+			// T? as well.
+			return options.TryGetTypeInfo(underlying, out var underlyingTypeInfo) && IsStockConverter(underlying, underlyingTypeInfo.Converter);
 		}
 		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
 		{
@@ -366,15 +406,29 @@ internal sealed class DirectRowBinder
 		}
 	}
 
+	private static bool IsStockConverter(Type type, JsonConverter converter)
+	{
+		// The stock enum converter is created per enum type, so any converter of the serializer's assembly qualifies and the
+		// probe of 0 judges what it accepts.
+		if (type.IsEnum)
+			return JsonMetadataManager.IsBuiltInConverter(converter);
+
+		var converterType = converter.GetType();
+		if (Nullable.GetUnderlyingType(type) is not null)
+			return converterType.IsGenericType && converterType.GetGenericTypeDefinition() == NullableConverterDefinition;
+
+		return StockConverterTypes.TryGetValue(type, out var stockType) && converterType == stockType;
+	}
+
 	/// <summary>
 	/// Returns the contract of a <c>List&lt;string&gt;</c> or <c>string[]</c> property that the serializer reads with its own
-	/// collection converter and its own converter for string, or null when the property binds as a converter cell.
+	/// collection converter and its stock converter for string, or null when the property binds as a converter cell.
 	/// </summary>
 	private static JsonTypeInfo? TryResolveStringListContract(Type propertyType, JsonSerializerOptions options)
 	{
 		// The decode creates and assigns the list itself, so only the two types it builds qualify. The serializer's list
-		// converter reads each element through the options' converter for string, so a converter registered for string
-		// keeps the list on a converter cell.
+		// converter reads each element through the options' converter for string, so a converter registered for string, or
+		// a factory that hands string another converter, keeps the list on a converter cell.
 		if (propertyType != typeof(List<string>) && propertyType != typeof(string[]))
 			return null;
 
