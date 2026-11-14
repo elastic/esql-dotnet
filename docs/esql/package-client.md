@@ -400,40 +400,45 @@ A mapped `string`, `bool`, `int`, `long`, `double`, `float`, `decimal`, `DateTim
 or the nullable form of one of these, is parsed straight off the reader when the serializer's stock converter for that
 type reads it, the converter `JsonMetadataServices` exposes for the type. Another converter of `System.Text.Json`, such
 as the object converter a factory can return for `string`, keeps the property on the converter cell. A `List<string>` or
-`string[]` property without a `[JsonConverter]` attribute is read off the reader as well when the serializer's own
-collection converter and its stock string converter read it and the `MaxDepth` and `ReferenceHandler` conditions above
-for a converter cell hold. A bare string cell becomes a one-element list where the column name matches the property's
-JSON name exactly, as on the fallback, and a null element stays null. An enum property without a `[JsonConverter]`
-attribute, or the nullable form of one, on a `byte`, `integer`, `long`, `short` or `unsigned_long` column is read off
-the reader too when the options read its type with a converter of `System.Text.Json` that accepts numbers, which
-`JsonStringEnumConverter` does unless `allowIntegerValues` is false. A number in the range of the enum's underlying type
-binds whether or not the enum defines it, as in the serializer, and the serializer reads any other cell. A converter
-registered on the options for the nullable form of a type, or any user-written converter factory on the options, keeps a
-nullable value type on the converter cell, because such a converter can be, and such a factory can return, the
-serializer's nullable wrapper around a converter of its own, and a factory's `CanConvert` need not give the same answer
-twice. A user-written factory therefore costs every nullable scalar or enum property a converter cell, while the
-serializer's own factories, `JsonStringEnumConverter` among them, do not count. Any other property binds as a converter
-cell, deserialized from the cell alone through the property's `[JsonConverter]` when it has one and through the contract
-of its type otherwise. Other enums, other collections, dictionaries, nested objects, types with a converter registered
-on the `JsonSerializerOptions` and properties with a `[JsonConverter]` attribute all bind this way. A converter cell is
-read by a reader of its own over the cell's bytes, so a converter that reads the reader's depth or position sees the
-cell and not the row, and one that returns `CurrentDepth` reads 0 on the direct path where the serializer reads 1. The
-direct path cannot tell such a converter apart, so a converter whose result depends on either reads differently there. A
-property-level converter needs a runtime that supports dynamic code, so under Native AOT a type with one stays on the
-fallback. It must also be a converter for the property type itself, after a factory is expanded. The direct path expands
-the factory itself, apart from the serializer's expansion for the contract and possibly more than once, so it must
-return a converter with the same behavior for the same type and options. A factory-made collection, dictionary or
-nested-object converter of the serializer's own reads on the direct path only when it is the converter instance the
-type's own contract carries, the one a factory that returns `options.GetConverter(type)` hands back on read-only
-options. The reader makes the options read-only before it binds the first row, and a contract resolved earlier, by a
-query that names a member of the type, is not kept, so the direct path reads the contracts the serializer uses. Any
-other such converter keeps the type on the fallback, where the serializer applies it. That includes a new instance of
-the serializer's nullable wrapper or of a converter that `JsonMetadataServices` creates, because only the instance the
-own contract carries is known to read as that contract does. A property whose type the resolver does not resolve keeps
-the type on the fallback as well when it has such a converter. A converter declared for a base type keeps the type on
-the fallback, where the serializer applies it through its casting converter. The compiled setters described under
-AOT-safe configuration need dynamic code too, and without it a directly bound row assigns its cells through the
-contract's own `JsonPropertyInfo.Set`.
+`string[]` property without a `[JsonConverter]` attribute is read off the reader as well when the serializer's stock
+list or array converter, the one `JsonMetadataServices.CreateListInfo` or `CreateArrayInfo` creates, and its stock
+string converter read it and the `MaxDepth` and `ReferenceHandler` conditions above for a converter cell hold. A
+source-generated context in the default or serialization generation mode reads these types through a wrapper around that
+converter, and a property it reads that way is read off the reader as well unless the options hold a converter for the
+property type or a user-written converter factory, because the wrapper does not expose the converter it holds. Another
+collection converter of `System.Text.Json` registered for the type, such as the `IList` converter
+`JsonMetadataServices.CreateIListInfo` creates, keeps the property on the converter cell. A bare string cell becomes a
+one-element list where the column name matches the property's JSON name exactly, as on the fallback, and a null element
+stays null. An enum property without a `[JsonConverter]` attribute, or the nullable form of one, on a `byte`, `integer`,
+`long`, `short` or `unsigned_long` column is read off the reader too when the options read its type with a converter of
+`System.Text.Json` that accepts numbers, which `JsonStringEnumConverter` does unless `allowIntegerValues` is false. A
+number in the range of the enum's underlying type binds whether or not the enum defines it, as in the serializer, and
+the serializer reads any other cell. A converter registered on the options for the nullable form of a type, or any
+user-written converter factory on the options, keeps a nullable value type on the converter cell, because such a
+converter can be, and such a factory can return, the serializer's nullable wrapper around a converter of its own, and a
+factory's `CanConvert` need not give the same answer twice. A user-written factory therefore costs every nullable scalar
+or enum property a converter cell, while the serializer's own factories, `JsonStringEnumConverter` among them, do not
+count. Any other property binds as a converter cell, deserialized from the cell alone through the property's
+`[JsonConverter]` when it has one and through the contract of its type otherwise. Other enums, other collections,
+dictionaries, nested objects, types with a converter registered on the `JsonSerializerOptions` and properties with a
+`[JsonConverter]` attribute all bind this way. A converter cell is read by a reader of its own over the cell's bytes, so
+a converter that reads the reader's depth or position sees the cell and not the row, and one that returns `CurrentDepth`
+reads 0 on the direct path where the serializer reads 1. The direct path cannot tell such a converter apart, so a
+converter whose result depends on either reads differently there. A property-level converter needs a runtime that
+supports dynamic code, so under Native AOT a type with one stays on the fallback. It must also be a converter for the
+property type itself, after a factory is expanded. The direct path expands the factory itself, apart from the
+serializer's expansion for the contract and possibly more than once, so it must return a converter with the same
+behavior for the same type and options. A factory-made collection, dictionary or nested-object converter of the
+serializer's own reads on the direct path only when it is the converter instance the type's own contract carries, the
+one a factory that returns `options.GetConverter(type)` hands back on read-only options. The reader makes the options
+read-only before it binds the first row, and a contract resolved earlier, by a query that names a member of the type, is
+not kept, so the direct path reads the contracts the serializer uses. Any other such converter keeps the type on the
+fallback, where the serializer applies it. That includes a new instance of the serializer's nullable wrapper or of a
+converter that `JsonMetadataServices` creates, because only the instance the own contract carries is known to read as
+that contract does. A property whose type the resolver does not resolve keeps the type on the fallback as well when it
+has such a converter. A converter declared for a base type keeps the type on the fallback, where the serializer applies
+it through its casting converter. The compiled setters described under AOT-safe configuration need dynamic code too, and
+without it a directly bound row assigns its cells through the contract's own `JsonPropertyInfo.Set`.
 
 When a converter that does not come from `System.Text.Json` reads a property whose type is a collection, `byte[]`
 included, a single-valued cell reaches it wrapped in an array, the shape a multi-valued cell has, so the converter must

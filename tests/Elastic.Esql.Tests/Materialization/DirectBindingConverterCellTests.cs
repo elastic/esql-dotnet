@@ -387,6 +387,49 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
+	public void ReadRows_StringArrayUnderRegisteredIListConverter_ThrowsLikeTheSerializer()
+	{
+		var options = CreateOptions();
+		options.Converters.Add(
+			JsonMetadataServices.CreateIListInfo<string[], string>(new JsonSerializerOptions(), new JsonCollectionInfoValues<string[]>()).Converter
+		);
+		var serializerRead = () => JsonSerializer.Deserialize<ArrayTagsModel>("""{"tags":["a","b"]}""", options);
+		serializerRead.Should().Throw<NotSupportedException>();
+
+		var act = () => ReadRows<ArrayTagsModel>("""{"columns":[{"name":"tags","type":"keyword"}],"values":[[["a","b"]]]}""", options);
+
+		act.Should().Throw<NotSupportedException>();
+	}
+
+	[Test]
+	public void ReadRows_StringArrayUnderRegisteredIListWrapper_ThrowsLikeTheSerializer()
+	{
+		var options = CreateOptions();
+		// The wrapper has the runtime type of a generated context's string[] converter, so only the options' converters tell
+		// the two apart.
+		var wrapper = JsonMetadataServices
+			.CreateIListInfo<string[], string>(options, new JsonCollectionInfoValues<string[]> { SerializeHandler = (_, _) => { } })
+			.Converter;
+		options.Converters.Add(wrapper);
+		var serializerRead = () => JsonSerializer.Deserialize<ArrayTagsModel>("""{"tags":["a","b"]}""", options);
+		serializerRead.Should().Throw<NotSupportedException>();
+
+		var act = () => ReadRows<ArrayTagsModel>("""{"columns":[{"name":"tags","type":"keyword"}],"values":[[["a","b"]]]}""", options);
+
+		act.Should().Throw<NotSupportedException>();
+	}
+
+	[Test]
+	public void Build_StringListsUnderDefaultModeGeneratedContext_KeepTheirKinds()
+	{
+		var options = new JsonSerializerOptions { TypeInfoResolver = GeneratedStringListsContext.Default };
+
+		var layout = BuildLayout<GeneratedStringListsModel>(options, ("Tags", "keyword"), ("Labels", "keyword"));
+
+		layout.DirectBinder!.Kinds.Should().Equal(DirectBinderKind.StringList, DirectBinderKind.StringArray);
+	}
+
+	[Test]
 	public void ReadRows_StringUnderObjectConverterForString_ThrowsLikeTheSerializer()
 	{
 		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"count","type":"integer"}],"values":[["a",1]]}""";
@@ -2092,6 +2135,16 @@ internal sealed class TranslatedListModel
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(TranslatedListModel))]
 internal sealed partial class TranslatedListContext : JsonSerializerContext;
+
+internal sealed class GeneratedStringListsModel
+{
+	public List<string> Tags { get; set; } = [];
+	public string[] Labels { get; set; } = [];
+}
+
+// The default generation mode wraps the List<string> and string[] converters, which metadata mode leaves bare.
+[JsonSerializable(typeof(GeneratedStringListsModel))]
+internal sealed partial class GeneratedStringListsContext : JsonSerializerContext;
 
 internal sealed class CountModel
 {

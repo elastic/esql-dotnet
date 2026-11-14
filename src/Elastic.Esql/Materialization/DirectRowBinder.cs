@@ -70,6 +70,28 @@ internal sealed class DirectRowBinder
 		.GetType()
 		.GetGenericTypeDefinition();
 
+	// The reflection resolver and a generated context in metadata mode give List<string> and string[] the converter types
+	// JsonMetadataServices creates for them. A generated context in the default or serialization mode passes a serialize
+	// handler, and the metadata services then wrap that converter in a wrapper type closed over the collection type.
+	// Another collection converter of the serializer's assembly can reject a row the inline read accepts, as the IList
+	// converter CreateIListInfo builds does for string[], so the assembly alone proves nothing.
+	private static readonly Type StringListConverterType = JsonMetadataServices
+		.CreateListInfo<List<string>, string>(new JsonSerializerOptions(), new JsonCollectionInfoValues<List<string>>())
+		.Converter
+		.GetType();
+	private static readonly Type StringArrayConverterType = JsonMetadataServices
+		.CreateArrayInfo<string>(new JsonSerializerOptions(), new JsonCollectionInfoValues<string[]>())
+		.Converter
+		.GetType();
+	private static readonly Type StringListWrapperType = JsonMetadataServices
+		.CreateListInfo<List<string>, string>(new JsonSerializerOptions(), new JsonCollectionInfoValues<List<string>> { SerializeHandler = (_, _) => { } })
+		.Converter
+		.GetType();
+	private static readonly Type StringArrayWrapperType = JsonMetadataServices
+		.CreateArrayInfo<string>(new JsonSerializerOptions(), new JsonCollectionInfoValues<string[]> { SerializeHandler = (_, _) => { } })
+		.Converter
+		.GetType();
+
 	public required DirectBinderKind[] Kinds { get; init; }
 	public required JsonPropertyInfo[] Properties { get; init; }
 
@@ -131,11 +153,13 @@ internal sealed class DirectRowBinder
 	/// read reference metadata or on a type with polymorphism options, a column whose name equals the type's discriminator
 	/// name, a converter cell or a string list cell under a depth limit of one, or either under options that read reference
 	/// metadata.
-	/// A <c>List&lt;string&gt;</c> or <c>string[]</c> cell that the serializer reads with its own collection converter and
-	/// its stock converter for string is read as a string list, an enum cell on a numeric column that the serializer reads
-	/// with its own converters, which accept numbers, is read as an enum, and any other cell that is not one of the built-in
-	/// scalar kinds deserializes through its own contract. The nullable form of a built-in scalar kind or of an enum is read
-	/// off the reader only under options with no user-written converter factory and no converter for the nullable type.
+	/// A <c>List&lt;string&gt;</c> or <c>string[]</c> cell that the serializer reads with its stock list or array
+	/// converter, bare or in a generated context's wrapper, and its stock converter for string is read as a string list,
+	/// an enum cell on a numeric column that the serializer reads with its own converters, which accept numbers, is read
+	/// as an enum, and any other cell that is not one of the built-in scalar kinds deserializes through its own contract.
+	/// The nullable form of a built-in scalar kind or of an enum, and a string list in a generated context's wrapper, are
+	/// read off the reader only under options with no user-written converter factory and no converter for the property
+	/// type.
 	/// <paramref name="columns"/> holds the ES|QL type of the column each leaf node reads.
 	/// </summary>
 	public static DirectRowBinder? TryCreate(
@@ -379,15 +403,8 @@ internal sealed class DirectRowBinder
 
 		// A converter or factory the serializer chose for the nullable type when it resolved the contract replaced the
 		// default wrapper with its own product, which can be the serializer's wrapper around a custom converter, so the
-		// wrapper's type tells nothing about what it holds. A converter names its target through Type, which
-		// JsonConverter<T> seals, so reading it runs no user code. A user factory answers through CanConvert, whose
-		// answer now need not be the one the serializer got, so its presence alone counts, while the serializer's own
-		// factories keep a pure predicate. Under the modifier-free chain the options' converters are the one place such
-		// a converter comes from.
-		var mayReplaceWrapper = options.Converters.Any(
-			converter => converter.Type == propertyType || (converter is JsonConverterFactory && !JsonMetadataManager.IsBuiltInConverter(converter))
-		);
-		if (mayReplaceWrapper)
+		// wrapper's type tells nothing about what it holds.
+		if (OptionsMayReplaceConverter(propertyType, options))
 			return false;
 
 		// The default wrapper reads through the converter for the type under it, so a user converter for T disqualifies
@@ -395,6 +412,15 @@ internal sealed class DirectRowBinder
 		return JsonMetadataManager.TryResolveTypeInfo(underlying, options) is { } underlyingTypeInfo
 			&& IsStockConverter(underlying, underlyingTypeInfo.Converter);
 	}
+
+	// A converter names its target through Type, which JsonConverter<T> seals, so reading it runs no user code. A user
+	// factory answers through CanConvert, whose answer now need not be the one the serializer got, so its presence alone
+	// counts, while the serializer's own factories keep a pure predicate. Under the modifier-free chain the options'
+	// converters are the one place a replacement for the resolver's converter comes from.
+	private static bool OptionsMayReplaceConverter(Type type, JsonSerializerOptions options) =>
+		options.Converters.Any(
+			converter => converter.Type == type || (converter is JsonConverterFactory && !JsonMetadataManager.IsBuiltInConverter(converter))
+		);
 
 	private static bool IsStockConverter(Type type, JsonConverter converter)
 	{
@@ -411,8 +437,9 @@ internal sealed class DirectRowBinder
 	}
 
 	/// <summary>
-	/// Returns the contract of a <c>List&lt;string&gt;</c> or <c>string[]</c> property that the serializer reads with its own
-	/// collection converter and its stock converter for string, or null when the property binds as a converter cell.
+	/// Returns the contract of a <c>List&lt;string&gt;</c> or <c>string[]</c> property that the serializer reads with its
+	/// stock list or array converter, bare or in a generated context's wrapper, and its stock converter for string, or
+	/// null when the property binds as a converter cell.
 	/// </summary>
 	private static JsonTypeInfo? TryResolveStringListContract(Type propertyType, JsonSerializerOptions options)
 	{
@@ -424,12 +451,28 @@ internal sealed class DirectRowBinder
 
 		if (JsonMetadataManager.TryResolveTypeInfo(propertyType, options) is not { Kind: JsonTypeInfoKind.Enumerable } typeInfo
 			|| typeInfo.ElementType != typeof(string)
-			|| !JsonMetadataManager.IsBuiltInConverter(typeInfo.Converter))
+			|| !IsStockStringListConverter(propertyType, typeInfo.Converter, options))
 			return null;
 
 		if (propertyType == typeof(List<string>) && typeInfo.CreateObject is null)
 			return null;
 
 		return UsesBuiltInConverter(typeof(string), options) ? typeInfo : null;
+	}
+
+	private static bool IsStockStringListConverter(Type propertyType, JsonConverter converter, JsonSerializerOptions options)
+	{
+		var isArray = propertyType == typeof(string[]);
+		var converterType = converter.GetType();
+		if (converterType == (isArray ? StringArrayConverterType : StringListConverterType))
+			return true;
+
+		// The wrapper hides the converter it wraps, and the metadata services give any converter they build for the
+		// collection type with a serialize handler the same wrapper type, the IList converter CreateIListInfo builds for
+		// string[] among them. Under the modifier-free chain, on options with no converter for the type and no user-written
+		// factory, a wrapper comes only from a generated context's own contract for the declared shape: the generator calls
+		// CreateListInfo for a List<T> and CreateArrayInfo for an array, and a converter registered on the options replaces
+		// that contract with a value contract around the registered instance.
+		return converterType == (isArray ? StringArrayWrapperType : StringListWrapperType) && !OptionsMayReplaceConverter(propertyType, options);
 	}
 }
