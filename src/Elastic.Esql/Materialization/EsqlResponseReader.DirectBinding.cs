@@ -195,7 +195,7 @@ internal sealed partial class EsqlResponseReader
 
 			if (branchCount > 0)
 			{
-				IndexRecordedSpans(binder, spans, activeBranches);
+				MarkRowBranches(binder, spans, activeBranches);
 
 				// A required nested object the row leaves empty is absent from the assembled row, which the serializer rejects,
 				// so the row falls back before any object exists.
@@ -429,7 +429,7 @@ internal sealed partial class EsqlResponseReader
 	}
 
 	/// <summary>Marks each branch above a non-null cell as active, as the regroup does.</summary>
-	private static void IndexRecordedSpans(DirectRowBinder binder, ReadOnlySpan<CellSpan> spans, Span<bool> activeBranches)
+	private static void MarkRowBranches(DirectRowBinder binder, ReadOnlySpan<CellSpan> spans, Span<bool> activeBranches)
 	{
 		activeBranches.Clear();
 
@@ -1022,7 +1022,7 @@ internal sealed partial class EsqlResponseReader
 				break;
 
 			default:
-				// TryAssignCells routes converter, string list and enum cells elsewhere and TryReadDirectValue rejects any
+				// TryAssignCell routes converter, string list and enum cells elsewhere and TryReadDirectValue rejects any
 				// other kind, so only a kind stored there and missed here lands on this arm. Throwing fails such a row rather
 				// than bind the property at its initializer.
 				throw new InvalidOperationException($"No direct value is stored for {kind}.");
