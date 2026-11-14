@@ -6,6 +6,9 @@ using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+#if !NETSTANDARD2_0
+using System.Text;
+#endif
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 
@@ -13,11 +16,15 @@ namespace Elastic.Esql.Materialization;
 
 internal sealed partial class EsqlResponseReader
 {
+#if !NETSTANDARD2_0
+	private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+
+#endif
 	/// <summary>
-	/// A validated cell's extent in the source, whether its bare scalar is read as <c>[value]</c>, and the value a built-in cell
-	/// other than a string parsed to.
+	/// A validated cell's extent in the source, whether its bare scalar is read as <c>[value]</c>, whether a string cell
+	/// carries an escape, and the value a built-in cell other than a string parsed to or the bits of an enum cell.
 	/// </summary>
-	private readonly record struct CellSpan(int Column, long Start, long Length, bool Wrap, DirectValue Value);
+	private readonly record struct CellSpan(int Column, long Start, long Length, bool Wrap, bool IsEscaped, DirectValue Value);
 
 	/// <summary>The parsed value of a built-in cell, in the field its <see cref="DirectBinderKind"/> selects.</summary>
 	/// <remarks>
@@ -223,6 +230,7 @@ internal sealed partial class EsqlResponseReader
 
 			var start = reader.TokenStartIndex;
 			var wrap = binder.IsCollection[i] && tokenType != JsonTokenType.StartArray;
+			var isEscaped = kinds[i] == DirectBinderKind.String && reader.ValueIsEscaped;
 			var value = default(DirectValue);
 
 			if (kinds[i] == DirectBinderKind.Converter)
@@ -246,7 +254,7 @@ internal sealed partial class EsqlResponseReader
 			else if (!TryReadDirectValue(ref reader, kinds[i], tokenType, out value))
 				return false;
 
-			spans[recorded++] = new CellSpan(i, start, reader.BytesConsumed - start, wrap, value);
+			spans[recorded++] = new CellSpan(i, start, reader.BytesConsumed - start, wrap, isEscaped, value);
 		}
 
 		if (!reader.Read())
@@ -305,7 +313,17 @@ internal sealed partial class EsqlResponseReader
 			if (kind is not (DirectBinderKind.String or DirectBinderKind.StringList))
 				continue;
 
-			var cellReader = new Utf8JsonReader(source.Slice(span.Start, span.Length));
+#if !NETSTANDARD2_0
+			if (kind == DirectBinderKind.String && !span.IsEscaped && source.IsSingleSegment)
+			{
+				if (!TryDecodePlainString(source.First.Span.Slice((int)span.Start + 1, (int)span.Length - 2), out strings[column]))
+					return false;
+
+				continue;
+			}
+#endif
+
+			var cellReader = CreateCellReader(source, span, default);
 			_ = cellReader.Read();
 
 			if (kind == DirectBinderKind.String)
@@ -422,20 +440,26 @@ internal sealed partial class EsqlResponseReader
 		RowAssemblyBuffers buffers,
 		object instance)
 	{
-		var slice = source.Slice(span.Start, span.Length);
-		var cellTypeInfo = binder.CellTypeInfos[span.Column]!;
 		var property = binder.Properties[span.Column];
+		var state = CellReaderState(binder);
 
 		// ES|QL returns a single-valued multi-value field as a bare scalar, and the row path rewrites it as [value].
 		var cellReader = span.Wrap
-			? new Utf8JsonReader(WrapInArray(slice, buffers.RowBuffer), isFinalBlock: true, CellReaderState(binder))
-			: new Utf8JsonReader(slice, isFinalBlock: true, CellReaderState(binder));
+			? new Utf8JsonReader(
+				source.IsSingleSegment
+					? WrapInArray(source.First.Span.Slice((int)span.Start, (int)span.Length), buffers.RowBuffer)
+					: WrapInArray(source.Slice(span.Start, span.Length), buffers.RowBuffer),
+				isFinalBlock: true,
+				state
+			)
+			: CreateCellReader(source, span, state);
 
 		_ = cellReader.Read();
 
 		if (binder.ConverterCells[span.Column] is { } cell)
 			return cell.TryBind(ref cellReader, property, instance);
 
+		var cellTypeInfo = binder.CellTypeInfos[span.Column]!;
 		object? value;
 		try
 		{
@@ -454,7 +478,21 @@ internal sealed partial class EsqlResponseReader
 		return true;
 	}
 
+	private static Utf8JsonReader CreateCellReader(in ReadOnlySequence<byte> source, in CellSpan span, JsonReaderState state) =>
+		source.IsSingleSegment
+			? new Utf8JsonReader(source.First.Span.Slice((int)span.Start, (int)span.Length), isFinalBlock: true, state)
+			: new Utf8JsonReader(source.Slice(span.Start, span.Length), isFinalBlock: true, state);
+
 	private static ReadOnlySpan<byte> WrapInArray(in ReadOnlySequence<byte> value, PooledBufferWriter buffer)
+	{
+		buffer.ResetWrittenCount();
+		buffer.Write((byte)'[');
+		buffer.Write(value);
+		buffer.Write((byte)']');
+		return buffer.WrittenSpan;
+	}
+
+	private static ReadOnlySpan<byte> WrapInArray(ReadOnlySpan<byte> value, PooledBufferWriter buffer)
 	{
 		buffer.ResetWrittenCount();
 		buffer.Write((byte)'[');
@@ -614,6 +652,24 @@ internal sealed partial class EsqlResponseReader
 		}
 	}
 
+#if !NETSTANDARD2_0
+	// GetString decodes unescaped text with a decoder that throws on invalid UTF-8, so this decode returns the same string
+	// and fails on the same input.
+	private static bool TryDecodePlainString(ReadOnlySpan<byte> utf8, out string? value)
+	{
+		try
+		{
+			value = StrictUtf8.GetString(utf8);
+			return true;
+		}
+		catch (DecoderFallbackException)
+		{
+			value = null;
+			return false;
+		}
+	}
+
+#endif
 	// TryGetDateTime, TryGetDateTimeOffset and TryGetGuid unescape an escaped value before they parse it, and the unescape
 	// throws InvalidOperationException for an escape that is not valid UTF-16, such as a lone surrogate. A valid date or
 	// guid needs no escape, so an escaped one sends the row to the fallback, where the serializer reads it or raises a

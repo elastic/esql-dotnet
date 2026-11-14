@@ -1001,6 +1001,23 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
+	public void ReadRows_InvalidUtf8InPlainStringCell_ThrowsLikeTheSerializer()
+	{
+		var options = CreateOptions();
+		byte[] document = [.. """{"level":2,"name":"a"""u8, 0xFF, .. "\"}"u8];
+		var serializerRead = () => JsonSerializer.Deserialize<EnumModel>(document, options);
+		serializerRead.Should().Throw<JsonException>();
+		BuildLayout<EnumModel>(("level", "integer"), ("name", "keyword")).DirectBinder!.Kinds.Should().Equal([DirectBinderKind.Enum, DirectBinderKind.String]);
+		byte[] json = [.. Encoding.UTF8.GetBytes(LevelColumnsJson + "[[2,\"a"), 0xFF, .. "\"]]}"u8];
+		using var stream = new MemoryStream(json);
+		using var results = new EsqlResponseReader(new JsonMetadataManager(options)).ReadRows<EnumModel>(stream);
+
+		var act = () => results.Rows.ToList();
+
+		act.Should().Throw<JsonException>();
+	}
+
+	[Test]
 	public void ReadRows_ConverterCellRowWithLoneSurrogateDateTimeCell_ThrowsJsonException()
 	{
 		const string json = """{"columns":[{"name":"level","type":"keyword"},{"name":"created","type":"date"}],"values":[[2,"2024-01-02\ud800"]]}""";
