@@ -35,7 +35,11 @@ internal sealed partial class EsqlResponseReader
 			var savedState = state;
 			var savedBuffer = buffer;
 
-			var reader = new Utf8JsonReader(buffer, isFinalBlock, state);
+			// A span reader skips the sequence copy its constructor makes and reports no Position, so both routes advance by
+			// BytesConsumed, which also spares the sequence reader the Position lookup each row paid.
+			var reader = buffer.IsSingleSegment
+				? new Utf8JsonReader(buffer.First.Span, isFinalBlock, state)
+				: new Utf8JsonReader(buffer, isFinalBlock, state);
 
 			if (!reader.Read())
 				return false;
@@ -44,7 +48,7 @@ internal sealed partial class EsqlResponseReader
 			{
 				reachedEnd = true;
 				state = reader.CurrentState;
-				buffer = buffer.Slice(reader.Position);
+				buffer = buffer.Slice(reader.BytesConsumed);
 				return true;
 			}
 
@@ -57,7 +61,7 @@ internal sealed partial class EsqlResponseReader
 				if (bound)
 				{
 					state = reader.CurrentState;
-					buffer = buffer.Slice(reader.Position);
+					buffer = buffer.Slice(reader.BytesConsumed);
 					return true;
 				}
 
