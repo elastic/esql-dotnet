@@ -44,7 +44,7 @@ public sealed class EsqlQueryProvider : IQueryProvider
 
 	/// <summary>Creates a translation-only provider from a source-generated <see cref="JsonSerializerContext"/>.</summary>
 	public EsqlQueryProvider(JsonSerializerContext context)
-		: this(ResolveOptions(context), ThrowingQueryExecutor.Instance) { }
+		: this(context, ThrowingQueryExecutor.Instance) { }
 
 	/// <summary>Creates an execution-capable provider using the provided <see cref="JsonSerializerOptions"/> and executor.</summary>
 	public EsqlQueryProvider(JsonSerializerOptions options, IEsqlQueryExecutor executor)
@@ -413,18 +413,32 @@ public sealed class EsqlQueryProvider : IQueryProvider
 
 	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "The reflection resolver is kept behind the user context on purpose: under Native AOT it still serves types with explicit JsonConverter attributes, and every other type is expected to be declared in the context.")]
 	[UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "The reflection resolver is kept behind the user context on purpose: under Native AOT it still serves types with explicit JsonConverter attributes, and every other type is expected to be declared in the context.")]
-	private static JsonSerializerOptions ResolveOptions(JsonSerializerContext context) =>
-		new()
+	private static JsonSerializerOptions ResolveOptions(JsonSerializerContext context)
+	{
+		var options = new JsonSerializerOptions
 		{
 			TypeInfoResolver = JsonTypeInfoResolver.Combine(context, new DefaultJsonTypeInfoResolver()),
 			PropertyNamingPolicy = context.Options.PropertyNamingPolicy
 		};
 
+		// The library's own options are frozen where they are built: no caller can reach them to configure them later, and
+		// the metadata manager caches contracts only on read-only options.
+		JsonMetadataManager.TryMakeReadOnly(options);
+		return options;
+	}
+
 	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Default options are a convenience for non-trimmed apps; Native AOT callers pass a JsonSerializerContext, and the reflection fallback is deliberately retained for converter-attributed types.")]
 	[UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Default options are a convenience for non-trimmed apps; Native AOT callers pass a JsonSerializerContext, and the reflection fallback is deliberately retained for converter-attributed types.")]
-	private static JsonSerializerOptions CreateDefaultJsonOptions() =>
-		new(JsonSerializerOptions.Default)
+	internal static JsonSerializerOptions CreateDefaultJsonOptions()
+	{
+		var options = new JsonSerializerOptions(JsonSerializerOptions.Default)
 		{
 			PropertyNamingPolicy = JsonNamingPolicy.CamelCase
 		};
+
+		// The library's own options are frozen where they are built: no caller can reach them to configure them later, and
+		// the metadata manager caches contracts only on read-only options.
+		JsonMetadataManager.TryMakeReadOnly(options);
+		return options;
+	}
 }
