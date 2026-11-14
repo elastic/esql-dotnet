@@ -86,13 +86,21 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
-	public void ReadRows_EnumCellOutsideTheUnderlyingRange_ThrowsLikeTheSerializer()
+	[Arguments("""{"sByte":128}""", """{"columns":[{"name":"sByte","type":"byte"}],"values":[[128]]}""")]
+	[Arguments("""{"byte":256}""", """{"columns":[{"name":"byte","type":"byte"}],"values":[[256]]}""")]
+	[Arguments("""{"int16":32768}""", """{"columns":[{"name":"int16","type":"short"}],"values":[[32768]]}""")]
+	[Arguments("""{"uInt16":65536}""", """{"columns":[{"name":"uInt16","type":"short"}],"values":[[65536]]}""")]
+	[Arguments("""{"int32":2147483648}""", """{"columns":[{"name":"int32","type":"integer"}],"values":[[2147483648]]}""")]
+	[Arguments("""{"uInt32":4294967296}""", """{"columns":[{"name":"uInt32","type":"integer"}],"values":[[4294967296]]}""")]
+	[Arguments("""{"int64":9223372036854775808}""", """{"columns":[{"name":"int64","type":"long"}],"values":[[9223372036854775808]]}""")]
+	[Arguments("""{"uInt64":18446744073709551616}""", """{"columns":[{"name":"uInt64","type":"unsigned_long"}],"values":[[18446744073709551616]]}""")]
+	public void ReadRows_EnumCellOneAboveItsUnderlyingMaximum_ThrowsLikeTheSerializer(string document, string response)
 	{
 		var options = CreateOptions();
-		var serializerRead = () => JsonSerializer.Deserialize<TinyModel>("""{"value":256}""", options);
+		var serializerRead = () => JsonSerializer.Deserialize<EnumWidthsModel>(document, options);
 		serializerRead.Should().Throw<JsonException>();
 
-		var act = () => ReadRows<TinyModel>("""{"columns":[{"name":"value","type":"integer"}],"values":[[256]]}""", options);
+		var act = () => ReadRows<EnumWidthsModel>(response, options);
 
 		act.Should().Throw<JsonException>();
 	}
@@ -1074,6 +1082,35 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
+	public void ReadRows_ConverterCellDeeperThanTheRowAllows_ThrowsLikeTheSerializer()
+	{
+		var options = CreateOptions();
+		options.MaxDepth = 2;
+		var serializerRead = () => JsonSerializer.Deserialize<CountingNestedNumbersModel>("""{"numbers":[[1]]}""", options);
+		serializerRead.Should().Throw<JsonException>();
+		BuildLayout<CountingNestedNumbersModel>(options, ("numbers", "integer")).DirectBinder!.Kinds.Should().Equal([DirectBinderKind.Converter]);
+
+		var act = () => ReadRows<CountingNestedNumbersModel>("""{"columns":[{"name":"numbers","type":"integer"}],"values":[[[[1]]]]}""", options);
+
+		act.Should().Throw<JsonException>();
+	}
+
+	[Test]
+	public void ReadRows_ConverterCellAtTheCellDepthLimit_BindsWithoutFallback()
+	{
+		var options = CreateOptions();
+		options.MaxDepth = 3;
+		JsonSerializer.Deserialize<CountingNestedNumbersModel>("""{"numbers":[[1]]}""", options)!.Numbers.Should().ContainSingle().Which.Should().Equal(1);
+		BuildLayout<CountingNestedNumbersModel>(options, ("numbers", "integer")).DirectBinder!.Kinds.Should().Equal([DirectBinderKind.Converter]);
+		CountingNestedNumbersModel.Constructed = 0;
+
+		var rows = ReadRows<CountingNestedNumbersModel>("""{"columns":[{"name":"numbers","type":"integer"}],"values":[[[[1]]]]}""", options);
+
+		rows.Single().Numbers.Should().ContainSingle().Which.Should().Equal(1);
+		CountingNestedNumbersModel.Constructed.Should().Be(1);
+	}
+
+	[Test]
 	public void ReadRows_PreserveReferencesWithDuplicateIdAcrossCells_ThrowsJsonException()
 	{
 		const string json =
@@ -1358,18 +1395,39 @@ public class DirectBindingConverterCellTests
 		public Level? Level { get; set; }
 	}
 
-	private enum Tiny : byte { Zero, One }
-
-	private sealed class TinyModel
-	{
-		public Tiny Value { get; set; }
-	}
-
 	private enum Huge : ulong { Zero, Max = ulong.MaxValue }
 
 	private sealed class HugeModel
 	{
 		public Huge Value { get; set; }
+	}
+
+	private enum SByteEnum : sbyte { Zero }
+
+	private enum ByteEnum : byte { Zero }
+
+	private enum Int16Enum : short { Zero }
+
+	private enum UInt16Enum : ushort { Zero }
+
+	private enum Int32Enum : int { Zero }
+
+	private enum UInt32Enum : uint { Zero }
+
+	private enum Int64Enum : long { Zero }
+
+	private enum UInt64Enum : ulong { Zero }
+
+	private sealed class EnumWidthsModel
+	{
+		public SByteEnum SByte { get; set; }
+		public ByteEnum Byte { get; set; }
+		public Int16Enum Int16 { get; set; }
+		public UInt16Enum UInt16 { get; set; }
+		public Int32Enum Int32 { get; set; }
+		public UInt32Enum UInt32 { get; set; }
+		public Int64Enum Int64 { get; set; }
+		public UInt64Enum UInt64 { get; set; }
 	}
 
 	private struct EnumStructModel
@@ -1448,6 +1506,16 @@ public class DirectBindingConverterCellTests
 
 		public List<int> Numbers { get; set; } = [];
 		public string Name { get; set; } = string.Empty;
+	}
+
+	private sealed class CountingNestedNumbersModel
+	{
+		[ThreadStatic]
+		public static int Constructed;
+
+		public CountingNestedNumbersModel() => Constructed++;
+
+		public List<List<int>> Numbers { get; set; } = [];
 	}
 
 	private sealed class BinaryDataModel

@@ -31,6 +31,17 @@ public class DenseVectorJsonConverterReadTests
 	}
 
 	[Test]
+	public void Read_ByteVectorLargerThanInitialScratch_ReadsEveryElement()
+	{
+		// -128 to -1 come in the signed form and 128 to 171 in the unsigned form, and the 300 elements pass the first rent of 256.
+		var wire = Enumerable.Range(-128, 300).ToArray();
+
+		var vector = JsonSerializer.Deserialize<DenseVector<byte>>(JsonSerializer.Serialize(wire), Options);
+
+		vector.Span.ToArray().Should().Equal(wire.Select(value => unchecked((byte)value)));
+	}
+
+	[Test]
 	public void Read_TruncatedArray_Throws()
 	{
 		var act = () => JsonSerializer.Deserialize<DenseVector<float>>("[1.0,2.0", Options);
