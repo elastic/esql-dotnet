@@ -1474,6 +1474,25 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
+	public void ReadRows_NullCellsAfterAFullRowOf66Columns_KeepTheInitializers()
+	{
+		// Past 64 columns a row records its cells in a pooled array, which still holds the first row's entries when the second
+		// row rents it, and the enum cell sends each row through the pass that records them.
+		var columns = Enumerable.Range(0, 65).Select(i => (Name: $"p{i}", Type: "integer")).Append((Name: "level", Type: "integer")).ToArray();
+		BuildLayout<WideLevelModel>(columns).DirectBinder!.ValidatesRows.Should().BeTrue();
+		var columnsJson = string.Join(",", columns.Select(column => $$"""{"name":"{{column.Name}}","type":"{{column.Type}}"}"""));
+		var fullRow = string.Join(",", Enumerable.Repeat("7", 65));
+		var partialRow = string.Join(",", Enumerable.Repeat("7", 64));
+		var json = $$"""{"columns":[{{columnsJson}}],"values":[[{{fullRow}},2],[{{partialRow}},null,null]]}""";
+
+		var rows = ReadRows<WideLevelModel>(json, CreateOptions());
+
+		rows[0].P64.Should().Be(7);
+		rows[1].P64.Should().Be(0);
+		rows[1].Level.Should().Be(Level.Low);
+	}
+
+	[Test]
 	public void ReadRows_InactiveRequiredBranch_ThrowsLikeTheSerializer()
 	{
 		var options = CreateOptions();
@@ -2103,6 +2122,76 @@ public class DirectBindingConverterCellTests
 	{
 		public required string Street { get; set; }
 		public string City { get; set; } = string.Empty;
+	}
+
+	private sealed class WideLevelModel
+	{
+		public int P0 { get; set; }
+		public int P1 { get; set; }
+		public int P2 { get; set; }
+		public int P3 { get; set; }
+		public int P4 { get; set; }
+		public int P5 { get; set; }
+		public int P6 { get; set; }
+		public int P7 { get; set; }
+		public int P8 { get; set; }
+		public int P9 { get; set; }
+		public int P10 { get; set; }
+		public int P11 { get; set; }
+		public int P12 { get; set; }
+		public int P13 { get; set; }
+		public int P14 { get; set; }
+		public int P15 { get; set; }
+		public int P16 { get; set; }
+		public int P17 { get; set; }
+		public int P18 { get; set; }
+		public int P19 { get; set; }
+		public int P20 { get; set; }
+		public int P21 { get; set; }
+		public int P22 { get; set; }
+		public int P23 { get; set; }
+		public int P24 { get; set; }
+		public int P25 { get; set; }
+		public int P26 { get; set; }
+		public int P27 { get; set; }
+		public int P28 { get; set; }
+		public int P29 { get; set; }
+		public int P30 { get; set; }
+		public int P31 { get; set; }
+		public int P32 { get; set; }
+		public int P33 { get; set; }
+		public int P34 { get; set; }
+		public int P35 { get; set; }
+		public int P36 { get; set; }
+		public int P37 { get; set; }
+		public int P38 { get; set; }
+		public int P39 { get; set; }
+		public int P40 { get; set; }
+		public int P41 { get; set; }
+		public int P42 { get; set; }
+		public int P43 { get; set; }
+		public int P44 { get; set; }
+		public int P45 { get; set; }
+		public int P46 { get; set; }
+		public int P47 { get; set; }
+		public int P48 { get; set; }
+		public int P49 { get; set; }
+		public int P50 { get; set; }
+		public int P51 { get; set; }
+		public int P52 { get; set; }
+		public int P53 { get; set; }
+		public int P54 { get; set; }
+		public int P55 { get; set; }
+		public int P56 { get; set; }
+		public int P57 { get; set; }
+		public int P58 { get; set; }
+		public int P59 { get; set; }
+		public int P60 { get; set; }
+		public int P61 { get; set; }
+		public int P62 { get; set; }
+		public int P63 { get; set; }
+		public int P64 { get; set; }
+		public Level Level { get; set; }
 	}
 
 	private sealed class CountingHolderModel
