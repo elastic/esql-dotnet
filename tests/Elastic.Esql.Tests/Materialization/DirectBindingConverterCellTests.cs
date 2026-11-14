@@ -86,19 +86,25 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
-	[Arguments("""{"sByte":128}""", """{"columns":[{"name":"sByte","type":"byte"}],"values":[[128]]}""")]
-	[Arguments("""{"byte":256}""", """{"columns":[{"name":"byte","type":"byte"}],"values":[[256]]}""")]
-	[Arguments("""{"int16":32768}""", """{"columns":[{"name":"int16","type":"short"}],"values":[[32768]]}""")]
-	[Arguments("""{"uInt16":65536}""", """{"columns":[{"name":"uInt16","type":"short"}],"values":[[65536]]}""")]
-	[Arguments("""{"int32":2147483648}""", """{"columns":[{"name":"int32","type":"integer"}],"values":[[2147483648]]}""")]
-	[Arguments("""{"uInt32":4294967296}""", """{"columns":[{"name":"uInt32","type":"integer"}],"values":[[4294967296]]}""")]
-	[Arguments("""{"int64":9223372036854775808}""", """{"columns":[{"name":"int64","type":"long"}],"values":[[9223372036854775808]]}""")]
-	[Arguments("""{"uInt64":18446744073709551616}""", """{"columns":[{"name":"uInt64","type":"unsigned_long"}],"values":[[18446744073709551616]]}""")]
-	public void ReadRows_EnumCellOneAboveItsUnderlyingMaximum_ThrowsLikeTheSerializer(string document, string response)
+	[Arguments("sByte", "byte", """{"sByte":128}""", """{"columns":[{"name":"sByte","type":"byte"}],"values":[[128]]}""")]
+	[Arguments("byte", "byte", """{"byte":256}""", """{"columns":[{"name":"byte","type":"byte"}],"values":[[256]]}""")]
+	[Arguments("int16", "short", """{"int16":32768}""", """{"columns":[{"name":"int16","type":"short"}],"values":[[32768]]}""")]
+	[Arguments("uInt16", "short", """{"uInt16":65536}""", """{"columns":[{"name":"uInt16","type":"short"}],"values":[[65536]]}""")]
+	[Arguments("int32", "integer", """{"int32":2147483648}""", """{"columns":[{"name":"int32","type":"integer"}],"values":[[2147483648]]}""")]
+	[Arguments("uInt32", "integer", """{"uInt32":4294967296}""", """{"columns":[{"name":"uInt32","type":"integer"}],"values":[[4294967296]]}""")]
+	[Arguments("int64", "long", """{"int64":9223372036854775808}""", """{"columns":[{"name":"int64","type":"long"}],"values":[[9223372036854775808]]}""")]
+	[Arguments(
+		"uInt64",
+		"unsigned_long",
+		"""{"uInt64":18446744073709551616}""",
+		"""{"columns":[{"name":"uInt64","type":"unsigned_long"}],"values":[[18446744073709551616]]}"""
+	)]
+	public void ReadRows_EnumCellOneAboveItsUnderlyingMaximum_ThrowsLikeTheSerializer(string column, string columnType, string document, string response)
 	{
 		var options = CreateOptions();
 		var serializerRead = () => JsonSerializer.Deserialize<EnumWidthsModel>(document, options);
 		serializerRead.Should().Throw<JsonException>();
+		BuildLayout<EnumWidthsModel>((column, columnType)).DirectBinder!.Kinds.Should().Equal([DirectBinderKind.Enum]);
 
 		var act = () => ReadRows<EnumWidthsModel>(response, options);
 

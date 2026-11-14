@@ -158,7 +158,8 @@ public class SingleColumnProjectionTests
 	{
 		var rows = ReadRows<JsonDocument>(NameJson);
 
-		using var document = rows.Should().ContainSingle().Subject;
+		rows.Should().ContainSingle();
+		using var document = rows[0];
 		document.RootElement.ValueKind.Should().Be(JsonValueKind.Object);
 		document.RootElement.GetProperty("name").GetString().Should().Be("a");
 	}
