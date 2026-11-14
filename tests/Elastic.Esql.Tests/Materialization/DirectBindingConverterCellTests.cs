@@ -1521,6 +1521,22 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
+	public void ReadRows_InactiveRequiredBranchUnderActiveBranch_ThrowsLikeTheSerializer()
+	{
+		var options = CreateOptions();
+		var serializerRead = () => JsonSerializer.Deserialize<OptionalRegionModel>("""{"name":"n","region":{"code":"x"}}""", options);
+		serializerRead.Should().Throw<JsonException>();
+		BuildLayout<OptionalRegionModel>(("name", "keyword"), ("region.town.name", "keyword"), ("region.code", "keyword")).DirectBinder.Should().NotBeNull();
+		const string json =
+			"""{"columns":[{"name":"name","type":"keyword"},{"name":"region.town.name","type":"keyword"},""" +
+			"""{"name":"region.code","type":"keyword"}],"values":[["n",null,"x"]]}""";
+
+		var act = () => ReadRows<OptionalRegionModel>(json, options);
+
+		act.Should().Throw<JsonException>().WithMessage("*required*");
+	}
+
+	[Test]
 	public void ReadRows_ConverterCellUnderBranchDeeperThanTheRowAllows_ThrowsLikeTheSerializer()
 	{
 		var options = CreateOptions();
@@ -2122,6 +2138,23 @@ public class DirectBindingConverterCellTests
 	{
 		public required string Street { get; set; }
 		public string City { get; set; } = string.Empty;
+	}
+
+	private sealed class OptionalRegionModel
+	{
+		public string Name { get; set; } = string.Empty;
+		public RequiredTownRegion? Region { get; set; }
+	}
+
+	private sealed class RequiredTownRegion
+	{
+		public string Code { get; set; } = string.Empty;
+		public required Town Town { get; set; }
+	}
+
+	private sealed class Town
+	{
+		public string Name { get; set; } = string.Empty;
 	}
 
 	private sealed class WideLevelModel
