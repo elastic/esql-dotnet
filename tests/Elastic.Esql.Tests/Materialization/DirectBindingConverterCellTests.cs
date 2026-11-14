@@ -754,6 +754,28 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
+	public void ReadRows_SingleNullableIntColumnUnderHandWrittenResolver_BindsLikeTheSerializer()
+	{
+		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web) { TypeInfoResolver = new DoublingNullableIntResolver() };
+		JsonSerializer.Deserialize<int?>("21", options).Should().Be(42);
+
+		var rows = ReadRows<int?>("""{"columns":[{"name":"count","type":"integer"}],"values":[[21]]}""", options);
+
+		rows.Should().Equal(42);
+	}
+
+	[Test]
+	public void ReadScalar_NullableIntUnderHandWrittenResolver_ReturnsTheSerializerValue()
+	{
+		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web) { TypeInfoResolver = new DoublingNullableIntResolver() };
+		JsonSerializer.Deserialize<int?>("21", options).Should().Be(42);
+
+		var scalar = ReadScalar<int?>("""{"columns":[{"name":"count","type":"integer"}],"values":[[21]]}""", options);
+
+		scalar.Value.Should().Be(42);
+	}
+
+	[Test]
 	public void Build_CombinedResolverAddedToTheChain_KeepsTheDirectBinder()
 	{
 		var options = new JsonSerializerOptions { TypeInfoResolver = new DefaultJsonTypeInfoResolver(), PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
@@ -1270,6 +1292,12 @@ public class DirectBindingConverterCellTests
 		using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
 		using var results = new EsqlResponseReader(new JsonMetadataManager(options)).ReadRows<T>(stream);
 		return results.Rows.ToList();
+	}
+
+	private static EsqlResponseReader.ScalarResult<T> ReadScalar<T>(string json, JsonSerializerOptions options)
+	{
+		using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+		return new EsqlResponseReader(new JsonMetadataManager(options)).ReadScalar<T>(stream);
 	}
 
 	private static JsonSerializerOptions CreateOptions() =>
@@ -1917,6 +1945,21 @@ public class DirectBindingConverterCellTests
 			property.IsRequired = isRequired;
 			return property;
 		}
+	}
+
+	// Hands int? the serializer's own wrapper around a doubling converter while int keeps its stock converter, so every
+	// converter check on the options passes.
+	private sealed class DoublingNullableIntResolver : IJsonTypeInfoResolver
+	{
+		private readonly DefaultJsonTypeInfoResolver _inner = new();
+
+		public JsonTypeInfo? GetTypeInfo(Type type, JsonSerializerOptions options) =>
+			type == typeof(int?)
+				? JsonMetadataServices.CreateValueInfo<int?>(
+					options,
+					JsonMetadataServices.GetNullableConverter(JsonMetadataServices.CreateValueInfo<int>(options, new DoublingIntConverter()))
+				)
+				: _inner.GetTypeInfo(type, options);
 	}
 
 	private sealed class PreservingReferenceHandler : ReferenceHandler

@@ -306,7 +306,7 @@ internal sealed partial class EsqlResponseReader
 		[EnumeratorCancellation] CancellationToken cancellationToken,
 		ReaderStateTracker? readerStateTracker = null)
 	{
-		var plan = CreateRowMaterializationPlan<T>(columns, options);
+		var plan = CreateRowMaterializationPlan<T>(columns, layout, options);
 
 		// The batched path wraps rows in a JSON array, adding one nesting level over the per-row
 		// object deserialize, so it needs strictly more depth headroom than the layout itself.
@@ -371,7 +371,7 @@ internal sealed partial class EsqlResponseReader
 		JsonSerializerOptions options,
 		ReaderStateTracker? readerStateTracker = null)
 	{
-		var plan = CreateRowMaterializationPlan<T>(columns, options);
+		var plan = CreateRowMaterializationPlan<T>(columns, layout, options);
 
 		// The batched path wraps rows in a JSON array, adding one nesting level over the per-row
 		// object deserialize, so it needs strictly more depth headroom than the layout itself.

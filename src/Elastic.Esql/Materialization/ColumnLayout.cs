@@ -56,6 +56,13 @@ internal sealed class ColumnLayout
 	/// <summary>Direct-binding fast path metadata for eligible flat layouts, or null when rows must use the assemble-and-deserialize path.</summary>
 	public DirectRowBinder? DirectBinder { get; }
 
+	/// <summary>
+	/// Whether the options' resolver was modifier-free when this layout was built. The single-column plan reads it here
+	/// rather than from the metadata manager, because the plan is built on every read and the judgment reads type
+	/// attributes on each call.
+	/// </summary>
+	public bool ResolverIsModifierFree { get; private init; }
+
 	private ColumnLayout(
 		ColumnNode root,
 		int columnCount,
@@ -131,7 +138,12 @@ internal sealed class ColumnLayout
 			? DirectRowBinder.TryCreate(leafNodesByColumnIndex, columns, typeInfo, metadata)
 			: null;
 
-		return new ColumnLayout(root, columnCount, maxDepth, leafNodesByColumnIndex, branchNodeCount, directBinder);
+		// Taken after the target's contract resolved, so the parts consulted for it are locked and the answer holds for every
+		// read the cached layout serves.
+		return new ColumnLayout(root, columnCount, maxDepth, leafNodesByColumnIndex, branchNodeCount, directBinder)
+		{
+			ResolverIsModifierFree = metadata.ResolverIsModifierFree
+		};
 	}
 
 	/// <summary>

@@ -180,13 +180,18 @@ internal sealed partial class EsqlResponseReader
 		public RowAssemblyBuffers CreateAssemblyBuffers() => new(EstimatedRowSize, IsScalar, WrapScalarInArray);
 	}
 
-	private static RowMaterializationPlan<T> CreateRowMaterializationPlan<T>(ColumnInfo[] columns, JsonSerializerOptions options)
+	private static RowMaterializationPlan<T> CreateRowMaterializationPlan<T>(ColumnInfo[] columns, ColumnLayout layout, JsonSerializerOptions options)
 	{
 		var estimatedRowSize = Math.Max(256, columns.Length * 32);
 		// Null when T has no metadata: rows then deserialize through the non-generic options-based overload.
 		var typeInfo = JsonMetadataManager.TryResolveTypeInfo(typeof(T), options);
 		var isScalar = columns.Length == 1 && IsScalarTarget(typeof(T), typeInfo);
-		var scalarKind = isScalar && DirectRowBinder.TryClassifyScalar(typeof(T), options, out var kind) ? kind : (DirectBinderKind?)null;
+		// A resolver outside the modifier-free chain can hand the nullable form a contract whose wrapper holds a custom
+		// converter while the type under it keeps the stock one, which no converter check sees, so a single column takes a
+		// built-in kind only where a row would.
+		var scalarKind = isScalar && layout.ResolverIsModifierFree && DirectRowBinder.TryClassifyScalar(typeof(T), options, out var kind)
+			? kind
+			: (DirectBinderKind?)null;
 
 		// A collection target takes the whole cell, so a single-valued multi-value column needs the same
 		// wrap the row path applies to a collection property.

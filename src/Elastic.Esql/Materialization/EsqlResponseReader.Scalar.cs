@@ -66,7 +66,7 @@ internal sealed partial class EsqlResponseReader
 		}
 
 		var (columns, readerState, layout) = (prepared.Columns, prepared.ReaderState, prepared.Layout);
-		var plan = CreateRowMaterializationPlan<T>(columns, Options);
+		var plan = CreateRowMaterializationPlan<T>(columns, layout, Options);
 
 		using var buffers = plan.CreateAssemblyBuffers();
 
@@ -109,7 +109,7 @@ internal sealed partial class EsqlResponseReader
 			return ReadScalarFromDrainedBuffer<T>(DrainToBuffer(cursor));
 
 		var (columns, readerState, layout) = (prepared.Columns, prepared.ReaderState, prepared.Layout);
-		var plan = CreateRowMaterializationPlan<T>(columns, Options);
+		var plan = CreateRowMaterializationPlan<T>(columns, layout, Options);
 
 		using var buffers = plan.CreateAssemblyBuffers();
 
