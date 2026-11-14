@@ -13,6 +13,8 @@ namespace Elastic.Esql.Benchmarks;
 [JsonSerializable(typeof(MixedDocument))]
 [JsonSerializable(typeof(RichDocument))]
 [JsonSerializable(typeof(StringEnumDocument))]
+[JsonSerializable(typeof(FlatEnumDocument))]
+[JsonSerializable(typeof(FlatIntLevelDocument))]
 [JsonSerializable(typeof(List<FlatDocument>))]
 [JsonSerializable(typeof(List<NestedDocument>))]
 [JsonSerializable(typeof(List<DeepDocument>))]
@@ -20,6 +22,8 @@ namespace Elastic.Esql.Benchmarks;
 [JsonSerializable(typeof(List<MixedDocument>))]
 [JsonSerializable(typeof(List<RichDocument>))]
 [JsonSerializable(typeof(List<StringEnumDocument>))]
+[JsonSerializable(typeof(List<FlatEnumDocument>))]
+[JsonSerializable(typeof(List<FlatIntLevelDocument>))]
 [JsonSerializable(typeof(int))]
 [JsonSerializable(typeof(List<int>))]
 [JsonSerializable(typeof(string))]
@@ -121,4 +125,24 @@ public class StringEnumDocument
 
 	[JsonConverter(typeof(JsonStringEnumConverter<Priority>))]
 	public Priority Level { get; set; }
+}
+
+public class FlatEnumDocument
+{
+	public string Name { get; set; } = string.Empty;
+	public int Count { get; set; }
+	public double Score { get; set; }
+	public bool Active { get; set; }
+	public string Category { get; set; } = string.Empty;
+	public Priority Level { get; set; }
+}
+
+public class FlatIntLevelDocument
+{
+	public string Name { get; set; } = string.Empty;
+	public int Count { get; set; }
+	public double Score { get; set; }
+	public bool Active { get; set; }
+	public string Category { get; set; } = string.Empty;
+	public int Level { get; set; }
 }

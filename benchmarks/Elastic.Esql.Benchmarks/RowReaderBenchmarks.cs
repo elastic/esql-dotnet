@@ -18,6 +18,8 @@ public class RowReaderBenchmarks
 
 	private byte[] _esqlFlatPayload = null!;
 	private byte[] _rawJsonFlatPayload = null!;
+	private byte[] _esqlFlatEnumPayload = null!;
+	private byte[] _rawJsonFlatEnumPayload = null!;
 	private byte[] _esqlNestedPayload = null!;
 	private byte[] _rawJsonNestedPayload = null!;
 	private byte[] _esqlDeepPayload = null!;
@@ -48,6 +50,9 @@ public class RowReaderBenchmarks
 
 		_esqlFlatPayload = BuildEsqlFlatPayload();
 		_rawJsonFlatPayload = BuildRawJsonFlatPayload();
+
+		_esqlFlatEnumPayload = BuildEsqlFlatEnumPayload();
+		_rawJsonFlatEnumPayload = BuildRawJsonFlatEnumPayload();
 
 		_esqlNestedPayload = BuildEsqlNestedPayload();
 		_rawJsonNestedPayload = BuildRawJsonNestedPayload();
@@ -86,6 +91,30 @@ public class RowReaderBenchmarks
 	[Benchmark(Baseline = true)]
 	public List<FlatDocument> RawJson_Flat() =>
 		JsonSerializer.Deserialize<List<FlatDocument>>(_rawJsonFlatPayload, _options)!;
+
+	// =========================================================================
+	// Flat with a numeric enum (the enum is the only validated cell)
+	// =========================================================================
+
+	[Benchmark]
+	public List<FlatEnumDocument> Esql_FlatWithEnum()
+	{
+		using var stream = new MemoryStream(_esqlFlatEnumPayload, writable: false);
+		using var result = _reader.ReadRows<FlatEnumDocument>(stream);
+		return result.Rows.ToList();
+	}
+
+	[Benchmark]
+	public List<FlatEnumDocument> RawJson_FlatWithEnum() =>
+		JsonSerializer.Deserialize<List<FlatEnumDocument>>(_rawJsonFlatEnumPayload, _options)!;
+
+	[Benchmark]
+	public List<FlatIntLevelDocument> Esql_FlatWithIntInPlaceOfEnum()
+	{
+		using var stream = new MemoryStream(_esqlFlatEnumPayload, writable: false);
+		using var result = _reader.ReadRows<FlatIntLevelDocument>(stream);
+		return result.Rows.ToList();
+	}
 
 	// =========================================================================
 	// Nested (1-level nested object)
@@ -269,6 +298,31 @@ public class RowReaderBenchmarks
 			Score = i * 1.5,
 			Active = true,
 			Category = $"cat-{i % 5}"
+		}, _options);
+
+	private static byte[] BuildEsqlFlatEnumPayload() =>
+		BuildEsqlPayload(
+			["name:keyword", "count:integer", "score:double", "active:boolean", "category:keyword", "level:integer"],
+			(w, i) =>
+			{
+				w.WriteStringValue($"item-{i}");
+				w.WriteNumberValue(i);
+				w.WriteNumberValue(i * 1.5);
+				w.WriteBooleanValue(true);
+				w.WriteStringValue($"cat-{i % 5}");
+				w.WriteNumberValue(i % 3);
+			}
+		);
+
+	private byte[] BuildRawJsonFlatEnumPayload() =>
+		BuildRawJsonPayload(i => new FlatEnumDocument
+		{
+			Name = $"item-{i}",
+			Count = i,
+			Score = i * 1.5,
+			Active = true,
+			Category = $"cat-{i % 5}",
+			Level = (Priority)(i % 3)
 		}, _options);
 
 	private static byte[] BuildEsqlNestedPayload() =>
