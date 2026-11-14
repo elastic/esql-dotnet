@@ -15,6 +15,8 @@ namespace Elastic.Esql.Benchmarks;
 [JsonSerializable(typeof(StringEnumDocument))]
 [JsonSerializable(typeof(FlatEnumDocument))]
 [JsonSerializable(typeof(FlatIntLevelDocument))]
+[JsonSerializable(typeof(OptionalNestedDocument))]
+[JsonSerializable(typeof(RequiredAddress))]
 [JsonSerializable(typeof(List<FlatDocument>))]
 [JsonSerializable(typeof(List<NestedDocument>))]
 [JsonSerializable(typeof(List<DeepDocument>))]
@@ -24,6 +26,7 @@ namespace Elastic.Esql.Benchmarks;
 [JsonSerializable(typeof(List<StringEnumDocument>))]
 [JsonSerializable(typeof(List<FlatEnumDocument>))]
 [JsonSerializable(typeof(List<FlatIntLevelDocument>))]
+[JsonSerializable(typeof(List<OptionalNestedDocument>))]
 [JsonSerializable(typeof(int))]
 [JsonSerializable(typeof(List<int>))]
 [JsonSerializable(typeof(string))]
@@ -50,6 +53,23 @@ public class NestedDocument
 	public string Name { get; set; } = string.Empty;
 	public int Age { get; set; }
 	public NestedAddress? Address { get; set; }
+}
+
+public class RequiredAddress
+{
+	// For a member with the required keyword, the source generator creates the type through an object initializer and
+	// gives its contract no parameterless creator, which keeps the type off the direct path.
+	[JsonRequired]
+	public string Street { get; set; } = string.Empty;
+
+	public string City { get; set; } = string.Empty;
+}
+
+public class OptionalNestedDocument
+{
+	public string Name { get; set; } = string.Empty;
+	public int Age { get; set; }
+	public RequiredAddress? Address { get; set; }
 }
 
 public class DeepLevel3

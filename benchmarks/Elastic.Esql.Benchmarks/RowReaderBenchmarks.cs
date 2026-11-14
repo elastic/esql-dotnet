@@ -22,6 +22,8 @@ public class RowReaderBenchmarks
 	private byte[] _rawJsonFlatEnumPayload = null!;
 	private byte[] _esqlNestedPayload = null!;
 	private byte[] _rawJsonNestedPayload = null!;
+	private byte[] _esqlNestedOptionalAbsentPayload = null!;
+	private byte[] _rawJsonNestedOptionalAbsentPayload = null!;
 	private byte[] _esqlDeepPayload = null!;
 	private byte[] _rawJsonDeepPayload = null!;
 	private byte[] _esqlWidePayload = null!;
@@ -56,6 +58,9 @@ public class RowReaderBenchmarks
 
 		_esqlNestedPayload = BuildEsqlNestedPayload();
 		_rawJsonNestedPayload = BuildRawJsonNestedPayload();
+
+		_esqlNestedOptionalAbsentPayload = BuildEsqlNestedOptionalAbsentPayload();
+		_rawJsonNestedOptionalAbsentPayload = BuildRawJsonNestedOptionalAbsentPayload();
 
 		_esqlDeepPayload = BuildEsqlDeepPayload();
 		_rawJsonDeepPayload = BuildRawJsonDeepPayload();
@@ -131,6 +136,22 @@ public class RowReaderBenchmarks
 	[Benchmark]
 	public List<NestedDocument> RawJson_NestedOneLevel() =>
 		JsonSerializer.Deserialize<List<NestedDocument>>(_rawJsonNestedPayload, _options)!;
+
+	// =========================================================================
+	// Nested optional absent (a nested object with a required member, null in every row)
+	// =========================================================================
+
+	[Benchmark]
+	public List<OptionalNestedDocument> Esql_NestedOptionalAbsent()
+	{
+		using var stream = new MemoryStream(_esqlNestedOptionalAbsentPayload, writable: false);
+		using var result = _reader.ReadRows<OptionalNestedDocument>(stream);
+		return result.Rows.ToList();
+	}
+
+	[Benchmark]
+	public List<OptionalNestedDocument> RawJson_NestedOptionalAbsent() =>
+		JsonSerializer.Deserialize<List<OptionalNestedDocument>>(_rawJsonNestedOptionalAbsentPayload, _options)!;
 
 	// =========================================================================
 	// Deep (3-level nested object)
@@ -343,6 +364,26 @@ public class RowReaderBenchmarks
 			Name = $"person-{i}",
 			Age = 20 + (i % 50),
 			Address = new NestedAddress { Street = $"street-{i}", City = $"city-{i % 10}" }
+		}, _options);
+
+	private static byte[] BuildEsqlNestedOptionalAbsentPayload() =>
+		BuildEsqlPayload(
+			["name:keyword", "age:integer", "address.street:keyword", "address.city:keyword"],
+			(w, i) =>
+			{
+				w.WriteStringValue($"person-{i}");
+				w.WriteNumberValue(20 + (i % 50));
+				w.WriteNullValue();
+				w.WriteNullValue();
+			}
+		);
+
+	private byte[] BuildRawJsonNestedOptionalAbsentPayload() =>
+		BuildRawJsonPayload(i => new OptionalNestedDocument
+		{
+			Name = $"person-{i}",
+			Age = 20 + (i % 50),
+			Address = null
 		}, _options);
 
 	private static byte[] BuildEsqlDeepPayload() =>
