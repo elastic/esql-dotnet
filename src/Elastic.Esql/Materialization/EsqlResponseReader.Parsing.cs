@@ -4,6 +4,7 @@
 
 using System.Buffers;
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 
 namespace Elastic.Esql.Materialization;
@@ -389,26 +390,11 @@ internal sealed partial class EsqlResponseReader
 			return false;
 		}
 
-		var list = new List<ColumnInfo>(16);
+		var staged = ArrayPool<ColumnInfo>.Shared.Rent(16);
+		var count = 0;
 
-		while (true)
+		try
 		{
-			if (!reader.Read())
-			{
-				state = reader.CurrentState;
-				consumed = reader.Position;
-				return false;
-			}
-
-			if (reader.TokenType == JsonTokenType.EndArray)
-				break;
-
-			if (reader.TokenType != JsonTokenType.StartObject)
-				continue;
-
-			string? name = null;
-			string? type = null;
-
 			while (true)
 			{
 				if (!reader.Read())
@@ -418,13 +404,16 @@ internal sealed partial class EsqlResponseReader
 					return false;
 				}
 
-				if (reader.TokenType == JsonTokenType.EndObject)
+				if (reader.TokenType == JsonTokenType.EndArray)
 					break;
 
-				if (reader.TokenType != JsonTokenType.PropertyName)
+				if (reader.TokenType != JsonTokenType.StartObject)
 					continue;
 
-				if (reader.ValueTextEquals("name"u8))
+				string? name = null;
+				string? type = null;
+
+				while (true)
 				{
 					if (!reader.Read())
 					{
@@ -432,38 +421,120 @@ internal sealed partial class EsqlResponseReader
 						consumed = reader.Position;
 						return false;
 					}
-					name = reader.GetString();
-				}
-				else if (reader.ValueTextEquals("type"u8))
-				{
-					if (!reader.Read())
-					{
-						state = reader.CurrentState;
-						consumed = reader.Position;
-						return false;
-					}
-					type = reader.GetString();
-				}
-				else
-				{
-					if (reader.TrySkip())
+
+					if (reader.TokenType == JsonTokenType.EndObject)
+						break;
+
+					if (reader.TokenType != JsonTokenType.PropertyName)
 						continue;
 
-					state = reader.CurrentState;
-					consumed = reader.Position;
-					return false;
+					if (reader.ValueTextEquals("name"u8))
+					{
+						if (!reader.Read())
+						{
+							state = reader.CurrentState;
+							consumed = reader.Position;
+							return false;
+						}
+						name = reader.GetString();
+					}
+					else if (reader.ValueTextEquals("type"u8))
+					{
+						if (!reader.Read())
+						{
+							state = reader.CurrentState;
+							consumed = reader.Position;
+							return false;
+						}
+						type = ReadColumnType(ref reader);
+					}
+					else
+					{
+						if (reader.TrySkip())
+							continue;
+
+						state = reader.CurrentState;
+						consumed = reader.Position;
+						return false;
+					}
 				}
+
+				if (count == staged.Length)
+					GrowStagedColumns(ref staged, count);
+
+				staged[count++] = new ColumnInfo(
+					name ?? throw new JsonException("ES|QL column is missing the \"name\" property."),
+					type ?? throw new JsonException("ES|QL column is missing the \"type\" property.")
+				);
 			}
 
-			list.Add(new ColumnInfo(
-				name ?? throw new JsonException("ES|QL column is missing the \"name\" property."),
-				type ?? throw new JsonException("ES|QL column is missing the \"type\" property.")));
+			columns = staged.AsSpan(0, count).ToArray();
+		}
+		finally
+		{
+			// The array goes back with its entries cleared, so the pool keeps no response's column names alive.
+			ArrayPool<ColumnInfo>.Shared.Return(staged, clearArray: true);
 		}
 
-		columns = [.. list];
 		state = reader.CurrentState;
 		consumed = reader.Position;
 		return true;
+	}
+
+	private static void GrowStagedColumns(ref ColumnInfo[] staged, int count)
+	{
+		var grown = ArrayPool<ColumnInfo>.Shared.Rent(count * 2);
+		staged.AsSpan(0, count).CopyTo(grown);
+
+		// The array goes back with its entries cleared, so the pool keeps no response's column names alive.
+		ArrayPool<ColumnInfo>.Shared.Return(staged, clearArray: true);
+		staged = grown;
+	}
+
+	private static readonly string[] EsqlTypeNames =
+	[
+		"aggregate_metric_double",
+		"boolean",
+		"byte",
+		"cartesian_point",
+		"cartesian_shape",
+		"counter_double",
+		"counter_integer",
+		"counter_long",
+		"date",
+		"date_nanos",
+		"dense_vector",
+		"double",
+		"geo_point",
+		"geo_shape",
+		"integer",
+		"ip",
+		"keyword",
+		"long",
+		"null",
+		"short",
+		"text",
+		"unsigned_long",
+		"unsupported",
+		"version"
+	];
+
+	private static readonly byte[][] EsqlTypeNamesUtf8 = Array.ConvertAll(EsqlTypeNames, Encoding.UTF8.GetBytes);
+
+	private static string? ReadColumnType(ref Utf8JsonReader reader)
+	{
+		// Only a string token is compared, because ValueTextEquals throws on the null token that GetString reads as a missing type.
+		if (reader.TokenType != JsonTokenType.String)
+			return reader.GetString();
+
+		for (var i = 0; i < EsqlTypeNamesUtf8.Length; i++)
+		{
+			// A table string equals the decoded text, so the schema hash and the layout cache see the same keys.
+			if (reader.ValueTextEquals(EsqlTypeNamesUtf8[i]))
+				return EsqlTypeNames[i];
+		}
+
+		return reader.GetString();
 	}
 
 	private static async Task<(JsonReaderState State, string? Id, bool? IsRunning)> AdvanceToValuesArrayFromAsyncCursorAsync(
