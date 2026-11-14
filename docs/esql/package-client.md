@@ -454,9 +454,9 @@ error surfaces at the faulty row, the same as for flat types.
 
 A single-column query such as `Select(l => l.Timestamp)` binds each cell to the result type when the serializer reads
 that type as a value or a collection, for example `DateTime` or `List<string>`. A result type the serializer reads as an
-object or a dictionary binds the whole row, as it does for a wider query. So do `JsonElement`, `JsonElement?`,
-`JsonNode`, `JsonObject` and `object`, which receive the row as an object with the column as its one property.
-`JsonArray` and `JsonValue` cannot hold an object, so they bind the cell.
+object or a dictionary binds the whole row, as it does for a wider query. So do `JsonDocument`, `JsonElement`,
+`JsonElement?`, `JsonNode`, `JsonObject` and `object`, which receive the row as an object with the column as its one
+property. `JsonArray` and `JsonValue` cannot hold an object, so they bind the cell.
 
 ## Raw response formats
 

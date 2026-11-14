@@ -216,7 +216,7 @@ internal sealed partial class EsqlResponseReader
 	private static bool IsDocumentTarget(Type type)
 	{
 		var t = Nullable.GetUnderlyingType(type) ?? type;
-		return t == typeof(object) || t == typeof(JsonElement) || t == typeof(JsonNode) || t == typeof(JsonObject);
+		return t == typeof(object) || t == typeof(JsonDocument) || t == typeof(JsonElement) || t == typeof(JsonNode) || t == typeof(JsonObject);
 	}
 
 	private static bool IsPrimitiveJsonType(Type type)

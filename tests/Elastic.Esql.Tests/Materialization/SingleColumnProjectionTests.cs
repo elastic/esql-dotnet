@@ -154,6 +154,16 @@ public class SingleColumnProjectionTests
 	}
 
 	[Test]
+	public void ReadRows_SingleColumnJsonDocumentTarget_StillAssemblesRow()
+	{
+		var rows = ReadRows<JsonDocument>(NameJson);
+
+		using var document = rows.Should().ContainSingle().Subject;
+		document.RootElement.ValueKind.Should().Be(JsonValueKind.Object);
+		document.RootElement.GetProperty("name").GetString().Should().Be("a");
+	}
+
+	[Test]
 	public void ReadRows_SingleColumnJsonArrayTarget_BindsCell()
 	{
 		var rows = ReadRows<JsonArray>(MixedListJson);
