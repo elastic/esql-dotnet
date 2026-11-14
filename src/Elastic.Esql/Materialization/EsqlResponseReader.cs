@@ -186,11 +186,11 @@ internal sealed partial class EsqlResponseReader
 	/// <summary>
 	/// A single-column response binds the cell itself to <c>T</c>, unless <c>T</c> is a document-like target, an object
 	/// or dictionary contract whose one property (or key) is what the column maps to, or a type without metadata that
-	/// is not a JSON primitive.
+	/// is outside the single-value list the translation of a single-value Select uses.
 	/// </summary>
 	private static bool IsScalarTarget(Type type, JsonTypeInfo? typeInfo) =>
 		!IsDocumentTarget(type)
-		&& (typeInfo is null ? IsPrimitiveJsonType(type) : typeInfo.Kind is JsonTypeInfoKind.None or JsonTypeInfoKind.Enumerable);
+		&& (typeInfo is null ? TypeHelper.IsSingleValueType(type) : typeInfo.Kind is JsonTypeInfoKind.None or JsonTypeInfoKind.Enumerable);
 
 	/// <summary>
 	/// A document-like target reads the whole row whatever the column count, so a one-column query keeps the shape of a wider one.
@@ -200,11 +200,5 @@ internal sealed partial class EsqlResponseReader
 	{
 		var t = Nullable.GetUnderlyingType(type) ?? type;
 		return t == typeof(object) || t == typeof(JsonDocument) || t == typeof(JsonElement) || t == typeof(JsonNode) || t == typeof(JsonObject);
-	}
-
-	private static bool IsPrimitiveJsonType(Type type)
-	{
-		var t = Nullable.GetUnderlyingType(type) ?? type;
-		return t.IsPrimitive || t == typeof(decimal) || t == typeof(string) || t.IsEnum;
 	}
 }
