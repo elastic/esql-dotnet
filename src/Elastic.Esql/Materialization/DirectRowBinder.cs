@@ -132,10 +132,10 @@ internal sealed class DirectRowBinder
 	/// limit of one, or either under options that read reference metadata.
 	/// A <c>List&lt;string&gt;</c> or <c>string[]</c> cell that the serializer reads with its own collection converter and
 	/// its stock converter for string is read as a string list, an enum cell on a numeric column that the serializer reads
-	/// with its own converters, which accept numbers, is read as an enum, the nullable form only under options with no
-	/// user-written converter factory and no converter for the nullable type, and any other cell that is not one of the
-	/// built-in scalar kinds deserializes through its own contract. <paramref name="columns"/> holds the ES|QL type of the
-	/// column each leaf node reads.
+	/// with its own converters, which accept numbers, is read as an enum, and any other cell that is not one of the built-in
+	/// scalar kinds deserializes through its own contract. The nullable form of a built-in scalar kind or of an enum is read
+	/// off the reader only under options with no user-written converter factory and no converter for the nullable type.
+	/// <paramref name="columns"/> holds the ES|QL type of the column each leaf node reads.
 	/// </summary>
 	public static DirectRowBinder? TryCreate(
 		ColumnNode[] leafNodes,

@@ -456,10 +456,12 @@ batch is malformed or does not match the type, the rows before it are still deli
 error surfaces at the faulty row, the same as for flat types.
 
 A single-column query such as `Select(l => l.Timestamp)` binds each cell to the result type when the serializer reads
-that type as a value or a collection, for example `DateTime` or `List<string>`. A result type the serializer reads as an
-object or a dictionary binds the whole row, as it does for a wider query. So do `JsonDocument`, `JsonElement`,
-`JsonElement?`, `JsonNode`, `JsonObject` and `object`, which receive the row as an object with the column as its one
-property. `JsonArray` and `JsonValue` cannot hold an object, so they bind the cell.
+that type as a value or a collection, for example `DateTime` or `List<string>`. A cell of one of the scalar types listed
+above is read off the reader under the same resolver and converter conditions as a row property, and through the
+serializer otherwise. A result type the serializer reads as an object or a dictionary binds the whole row, as it does
+for a wider query. So do `JsonDocument`, `JsonElement`, `JsonElement?`, `JsonNode`, `JsonObject` and `object`, which
+receive the row as an object with the column as its one property. `JsonArray` and `JsonValue` cannot hold an object, so
+they bind the cell.
 
 ## Raw response formats
 

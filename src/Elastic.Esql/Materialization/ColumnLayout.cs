@@ -57,9 +57,9 @@ internal sealed class ColumnLayout
 	public DirectRowBinder? DirectBinder { get; }
 
 	/// <summary>
-	/// The built-in kind a single-column read binds its cell as, or null when the cell must use the assemble-and-deserialize
-	/// path. The kind is kept here because the plan is built on every read, and the resolver judgment behind it reads type
-	/// attributes on each call.
+	/// The built-in kind a single-column read binds its cell as, or null when a one-column read of a scalar target assembles
+	/// its cell. The kind is kept here because the plan is built on every read, and the resolver judgment behind it reads
+	/// type attributes on each call.
 	/// </summary>
 	public DirectBinderKind? ScalarKind { get; private init; }
 
@@ -141,8 +141,9 @@ internal sealed class ColumnLayout
 		// Taken after the target's contract resolved, so the parts consulted for it are locked and the answer holds for every
 		// read the cached layout serves. A resolver outside the modifier-free chain can hand the nullable form a contract
 		// whose wrapper holds a custom converter while the type under it keeps the stock one, which no converter check sees,
-		// so a single column takes a built-in kind only where a row would bind directly.
-		var scalarKind = columnCount == 1 && metadata.ResolverIsModifierFree && DirectRowBinder.TryClassifyScalar(targetType, options, out var kind)
+		// so a single column takes a built-in kind only where a row would bind directly. The table lookup goes first, so a
+		// one-column object target, which the binder has judged already, skips a second resolver judgment.
+		var scalarKind = columnCount == 1 && DirectRowBinder.TryClassifyScalar(targetType, options, out var kind) && metadata.ResolverIsModifierFree
 			? kind
 			: (DirectBinderKind?)null;
 
