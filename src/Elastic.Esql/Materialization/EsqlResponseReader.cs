@@ -150,24 +150,12 @@ internal sealed partial class EsqlResponseReader
 	/// (e.g. a source-generated context without a <c>List&lt;T&gt;</c> registration); callers must then use
 	/// the per-row typed path so AOT never silently falls back to reflection.
 	/// </summary>
-	private static JsonTypeInfo<List<T>>? TryResolveListTypeInfo<T>(JsonSerializerOptions options)
-	{
-		try
-		{
-			// TryGetTypeInfo answers "not registered" without an exception, which matters for
-			// source-generated contexts that omit List<T>: this runs once per enumeration. A user
-			// converter for List<T> would see the internal batch wrapper instead of the caller's
-			// rows, so only the framework's own list converter keeps batching transparent.
-			return options.TryGetTypeInfo(typeof(List<T>), out var typeInfo) && JsonMetadataManager.IsBuiltInConverter(typeInfo.Converter)
-				? typeInfo as JsonTypeInfo<List<T>>
-				: null;
-		}
-		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
-		{
-			// A resolver that throws for List<T> (for example the reflection fallback under Native AOT) means: fall back to the per-row path.
-			return null;
-		}
-	}
+	private static JsonTypeInfo<List<T>>? TryResolveListTypeInfo<T>(JsonSerializerOptions options) =>
+		// A user converter for List<T> would see the internal batch wrapper instead of the caller's rows, so only the
+		// framework's own list converter keeps batching transparent.
+		JsonMetadataManager.TryResolveTypeInfo(typeof(List<T>), options) is { } typeInfo && JsonMetadataManager.IsBuiltInConverter(typeInfo.Converter)
+			? typeInfo as JsonTypeInfo<List<T>>
+			: null;
 
 	private readonly record struct RowMaterializationPlan<T>(
 		int EstimatedRowSize,
@@ -180,18 +168,13 @@ internal sealed partial class EsqlResponseReader
 		public RowAssemblyBuffers CreateAssemblyBuffers() => new(EstimatedRowSize, IsScalar, WrapScalarInArray);
 	}
 
-	private static RowMaterializationPlan<T> CreateRowMaterializationPlan<T>(ColumnInfo[] columns, ColumnLayout layout, JsonSerializerOptions options)
+	private static RowMaterializationPlan<T> CreateRowMaterializationPlan<T>(ColumnLayout layout, JsonSerializerOptions options)
 	{
-		var estimatedRowSize = Math.Max(256, columns.Length * 32);
+		var estimatedRowSize = Math.Max(256, layout.ColumnCount * 32);
 		// Null when T has no metadata: rows then deserialize through the non-generic options-based overload.
 		var typeInfo = JsonMetadataManager.TryResolveTypeInfo(typeof(T), options);
-		var isScalar = columns.Length == 1 && IsScalarTarget(typeof(T), typeInfo);
-		// A resolver outside the modifier-free chain can hand the nullable form a contract whose wrapper holds a custom
-		// converter while the type under it keeps the stock one, which no converter check sees, so a single column takes a
-		// built-in kind only where a row would.
-		var scalarKind = isScalar && layout.ResolverIsModifierFree && DirectRowBinder.TryClassifyScalar(typeof(T), options, out var kind)
-			? kind
-			: (DirectBinderKind?)null;
+		var isScalar = layout.ColumnCount == 1 && IsScalarTarget(typeof(T), typeInfo);
+		var scalarKind = isScalar ? layout.ScalarKind : null;
 
 		// A collection target takes the whole cell, so a single-valued multi-value column needs the same
 		// wrap the row path applies to a collection property.

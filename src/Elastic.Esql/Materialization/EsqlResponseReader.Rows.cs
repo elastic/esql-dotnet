@@ -154,7 +154,7 @@ internal sealed partial class EsqlResponseReader
 		if (prepared.ValuesFirst)
 			return ReadFromBufferedResponseAsync<T>(cursor, result, cancellationToken);
 
-		return StreamRowsAsync<T>(cursor, prepared.ReaderState, prepared.Columns, prepared.Layout, Options, cancellationToken: cancellationToken);
+		return StreamRowsAsync<T>(cursor, prepared.ReaderState, prepared.Layout, Options, cancellationToken: cancellationToken);
 	}
 
 #if NET10_0_OR_GREATER
@@ -188,7 +188,7 @@ internal sealed partial class EsqlResponseReader
 		if (prepared.ValuesFirst)
 			return ReadFromBufferedResponse<T>(cursor, result);
 
-		return StreamRows<T>(cursor, prepared.ReaderState, prepared.Columns, prepared.Layout, Options);
+		return StreamRows<T>(cursor, prepared.ReaderState, prepared.Layout, Options);
 	}
 
 	private async IAsyncEnumerable<T> StreamRowsThenScanForIdAsync<T>(
@@ -199,7 +199,7 @@ internal sealed partial class EsqlResponseReader
 	{
 		var tracker = new ReaderStateTracker(prepared.ReaderState);
 
-		await foreach (var item in StreamRowsAsync<T>(cursor, prepared.ReaderState, prepared.Columns, prepared.Layout, Options, cancellationToken, tracker).ConfigureAwait(false))
+		await foreach (var item in StreamRowsAsync<T>(cursor, prepared.ReaderState, prepared.Layout, Options, cancellationToken, tracker).ConfigureAwait(false))
 			yield return item;
 
 		var (id, _) = await ScanForIdAsync(cursor, tracker.State, cancellationToken).ConfigureAwait(false);
@@ -233,7 +233,7 @@ internal sealed partial class EsqlResponseReader
 	{
 		var tracker = new ReaderStateTracker(prepared.ReaderState);
 
-		foreach (var item in StreamRows<T>(cursor, prepared.ReaderState, prepared.Columns, prepared.Layout, Options, tracker))
+		foreach (var item in StreamRows<T>(cursor, prepared.ReaderState, prepared.Layout, Options, tracker))
 			yield return item;
 
 		var (id, _) = ScanForId(cursor, tracker.State);
@@ -246,10 +246,10 @@ internal sealed partial class EsqlResponseReader
 	{
 		var (columns, valuesOffset, id, isRunning) = ParseColumnsFromBuffer(buffer, length);
 		var layout = GetColumnLayout<T>(columns);
-		return new BufferedStreamResult<T>(StreamRowsFromBuffer<T>(buffer, length, valuesOffset, columns, layout), id, isRunning);
+		return new BufferedStreamResult<T>(StreamRowsFromBuffer<T>(buffer, length, valuesOffset, layout), id, isRunning);
 	}
 
-	private IEnumerable<T> StreamRowsFromBuffer<T>(byte[] buffer, int length, int valuesOffset, ColumnInfo[] columns, ColumnLayout layout)
+	private IEnumerable<T> StreamRowsFromBuffer<T>(byte[] buffer, int length, int valuesOffset, ColumnLayout layout)
 	{
 		var bufferCursor = new DrainedBufferCursor(buffer, valuesOffset, length);
 
@@ -257,7 +257,7 @@ internal sealed partial class EsqlResponseReader
 		if (!AdvancePastStartArray(bufferCursor, ref readerState))
 			yield break;
 
-		foreach (var item in StreamRows<T>(bufferCursor, readerState, columns, layout, Options))
+		foreach (var item in StreamRows<T>(bufferCursor, readerState, layout, Options))
 			yield return item;
 	}
 
@@ -300,13 +300,12 @@ internal sealed partial class EsqlResponseReader
 	private static async IAsyncEnumerable<T> StreamRowsAsync<T>(
 		IAsyncBufferCursor cursor,
 		JsonReaderState readerState,
-		ColumnInfo[] columns,
 		ColumnLayout layout,
 		JsonSerializerOptions options,
 		[EnumeratorCancellation] CancellationToken cancellationToken,
 		ReaderStateTracker? readerStateTracker = null)
 	{
-		var plan = CreateRowMaterializationPlan<T>(columns, layout, options);
+		var plan = CreateRowMaterializationPlan<T>(layout, options);
 
 		// The batched path wraps rows in a JSON array, adding one nesting level over the per-row
 		// object deserialize, so it needs strictly more depth headroom than the layout itself.
@@ -366,12 +365,11 @@ internal sealed partial class EsqlResponseReader
 	private static IEnumerable<T> StreamRows<T>(
 		ISyncBufferCursor cursor,
 		JsonReaderState readerState,
-		ColumnInfo[] columns,
 		ColumnLayout layout,
 		JsonSerializerOptions options,
 		ReaderStateTracker? readerStateTracker = null)
 	{
-		var plan = CreateRowMaterializationPlan<T>(columns, layout, options);
+		var plan = CreateRowMaterializationPlan<T>(layout, options);
 
 		// The batched path wraps rows in a JSON array, adding one nesting level over the per-row
 		// object deserialize, so it needs strictly more depth headroom than the layout itself.

@@ -57,11 +57,11 @@ internal sealed class ColumnLayout
 	public DirectRowBinder? DirectBinder { get; }
 
 	/// <summary>
-	/// Whether the options' resolver was modifier-free when this layout was built. The single-column plan reads it here
-	/// rather than from the metadata manager, because the plan is built on every read and the judgment reads type
+	/// The built-in kind a single-column read binds its cell as, or null when the cell must use the assemble-and-deserialize
+	/// path. The kind is kept here because the plan is built on every read, and the resolver judgment behind it reads type
 	/// attributes on each call.
 	/// </summary>
-	public bool ResolverIsModifierFree { get; private init; }
+	public DirectBinderKind? ScalarKind { get; private init; }
 
 	private ColumnLayout(
 		ColumnNode root,
@@ -139,11 +139,14 @@ internal sealed class ColumnLayout
 			: null;
 
 		// Taken after the target's contract resolved, so the parts consulted for it are locked and the answer holds for every
-		// read the cached layout serves.
-		return new ColumnLayout(root, columnCount, maxDepth, leafNodesByColumnIndex, branchNodeCount, directBinder)
-		{
-			ResolverIsModifierFree = metadata.ResolverIsModifierFree
-		};
+		// read the cached layout serves. A resolver outside the modifier-free chain can hand the nullable form a contract
+		// whose wrapper holds a custom converter while the type under it keeps the stock one, which no converter check sees,
+		// so a single column takes a built-in kind only where a row would bind directly.
+		var scalarKind = columnCount == 1 && metadata.ResolverIsModifierFree && DirectRowBinder.TryClassifyScalar(targetType, options, out var kind)
+			? kind
+			: (DirectBinderKind?)null;
+
+		return new ColumnLayout(root, columnCount, maxDepth, leafNodesByColumnIndex, branchNodeCount, directBinder) { ScalarKind = scalarKind };
 	}
 
 	/// <summary>

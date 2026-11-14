@@ -149,7 +149,8 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 	{
 		try
 		{
-			return options.GetTypeInfo(type);
+			// TryGetTypeInfo answers a missing contract without an exception, and the row plan resolves its target on every read.
+			return options.TryGetTypeInfo(type, out var typeInfo) ? typeInfo : null;
 		}
 		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
 		{

@@ -49,18 +49,18 @@ internal sealed class DirectRowBinder
 	// The reflection resolver and the source generator hand each of these types the converter JsonMetadataServices exposes.
 	// Another converter of the serializer's assembly, such as the object converter a factory can return for string, reads
 	// other tokens than the inline read accepts, so the assembly alone proves nothing.
-	private static readonly Dictionary<Type, Type> StockConverterTypes = new()
+	private static readonly Dictionary<Type, (DirectBinderKind Kind, Type ConverterType)> ScalarKinds = new()
 	{
-		[typeof(bool)] = JsonMetadataServices.BooleanConverter.GetType(),
-		[typeof(DateTime)] = JsonMetadataServices.DateTimeConverter.GetType(),
-		[typeof(DateTimeOffset)] = JsonMetadataServices.DateTimeOffsetConverter.GetType(),
-		[typeof(decimal)] = JsonMetadataServices.DecimalConverter.GetType(),
-		[typeof(double)] = JsonMetadataServices.DoubleConverter.GetType(),
-		[typeof(float)] = JsonMetadataServices.SingleConverter.GetType(),
-		[typeof(Guid)] = JsonMetadataServices.GuidConverter.GetType(),
-		[typeof(int)] = JsonMetadataServices.Int32Converter.GetType(),
-		[typeof(long)] = JsonMetadataServices.Int64Converter.GetType(),
-		[typeof(string)] = JsonMetadataServices.StringConverter.GetType()
+		[typeof(bool)] = (DirectBinderKind.Bool, JsonMetadataServices.BooleanConverter.GetType()),
+		[typeof(DateTime)] = (DirectBinderKind.DateTime, JsonMetadataServices.DateTimeConverter.GetType()),
+		[typeof(DateTimeOffset)] = (DirectBinderKind.DateTimeOffset, JsonMetadataServices.DateTimeOffsetConverter.GetType()),
+		[typeof(decimal)] = (DirectBinderKind.Decimal, JsonMetadataServices.DecimalConverter.GetType()),
+		[typeof(double)] = (DirectBinderKind.Double, JsonMetadataServices.DoubleConverter.GetType()),
+		[typeof(float)] = (DirectBinderKind.Single, JsonMetadataServices.SingleConverter.GetType()),
+		[typeof(Guid)] = (DirectBinderKind.Guid, JsonMetadataServices.GuidConverter.GetType()),
+		[typeof(int)] = (DirectBinderKind.Int32, JsonMetadataServices.Int32Converter.GetType()),
+		[typeof(long)] = (DirectBinderKind.Int64, JsonMetadataServices.Int64Converter.GetType()),
+		[typeof(string)] = (DirectBinderKind.String, JsonMetadataServices.StringConverter.GetType())
 	};
 
 	// The serializer keeps its nullable wrapper type internal, and GetNullableConverter creates the wrapper the resolvers
@@ -350,32 +350,9 @@ internal sealed class DirectRowBinder
 
 	private static bool TryClassify(Type propertyType, out DirectBinderKind kind)
 	{
-		var type = Nullable.GetUnderlyingType(propertyType) ?? propertyType;
-
-		// Enums share integer type codes but need converter-driven handling, which an enum cell or a converter cell gives.
-		if (type.IsEnum)
-		{
-			kind = default;
-			return false;
-		}
-
-		var classified = Type.GetTypeCode(type) switch
-		{
-			TypeCode.String => DirectBinderKind.String,
-			TypeCode.Boolean => DirectBinderKind.Bool,
-			TypeCode.Int32 => DirectBinderKind.Int32,
-			TypeCode.Int64 => DirectBinderKind.Int64,
-			TypeCode.Double => DirectBinderKind.Double,
-			TypeCode.Single => DirectBinderKind.Single,
-			TypeCode.Decimal => DirectBinderKind.Decimal,
-			TypeCode.DateTime => DirectBinderKind.DateTime,
-			TypeCode.Object when type == typeof(DateTimeOffset) => DirectBinderKind.DateTimeOffset,
-			TypeCode.Object when type == typeof(Guid) => DirectBinderKind.Guid,
-			_ => (DirectBinderKind?)null
-		};
-
-		kind = classified ?? default;
-		return classified is not null;
+		var found = ScalarKinds.TryGetValue(Nullable.GetUnderlyingType(propertyType) ?? propertyType, out var entry);
+		kind = entry.Kind;
+		return found;
 	}
 
 	/// <summary>
@@ -384,38 +361,31 @@ internal sealed class DirectRowBinder
 	/// </summary>
 	private static bool UsesBuiltInConverter(Type propertyType, JsonSerializerOptions options)
 	{
-		try
-		{
-			if (!options.TryGetTypeInfo(propertyType, out var propertyTypeInfo) || !IsStockConverter(propertyType, propertyTypeInfo.Converter))
-				return false;
-
-			var underlying = Nullable.GetUnderlyingType(propertyType);
-			if (underlying is null)
-				return true;
-
-			// A converter or factory the serializer chose for the nullable type when it resolved the contract replaced the
-			// default wrapper with its own product, which can be the serializer's wrapper around a custom converter, so the
-			// wrapper's type tells nothing about what it holds. A converter names its target through Type, which
-			// JsonConverter<T> seals, so reading it runs no user code. A user factory answers through CanConvert, whose
-			// answer now need not be the one the serializer got, so its presence alone counts, while the serializer's own
-			// factories keep a pure predicate. Under the modifier-free chain the options' converters are the one place such
-			// a converter comes from.
-			var mayReplaceWrapper = options.Converters.Any(
-				converter => converter.Type == propertyType || (converter is JsonConverterFactory && !JsonMetadataManager.IsBuiltInConverter(converter))
-			);
-			if (mayReplaceWrapper)
-				return false;
-
-			// The default wrapper reads through the converter for the type under it, so a user converter for T disqualifies
-			// T? as well.
-			return options.TryGetTypeInfo(underlying, out var underlyingTypeInfo) && IsStockConverter(underlying, underlyingTypeInfo.Converter);
-		}
-		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
-		{
-			// The documented STJ failures for an unsupported type: keep the slow path. Anything
-			// else is a resolver bug and must surface.
+		if (JsonMetadataManager.TryResolveTypeInfo(propertyType, options) is not { } propertyTypeInfo
+			|| !IsStockConverter(propertyType, propertyTypeInfo.Converter))
 			return false;
-		}
+
+		var underlying = Nullable.GetUnderlyingType(propertyType);
+		if (underlying is null)
+			return true;
+
+		// A converter or factory the serializer chose for the nullable type when it resolved the contract replaced the
+		// default wrapper with its own product, which can be the serializer's wrapper around a custom converter, so the
+		// wrapper's type tells nothing about what it holds. A converter names its target through Type, which
+		// JsonConverter<T> seals, so reading it runs no user code. A user factory answers through CanConvert, whose
+		// answer now need not be the one the serializer got, so its presence alone counts, while the serializer's own
+		// factories keep a pure predicate. Under the modifier-free chain the options' converters are the one place such
+		// a converter comes from.
+		var mayReplaceWrapper = options.Converters.Any(
+			converter => converter.Type == propertyType || (converter is JsonConverterFactory && !JsonMetadataManager.IsBuiltInConverter(converter))
+		);
+		if (mayReplaceWrapper)
+			return false;
+
+		// The default wrapper reads through the converter for the type under it, so a user converter for T disqualifies
+		// T? as well.
+		return JsonMetadataManager.TryResolveTypeInfo(underlying, options) is { } underlyingTypeInfo
+			&& IsStockConverter(underlying, underlyingTypeInfo.Converter);
 	}
 
 	private static bool IsStockConverter(Type type, JsonConverter converter)
@@ -429,7 +399,7 @@ internal sealed class DirectRowBinder
 		if (Nullable.GetUnderlyingType(type) is not null)
 			return converterType.IsGenericType && converterType.GetGenericTypeDefinition() == NullableConverterDefinition;
 
-		return StockConverterTypes.TryGetValue(type, out var stockType) && converterType == stockType;
+		return ScalarKinds.TryGetValue(type, out var entry) && converterType == entry.ConverterType;
 	}
 
 	/// <summary>
