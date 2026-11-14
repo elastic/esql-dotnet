@@ -298,7 +298,8 @@ internal sealed partial class EsqlResponseReader
 
 	/// <summary>
 	/// Streams rows from the <c>values</c> array, one at a time for a layout with a binder or without branches, and in
-	/// batches for a nested layout without a binder.
+	/// batches for a nested layout without a binder when the depth limit leaves room for the batch array and the options
+	/// resolve a list contract for the row type.
 	/// </summary>
 	private static async IAsyncEnumerable<T> StreamRowsAsync<T>(
 		IAsyncBufferCursor cursor,

@@ -83,7 +83,8 @@ internal sealed partial class EsqlResponseReader
 		item = default;
 		incomplete = false;
 
-		// A nested row assigns after the whole row is checked, so a cut or refused row creates no object.
+		// A validated row assigns after the whole row is checked, so a cut row, or one the checks before the instance refuse,
+		// creates no object.
 		if (binder.ValidatesRows)
 			return TryBindValidatedRow(ref reader, source, binder, buffers, out item, out incomplete);
 
