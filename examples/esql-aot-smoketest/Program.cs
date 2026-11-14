@@ -104,9 +104,8 @@ if (count != 2)
 Console.WriteLine($"\nMaterialization test (scalar):");
 Console.WriteLine($"  Count = {count}");
 
-// Dotted columns force a nested ColumnLayout, which routes materialization through
-// StreamRowsBatched instead of the flat row-at-a-time path - only that path exercises the
-// source-gen List<T> resolver under AOT.
+// Dotted columns into a class bind directly under Native AOT, through JsonPropertyInfo.Set for the nested object and its
+// members.
 const string nestedJson =
 	"""
 	{"took":1,"columns":[{"name":"shipmentId","type":"keyword"},{"name":"address.city","type":"keyword"},{"name":"address.zip","type":"keyword"}],"values":[["S-1","Berlin","10115"],["S-2","Munich","80331"]]}
@@ -125,6 +124,18 @@ if (shipments[0].Address is null || shipments[0].Address!.City != "Berlin")
 Console.WriteLine($"\nMaterialization test (nested):");
 Console.WriteLine($"  Row 0: {shipments[0].ShipmentId} {shipments[0].Address!.City}");
 Console.WriteLine($"  Row 1: {shipments[1].ShipmentId} {shipments[1].Address!.City}");
+
+// A positional record has no parameterless constructor and so no binder, which keeps this read on the batched path,
+// the one path that exercises the source-generated List<T> contract under AOT.
+var batchProvider = new EsqlQueryProvider(EsqlJsonContext.Default, new StubQueryExecutor(nestedJson));
+var batchShipments = new EsqlQueryable<EsqlShipmentBatch>(batchProvider)
+	.From("shipments")
+	.ToList();
+
+if (batchShipments.Count != 2)
+	throw new InvalidOperationException($"Expected 2 batched rows but materialized {batchShipments.Count}.");
+if (batchShipments[0].Address?.City != "Berlin")
+	throw new InvalidOperationException("Row 0 did not materialize the expected nested values through the batched path.");
 
 // Client: the transport-backed path must AOT-compile too, so run one typed query through
 // EsqlClient over an in-memory request invoker that serves the rows payload.
@@ -195,10 +206,20 @@ namespace EsqlAotSmoketest
 		public string? Zip { get; set; }
 	}
 
+	public class EsqlShipmentBatch
+	{
+		public string? ShipmentId { get; set; }
+		public BatchShipmentAddress? Address { get; set; }
+	}
+
+	public record BatchShipmentAddress(string? City, string? Zip);
+
 	[JsonSerializable(typeof(EsqlOrder))]
 	[JsonSerializable(typeof(EsqlProduct))]
 	[JsonSerializable(typeof(EsqlShipment))]
 	[JsonSerializable(typeof(List<EsqlShipment>))]
+	[JsonSerializable(typeof(EsqlShipmentBatch))]
+	[JsonSerializable(typeof(List<EsqlShipmentBatch>))]
 	[JsonSerializable(typeof(int))]
 	[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 	public partial class EsqlJsonContext : JsonSerializerContext;

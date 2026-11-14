@@ -83,11 +83,8 @@ internal sealed partial class EsqlResponseReader
 		item = default;
 		incomplete = false;
 
-		// The row bind assigns each cell to the root instance, so a row of a layout with branches takes the assembled path.
-		if (binder.BranchProperties.Length > 0)
-			return false;
-
-		if (binder.ValidatedCellCount > 0)
+		// A nested row assigns after the whole row is checked, so a cut or refused row creates no object.
+		if (binder.ValidatedCellCount > 0 || binder.BranchProperties.Length > 0)
 			return TryBindValidatedRow(ref reader, source, binder, buffers, out item, out incomplete);
 
 		var kinds = binder.Kinds;
@@ -138,14 +135,16 @@ internal sealed partial class EsqlResponseReader
 	}
 
 	/// <summary>
-	/// Binds a row with converter, string list or enum cells in three steps. The validating pass checks every cell's shape,
-	/// parses each built-in cell other than a string and each enum cell, and assigns nothing, so a row that fails it or ends
-	/// mid-buffer has run no nested type's deserialization callback. Once that pass has seen the closing bracket, each string
-	/// cell and each string list cell decodes into the scratch, and a string that does not decode sends the row to the
-	/// fallback before any converter cell runs. The assigning pass then assigns the cells in column order, the order the
-	/// serializer's setters see. A cell that only the assigning pass decodes can still send the row to the fallback (a
-	/// converter cell its contract rejects, a null converter result for a property that does not accept null) after the
-	/// converter cells in that cell or before it have run their callbacks.
+	/// Binds a row with converter, string list or enum cells, and every row of a layout with branches, in three steps. The
+	/// validating pass checks every cell's shape, parses each built-in cell other than a string and each enum cell, and
+	/// assigns nothing, so a row that fails it or ends mid-buffer has run no nested type's deserialization callback. Once
+	/// that pass has seen the closing bracket, each string cell and each string list cell decodes into the scratch, and a
+	/// string that does not decode sends the row to the fallback before any converter cell runs. A row of a layout with
+	/// branches then marks each branch above a non-null cell as active, and falls back when a required branch is not. The
+	/// assigning pass then assigns the cells in column order for a flat layout and in the tree's order for a nested one,
+	/// the order the serializer's setters see. A cell that only the assigning pass decodes can still send the row to the
+	/// fallback (a converter cell its contract rejects, a null converter result for a property that does not accept null)
+	/// after the converter cells in that cell or before it have run their callbacks.
 	/// </summary>
 	private static bool TryBindValidatedRow<T>(
 		ref Utf8JsonReader reader,
@@ -157,6 +156,8 @@ internal sealed partial class EsqlResponseReader
 	{
 		item = default;
 		var columnCount = binder.Kinds.Length;
+		var branchCount = binder.BranchProperties.Length;
+		var indexedColumnCount = branchCount > 0 ? columnCount : 0;
 		var strings = buffers.StringCells(columnCount);
 		var lists = buffers.ListCells(columnCount);
 
@@ -164,6 +165,16 @@ internal sealed partial class EsqlResponseReader
 		var spans = columnCount <= 64
 			? stackalloc CellSpan[columnCount]
 			: (rentedSpans = ArrayPool<CellSpan>.Shared.Rent(columnCount)).AsSpan(0, columnCount);
+
+		int[]? rentedSpanIndexes = null;
+		var spanIndexByColumn = indexedColumnCount <= 64
+			? stackalloc int[indexedColumnCount]
+			: (rentedSpanIndexes = ArrayPool<int>.Shared.Rent(indexedColumnCount)).AsSpan(0, indexedColumnCount);
+
+		bool[]? rentedActiveBranches = null;
+		var activeBranches = branchCount <= 128
+			? stackalloc bool[branchCount]
+			: (rentedActiveBranches = ArrayPool<bool>.Shared.Rent(branchCount)).AsSpan(0, branchCount);
 
 		try
 		{
@@ -176,8 +187,31 @@ internal sealed partial class EsqlResponseReader
 			if (!TryDecodeStringCells(source, binder, buffers, spans[..recorded]))
 				return false;
 
+			if (branchCount > 0)
+			{
+				IndexRecordedSpans(binder, spans[..recorded], spanIndexByColumn, activeBranches);
+
+				// A required nested object the row leaves empty is absent from the assembled row, which the serializer rejects,
+				// so the row falls back before any object exists.
+				if (HasInactiveRequiredBranch(binder, activeBranches))
+					return false;
+			}
+
+			var row = new RecordedRow
+			{
+				Source = source,
+				Binder = binder,
+				Buffers = buffers,
+				Spans = spans[..recorded],
+				SpanIndexByColumn = spanIndexByColumn,
+				ActiveBranches = activeBranches
+			};
+
 			var instance = binder.CreateObject();
-			if (!TryAssignCells(source, binder, buffers, spans[..recorded], instance))
+			var assigned = branchCount > 0
+				? TryAssignChildren(row, binder.Root.Children!, instance)
+				: TryAssignCells(row, instance);
+			if (!assigned)
 				return false;
 
 			item = (T)instance;
@@ -191,6 +225,10 @@ internal sealed partial class EsqlResponseReader
 			buffers.ClearStringListScratch();
 			if (rentedSpans is not null)
 				ArrayPool<CellSpan>.Shared.Return(rentedSpans);
+			if (rentedSpanIndexes is not null)
+				ArrayPool<int>.Shared.Return(rentedSpanIndexes);
+			if (rentedActiveBranches is not null)
+				ArrayPool<bool>.Shared.Return(rentedActiveBranches);
 		}
 	}
 
@@ -393,47 +431,119 @@ internal sealed partial class EsqlResponseReader
 		return true;
 	}
 
-	private static bool TryAssignCells(
-		in ReadOnlySequence<byte> source,
-		DirectRowBinder binder,
-		RowAssemblyBuffers buffers,
-		ReadOnlySpan<CellSpan> spans,
-		object instance)
+	/// <summary>
+	/// Points each column at its recorded span, or at -1 for a null cell, and marks each branch above a recorded cell as
+	/// active, as the regroup does.
+	/// </summary>
+	private static void IndexRecordedSpans(DirectRowBinder binder, ReadOnlySpan<CellSpan> spans, Span<int> spanIndexByColumn, Span<bool> activeBranches)
 	{
-		var strings = buffers.StringCells(binder.Kinds.Length);
-		var lists = buffers.ListCells(binder.Kinds.Length);
+		spanIndexByColumn.Fill(-1);
+		activeBranches.Clear();
 
-		foreach (var span in spans)
+		for (var i = 0; i < spans.Length; i++)
 		{
-			var column = span.Column;
-			var kind = binder.Kinds[column];
+			var column = spans[i].Column;
+			spanIndexByColumn[column] = i;
+			MarkActiveBranches(binder.Leaves[column], activeBranches);
+		}
+	}
 
-			if (kind == DirectBinderKind.Converter)
+	private static bool HasInactiveRequiredBranch(DirectRowBinder binder, ReadOnlySpan<bool> activeBranches)
+	{
+		for (var i = 0; i < activeBranches.Length; i++)
+		{
+			if (!activeBranches[i] && binder.BranchProperties[i].IsRequired)
+				return true;
+		}
+
+		return false;
+	}
+
+	private static bool TryAssignCells(in RecordedRow row, object instance)
+	{
+		foreach (var span in row.Spans)
+		{
+			if (!TryAssignCell(row, span, instance))
+				return false;
+		}
+
+		return true;
+	}
+
+	private static bool TryAssignCell(in RecordedRow row, in CellSpan span, object instance)
+	{
+		var binder = row.Binder;
+		var column = span.Column;
+		var kind = binder.Kinds[column];
+
+		if (kind == DirectBinderKind.Converter)
+			return TryBindConverterCell(row.Source, span, binder, row.Buffers, instance);
+
+		if (kind == DirectBinderKind.StringList)
+		{
+			Assign(binder.TypedSetters[column], binder.Properties[column], instance, (List<string?>)row.Buffers.ListCells(binder.Kinds.Length)[column]!);
+			return true;
+		}
+
+		if (kind == DirectBinderKind.StringArray)
+		{
+			Assign(binder.TypedSetters[column], binder.Properties[column], instance, (string[])row.Buffers.ListCells(binder.Kinds.Length)[column]!);
+			return true;
+		}
+
+		if (kind == DirectBinderKind.Enum)
+		{
+			AssignEnum(binder, column, span.Value.Int64, instance);
+			return true;
+		}
+
+		var strings = row.Buffers.StringCells(binder.Kinds.Length);
+		AssignDirectValue(kind, span.Value, strings[column], binder.Properties[column], binder.TypedSetters[column], instance);
+		return true;
+	}
+
+	/// <summary>
+	/// The row the validating pass recorded and the assigning pass reads: the sequence the spans point into, the binder,
+	/// the scratch that holds the decoded strings and lists, and the recorded spans in column order.
+	/// </summary>
+	private readonly ref struct RecordedRow
+	{
+		public ReadOnlySequence<byte> Source { get; init; }
+		public DirectRowBinder Binder { get; init; }
+		public RowAssemblyBuffers Buffers { get; init; }
+		public ReadOnlySpan<CellSpan> Spans { get; init; }
+
+		/// <summary>Per column, the index of its span in <see cref="Spans"/>, or -1 for a null cell. Empty for a flat binder.</summary>
+		public ReadOnlySpan<int> SpanIndexByColumn { get; init; }
+
+		/// <summary>Per branch, at its <see cref="ColumnNode.BranchIndex"/>, whether a non-null cell sits under it. Empty for a flat binder.</summary>
+		public ReadOnlySpan<bool> ActiveBranches { get; init; }
+	}
+
+	// The walk follows the order the assembled row lists its members in, which is the order the serializer creates objects
+	// and calls setters: a nested object at its opening brace, its members in row order, and its assignment to the parent
+	// after its closing brace.
+	private static bool TryAssignChildren(in RecordedRow row, List<ColumnNode> children, object instance)
+	{
+		foreach (var child in children)
+		{
+			if (child.ColumnIndex >= 0)
 			{
-				if (!TryBindConverterCell(source, span, binder, buffers, instance))
+				var spanIndex = row.SpanIndexByColumn[child.ColumnIndex];
+				if (spanIndex >= 0 && !TryAssignCell(row, row.Spans[spanIndex], instance))
 					return false;
 				continue;
 			}
 
-			if (kind == DirectBinderKind.StringList)
-			{
-				Assign(binder.TypedSetters[column], binder.Properties[column], instance, (List<string?>)lists[column]!);
+			// An inactive branch is absent from the assembled row, so its property keeps its initializer.
+			if (!row.ActiveBranches[child.BranchIndex])
 				continue;
-			}
 
-			if (kind == DirectBinderKind.StringArray)
-			{
-				Assign(binder.TypedSetters[column], binder.Properties[column], instance, (string[])lists[column]!);
-				continue;
-			}
+			var created = row.Binder.BranchCreators[child.BranchIndex]();
+			if (!TryAssignChildren(row, child.Children!, created))
+				return false;
 
-			if (kind == DirectBinderKind.Enum)
-			{
-				AssignEnum(binder, column, span.Value.Int64, instance);
-				continue;
-			}
-
-			AssignDirectValue(kind, span.Value, strings[column], binder.Properties[column], binder.TypedSetters[column], instance);
+			row.Binder.BranchProperties[child.BranchIndex].Set!(instance, created);
 		}
 
 		return true;

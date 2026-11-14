@@ -26,7 +26,7 @@ internal sealed partial class EsqlResponseReader
 		item = default;
 		reachedEnd = false;
 
-		// Fast paths: eligible flat layouts bind cells straight off the reader, and scalar reads of the built-in
+		// Fast paths: eligible layouts bind cells straight off the reader, and scalar reads of the built-in
 		// kinds read the one cell the same way. A row whose token shapes need the serializer's coercion or error
 		// semantics falls through, per row, to assemble-and-deserialize below.
 		var bindsDirect = buffers.IsScalar ? plan.ScalarKind is not null : layout.DirectBinder is not null;

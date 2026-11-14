@@ -296,7 +296,10 @@ internal sealed partial class EsqlResponseReader
 		result.ReleaseBuffer();
 	}
 
-	/// <summary>Streams rows from the <c>values</c> array, one at a time for flat layouts and in batches for nested layouts.</summary>
+	/// <summary>
+	/// Streams rows from the <c>values</c> array, one at a time for a layout with a binder or without branches, and in
+	/// batches for a nested layout without a binder.
+	/// </summary>
 	private static async IAsyncEnumerable<T> StreamRowsAsync<T>(
 		IAsyncBufferCursor cursor,
 		JsonReaderState readerState,
@@ -311,10 +314,13 @@ internal sealed partial class EsqlResponseReader
 		// object deserialize, so it needs strictly more depth headroom than the layout itself.
 		var effectiveMaxDepth = ColumnLayout.EffectiveMaxDepth(options);
 
-		// Batching only pays off for nested layouts, where every per-row Deserialize call
-		// allocates serializer-internal depth-tracking state. Flat layouts keep true
-		// row-at-a-time streaming.
-		if (layout.BranchNodeCount > 0 && layout.MaxDepth < effectiveMaxDepth && TryResolveListTypeInfo<T>(options) is { } listTypeInfo)
+		// Batching only pays off for nested layouts without a binder, where every per-row Deserialize call allocates
+		// serializer-internal depth-tracking state. A layout with a binder binds each row directly and streams it like a flat
+		// one.
+		if (layout.DirectBinder is null
+			&& layout.BranchNodeCount > 0
+			&& layout.MaxDepth < effectiveMaxDepth
+			&& TryResolveListTypeInfo<T>(options) is { } listTypeInfo)
 		{
 			await foreach (var item in StreamRowsBatchedAsync(cursor, readerState, plan, layout, listTypeInfo, cancellationToken, readerStateTracker).ConfigureAwait(false))
 				yield return item;
@@ -375,10 +381,13 @@ internal sealed partial class EsqlResponseReader
 		// object deserialize, so it needs strictly more depth headroom than the layout itself.
 		var effectiveMaxDepth = ColumnLayout.EffectiveMaxDepth(options);
 
-		// Batching only pays off for nested layouts, where every per-row Deserialize call
-		// allocates serializer-internal depth-tracking state. Flat layouts keep true
-		// row-at-a-time streaming.
-		if (layout.BranchNodeCount > 0 && layout.MaxDepth < effectiveMaxDepth && TryResolveListTypeInfo<T>(options) is { } listTypeInfo)
+		// Batching only pays off for nested layouts without a binder, where every per-row Deserialize call allocates
+		// serializer-internal depth-tracking state. A layout with a binder binds each row directly and streams it like a flat
+		// one.
+		if (layout.DirectBinder is null
+			&& layout.BranchNodeCount > 0
+			&& layout.MaxDepth < effectiveMaxDepth
+			&& TryResolveListTypeInfo<T>(options) is { } listTypeInfo)
 		{
 			foreach (var item in StreamRowsBatched(cursor, readerState, plan, layout, listTypeInfo, readerStateTracker))
 				yield return item;

@@ -20,6 +20,10 @@ public class DirectBindingConverterCellTests
 {
 	private const string TagsColumnsJson = """{"columns":[{"name":"tags","type":"keyword"},{"name":"name","type":"keyword"}],"values":""";
 	private const string LevelColumnsJson = """{"columns":[{"name":"level","type":"integer"},{"name":"name","type":"keyword"}],"values":""";
+	private const string SizedColumnsJson = """{"columns":[{"name":"name","type":"keyword"},{"name":"size.width","type":"integer"}],"values":""";
+	private const string PlaceColumnsJson =
+		"""{"columns":[{"name":"name","type":"keyword"},{"name":"place.street","type":"keyword"},{"name":"place.city","type":"keyword"}],"values":""";
+	private const string HolderColumnsJson = """{"columns":[{"name":"holder.numbers","type":"integer"}],"values":""";
 
 	[Test]
 	public void Build_EnumPropertyOnNumericColumn_UsesEnumKind()
@@ -1387,6 +1391,145 @@ public class DirectBindingConverterCellTests
 		rows.Should().ContainSingle().Which.Name.Should().Be("\ud83d\ude00");
 	}
 
+	[Test]
+	[NotInParallel(nameof(CountingSizedModel))]
+	public void ReadRows_NestedRowRefusedAfterABoundRow_ConstructsEachRowOnce()
+	{
+		var options = CreateOptions();
+		var serializerRead = () => JsonSerializer.Deserialize<CountingSizedModel>("""{"name":"b","size":{"width":"x"}}""", options);
+		serializerRead.Should().Throw<JsonException>();
+		BuildLayout<CountingSizedModel>(("name", "keyword"), ("size.width", "integer")).DirectBinder.Should().NotBeNull();
+		CountingSizedModel.Constructed = 0;
+		using var stream = new MemoryStream(Encoding.UTF8.GetBytes(SizedColumnsJson + """[["a",1],["b","x"]]}"""));
+		using var results = new EsqlResponseReader(new JsonMetadataManager(options)).ReadRows<CountingSizedModel>(stream);
+		var collected = new List<CountingSizedModel>();
+
+		var act = () =>
+		{
+			foreach (var row in results.Rows)
+				collected.Add(row);
+		};
+
+		act.Should().Throw<JsonException>();
+		collected.Should().ContainSingle().Which.Size!.Width.Should().Be(1);
+		CountingSizedModel.Constructed.Should().Be(2);
+	}
+
+	[Test]
+	[NotInParallel(nameof(CountingSizedModel))]
+	public async Task ReadRowsAsync_NestedRowRefusedAfterABoundRow_ConstructsEachRowOnce()
+	{
+		var options = CreateOptions();
+		var serializerRead = () => JsonSerializer.Deserialize<CountingSizedModel>("""{"name":"b","size":{"width":"x"}}""", options);
+		serializerRead.Should().Throw<JsonException>();
+		CountingSizedModel.Constructed = 0;
+		using var stream = new MemoryStream(Encoding.UTF8.GetBytes(SizedColumnsJson + """[["a",1],["b","x"]]}"""));
+		await using var results = await new EsqlResponseReader(new JsonMetadataManager(options)).ReadRowsAsync<CountingSizedModel>(stream);
+		var collected = new List<CountingSizedModel>();
+
+		var act = async () =>
+		{
+			await foreach (var row in results.Rows)
+				collected.Add(row);
+		};
+
+		await act.Should().ThrowAsync<JsonException>();
+		collected.Should().ContainSingle().Which.Size!.Width.Should().Be(1);
+		CountingSizedModel.Constructed.Should().Be(2);
+	}
+
+	[Test]
+	public void ReadRows_InterleavedColumnsOfTwoBranches_AssignInTheSerializerOrder()
+	{
+		const string json =
+			"""{"columns":[{"name":"first.x","type":"keyword"},{"name":"second.x","type":"keyword"},""" +
+			"""{"name":"first.z","type":"keyword"}],"values":[["1","2","3"]]}""";
+		var options = CreateOptions();
+		LoggedRoot.Log = [];
+		_ = JsonSerializer.Deserialize<LoggedRoot>("""{"first":{"x":"1","z":"3"},"second":{"x":"2"}}""", options);
+		LoggedRoot.Log.Should().Equal("x=1", "z=3", "first", "x=2", "second");
+		BuildLayout<LoggedRoot>(("first.x", "keyword"), ("second.x", "keyword"), ("first.z", "keyword")).DirectBinder.Should().NotBeNull();
+		LoggedRoot.Log = [];
+
+		_ = ReadRows<LoggedRoot>(json, options);
+
+		LoggedRoot.Log.Should().Equal("x=1", "z=3", "first", "x=2", "second");
+	}
+
+	[Test]
+	public void ReadRows_NullLeafAndInactiveBranch_KeepTheInitializers()
+	{
+		var options = CreateOptions();
+		JsonSerializer.Deserialize<PlacedModel>("""{"name":"a"}""", options)!.Place.Street.Should().Be("initial street");
+		JsonSerializer.Deserialize<PlacedModel>("""{"name":"b","place":{"street":"s"}}""", options)!.Place.City.Should().BeEmpty();
+		BuildLayout<PlacedModel>(("name", "keyword"), ("place.street", "keyword"), ("place.city", "keyword")).DirectBinder.Should().NotBeNull();
+
+		var rows = ReadRows<PlacedModel>(PlaceColumnsJson + """[["a",null,null],["b","s",null]]}""", options);
+
+		rows[0].Place.Street.Should().Be("initial street");
+		rows[0].Place.City.Should().Be("initial city");
+		rows[1].Place.Street.Should().Be("s");
+		rows[1].Place.City.Should().BeEmpty();
+	}
+
+	[Test]
+	public void ReadRows_InactiveRequiredBranch_ThrowsLikeTheSerializer()
+	{
+		var options = CreateOptions();
+		var serializerRead = () => JsonSerializer.Deserialize<RequiredPlaceModel>("""{"name":"a"}""", options);
+		serializerRead.Should().Throw<JsonException>();
+		BuildLayout<RequiredPlaceModel>(("name", "keyword"), ("place.street", "keyword"), ("place.city", "keyword")).DirectBinder.Should().NotBeNull();
+		RequiredPlaceModel.Constructed = 0;
+
+		var act = () => ReadRows<RequiredPlaceModel>(PlaceColumnsJson + """[["a",null,null]]}""", options);
+
+		act.Should().Throw<JsonException>();
+		RequiredPlaceModel.Constructed.Should().Be(1);
+	}
+
+	[Test]
+	public void ReadRows_ConverterCellUnderBranchDeeperThanTheRowAllows_ThrowsLikeTheSerializer()
+	{
+		var options = CreateOptions();
+		options.MaxDepth = 3;
+		var serializerRead = () => JsonSerializer.Deserialize<CountingHolderModel>("""{"holder":{"numbers":[[1]]}}""", options);
+		serializerRead.Should().Throw<JsonException>();
+		BuildLayout<CountingHolderModel>(options, ("holder.numbers", "integer")).DirectBinder!.Kinds.Should().Equal([DirectBinderKind.Converter]);
+
+		var act = () => ReadRows<CountingHolderModel>(HolderColumnsJson + """[[[[1]]]]}""", options);
+
+		act.Should().Throw<JsonException>();
+	}
+
+	[Test]
+	public void ReadRows_ConverterCellUnderBranchAtTheCellDepthLimit_BindsWithoutFallback()
+	{
+		var options = CreateOptions();
+		options.MaxDepth = 4;
+		var serialized = JsonSerializer.Deserialize<CountingHolderModel>("""{"holder":{"numbers":[[1]]}}""", options)!;
+		serialized.Holder!.Numbers.Should().ContainSingle().Which.Should().Equal(1);
+		BuildLayout<CountingHolderModel>(options, ("holder.numbers", "integer")).DirectBinder!.Kinds.Should().Equal([DirectBinderKind.Converter]);
+		CountingHolderModel.Constructed = 0;
+
+		var rows = ReadRows<CountingHolderModel>(HolderColumnsJson + """[[[[1]]]]}""", options);
+
+		rows.Single().Holder!.Numbers.Should().ContainSingle().Which.Should().Equal(1);
+		CountingHolderModel.Constructed.Should().Be(1);
+	}
+
+	[Test]
+	public void ReadRows_RejectedConverterCellUnderBranch_ThrowsLikeTheSerializer()
+	{
+		var options = CreateOptions();
+		var serializerRead = () => JsonSerializer.Deserialize<CountingHolderModel>("""{"holder":{"numbers":[["x"]]}}""", options);
+		serializerRead.Should().Throw<JsonException>();
+		BuildLayout<CountingHolderModel>(("holder.numbers", "integer")).DirectBinder!.Kinds.Should().Equal([DirectBinderKind.Converter]);
+
+		var act = () => ReadRows<CountingHolderModel>(HolderColumnsJson + """[[[["x"]]]]}""", options);
+
+		act.Should().Throw<JsonException>();
+	}
+
 	private static ColumnLayout BuildLayout<T>(params (string Name, string Type)[] columns) => BuildLayout<T>(CreateOptions(), columns);
 
 	private static ColumnLayout BuildLayout<T>(JsonSerializerOptions options, params (string Name, string Type)[] columns) =>
@@ -1847,6 +1990,108 @@ public class DirectBindingConverterCellTests
 	{
 		public string Name { get; set; } = string.Empty;
 		public DateTime? When { get; set; }
+	}
+
+	private sealed class CountingSizedModel
+	{
+		public static int Constructed;
+
+		public CountingSizedModel() => Constructed++;
+
+		public string Name { get; set; } = string.Empty;
+		public Size? Size { get; set; }
+	}
+
+	private sealed class Size
+	{
+		public int Width { get; set; }
+	}
+
+	private sealed class LoggedRoot
+	{
+		[ThreadStatic]
+		public static List<string>? Log;
+
+		public LoggedPair? First
+		{
+			get;
+			set
+			{
+				Log?.Add("first");
+				field = value;
+			}
+		}
+
+		public LoggedPair? Second
+		{
+			get;
+			set
+			{
+				Log?.Add("second");
+				field = value;
+			}
+		}
+	}
+
+	private sealed class LoggedPair
+	{
+		public string? X
+		{
+			get;
+			set
+			{
+				LoggedRoot.Log?.Add($"x={value}");
+				field = value;
+			}
+		}
+
+		public string? Z
+		{
+			get;
+			set
+			{
+				LoggedRoot.Log?.Add($"z={value}");
+				field = value;
+			}
+		}
+	}
+
+	private sealed class Place
+	{
+		public string Street { get; set; } = string.Empty;
+		public string City { get; set; } = string.Empty;
+	}
+
+	private sealed class PlacedModel
+	{
+		public string Name { get; set; } = string.Empty;
+		public Place Place { get; set; } = new() { Street = "initial street", City = "initial city" };
+	}
+
+	private sealed class RequiredPlaceModel
+	{
+		[ThreadStatic]
+		public static int Constructed;
+
+		public RequiredPlaceModel() => Constructed++;
+
+		public string Name { get; set; } = string.Empty;
+		public required Place Place { get; set; }
+	}
+
+	private sealed class CountingHolderModel
+	{
+		[ThreadStatic]
+		public static int Constructed;
+
+		public CountingHolderModel() => Constructed++;
+
+		public NumbersHolder? Holder { get; set; }
+	}
+
+	private sealed class NumbersHolder
+	{
+		public List<List<int>> Numbers { get; set; } = [];
 	}
 
 	private sealed class YesNoBoolConverter : JsonConverter<bool>

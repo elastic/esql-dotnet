@@ -133,7 +133,8 @@ internal sealed class DirectRowBinder
 	/// <summary>
 	/// Number of <see cref="DirectBinderKind.Converter"/>, <see cref="DirectBinderKind.Enum"/>,
 	/// <see cref="DirectBinderKind.StringArray"/> and <see cref="DirectBinderKind.StringList"/> columns. A row with any
-	/// validates every cell before it creates the instance, decodes a string list or deserializes a converter cell.
+	/// validates every cell before it creates the instance, decodes a string list or deserializes a converter cell. A binder
+	/// with branches validates every row the same way, whatever this count.
 	/// </summary>
 	public required int ValidatedCellCount { get; init; }
 

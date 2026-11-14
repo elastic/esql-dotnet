@@ -6,8 +6,8 @@ namespace Elastic.Esql.Materialization;
 
 /// <summary>
 /// Scratch space one response enumeration reuses across its rows: the buffers of a row that goes through JSON assembly
-/// or wraps a bare scalar converter cell, and the string cells and string list cells of a directly bound row with
-/// converter, enum or string list cells. Each is created on first use.
+/// or wraps a bare scalar converter cell, and the string cells and string list cells of a directly bound row that takes
+/// the validating pass. Each is created on first use.
 /// </summary>
 internal sealed class RowAssemblyBuffers(int estimatedRowSize, bool isScalar, bool wrapScalarInArray) : IDisposable
 {
@@ -34,8 +34,8 @@ internal sealed class RowAssemblyBuffers(int estimatedRowSize, bool isScalar, bo
 	public bool WrapScalarInArray { get; } = wrapScalarInArray;
 
 	/// <summary>
-	/// The string cells of a directly bound row with converter, enum or string list cells, indexed by column and decoded
-	/// once the validating pass has seen the whole row. The first call sizes the array and later calls return it.
+	/// The string cells of a directly bound row that takes the validating pass, indexed by column and decoded once that
+	/// pass has seen the whole row. The first call sizes the array and later calls return it.
 	/// </summary>
 	public string?[] StringCells(int columnCount) => _stringCells ??= new string?[columnCount];
 
