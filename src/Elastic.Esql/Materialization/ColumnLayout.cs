@@ -54,7 +54,16 @@ internal sealed class ColumnLayout
 	public int BranchNodeCount { get; }
 
 	/// <summary>Direct-binding fast path metadata for eligible layouts, flat or nested, or null when rows must use the assemble-and-deserialize path.</summary>
-	public DirectRowBinder? DirectBinder { get; }
+	public DirectRowBinder? DirectBinder { get; private set; }
+
+	/// <summary>
+	/// Whether the row streams read this layout's rows in batches where the options resolve a list contract for the row
+	/// type. Batching only pays off for a nested layout without a binder, where every per-row Deserialize call allocates
+	/// serializer-internal depth-tracking state. A layout with a binder binds each row directly and streams it like a flat
+	/// one. A batch wraps its rows in a JSON array, adding one nesting level over the per-row object deserialize, so it
+	/// needs strictly more depth headroom than the layout itself.
+	/// </summary>
+	public bool BatchesRows { get; private set; }
 
 	/// <summary>
 	/// The built-in kind a single-column read binds its cell as, or null when a one-column read of a scalar target assembles
@@ -68,15 +77,13 @@ internal sealed class ColumnLayout
 		int columnCount,
 		int maxDepth,
 		ColumnNode[] leafNodesByColumnIndex,
-		int branchNodeCount,
-		DirectRowBinder? directBinder)
+		int branchNodeCount)
 	{
 		Root = root;
 		ColumnCount = columnCount;
 		MaxDepth = maxDepth;
 		LeafNodesByColumnIndex = leafNodesByColumnIndex;
 		BranchNodeCount = branchNodeCount;
-		DirectBinder = directBinder;
 	}
 
 	/// <summary>The depth limit the serializer enforces under <paramref name="options"/>, where a limit of zero means the default.</summary>
@@ -132,12 +139,6 @@ internal sealed class ColumnLayout
 		var leafNodesByColumnIndex = new ColumnNode[columnCount];
 		var branchNodeCount = IndexNodes(root, leafNodesByColumnIndex, 0);
 
-		// The binder is cached together with this layout in the reader's column layout cache, so
-		// eligibility is decided once per (target type, column schema).
-		var directBinder = columnCount > 0 && typeInfo is not null
-			? DirectRowBinder.TryCreate(root, columns, typeInfo, metadata)
-			: null;
-
 		// Taken after the target's contract resolved, so the parts consulted for it are locked and the answer holds for every
 		// read the cached layout serves. A resolver outside the modifier-free chain can hand the nullable form a contract
 		// whose wrapper holds a custom converter while the type under it keeps the stock one, which no converter check sees,
@@ -147,7 +148,15 @@ internal sealed class ColumnLayout
 			? kind
 			: (DirectBinderKind?)null;
 
-		return new ColumnLayout(root, columnCount, maxDepth, leafNodesByColumnIndex, branchNodeCount, directBinder) { ScalarKind = scalarKind };
+		var layout = new ColumnLayout(root, columnCount, maxDepth, leafNodesByColumnIndex, branchNodeCount) { ScalarKind = scalarKind };
+
+		// The binder is cached together with this layout in the reader's column layout cache, so
+		// eligibility is decided once per (target type, column schema).
+		layout.DirectBinder = columnCount > 0 && typeInfo is not null
+			? DirectRowBinder.TryCreate(layout, columns, typeInfo, metadata)
+			: null;
+		layout.BatchesRows = layout.DirectBinder is null && branchNodeCount > 0 && maxDepth < effectiveMaxDepth;
+		return layout;
 	}
 
 	/// <summary>

@@ -84,7 +84,7 @@ internal sealed partial class EsqlResponseReader
 		incomplete = false;
 
 		// A nested row assigns after the whole row is checked, so a cut or refused row creates no object.
-		if (binder.ValidatedCellCount > 0 || binder.BranchProperties.Length > 0)
+		if (binder.ValidatesRows)
 			return TryBindValidatedRow(ref reader, source, binder, buffers, out item, out incomplete);
 
 		var kinds = binder.Kinds;
@@ -157,55 +157,50 @@ internal sealed partial class EsqlResponseReader
 		item = default;
 		var columnCount = binder.Kinds.Length;
 		var branchCount = binder.BranchProperties.Length;
-		var indexedColumnCount = branchCount > 0 ? columnCount : 0;
 		var strings = buffers.StringCells(columnCount);
 		var lists = buffers.ListCells(columnCount);
 
 		CellSpan[]? rentedSpans = null;
-		var spans = columnCount <= 64
+		var spans = columnCount <= MaxStackColumns
 			? stackalloc CellSpan[columnCount]
 			: (rentedSpans = ArrayPool<CellSpan>.Shared.Rent(columnCount)).AsSpan(0, columnCount);
 
-		int[]? rentedSpanIndexes = null;
-		var spanIndexByColumn = indexedColumnCount <= 64
-			? stackalloc int[indexedColumnCount]
-			: (rentedSpanIndexes = ArrayPool<int>.Shared.Rent(indexedColumnCount)).AsSpan(0, indexedColumnCount);
-
 		bool[]? rentedActiveBranches = null;
-		var activeBranches = branchCount <= 128
+		var activeBranches = branchCount <= MaxStackBranches
 			? stackalloc bool[branchCount]
 			: (rentedActiveBranches = ArrayPool<bool>.Shared.Rent(branchCount)).AsSpan(0, branchCount);
 
 		try
 		{
-			if (!TryValidateRow(ref reader, binder, spans, out var recorded, out incomplete))
+			if (!TryValidateRow(ref reader, binder, spans, out incomplete))
 				return false;
-
-			// A row that ends mid-buffer is read again from its start after each fill of the stream buffer, so its strings
-			// decode once the validating pass has seen the whole row. An undecodable string must reach the fallback before a
-			// converter cell runs a callback.
-			if (!TryDecodeStringCells(source, binder, buffers, spans[..recorded]))
-				return false;
-
-			if (branchCount > 0)
-			{
-				IndexRecordedSpans(binder, spans[..recorded], spanIndexByColumn, activeBranches);
-
-				// A required nested object the row leaves empty is absent from the assembled row, which the serializer rejects,
-				// so the row falls back before any object exists.
-				if (HasInactiveRequiredBranch(binder, activeBranches))
-					return false;
-			}
 
 			var row = new RecordedRow
 			{
 				Source = source,
 				Binder = binder,
 				Buffers = buffers,
-				Spans = spans[..recorded],
-				SpanIndexByColumn = spanIndexByColumn,
+				Strings = strings,
+				Lists = lists,
+				Spans = spans,
 				ActiveBranches = activeBranches
 			};
+
+			// A row that ends mid-buffer is read again from its start after each fill of the stream buffer, so its strings
+			// decode once the validating pass has seen the whole row. An undecodable string must reach the fallback before a
+			// converter cell runs a callback.
+			if (!TryDecodeStringCells(row))
+				return false;
+
+			if (branchCount > 0)
+			{
+				IndexRecordedSpans(binder, spans, activeBranches);
+
+				// A required nested object the row leaves empty is absent from the assembled row, which the serializer rejects,
+				// so the row falls back before any object exists.
+				if (HasInactiveRequiredBranch(binder, activeBranches))
+					return false;
+			}
 
 			var instance = binder.CreateObject();
 			var assigned = branchCount > 0
@@ -225,26 +220,22 @@ internal sealed partial class EsqlResponseReader
 			buffers.ClearStringListScratch();
 			if (rentedSpans is not null)
 				ArrayPool<CellSpan>.Shared.Return(rentedSpans);
-			if (rentedSpanIndexes is not null)
-				ArrayPool<int>.Shared.Return(rentedSpanIndexes);
 			if (rentedActiveBranches is not null)
 				ArrayPool<bool>.Shared.Return(rentedActiveBranches);
 		}
 	}
 
 	/// <summary>
-	/// Checks every cell's token shape, skips over every converter cell, and records the extent of each non-null cell
-	/// with the parsed value of each built-in cell other than a string and the bits of each enum cell. Returns false with
-	/// <paramref name="incomplete"/> set when the buffer ends mid-row.
+	/// Checks every cell's token shape, skips over every converter cell, and records at each column's index the extent of
+	/// its cell with the parsed value of each built-in cell other than a string and the bits of each enum cell, or an empty
+	/// span for a null cell. Returns false with <paramref name="incomplete"/> set when the buffer ends mid-row.
 	/// </summary>
 	private static bool TryValidateRow(
 		ref Utf8JsonReader reader,
 		DirectRowBinder binder,
 		scoped Span<CellSpan> spans,
-		out int recorded,
 		out bool incomplete)
 	{
-		recorded = 0;
 		incomplete = false;
 		var kinds = binder.Kinds;
 
@@ -268,6 +259,10 @@ internal sealed partial class EsqlResponseReader
 				// required member that omission is the serializer's error to raise.
 				if (binder.Properties[i].IsRequired)
 					return false;
+
+				// A token spans at least one byte, so the empty span marks the null cell, and it overwrites whatever a
+				// rented array held at this index.
+				spans[i] = default;
 				continue;
 			}
 
@@ -297,7 +292,7 @@ internal sealed partial class EsqlResponseReader
 			else if (!TryReadDirectValue(ref reader, kinds[i], tokenType, out value))
 				return false;
 
-			spans[recorded++] = new CellSpan(i, start, reader.BytesConsumed - start, wrap, isEscaped, value);
+			spans[i] = new CellSpan(i, start, reader.BytesConsumed - start, wrap, isEscaped, value);
 		}
 
 		if (!reader.Read())
@@ -340,17 +335,18 @@ internal sealed partial class EsqlResponseReader
 		return false;
 	}
 
-	private static bool TryDecodeStringCells(
-		in ReadOnlySequence<byte> source,
-		DirectRowBinder binder,
-		RowAssemblyBuffers buffers,
-		ReadOnlySpan<CellSpan> spans)
+	private static bool TryDecodeStringCells(in RecordedRow row)
 	{
-		var strings = buffers.StringCells(binder.Kinds.Length);
-		var lists = buffers.ListCells(binder.Kinds.Length);
+		var source = row.Source;
+		var binder = row.Binder;
+		var strings = row.Strings;
+		var lists = row.Lists;
 
-		foreach (var span in spans)
+		foreach (var span in row.Spans)
 		{
+			if (span.Length == 0)
+				continue;
+
 			var column = span.Column;
 			var kind = binder.Kinds[column];
 			if (kind is not (DirectBinderKind.String or DirectBinderKind.StringList or DirectBinderKind.StringArray))
@@ -376,7 +372,7 @@ internal sealed partial class EsqlResponseReader
 			}
 			else if (kind == DirectBinderKind.StringArray)
 			{
-				var scratch = buffers.StringListScratch;
+				var scratch = row.Buffers.StringListScratch;
 				// The scratch keeps the previous cell's elements until the row's finally clears it, so a row with two string[]
 				// cells needs this clear before each decode.
 				scratch.Clear();
@@ -431,20 +427,15 @@ internal sealed partial class EsqlResponseReader
 		return true;
 	}
 
-	/// <summary>
-	/// Points each column at its recorded span, or at -1 for a null cell, and marks each branch above a recorded cell as
-	/// active, as the regroup does.
-	/// </summary>
-	private static void IndexRecordedSpans(DirectRowBinder binder, ReadOnlySpan<CellSpan> spans, Span<int> spanIndexByColumn, Span<bool> activeBranches)
+	/// <summary>Marks each branch above a non-null cell as active, as the regroup does.</summary>
+	private static void IndexRecordedSpans(DirectRowBinder binder, ReadOnlySpan<CellSpan> spans, Span<bool> activeBranches)
 	{
-		spanIndexByColumn.Fill(-1);
 		activeBranches.Clear();
 
-		for (var i = 0; i < spans.Length; i++)
+		for (var column = 0; column < spans.Length; column++)
 		{
-			var column = spans[i].Column;
-			spanIndexByColumn[column] = i;
-			MarkActiveBranches(binder.Leaves[column], activeBranches);
+			if (spans[column].Length > 0)
+				MarkActiveBranches(binder.Leaves[column], activeBranches);
 		}
 	}
 
@@ -463,7 +454,7 @@ internal sealed partial class EsqlResponseReader
 	{
 		foreach (var span in row.Spans)
 		{
-			if (!TryAssignCell(row, span, instance))
+			if (span.Length > 0 && !TryAssignCell(row, span, instance))
 				return false;
 		}
 
@@ -481,13 +472,13 @@ internal sealed partial class EsqlResponseReader
 
 		if (kind == DirectBinderKind.StringList)
 		{
-			Assign(binder.TypedSetters[column], binder.Properties[column], instance, (List<string?>)row.Buffers.ListCells(binder.Kinds.Length)[column]!);
+			Assign(binder.TypedSetters[column], binder.Properties[column], instance, (List<string?>)row.Lists[column]!);
 			return true;
 		}
 
 		if (kind == DirectBinderKind.StringArray)
 		{
-			Assign(binder.TypedSetters[column], binder.Properties[column], instance, (string[])row.Buffers.ListCells(binder.Kinds.Length)[column]!);
+			Assign(binder.TypedSetters[column], binder.Properties[column], instance, (string[])row.Lists[column]!);
 			return true;
 		}
 
@@ -497,24 +488,23 @@ internal sealed partial class EsqlResponseReader
 			return true;
 		}
 
-		var strings = row.Buffers.StringCells(binder.Kinds.Length);
-		AssignDirectValue(kind, span.Value, strings[column], binder.Properties[column], binder.TypedSetters[column], instance);
+		AssignDirectValue(kind, span.Value, row.Strings[column], binder.Properties[column], binder.TypedSetters[column], instance);
 		return true;
 	}
 
 	/// <summary>
-	/// The row the validating pass recorded and the assigning pass reads: the sequence the spans point into, the binder,
-	/// the scratch that holds the decoded strings and lists, and the recorded spans in column order.
+	/// The row the validating pass recorded, which the string decode and the assigning pass read: the sequence the spans
+	/// point into, the binder, the scratch that holds the decoded strings and lists, and the span of each column in column
+	/// order, empty for a null cell.
 	/// </summary>
 	private readonly ref struct RecordedRow
 	{
 		public ReadOnlySequence<byte> Source { get; init; }
 		public DirectRowBinder Binder { get; init; }
 		public RowAssemblyBuffers Buffers { get; init; }
+		public string?[] Strings { get; init; }
+		public object?[] Lists { get; init; }
 		public ReadOnlySpan<CellSpan> Spans { get; init; }
-
-		/// <summary>Per column, the index of its span in <see cref="Spans"/>, or -1 for a null cell. Empty for a flat binder.</summary>
-		public ReadOnlySpan<int> SpanIndexByColumn { get; init; }
 
 		/// <summary>Per branch, at its <see cref="ColumnNode.BranchIndex"/>, whether a non-null cell sits under it. Empty for a flat binder.</summary>
 		public ReadOnlySpan<bool> ActiveBranches { get; init; }
@@ -529,8 +519,8 @@ internal sealed partial class EsqlResponseReader
 		{
 			if (child.ColumnIndex >= 0)
 			{
-				var spanIndex = row.SpanIndexByColumn[child.ColumnIndex];
-				if (spanIndex >= 0 && !TryAssignCell(row, row.Spans[spanIndex], instance))
+				ref readonly var span = ref row.Spans[child.ColumnIndex];
+				if (span.Length > 0 && !TryAssignCell(row, span, instance))
 					return false;
 				continue;
 			}

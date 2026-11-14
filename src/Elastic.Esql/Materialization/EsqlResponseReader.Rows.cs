@@ -310,17 +310,7 @@ internal sealed partial class EsqlResponseReader
 	{
 		var plan = CreateRowMaterializationPlan<T>(layout, options);
 
-		// The batched path wraps rows in a JSON array, adding one nesting level over the per-row
-		// object deserialize, so it needs strictly more depth headroom than the layout itself.
-		var effectiveMaxDepth = ColumnLayout.EffectiveMaxDepth(options);
-
-		// Batching only pays off for nested layouts without a binder, where every per-row Deserialize call allocates
-		// serializer-internal depth-tracking state. A layout with a binder binds each row directly and streams it like a flat
-		// one.
-		if (layout.DirectBinder is null
-			&& layout.BranchNodeCount > 0
-			&& layout.MaxDepth < effectiveMaxDepth
-			&& TryResolveListTypeInfo<T>(options) is { } listTypeInfo)
+		if (layout.BatchesRows && TryResolveListTypeInfo<T>(options) is { } listTypeInfo)
 		{
 			await foreach (var item in StreamRowsBatchedAsync(cursor, readerState, plan, layout, listTypeInfo, cancellationToken, readerStateTracker).ConfigureAwait(false))
 				yield return item;
@@ -377,17 +367,7 @@ internal sealed partial class EsqlResponseReader
 	{
 		var plan = CreateRowMaterializationPlan<T>(layout, options);
 
-		// The batched path wraps rows in a JSON array, adding one nesting level over the per-row
-		// object deserialize, so it needs strictly more depth headroom than the layout itself.
-		var effectiveMaxDepth = ColumnLayout.EffectiveMaxDepth(options);
-
-		// Batching only pays off for nested layouts without a binder, where every per-row Deserialize call allocates
-		// serializer-internal depth-tracking state. A layout with a binder binds each row directly and streams it like a flat
-		// one.
-		if (layout.DirectBinder is null
-			&& layout.BranchNodeCount > 0
-			&& layout.MaxDepth < effectiveMaxDepth
-			&& TryResolveListTypeInfo<T>(options) is { } listTypeInfo)
+		if (layout.BatchesRows && TryResolveListTypeInfo<T>(options) is { } listTypeInfo)
 		{
 			foreach (var item in StreamRowsBatched(cursor, readerState, plan, layout, listTypeInfo, readerStateTracker))
 				yield return item;

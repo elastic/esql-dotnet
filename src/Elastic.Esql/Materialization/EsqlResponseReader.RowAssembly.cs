@@ -11,6 +11,11 @@ namespace Elastic.Esql.Materialization;
 
 internal sealed partial class EsqlResponseReader
 {
+	// A row keeps its per-column and per-branch scratch on the stack up to these counts and rents it from the pool beyond
+	// them, which bounds the stack a wide layout takes per row.
+	private const int MaxStackBranches = 128;
+	private const int MaxStackColumns = 64;
+
 	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Serialization delegates to the user-provided JsonSerializerOptions/JsonSerializerContext which is expected to include an AOT-safe TypeInfoResolver.")]
 	[UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Serialization delegates to the user-provided JsonSerializerOptions/JsonSerializerContext which is expected to include an AOT-safe TypeInfoResolver.")]
 	private static bool TryReadNextRow<T>(
@@ -222,7 +227,7 @@ internal sealed partial class EsqlResponseReader
 		var columnCount = layout.ColumnCount;
 
 		ValueSlice[]? rentedSlices = null;
-		var slices = columnCount <= 64
+		var slices = columnCount <= MaxStackColumns
 			? stackalloc ValueSlice[columnCount]
 			: (rentedSlices = ArrayPool<ValueSlice>.Shared.Rent(columnCount)).AsSpan(0, columnCount);
 
@@ -230,7 +235,7 @@ internal sealed partial class EsqlResponseReader
 		var activeBranches = layout.BranchNodeCount switch
 		{
 			0 => [],
-			<= 128 => stackalloc bool[layout.BranchNodeCount],
+			<= MaxStackBranches => stackalloc bool[layout.BranchNodeCount],
 			_ => (rentedActiveBranches = ArrayPool<bool>.Shared.Rent(layout.BranchNodeCount)).AsSpan(0, layout.BranchNodeCount)
 		};
 		activeBranches.Clear();

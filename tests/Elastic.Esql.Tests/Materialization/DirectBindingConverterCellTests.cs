@@ -1118,7 +1118,8 @@ public class DirectBindingConverterCellTests
 			("amount", "double")
 		).DirectBinder;
 		binder.Should().NotBeNull();
-		binder.ValidatedCellCount.Should().Be(1);
+		binder.Kinds[0].Should().Be(DirectBinderKind.Converter);
+		binder.Kinds[1..].Should().NotContain([DirectBinderKind.Converter, DirectBinderKind.Enum, DirectBinderKind.StringArray, DirectBinderKind.StringList]);
 
 		var row = ReadRows<EveryKindModel>(json, CreateOptions())[0];
 
