@@ -335,6 +335,8 @@ internal sealed partial class EsqlResponseReader
 			else if (kind == DirectBinderKind.StringArray)
 			{
 				var scratch = buffers.StringListScratch;
+				// The scratch keeps the previous cell's elements until the row's finally clears it, so a row with two string[]
+				// cells needs this clear before each decode.
 				scratch.Clear();
 				if (!TryDecodeStringList(ref cellReader, scratch))
 					return false;

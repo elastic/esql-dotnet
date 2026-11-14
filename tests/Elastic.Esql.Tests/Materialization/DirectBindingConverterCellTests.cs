@@ -98,6 +98,25 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
+	public void ReadRows_EnumCellsOnStructTarget_BindLikeTheSerializer()
+	{
+		const string json = """{"columns":[{"name":"level","type":"integer"},{"name":"huge","type":"unsigned_long"}],"values":[[2,18446744073709551615]]}""";
+		var options = CreateOptions();
+		var serialized = JsonSerializer.Deserialize<EnumStructModel>("""{"level":2,"huge":18446744073709551615}""", options);
+		serialized.Level.Should().Be(Level.High);
+		serialized.Huge.Should().Be(Huge.Max);
+		// A struct target gets no compiled setter, so both cells assign through the Enum.ToObject fallback.
+		var binder = BuildLayout<EnumStructModel>(("level", "integer"), ("huge", "unsigned_long")).DirectBinder;
+		binder!.Kinds.Should().Equal([DirectBinderKind.Enum, DirectBinderKind.Enum]);
+		binder.TypedSetters.Should().AllSatisfy(setter => setter.Should().BeNull());
+
+		var row = ReadRows<EnumStructModel>(json, options).Single();
+
+		row.Level.Should().Be(Level.High);
+		row.Huge.Should().Be(Huge.Max);
+	}
+
+	[Test]
 	public void ReadRows_NullableEnumOnNumericColumn_BindsTheValue()
 	{
 		BuildLayout<NullableLevelModel>(("level", "integer")).DirectBinder!.Kinds.Should().Equal([DirectBinderKind.Enum]);
@@ -197,6 +216,23 @@ public class DirectBindingConverterCellTests
 		firstChanceCount.Should().Be(0);
 		rows[0].Tags.Should().Equal("a");
 		rows[1].Tags.Should().Equal("solo");
+	}
+
+	[Test]
+	public void ReadRows_TwoStringArrayCells_DecodeEachOnItsOwn()
+	{
+		const string json = """{"columns":[{"name":"first","type":"keyword"},{"name":"second","type":"keyword"}],"values":[[["a"],["b","c"]]]}""";
+		var options = CreateOptions();
+		var serialized = JsonSerializer.Deserialize<TwoArraysModel>("""{"first":["a"],"second":["b","c"]}""", options)!;
+		serialized.First.Should().Equal("a");
+		serialized.Second.Should().Equal("b", "c");
+		var binder = BuildLayout<TwoArraysModel>(("first", "keyword"), ("second", "keyword")).DirectBinder;
+		binder!.Kinds.Should().Equal([DirectBinderKind.StringArray, DirectBinderKind.StringArray]);
+
+		var row = ReadRows<TwoArraysModel>(json, options).Single();
+
+		row.First.Should().Equal("a");
+		row.Second.Should().Equal("b", "c");
 	}
 
 	[Test]
@@ -301,6 +337,22 @@ public class DirectBindingConverterCellTests
 		var act = () => ReadRows<NumbersModel>(json, CreateOptions());
 
 		act.Should().Throw<JsonException>();
+	}
+
+	[Test]
+	public void ReadRows_BareScalarInListConverterCell_BindsWithoutFallback()
+	{
+		const string json = """{"columns":[{"name":"numbers","type":"integer"},{"name":"name","type":"keyword"}],"values":[[5,"x"]]}""";
+		var binder = BuildLayout<CountingNumbersModel>(("numbers", "integer"), ("name", "keyword")).DirectBinder;
+		binder!.Kinds.Should().Equal([DirectBinderKind.Converter, DirectBinderKind.String]);
+		binder.IsCollection[0].Should().BeTrue();
+		CountingNumbersModel.Constructed = 0;
+
+		var rows = ReadRows<CountingNumbersModel>(json, CreateOptions());
+
+		// A wrap the converter rejects sends the row to the fallback, which constructs it again with the same values.
+		CountingNumbersModel.Constructed.Should().Be(1);
+		rows.Single().Numbers.Should().Equal(5);
 	}
 
 	[Test]
@@ -1162,6 +1214,13 @@ public class DirectBindingConverterCellTests
 		public Huge Value { get; set; }
 	}
 
+	private struct EnumStructModel
+	{
+		// Nullable, so a fallback that boxes with the nullable type in place of the enum type fails.
+		public Level? Level { get; set; }
+		public Huge Huge { get; set; }
+	}
+
 	private sealed class CountingLevelModel
 	{
 		[ThreadStatic]
@@ -1206,9 +1265,26 @@ public class DirectBindingConverterCellTests
 		public string[] Tags { get; set; } = [];
 	}
 
+	private sealed class TwoArraysModel
+	{
+		public string[] First { get; set; } = [];
+		public string[] Second { get; set; } = [];
+	}
+
 	private sealed class NumbersModel
 	{
 		public List<int> Numbers { get; set; } = [];
+	}
+
+	private sealed class CountingNumbersModel
+	{
+		[ThreadStatic]
+		public static int Constructed;
+
+		public CountingNumbersModel() => Constructed++;
+
+		public List<int> Numbers { get; set; } = [];
+		public string Name { get; set; } = string.Empty;
 	}
 
 	private sealed class BinaryDataModel
