@@ -742,7 +742,7 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
-	public void ReadRows_ConverterCellSplitAcrossReads_Binds()
+	public void ReadRows_StringListRowSplitAcrossReads_Binds()
 	{
 		const string json = """{"columns":[{"name":"tags","type":"keyword"},{"name":"name","type":"keyword"}],"values":[[["a","b"],"x"],[["c"],"y"]]}""";
 		using var stream = new ChunkedReadStream(Encoding.UTF8.GetBytes(json), maxBytesPerRead: 5);
@@ -1045,9 +1045,9 @@ public class DirectBindingConverterCellTests
 	[Test]
 	public void ReadRows_ConverterCellRowWithNullCellBeforeStringCell_BindsTheString()
 	{
-		const string json = """{"columns":[{"name":"level","type":"integer"},{"name":"name","type":"keyword"}],"values":[[null,"b"]]}""";
+		const string json = """{"columns":[{"name":"level","type":"keyword"},{"name":"name","type":"keyword"}],"values":[[null,"b"]]}""";
 
-		BuildLayout<EnumModel>(("level", "integer"), ("name", "keyword")).DirectBinder.Should().NotBeNull();
+		BuildLayout<EnumModel>(("level", "keyword"), ("name", "keyword")).DirectBinder.Should().NotBeNull();
 		var rows = ReadRows<EnumModel>(json, CreateOptions());
 
 		rows[0].Name.Should().Be("b");

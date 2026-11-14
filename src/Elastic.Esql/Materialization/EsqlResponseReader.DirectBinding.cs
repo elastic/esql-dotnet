@@ -29,12 +29,12 @@ internal sealed partial class EsqlResponseReader
 	/// <summary>The parsed value of a built-in cell, in the field its <see cref="DirectBinderKind"/> selects.</summary>
 	/// <remarks>
 	/// The fields overlap, so the struct stays 16 bytes and unmanaged and a stackalloc'd row of <see cref="CellSpan"/>
-	/// can carry each built-in cell other than a string from the validating pass to the assigning one without a second
-	/// parse. A string is a reference, which cannot overlap the value fields and would make the row managed, so it travels
-	/// in the per-enumeration scratch instead. Only sequential-layout fields overlap, because an auto-layout field such as
-	/// DateTime inside an explicit layout is not guaranteed to load on every runtime the netstandard2.0 build serves. A
-	/// date lives in <see cref="Int64"/>, so offset 8 is free for the offset of a DateTimeOffset whenever a date is the
-	/// live kind.
+	/// can carry each built-in cell other than a string, and the bits of each enum cell in <see cref="Int64"/>, from the
+	/// validating pass to the assigning one without a second parse. A string is a reference, which cannot overlap the
+	/// value fields and would make the row managed, so it travels in the per-enumeration scratch instead. Only
+	/// sequential-layout fields overlap, because an auto-layout field such as DateTime inside an explicit layout is not
+	/// guaranteed to load on every runtime the netstandard2.0 build serves. A date lives in <see cref="Int64"/>, so
+	/// offset 8 is free for the offset of a DateTimeOffset whenever a date is the live kind.
 	/// </remarks>
 	[StructLayout(LayoutKind.Explicit)]
 	private struct DirectValue
@@ -137,7 +137,7 @@ internal sealed partial class EsqlResponseReader
 	/// Binds a row with converter, string list or enum cells in three steps. The validating pass checks every cell's shape,
 	/// parses each built-in cell other than a string and each enum cell, and assigns nothing, so a row that fails it or ends
 	/// mid-buffer has run no nested type's deserialization callback. Once that pass has seen the closing bracket, each string
-	/// cell and each string list cell decodes into the scratch, and a string the reader cannot decode sends the row to the
+	/// cell and each string list cell decodes into the scratch, and a string that does not decode sends the row to the
 	/// fallback before any converter cell runs. The assigning pass then assigns the cells in column order, the order the
 	/// serializer's setters see. A cell that only the assigning pass decodes can still send the row to the fallback (a
 	/// converter cell its contract rejects, a null converter result for a property that does not accept null) after the
@@ -184,6 +184,7 @@ internal sealed partial class EsqlResponseReader
 			// A string or a list left in the scratch stays reachable until a later row overwrites it or the enumeration ends.
 			Array.Clear(strings, 0, columnCount);
 			Array.Clear(lists, 0, columnCount);
+			buffers.ClearStringListScratch();
 			if (rentedSpans is not null)
 				ArrayPool<CellSpan>.Shared.Return(rentedSpans);
 		}

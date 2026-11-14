@@ -6,7 +6,7 @@ using System.Runtime.CompilerServices;
 
 namespace Elastic.Esql.Materialization;
 
-/// <summary>Whether the runtime can generate code, which compiled setters and property converter contracts need.</summary>
+/// <summary>Whether the runtime can generate code, which compiled setters, property converter contracts and typed converter cells need.</summary>
 internal static class DynamicCode
 {
 	// netstandard2.0 has no RuntimeFeature.IsDynamicCodeSupported, but every runtime it targets here compiles

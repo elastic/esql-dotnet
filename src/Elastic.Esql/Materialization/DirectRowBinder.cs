@@ -81,7 +81,8 @@ internal sealed class DirectRowBinder
 
 	/// <summary>
 	/// Per column, whether the target property is a collection. A bare scalar cell for such a column is wrapped in
-	/// brackets before its contract reads it, matching the row path's <c>[value]</c> rewrite.
+	/// brackets before its contract reads it, matching the row path's <c>[value]</c> rewrite, and a string list cell
+	/// reads a bare string as its only element.
 	/// </summary>
 	public required bool[] IsCollection { get; init; }
 
@@ -151,12 +152,13 @@ internal sealed class DirectRowBinder
 		var bound = new HashSet<JsonPropertyInfo>();
 		var effectiveMaxDepth = ColumnLayout.EffectiveMaxDepth(options);
 
-		// Under a depth limit of one, a cell reader would get a depth limit of zero, which it reads as the default, so it
-		// could not reject a nested converter cell the way the serializer rejects the assembled row. The assemble path
-		// serves these rows instead.
+		// Converter cells and string list cells bind only under these conditions. Under a depth limit of one, a cell reader
+		// would get a depth limit of zero, which it reads as the default, so it could not reject a nested converter cell the
+		// way the serializer rejects the assembled row, and the serializer rejects a string list cell's array there too.
+		// The assemble path serves these rows instead.
 		// Each converter cell deserializes in a call of its own, so an $id or $ref that spans cells resolves differently
 		// than in the serializer's single call over the row. IgnoreCycles reads no metadata and keeps the direct path.
-		var converterCellsBind = effectiveMaxDepth >= 2 && (options.ReferenceHandler is not { } handler || handler == ReferenceHandler.IgnoreCycles);
+		var validatedCellsBind = effectiveMaxDepth >= 2 && (options.ReferenceHandler is not { } handler || handler == ReferenceHandler.IgnoreCycles);
 
 		for (var i = 0; i < count; i++)
 		{
@@ -191,7 +193,7 @@ internal sealed class DirectRowBinder
 				continue;
 			}
 
-			if (!converterCellsBind)
+			if (!validatedCellsBind)
 				return null;
 
 			if (property.CustomConverter is null && TryResolveStringListContract(property.PropertyType, options) is { } listTypeInfo)

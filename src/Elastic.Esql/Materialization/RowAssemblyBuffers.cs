@@ -7,7 +7,7 @@ namespace Elastic.Esql.Materialization;
 /// <summary>
 /// Scratch space one response enumeration reuses across its rows: the buffers of a row that goes through JSON assembly
 /// or wraps a bare scalar converter cell, and the string cells and string list cells of a directly bound row with
-/// converter cells or string list cells. Each is created on first use.
+/// converter, enum or string list cells. Each is created on first use.
 /// </summary>
 internal sealed class RowAssemblyBuffers(int estimatedRowSize, bool isScalar, bool wrapScalarInArray) : IDisposable
 {
@@ -34,7 +34,7 @@ internal sealed class RowAssemblyBuffers(int estimatedRowSize, bool isScalar, bo
 	public bool WrapScalarInArray { get; } = wrapScalarInArray;
 
 	/// <summary>
-	/// The string cells of a directly bound row with converter cells or string list cells, indexed by column and decoded
+	/// The string cells of a directly bound row with converter, enum or string list cells, indexed by column and decoded
 	/// once the validating pass has seen the whole row. The first call sizes the array and later calls return it.
 	/// </summary>
 	public string?[] StringCells(int columnCount) => _stringCells ??= new string?[columnCount];
@@ -47,6 +47,9 @@ internal sealed class RowAssemblyBuffers(int estimatedRowSize, bool isScalar, bo
 
 	/// <summary>Collects the elements of a <c>string[]</c> cell, whose array is sized once they are all read.</summary>
 	public List<string?> StringListScratch => _stringListScratch ??= [];
+
+	/// <summary>Clears <see cref="StringListScratch"/> where a row has created it.</summary>
+	public void ClearStringListScratch() => _stringListScratch?.Clear();
 
 	public void Dispose()
 	{

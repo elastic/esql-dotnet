@@ -277,7 +277,10 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 			p => p.CustomConverter is { } converter ? PropertyConverterContracts.TryCreate(p.PropertyType, converter, options) : null
 		);
 
-	/// <summary>Returns the cell that reads <paramref name="property"/> through <paramref name="cellTypeInfo"/>.</summary>
+	/// <summary>
+	/// Returns the cell that reads <paramref name="property"/> through <paramref name="cellTypeInfo"/>, which must be the
+	/// property's own cell contract, because the cache is keyed by the property alone and returns the first cell built.
+	/// </summary>
 	public ConverterCell GetOrCreateConverterCell(JsonPropertyInfo property, JsonTypeInfo cellTypeInfo) =>
 		Cached(_converterCellCache, property, p => ConverterCell.TryCreate(p, cellTypeInfo));
 
