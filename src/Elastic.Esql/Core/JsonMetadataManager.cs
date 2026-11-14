@@ -282,7 +282,7 @@ internal sealed class JsonMetadataManager(JsonSerializerOptions options)
 	/// property's own cell contract, because the cache is keyed by the property alone and returns the first cell built.
 	/// </summary>
 	public ConverterCell GetOrCreateConverterCell(JsonPropertyInfo property, JsonTypeInfo cellTypeInfo) =>
-		Cached(_converterCellCache, property, p => ConverterCell.TryCreate(p, cellTypeInfo));
+		Cached(_converterCellCache, property, p => ConverterCell.Create(p, cellTypeInfo));
 
 	private Dictionary<MemberInfo, JsonPropertyInfo> GetMemberPropertyMap(Type type) =>
 		Cached(_memberPropertyMapCache, type, t =>

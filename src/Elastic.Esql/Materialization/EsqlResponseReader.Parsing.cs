@@ -458,7 +458,7 @@ internal sealed partial class EsqlResponseReader
 				}
 
 				if (count == staged.Length)
-					PooledArrays.Grow(ref staged, 0, count, count * 2, clearArray: true);
+					PooledArrays.Grow(ref staged, 0, count, count * 2);
 
 				staged[count++] = CreateColumn(name, type);
 			}

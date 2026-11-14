@@ -38,14 +38,14 @@ internal abstract class ConverterCell(JsonPropertyInfo property)
 	[UnconditionalSuppressMessage(
 		"AOT",
 		"IL3050",
-		Justification = "TryCreate returns the object cell before any generic instantiation when dynamic code is unsupported, so Native AOT reads through it."
+		Justification = "Create returns the object cell before any generic instantiation when dynamic code is unsupported, so Native AOT reads through it."
 	)]
 	[UnconditionalSuppressMessage(
 		"Trimming",
 		"IL2060",
 		Justification = "Create<TValue> places no DynamicallyAccessedMembers requirement on TValue, so no instantiation needs members the trimmer could remove."
 	)]
-	public static ConverterCell TryCreate(JsonPropertyInfo property, JsonTypeInfo cellTypeInfo)
+	public static ConverterCell Create(JsonPropertyInfo property, JsonTypeInfo cellTypeInfo)
 	{
 		if (!DynamicCode.IsSupported)
 			return new ObjectConverterCell(property, cellTypeInfo);
