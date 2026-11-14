@@ -1218,6 +1218,20 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
+	public void ReadRows_ColumnNamedLikeACustomDiscriminator_ThrowsLikeTheSerializer()
+	{
+		const string json = """{"columns":[{"name":"kind","type":"keyword"},{"name":"name","type":"keyword"}],"values":[["x","a"]]}""";
+		var options = CreateOptions();
+		options.PropertyNameCaseInsensitive = true;
+		var serializerRead = () => JsonSerializer.Deserialize<DiscriminatedShapeModel>("""{"kind":"x","name":"a"}""", options);
+		serializerRead.Should().Throw<JsonException>();
+
+		var act = () => ReadRows<DiscriminatedShapeModel>(json, options);
+
+		act.Should().Throw<JsonException>();
+	}
+
+	[Test]
 	public void ReadRows_ConverterReturnsNullForNonNullableProperty_ThrowsUnderRespectNullableAnnotations()
 	{
 		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"count","type":"integer"}],"values":[["a",1]]}""";
@@ -1578,6 +1592,17 @@ public class DirectBindingConverterCellTests
 	}
 
 	private sealed class DerivedDollarIdModel : PolymorphicDollarIdModel;
+
+	[JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
+	[JsonDerivedType(typeof(CircleShapeModel), "circle")]
+	private class DiscriminatedShapeModel
+	{
+		[JsonPropertyName("Kind")]
+		public string? Kind { get; set; }
+		public string? Name { get; set; }
+	}
+
+	private sealed class CircleShapeModel : DiscriminatedShapeModel;
 
 	private sealed class Owner
 	{

@@ -203,6 +203,13 @@ internal sealed class DirectRowBinder
 			if ((readsReferenceMetadata || typeInfo.PolymorphismOptions is not null) && property.Name.Length > 0 && property.Name[0] == '$')
 				return null;
 
+			// A custom discriminator name is metadata without a $. The serializer reads it in first position as the
+			// discriminator and rejects it later, so a row with such a column never binds through the property. The serializer
+			// compares it ordinally with the name in the row object, the column's own, which the lookup above can map to a
+			// property whose name differs in case.
+			if (string.Equals(leafNodes[i].PropertyName, typeInfo.PolymorphismOptions?.TypeDiscriminatorPropertyName, StringComparison.Ordinal))
+				return null;
+
 			// Two columns for one property, or populate-style creation, are the serializer's business.
 			if (!bound.Add(property) || EffectiveCreationHandling(property, typeInfo, options) == JsonObjectCreationHandling.Populate)
 				return null;

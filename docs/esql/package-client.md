@@ -384,10 +384,13 @@ document. A type qualifies for this path when all of the following hold:
   `ReferenceHandler.IgnoreCycles`, because each converter cell is read on its own and would not see `$id` or `$ref`
   metadata from another cell
 - no column maps to a property whose JSON name starts with `$` while the options set a `ReferenceHandler` other than
-  `ReferenceHandler.IgnoreCycles` or the type declares derived types with `[JsonDerivedType]`, because the serializer
+  `ReferenceHandler.IgnoreCycles` or the type carries `[JsonPolymorphic]` or `[JsonDerivedType]`, because the serializer
   can read such a column as metadata. Under such a handler it reads `$id` and `$ref` as reference metadata, which must
   hold a string, and rejects any other name with a leading `$`, and without one it rejects every such name on a type
   with type discriminators
+- no column's name equals, case included, the discriminator name that `[JsonPolymorphic]` sets through
+  `TypeDiscriminatorPropertyName`, because the serializer reads such a column as the discriminator in first position and
+  rejects it in a later position
 - no two columns map to the same property
 - every column is flat, so a dotted name such as `address.city` that resolves into a nested object keeps the type on the
   fallback
