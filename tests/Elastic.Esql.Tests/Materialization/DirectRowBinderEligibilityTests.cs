@@ -73,9 +73,94 @@ public class DirectRowBinderEligibilityTests
 	}
 
 	[Test]
-	public void Build_NestedColumns_DoesNotCreateDirectBinder()
+	public void Build_NestedColumns_CreatesDirectBinder()
 	{
 		var layout = BuildLayout<PersonModel>(("name", "keyword"), ("address.street", "keyword"));
+
+		layout.DirectBinder.Should().NotBeNull();
+		layout.DirectBinder.Kinds.Should().Equal([DirectBinderKind.String, DirectBinderKind.String]);
+	}
+
+	[Test]
+	public void Build_TwoBranchesOfOneNestedType_CreatesDirectBinder()
+	{
+		// Read-only options share one contract per type, as on every read, so both branches meet the same property infos.
+		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web) { TypeInfoResolver = new DefaultJsonTypeInfoResolver() };
+		options.MakeReadOnly();
+
+		var layout = BuildLayout<TwoAddressesModel>(options, ("home.city", "keyword"), ("work.city", "keyword"));
+
+		layout.DirectBinder.Should().NotBeNull();
+	}
+
+	[Test]
+	public void Build_BranchPropertyWithConverter_DoesNotCreateDirectBinder() =>
+		BuildLayout<ConvertedAddressModel>(("name", "keyword"), ("address.city", "keyword")).DirectBinder.Should().BeNull();
+
+	[Test]
+	public void Build_BranchPropertyWithPopulateHandling_DoesNotCreateDirectBinder() =>
+		BuildLayout<PopulatedAddressModel>(("name", "keyword"), ("address.city", "keyword")).DirectBinder.Should().BeNull();
+
+	[Test]
+	public void Build_BranchPropertyWithoutSetter_DoesNotCreateDirectBinder() =>
+		BuildLayout<GetOnlyAddressModel>(("name", "keyword"), ("address.city", "keyword")).DirectBinder.Should().BeNull();
+
+	[Test]
+	public void Build_DollarNamedBranchUnderPreserve_DoesNotCreateDirectBinder()
+	{
+		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web) { ReferenceHandler = ReferenceHandler.Preserve };
+
+		var layout = BuildLayout<DollarAddressModel>(options, ("name", "keyword"), ("$meta.city", "keyword"));
+
+		layout.DirectBinder.Should().BeNull();
+	}
+
+	[Test]
+	public void Build_BranchThroughEmptyJsonName_DoesNotCreateDirectBinder() =>
+		BuildLayout<EmptyNameOuterModel>(("name", "keyword"), ("outer..city", "keyword")).DirectBinder.Should().BeNull();
+
+	[Test]
+	public void Build_LeafAndBranchOnOneProperty_DoesNotCreateDirectBinder()
+	{
+		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+		{
+			AllowDuplicateProperties = false,
+			TypeInfoResolver = new DefaultJsonTypeInfoResolver()
+		};
+		var serializerRead = () => JsonSerializer.Deserialize<PersonModel>("""{"address":{"street":"s"},"address":{"city":"c"}}""", options);
+		serializerRead.Should().Throw<JsonException>();
+
+		var layout = BuildLayout<PersonModel>(options, ("address", "object"), ("address.city", "keyword"));
+
+		layout.DirectBinder.Should().BeNull();
+	}
+
+	[Test]
+	public void Build_NestedTypeWithParameterizedConstructor_DoesNotCreateDirectBinder() =>
+		BuildLayout<RecordAddressModel>(("name", "keyword"), ("address.city", "keyword")).DirectBinder.Should().BeNull();
+
+	[Test]
+	public void Build_NestedTypeWithOnDeserialized_DoesNotCreateDirectBinder() =>
+		BuildLayout<CallbackAddressModel>(("name", "keyword"), ("address.city", "keyword")).DirectBinder.Should().BeNull();
+
+	[Test]
+	public void Build_NestedTypeWithTypeLevelNumberHandling_DoesNotCreateDirectBinder() =>
+		BuildLayout<StrictStatsModel>(("name", "keyword"), ("stats.numbers", "integer")).DirectBinder.Should().BeNull();
+
+	[Test]
+	public void Build_NestedRequiredMemberWithColumn_CreatesDirectBinder() =>
+		BuildLayout<RequiredStreetModel>(("name", "keyword"), ("address.street", "keyword"), ("address.city", "keyword")).DirectBinder.Should().NotBeNull();
+
+	[Test]
+	public void Build_NestedRequiredMemberWithoutColumn_DoesNotCreateDirectBinder() =>
+		BuildLayout<RequiredStreetModel>(("name", "keyword"), ("address.city", "keyword")).DirectBinder.Should().BeNull();
+
+	[Test]
+	public void Build_ConverterCellUnderBranchWithoutACellLevel_DoesNotCreateDirectBinder()
+	{
+		var options = new JsonSerializerOptions(JsonSerializerDefaults.Web) { MaxDepth = 2 };
+
+		var layout = BuildLayout<NestedNumbersModel>(options, ("holder.numbers", "integer"));
 
 		layout.DirectBinder.Should().BeNull();
 	}
@@ -285,6 +370,111 @@ public class DirectRowBinderEligibilityTests
 		}
 	}
 
+	private sealed class TwoAddressesModel
+	{
+		public AddressModel? Home { get; set; }
+		public AddressModel? Work { get; set; }
+	}
+
+	private sealed class ConvertedAddressModel
+	{
+		public string Name { get; set; } = string.Empty;
+
+		[JsonConverter(typeof(UpperCaseCityConverter))]
+		public AddressModel? Address { get; set; }
+	}
+
+	private sealed class PopulatedAddressModel
+	{
+		public string Name { get; set; } = string.Empty;
+
+		[JsonObjectCreationHandling(JsonObjectCreationHandling.Populate)]
+		public AddressModel Address { get; set; } = new();
+	}
+
+	private sealed class GetOnlyAddressModel
+	{
+		public string Name { get; set; } = string.Empty;
+		public AddressModel Address { get; } = new();
+	}
+
+	private sealed class DollarAddressModel
+	{
+		public string Name { get; set; } = string.Empty;
+
+		[JsonPropertyName("$meta")]
+		public AddressModel? Meta { get; set; }
+	}
+
+	private sealed class RecordAddressModel
+	{
+		public string Name { get; set; } = string.Empty;
+		public AddressRecord? Address { get; set; }
+	}
+
+	private sealed record AddressRecord(string Street, string City);
+
+	private sealed class CallbackAddressModel
+	{
+		public string Name { get; set; } = string.Empty;
+		public CallbackAddress? Address { get; set; }
+	}
+
+	private sealed class CallbackAddress : IJsonOnDeserialized
+	{
+		public string City { get; set; } = string.Empty;
+
+		public void OnDeserialized()
+		{
+		}
+	}
+
+	private sealed class StrictStatsModel
+	{
+		public string Name { get; set; } = string.Empty;
+		public StrictStats? Stats { get; set; }
+	}
+
+	[JsonNumberHandling(JsonNumberHandling.Strict)]
+	private sealed class StrictStats
+	{
+		public List<int> Numbers { get; set; } = [];
+	}
+
+	private sealed class RequiredStreetModel
+	{
+		public string Name { get; set; } = string.Empty;
+		public RequiredStreetAddress? Address { get; set; }
+	}
+
+	private sealed class RequiredStreetAddress
+	{
+		public required string Street { get; set; }
+		public string City { get; set; } = string.Empty;
+	}
+
+	private sealed class NestedNumbersModel
+	{
+		public NumbersHolder? Holder { get; set; }
+	}
+
+	private sealed class NumbersHolder
+	{
+		public List<List<int>> Numbers { get; set; } = [];
+	}
+
+	private sealed class EmptyNameOuterModel
+	{
+		public string Name { get; set; } = string.Empty;
+		public EmptyNameHolder? Outer { get; set; }
+	}
+
+	private sealed class EmptyNameHolder
+	{
+		[JsonPropertyName("")]
+		public AddressModel? Address { get; set; }
+	}
+
 	private sealed class UnixEpochDateTimeConverter : JsonConverter<DateTime>
 	{
 		public override DateTime Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
@@ -292,5 +482,18 @@ public class DirectRowBinderEligibilityTests
 
 		public override void Write(Utf8JsonWriter writer, DateTime value, JsonSerializerOptions options) =>
 			writer.WriteNumberValue((long)(value - DateTime.UnixEpoch).TotalSeconds);
+	}
+
+	private sealed class UpperCaseCityConverter : JsonConverter<AddressModel>
+	{
+		public override AddressModel? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+		{
+			var address = JsonSerializer.Deserialize<AddressModel>(ref reader, options);
+			address?.City = address.City.ToUpperInvariant();
+			return address;
+		}
+
+		public override void Write(Utf8JsonWriter writer, AddressModel value, JsonSerializerOptions options) =>
+			JsonSerializer.Serialize(writer, value, options);
 	}
 }

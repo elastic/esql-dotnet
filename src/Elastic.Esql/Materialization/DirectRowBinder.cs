@@ -34,11 +34,7 @@ internal enum DirectBinderKind
 	Converter
 }
 
-/// <summary>
-/// Pre-computed per-column binding metadata for flat column layouts. Enables reading each cell directly off the
-/// <see cref="Utf8JsonReader"/> and assigning it through a compiled typed setter, or through
-/// <see cref="JsonPropertyInfo.Set"/> where no setter could be compiled.
-/// </summary>
+/// <summary>Pre-computed binding metadata for a column layout, per column and per branch.</summary>
 /// <remarks>
 /// Binding directly is a large net win over the assemble-and-deserialize pipeline, which tokenizes, re-writes and
 /// re-parses every cell. Built once per (target type, column schema) and cached on the <see cref="ColumnLayout"/>.
@@ -141,18 +137,40 @@ internal sealed class DirectRowBinder
 	/// </summary>
 	public required int ValidatedCellCount { get; init; }
 
-	/// <summary>Depth limit for a cell read on its own reader: the options' limit less the level the assembled row object adds.</summary>
-	public required int CellMaxDepth { get; init; }
+	/// <summary>
+	/// Per column, the depth limit for a cell read on its own reader: the options' limit less the object levels above the
+	/// cell in the assembled row, one for the row object and one for each branch.
+	/// </summary>
+	public required int[] CellMaxDepths { get; init; }
 
 	/// <summary>
-	/// Builds a binder for a flat layout, or returns null when a part of the options' resolver chain can supply property
-	/// metadata the binder cannot see, or when the type itself cannot be bound with exact serializer fidelity:
+	/// Per branch, at its <see cref="ColumnNode.BranchIndex"/>, the parent's property that the branch's object fills. Empty
+	/// for a flat layout.
+	/// </summary>
+	public required JsonPropertyInfo[] BranchProperties { get; init; }
+
+	/// <summary>Per branch, at its <see cref="ColumnNode.BranchIndex"/>, the creator of the nested object. Empty for a flat layout.</summary>
+	public required Func<object>[] BranchCreators { get; init; }
+
+	/// <summary>The layout's root, whose children are the result type's columns and branches.</summary>
+	public required ColumnNode Root { get; init; }
+
+	/// <summary>Per column, the column's leaf node under <see cref="Root"/>.</summary>
+	public required ColumnNode[] Leaves { get; init; }
+
+	/// <summary>
+	/// Builds a binder for a flat or nested layout, or returns null when a part of the options' resolver chain can supply
+	/// property metadata the binder cannot see, or when the type itself cannot be bound with exact serializer fidelity:
 	/// parameterized constructors, serialization callbacks, extension data, number handling on the type or a property, a
 	/// property-level converter no cell contract can be built for, populate-style object creation, a required member
-	/// without a column, two columns for one property, a mapped property whose JSON name starts with $ under options that
-	/// read reference metadata or on a type with polymorphism options, a column whose name equals the type's discriminator
-	/// name, a converter cell or a string list cell under a depth limit of one, or either under options that read reference
-	/// metadata.
+	/// without a column, two columns or branches for one property of one object, a mapped property whose JSON name starts
+	/// with $ under options that read reference metadata or on a type with polymorphism options, a column whose name equals
+	/// the type's discriminator name, a converter cell or a string list cell whose reader would get a depth limit of zero,
+	/// or either under options that read reference metadata.
+	/// A branch binds through a settable property of its parent without a property-level converter, number handling or
+	/// populate-style creation, under the metadata-name rules of a leaf, and needs an index from the layout. Its nested
+	/// type meets the rules of the result type, has no polymorphism options, is a reference type and has a column for each
+	/// of its required members. A cell's reader gets the options' depth limit less the object levels above the cell.
 	/// A <c>List&lt;string&gt;</c> or <c>string[]</c> cell that the serializer reads with its stock list or array
 	/// converter, bare or in a generated context's wrapper, and its stock converter for string is read as a string list,
 	/// an enum cell on a numeric column that the serializer reads with its own converters, which accept numbers, is read
@@ -160,16 +178,15 @@ internal sealed class DirectRowBinder
 	/// The nullable form of a built-in scalar kind or of an enum, and a string list in a generated context's wrapper, are
 	/// read off the reader only under options with no user-written converter factory and no converter for the property
 	/// type.
-	/// <paramref name="columns"/> holds the ES|QL type of the column each leaf node reads.
+	/// <paramref name="columns"/> holds the ES|QL type of each column, at the column index of its leaf under
+	/// <paramref name="root"/>.
 	/// </summary>
 	public static DirectRowBinder? TryCreate(
-		ColumnNode[] leafNodes,
+		ColumnNode root,
 		ReadOnlySpan<EsqlResponseReader.ColumnInfo> columns,
 		JsonTypeInfo typeInfo,
 		JsonMetadataManager metadata)
 	{
-		var options = metadata.Options;
-
 		if (typeInfo.Kind != JsonTypeInfoKind.Object || typeInfo.CreateObject is null)
 			return null;
 
@@ -191,123 +208,226 @@ internal sealed class DirectRowBinder
 		if (!metadata.ResolverIsModifierFree)
 			return null;
 
-		var count = leafNodes.Length;
-		var kinds = new DirectBinderKind[count];
-		var properties = new JsonPropertyInfo[count];
-		var typedSetters = new Delegate?[count];
-		var cellTypeInfos = new JsonTypeInfo?[count];
-		var converterCells = new ConverterCell?[count];
-		var enumTypeCodes = new TypeCode[count];
-		var enumTypes = new Type?[count];
-		var isCollection = new bool[count];
-		var validatedCellCount = 0;
-		var bound = new HashSet<JsonPropertyInfo>();
-		var effectiveMaxDepth = ColumnLayout.EffectiveMaxDepth(options);
-		var readsReferenceMetadata = options.ReferenceHandler is { } handler && handler != ReferenceHandler.IgnoreCycles;
+		var columnTypes = new string[columns.Length];
+		for (var i = 0; i < columns.Length; i++)
+			columnTypes[i] = columns[i].Type;
 
-		// Converter cells and string list cells bind only under these conditions. Under a depth limit of one, a cell reader
-		// would get a depth limit of zero, which it reads as the default, so it could not reject a nested converter cell the
-		// way the serializer rejects the assembled row, and the serializer rejects a string list cell's array there too.
-		// The assemble path serves these rows instead.
-		// Each converter cell deserializes in a call of its own, so an $id or $ref that spans cells resolves differently
-		// than in the serializer's single call over the row. IgnoreCycles reads no metadata and keeps the direct path.
-		var validatedCellsBind = effectiveMaxDepth >= 2 && !readsReferenceMetadata;
+		var builder = new Builder(metadata, columnTypes, Builder.CountBranches(root));
+		return builder.TryAddLevel(root, typeInfo, ColumnLayout.EffectiveMaxDepth(metadata.Options) - 1)
+			? builder.ToBinder(root, typeInfo.CreateObject)
+			: null;
+	}
 
-		for (var i = 0; i < count; i++)
+	/// <summary>Walks the column tree one object level at a time and fills the binder's arrays per column and per branch.</summary>
+	private sealed class Builder(JsonMetadataManager metadata, string[] columnTypes, int branchCount)
+	{
+		private readonly JsonMetadataManager _metadata = metadata;
+		private readonly JsonSerializerOptions _options = metadata.Options;
+		private readonly string[] _columnTypes = columnTypes;
+		private readonly bool _readsReferenceMetadata = metadata.Options.ReferenceHandler is { } handler && handler != ReferenceHandler.IgnoreCycles;
+		private readonly DirectBinderKind[] _kinds = new DirectBinderKind[columnTypes.Length];
+		private readonly JsonPropertyInfo[] _properties = new JsonPropertyInfo[columnTypes.Length];
+		private readonly Delegate?[] _typedSetters = new Delegate?[columnTypes.Length];
+		private readonly JsonTypeInfo?[] _cellTypeInfos = new JsonTypeInfo?[columnTypes.Length];
+		private readonly ConverterCell?[] _converterCells = new ConverterCell?[columnTypes.Length];
+		private readonly TypeCode[] _enumTypeCodes = new TypeCode[columnTypes.Length];
+		private readonly Type?[] _enumTypes = new Type?[columnTypes.Length];
+		private readonly bool[] _isCollection = new bool[columnTypes.Length];
+		private readonly int[] _cellMaxDepths = new int[columnTypes.Length];
+		private readonly ColumnNode[] _leaves = new ColumnNode[columnTypes.Length];
+		private readonly JsonPropertyInfo[] _branchProperties = new JsonPropertyInfo[branchCount];
+		private readonly Func<object>[] _branchCreators = new Func<object>[branchCount];
+		private int _validatedCellCount;
+
+		public static int CountBranches(ColumnNode node) =>
+			(node.Children ?? [])
+				.Where(child => child.ColumnIndex < 0)
+				.Sum(child => 1 + CountBranches(child));
+
+		/// <summary>
+		/// Adds the leaves and branches under <paramref name="node"/>, whose object reads through <paramref name="contract"/>
+		/// and whose cells get the depth limit <paramref name="cellMaxDepth"/>, or returns false at the first rule one misses.
+		/// </summary>
+		public bool TryAddLevel(ColumnNode node, JsonTypeInfo contract, int cellMaxDepth)
 		{
-			var property = FindProperty(typeInfo, leafNodes[i].PropertyName, options.PropertyNameCaseInsensitive);
+			// Two branches of one nested type share its contract's property infos, so a property counts as bound twice only
+			// within one object.
+			var bound = new HashSet<JsonPropertyInfo>();
+
+			foreach (var child in node.Children ?? [])
+			{
+				var added = child.ColumnIndex >= 0
+					? TryAddLeaf(child, contract, cellMaxDepth, bound)
+					: TryAddBranch(child, contract, cellMaxDepth, bound);
+				if (!added)
+					return false;
+			}
+
+			// A required member without a column fails every row that holds its object in the serializer, so keep that
+			// behavior on the slow path.
+			foreach (var property in contract.Properties)
+			{
+				if (property.IsRequired && !bound.Contains(property))
+					return false;
+			}
+
+			return true;
+		}
+
+		public DirectRowBinder ToBinder(ColumnNode root, Func<object> createObject) =>
+			new()
+			{
+				Kinds = _kinds,
+				Properties = _properties,
+				TypedSetters = _typedSetters,
+				CellTypeInfos = _cellTypeInfos,
+				ConverterCells = _converterCells,
+				EnumTypeCodes = _enumTypeCodes,
+				EnumTypes = _enumTypes,
+				IsCollection = _isCollection,
+				CreateObject = createObject,
+				ValidatedCellCount = _validatedCellCount,
+				CellMaxDepths = _cellMaxDepths,
+				BranchProperties = _branchProperties,
+				BranchCreators = _branchCreators,
+				Root = root,
+				Leaves = _leaves
+			};
+
+		private bool TryAddLeaf(ColumnNode leaf, JsonTypeInfo contract, int cellMaxDepth, HashSet<JsonPropertyInfo> bound)
+		{
+			var property = FindProperty(contract, leaf.PropertyName, _options.PropertyNameCaseInsensitive);
 			if (property is null || property.Set is null || property.IsExtensionData || property.NumberHandling is not null)
+				return false;
+
+			if (ReadsAsMetadata(leaf, property, contract))
+				return false;
+
+			// Two columns for one property, or populate-style creation, are the serializer's business.
+			if (!bound.Add(property) || EffectiveCreationHandling(property, contract, _options) == JsonObjectCreationHandling.Populate)
+				return false;
+
+			var column = leaf.ColumnIndex;
+			_properties[column] = property;
+			_isCollection[column] = leaf.IsCollection;
+			_leaves[column] = leaf;
+			_cellMaxDepths[column] = cellMaxDepth;
+			return TryClassifyCell(column, property, cellMaxDepth);
+		}
+
+		private bool TryClassifyCell(int column, JsonPropertyInfo property, int cellMaxDepth)
+		{
+			// Checked before the built-in kinds, which would read the cell without the property's converter.
+			if (property.CustomConverter is null && TryClassifyScalar(property.PropertyType, _options, out var kind))
+			{
+				_kinds[column] = kind;
+				// The modifier-free chain carries no replaced Set, so a setter compiled for the member assigns what Set would.
+				_typedSetters[column] = _metadata.GetOrCompileSetter(property, kind);
+				return true;
+			}
+
+			// An enum cell needs no cell reader and reads no reference metadata, so the converter cell conditions do not apply.
+			if (TryClassifyEnum(property, _columnTypes[column], _options, out var enumType))
+			{
+				_kinds[column] = DirectBinderKind.Enum;
+				_enumTypeCodes[column] = Type.GetTypeCode(enumType);
+				_enumTypes[column] = enumType;
+				_typedSetters[column] = _metadata.GetOrCompileSetter(property, DirectBinderKind.Enum);
+				_validatedCellCount++;
+				return true;
+			}
+
+			// Converter cells and string list cells bind only under these conditions. Each object of the assembled row that
+			// holds a cell sits above it, so a cell reader gets the options' limit less those levels. Where that leaves zero,
+			// which a reader takes for the default, it could not reject a nested value the way the serializer rejects the
+			// assembled row, and the serializer rejects a string list cell's array there too. The assemble path serves these
+			// rows instead.
+			// Each converter cell deserializes in a call of its own, so an $id or $ref that spans cells resolves differently
+			// than in the serializer's single call over the row. IgnoreCycles reads no metadata and keeps the direct path.
+			if (cellMaxDepth < 1 || _readsReferenceMetadata)
+				return false;
+
+			if (property.CustomConverter is null && TryResolveStringListContract(property.PropertyType, _options) is { } listTypeInfo)
+			{
+				_kinds[column] = property.PropertyType == typeof(string[]) ? DirectBinderKind.StringArray : DirectBinderKind.StringList;
+				if (_kinds[column] == DirectBinderKind.StringList)
+					_cellTypeInfos[column] = listTypeInfo;
+
+				_typedSetters[column] = _metadata.GetOrCompileSetter(property, _kinds[column]);
+				_validatedCellCount++;
+				return true;
+			}
+
+			var cellTypeInfo = property.CustomConverter is not null
+				? _metadata.GetOrCreatePropertyContract(property)
+				: JsonMetadataManager.TryResolveTypeInfo(property.PropertyType, _options);
+			if (cellTypeInfo is null)
+				return false;
+
+			_kinds[column] = DirectBinderKind.Converter;
+			_converterCells[column] = _metadata.GetOrCreateConverterCell(property, cellTypeInfo);
+			_validatedCellCount++;
+			return true;
+		}
+
+		private bool TryAddBranch(ColumnNode branch, JsonTypeInfo contract, int cellMaxDepth, HashSet<JsonPropertyInfo> bound)
+		{
+			// The layout marks the root by its empty name, so it indexes no branch reached through a property whose JSON name
+			// is empty, and such a layout keeps the batched path.
+			if (branch.BranchIndex < 0)
+				return false;
+
+			if (FindBranchProperty(branch, contract) is not { } property || !bound.Add(property))
+				return false;
+
+			var nested = JsonMetadataManager.TryResolveTypeInfo(property.PropertyType, _options);
+			if (nested is not { Kind: JsonTypeInfoKind.Object, CreateObject: { } createObject }
+				|| nested.OnDeserializing is not null
+				|| nested.OnDeserialized is not null
+				|| nested.NumberHandling is not null
+				|| nested.PolymorphismOptions is not null
+				|| property.PropertyType.IsValueType)
+				return false;
+
+			// A branch assigns its nested object through Set, which boxes nothing for the reference type a nested type must
+			// be, so no setter is compiled for it.
+			_branchProperties[branch.BranchIndex] = property;
+			_branchCreators[branch.BranchIndex] = createObject;
+			return TryAddLevel(branch, nested, cellMaxDepth - 1);
+		}
+
+		private JsonPropertyInfo? FindBranchProperty(ColumnNode branch, JsonTypeInfo contract)
+		{
+			var property = FindProperty(contract, branch.PropertyName, caseInsensitive: false);
+			if (property is null
+				|| property.Set is null
+				|| property.CustomConverter is not null
+				|| property.IsExtensionData
+				|| property.NumberHandling is not null)
 				return null;
 
+			return ReadsAsMetadata(branch, property, contract) || EffectiveCreationHandling(property, contract, _options) == JsonObjectCreationHandling.Populate
+				? null
+				: property;
+		}
+
+		private bool ReadsAsMetadata(ColumnNode node, JsonPropertyInfo property, JsonTypeInfo contract)
+		{
 			// The serializer takes a property name with a leading $ for metadata under a handler that reads reference metadata
 			// and on a type whose derived types carry a type discriminator. Under such a handler it reads $id and $ref as
 			// reference metadata, which must hold a string, and rejects any other such name, and on such a type it rejects
 			// every such name, so a row with such a column never binds through it, whatever the cell's kind. The check takes
 			// every type with polymorphism options, so a type whose derived types carry no discriminator loses the direct
 			// path for such a column and keeps its values.
-			if ((readsReferenceMetadata || typeInfo.PolymorphismOptions is not null) && property.Name.Length > 0 && property.Name[0] == '$')
-				return null;
+			if ((_readsReferenceMetadata || contract.PolymorphismOptions is not null) && property.Name.Length > 0 && property.Name[0] == '$')
+				return true;
 
 			// A custom discriminator name is metadata without a $. The serializer reads such a column as the type discriminator,
 			// in first position under the default options and in any position under AllowOutOfOrderMetadataProperties, and never
 			// binds it to the property. It compares the name ordinally with the name in the row object, the column's own, which
-			// the lookup above can map to a property whose name differs in case.
-			if (string.Equals(leafNodes[i].PropertyName, typeInfo.PolymorphismOptions?.TypeDiscriminatorPropertyName, StringComparison.Ordinal))
-				return null;
-
-			// Two columns for one property, or populate-style creation, are the serializer's business.
-			if (!bound.Add(property) || EffectiveCreationHandling(property, typeInfo, options) == JsonObjectCreationHandling.Populate)
-				return null;
-
-			properties[i] = property;
-			isCollection[i] = leafNodes[i].IsCollection;
-
-			// Checked before the built-in kinds, which would read the cell without the property's converter.
-			if (property.CustomConverter is null && TryClassifyScalar(property.PropertyType, options, out var kind))
-			{
-				kinds[i] = kind;
-				// The modifier-free chain carries no replaced Set, so a setter compiled for the member assigns what Set would.
-				typedSetters[i] = metadata.GetOrCompileSetter(property, kind);
-				continue;
-			}
-
-			// An enum cell needs no cell reader and reads no reference metadata, so the converter cell conditions do not apply.
-			if (TryClassifyEnum(property, columns[i].Type, options, out var enumType))
-			{
-				kinds[i] = DirectBinderKind.Enum;
-				enumTypeCodes[i] = Type.GetTypeCode(enumType);
-				enumTypes[i] = enumType;
-				typedSetters[i] = metadata.GetOrCompileSetter(property, DirectBinderKind.Enum);
-				validatedCellCount++;
-				continue;
-			}
-
-			if (!validatedCellsBind)
-				return null;
-
-			if (property.CustomConverter is null && TryResolveStringListContract(property.PropertyType, options) is { } listTypeInfo)
-			{
-				kinds[i] = property.PropertyType == typeof(string[]) ? DirectBinderKind.StringArray : DirectBinderKind.StringList;
-				if (kinds[i] == DirectBinderKind.StringList)
-					cellTypeInfos[i] = listTypeInfo;
-
-				typedSetters[i] = metadata.GetOrCompileSetter(property, kinds[i]);
-				validatedCellCount++;
-				continue;
-			}
-
-			var cellTypeInfo = property.CustomConverter is not null
-				? metadata.GetOrCreatePropertyContract(property)
-				: JsonMetadataManager.TryResolveTypeInfo(property.PropertyType, options);
-			if (cellTypeInfo is null)
-				return null;
-
-			kinds[i] = DirectBinderKind.Converter;
-			converterCells[i] = metadata.GetOrCreateConverterCell(property, cellTypeInfo);
-			validatedCellCount++;
+			// a leaf's lookup can map to a property whose name differs in case.
+			return string.Equals(node.PropertyName, contract.PolymorphismOptions?.TypeDiscriminatorPropertyName, StringComparison.Ordinal);
 		}
-
-		// A required property without a column fails every row in the serializer, so keep that behavior on the slow path.
-		foreach (var property in typeInfo.Properties)
-		{
-			if (property.IsRequired && !bound.Contains(property))
-				return null;
-		}
-
-		return new DirectRowBinder
-		{
-			Kinds = kinds,
-			Properties = properties,
-			TypedSetters = typedSetters,
-			CellTypeInfos = cellTypeInfos,
-			ConverterCells = converterCells,
-			EnumTypeCodes = enumTypeCodes,
-			EnumTypes = enumTypes,
-			IsCollection = isCollection,
-			CreateObject = typeInfo.CreateObject,
-			ValidatedCellCount = validatedCellCount,
-			CellMaxDepth = effectiveMaxDepth - 1
-		};
 	}
 
 	/// <summary>Resolves the creation handling the serializer would apply to a property: property, then type, then options.</summary>

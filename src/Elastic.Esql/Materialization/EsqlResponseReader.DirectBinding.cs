@@ -83,6 +83,10 @@ internal sealed partial class EsqlResponseReader
 		item = default;
 		incomplete = false;
 
+		// The row bind assigns each cell to the root instance, so a row of a layout with branches takes the assembled path.
+		if (binder.BranchProperties.Length > 0)
+			return false;
+
 		if (binder.ValidatedCellCount > 0)
 			return TryBindValidatedRow(ref reader, source, binder, buffers, out item, out incomplete);
 
@@ -446,7 +450,7 @@ internal sealed partial class EsqlResponseReader
 		RowAssemblyBuffers buffers,
 		object instance)
 	{
-		var state = CellReaderState(binder);
+		var state = CellReaderState(binder.CellMaxDepths[span.Column]);
 
 		// ES|QL returns a single-valued multi-value field as a bare scalar, and the row path rewrites it as [value].
 		var cellReader = span.Wrap
@@ -477,10 +481,10 @@ internal sealed partial class EsqlResponseReader
 		return buffer.WrittenSpan;
 	}
 
-	// The reader's depth limit takes precedence over the options' one inside Deserialize, and the assembled row
-	// object sits one level above every cell.
-	private static JsonReaderState CellReaderState(DirectRowBinder binder) =>
-		new(new JsonReaderOptions { MaxDepth = binder.CellMaxDepth });
+	// The reader's depth limit takes precedence over the options' one inside Deserialize, and the binder's limit for the
+	// cell counts the objects above it in the assembled row.
+	private static JsonReaderState CellReaderState(int cellMaxDepth) =>
+		new(new JsonReaderOptions { MaxDepth = cellMaxDepth });
 
 	/// <summary>
 	/// Reads the single cell of a scalar row. A null cell binds <c>default(T)</c> when <c>T</c> accepts null, as the

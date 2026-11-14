@@ -53,7 +53,7 @@ internal sealed class ColumnLayout
 	/// <summary>Total count of non-root branch nodes (nested objects).</summary>
 	public int BranchNodeCount { get; }
 
-	/// <summary>Direct-binding fast path metadata for eligible flat layouts, or null when rows must use the assemble-and-deserialize path.</summary>
+	/// <summary>Direct-binding fast path metadata for eligible layouts, flat or nested, or null when rows must use the assemble-and-deserialize path.</summary>
 	public DirectRowBinder? DirectBinder { get; }
 
 	/// <summary>
@@ -134,8 +134,8 @@ internal sealed class ColumnLayout
 
 		// The binder is cached together with this layout in the reader's column layout cache, so
 		// eligibility is decided once per (target type, column schema).
-		var directBinder = branchNodeCount == 0 && maxDepth <= 1 && columnCount > 0 && typeInfo is not null
-			? DirectRowBinder.TryCreate(leafNodesByColumnIndex, columns, typeInfo, metadata)
+		var directBinder = columnCount > 0 && typeInfo is not null
+			? DirectRowBinder.TryCreate(root, columns, typeInfo, metadata)
 			: null;
 
 		// Taken after the target's contract resolved, so the parts consulted for it are locked and the answer holds for every
