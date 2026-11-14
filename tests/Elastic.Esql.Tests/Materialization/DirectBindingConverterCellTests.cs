@@ -1099,6 +1099,60 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
+	public void ReadRows_DollarIdColumnOnEnumUnderPreserve_ThrowsLikeTheSerializer()
+	{
+		var options = CreateOptions();
+		options.ReferenceHandler = ReferenceHandler.Preserve;
+		options.PropertyNameCaseInsensitive = true;
+		var serializerRead = () => JsonSerializer.Deserialize<DollarIdLevelModel>("""{"$id":1}""", options);
+		serializerRead.Should().Throw<JsonException>();
+
+		var act = () => ReadRows<DollarIdLevelModel>("""{"columns":[{"name":"$id","type":"integer"}],"values":[[1]]}""", options);
+
+		act.Should().Throw<JsonException>();
+	}
+
+	[Test]
+	public void ReadRows_DollarIdColumnOnIntUnderPreserve_ThrowsLikeTheSerializer()
+	{
+		var options = CreateOptions();
+		options.ReferenceHandler = ReferenceHandler.Preserve;
+		options.PropertyNameCaseInsensitive = true;
+		var serializerRead = () => JsonSerializer.Deserialize<DollarIdCountModel>("""{"$id":1}""", options);
+		serializerRead.Should().Throw<JsonException>();
+
+		var act = () => ReadRows<DollarIdCountModel>("""{"columns":[{"name":"$id","type":"integer"}],"values":[[1]]}""", options);
+
+		act.Should().Throw<JsonException>();
+	}
+
+	[Test]
+	public void Build_DollarIdColumnUnderIgnoreCycles_CreatesDirectBinder()
+	{
+		var options = CreateOptions();
+		options.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+		options.PropertyNameCaseInsensitive = true;
+
+		var layout = BuildLayout<DollarIdCountModel>(options, ("$id", "integer"));
+
+		layout.DirectBinder.Should().NotBeNull();
+	}
+
+	[Test]
+	public void ReadRows_DollarIdColumnOnPolymorphicType_ThrowsLikeTheSerializer()
+	{
+		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"$id","type":"integer"}],"values":[["a",1]]}""";
+		var options = CreateOptions();
+		options.PropertyNameCaseInsensitive = true;
+		var serializerRead = () => JsonSerializer.Deserialize<PolymorphicDollarIdModel>("""{"name":"a","$id":1}""", options);
+		serializerRead.Should().Throw<JsonException>();
+
+		var act = () => ReadRows<PolymorphicDollarIdModel>(json, options);
+
+		act.Should().Throw<JsonException>();
+	}
+
+	[Test]
 	public void ReadRows_ConverterReturnsNullForNonNullableProperty_ThrowsUnderRespectNullableAnnotations()
 	{
 		const string json = """{"columns":[{"name":"name","type":"keyword"},{"name":"count","type":"integer"}],"values":[["a",1]]}""";
@@ -1400,6 +1454,28 @@ public class DirectBindingConverterCellTests
 		public Owner? Owner { get; set; }
 		public Owner? Other { get; set; }
 	}
+
+	private sealed class DollarIdLevelModel
+	{
+		[JsonPropertyName("$ID")]
+		public Level Level { get; set; }
+	}
+
+	private sealed class DollarIdCountModel
+	{
+		[JsonPropertyName("$ID")]
+		public int Count { get; set; }
+	}
+
+	[JsonDerivedType(typeof(DerivedDollarIdModel), "d")]
+	private class PolymorphicDollarIdModel
+	{
+		[JsonPropertyName("$ID")]
+		public int Count { get; set; }
+		public string Name { get; set; } = string.Empty;
+	}
+
+	private sealed class DerivedDollarIdModel : PolymorphicDollarIdModel;
 
 	private sealed class Owner
 	{

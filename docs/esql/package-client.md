@@ -383,6 +383,11 @@ document. A type qualifies for this path when all of the following hold:
 - no mapped property binds as a converter cell while the options set a `ReferenceHandler` other than
   `ReferenceHandler.IgnoreCycles`, because each converter cell is read on its own and would not see `$id` or `$ref`
   metadata from another cell
+- no column maps to a property whose JSON name starts with `$` while the options set a `ReferenceHandler` other than
+  `ReferenceHandler.IgnoreCycles` or the type declares derived types with `[JsonDerivedType]`, because the serializer
+  can read such a column as metadata. Under such a handler it reads `$id` and `$ref` as reference metadata, which must
+  hold a string, and rejects any other name with a leading `$`, and without one it rejects every such name on a type
+  with type discriminators
 - no two columns map to the same property
 - every column is flat, so a dotted name such as `address.city` that resolves into a nested object keeps the type on the
   fallback

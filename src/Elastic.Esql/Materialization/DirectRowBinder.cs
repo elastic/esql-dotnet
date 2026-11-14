@@ -127,13 +127,15 @@ internal sealed class DirectRowBinder
 	/// metadata the binder cannot see, or when the type itself cannot be bound with exact serializer fidelity:
 	/// parameterized constructors, serialization callbacks, extension data, number handling on the type or a property, a
 	/// property-level converter no cell contract can be built for, populate-style object creation, a required member
-	/// without a column, two columns for one property, a converter cell or a string list cell under a depth limit of one,
-	/// or either under options that read reference metadata.
+	/// without a column, two columns for one property, a mapped property whose JSON name starts with $ under options that
+	/// read reference metadata or on a type with polymorphism options, a converter cell or a string list cell under a depth
+	/// limit of one, or either under options that read reference metadata.
 	/// A <c>List&lt;string&gt;</c> or <c>string[]</c> cell that the serializer reads with its own collection converter and
 	/// its stock converter for string is read as a string list, an enum cell on a numeric column that the serializer reads
-	/// with its own converters, which accept numbers, is read as an enum, and any other cell that is not one of the built-in
-	/// scalar kinds deserializes through its own contract. <paramref name="columns"/> holds the ES|QL type of the column
-	/// each leaf node reads.
+	/// with its own converters, which accept numbers, is read as an enum, the nullable form only under options with no
+	/// user-written converter factory and no converter for the nullable type, and any other cell that is not one of the
+	/// built-in scalar kinds deserializes through its own contract. <paramref name="columns"/> holds the ES|QL type of the
+	/// column each leaf node reads.
 	/// </summary>
 	public static DirectRowBinder? TryCreate(
 		ColumnNode[] leafNodes,
@@ -176,6 +178,7 @@ internal sealed class DirectRowBinder
 		var validatedCellCount = 0;
 		var bound = new HashSet<JsonPropertyInfo>();
 		var effectiveMaxDepth = ColumnLayout.EffectiveMaxDepth(options);
+		var readsReferenceMetadata = options.ReferenceHandler is { } handler && handler != ReferenceHandler.IgnoreCycles;
 
 		// Converter cells and string list cells bind only under these conditions. Under a depth limit of one, a cell reader
 		// would get a depth limit of zero, which it reads as the default, so it could not reject a nested converter cell the
@@ -183,12 +186,21 @@ internal sealed class DirectRowBinder
 		// The assemble path serves these rows instead.
 		// Each converter cell deserializes in a call of its own, so an $id or $ref that spans cells resolves differently
 		// than in the serializer's single call over the row. IgnoreCycles reads no metadata and keeps the direct path.
-		var validatedCellsBind = effectiveMaxDepth >= 2 && (options.ReferenceHandler is not { } handler || handler == ReferenceHandler.IgnoreCycles);
+		var validatedCellsBind = effectiveMaxDepth >= 2 && !readsReferenceMetadata;
 
 		for (var i = 0; i < count; i++)
 		{
 			var property = FindProperty(typeInfo, leafNodes[i].PropertyName, options.PropertyNameCaseInsensitive);
 			if (property is null || property.Set is null || property.IsExtensionData || property.NumberHandling is not null)
+				return null;
+
+			// The serializer takes a property name with a leading $ for metadata under a handler that reads reference metadata
+			// and on a type whose derived types carry a type discriminator. Under such a handler it reads $id and $ref as
+			// reference metadata, which must hold a string, and rejects any other such name, and on such a type it rejects
+			// every such name, so a row with such a column never binds through it, whatever the cell's kind. The check takes
+			// every type with polymorphism options, so a type whose derived types carry no discriminator loses the direct
+			// path for such a column and keeps its values.
+			if ((readsReferenceMetadata || typeInfo.PolymorphismOptions is not null) && property.Name.Length > 0 && property.Name[0] == '$')
 				return null;
 
 			// Two columns for one property, or populate-style creation, are the serializer's business.
