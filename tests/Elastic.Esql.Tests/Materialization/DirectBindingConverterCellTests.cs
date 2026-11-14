@@ -201,6 +201,20 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
+	public void ReadRows_NullableIntUnderRegisteredWrapperInstance_BindsLikeTheSerializer()
+	{
+		var options = CreateOptions();
+		// The wrapper is the serializer's own type and int keeps its stock converter, so only the wrapper's Type of int? marks it.
+		var wrapper = JsonMetadataServices.GetNullableConverter<int>(JsonMetadataServices.CreateValueInfo<int>(options, new DoublingIntConverter()));
+		options.Converters.Add(wrapper);
+		JsonSerializer.Deserialize<NullableCountModel>("""{"count":21}""", options)!.Count.Should().Be(42);
+
+		var rows = ReadRows<NullableCountModel>("""{"columns":[{"name":"count","type":"integer"}],"values":[[21]]}""", options);
+
+		rows.Single().Count.Should().Be(42);
+	}
+
+	[Test]
 	public void ReadRows_SingleNullableIntColumnUnderRegisteredWrappingFactory_BindsLikeTheSerializer()
 	{
 		var options = CreateOptions();
