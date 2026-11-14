@@ -22,9 +22,9 @@ namespace Elastic.Esql.Materialization;
 internal static class DirectSetterCompiler
 {
 	/// <summary>
-	/// Returns a compiled <c>Action&lt;object, TValue&gt;</c> for the exact value type of <paramref name="kind"/>, for the
-	/// property's own list type on a string list or for the underlying integer type of the enum on an enum, or null when
-	/// the runtime does not support dynamic code, the declaring type is a struct, the member cannot be resolved via
+	/// Returns a compiled <c>Action&lt;object, TValue&gt;</c> for the exact value type of <paramref name="kind"/>, for
+	/// <c>long</c> on an enum, whose cell carries the bits of the enum's underlying integer type, or null when the runtime
+	/// does not support dynamic code, the declaring type is a struct, the member cannot be resolved via
 	/// <see cref="JsonPropertyInfo.AttributeProvider"/>, or the member is not a property with a public setter or a public
 	/// writable field.
 	/// </summary>
@@ -45,20 +45,9 @@ internal static class DirectSetterCompiler
 			DirectBinderKind.DateTime => TryCreate<DateTime>(property),
 			DirectBinderKind.DateTimeOffset => TryCreate<DateTimeOffset>(property),
 			DirectBinderKind.Guid => TryCreate<Guid>(property),
-			DirectBinderKind.Enum => Type.GetTypeCode(Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType) switch
-			{
-				TypeCode.SByte => TryCreate<sbyte>(property),
-				TypeCode.Byte => TryCreate<byte>(property),
-				TypeCode.Int16 => TryCreate<short>(property),
-				TypeCode.UInt16 => TryCreate<ushort>(property),
-				TypeCode.Int32 => TryCreate<int>(property),
-				TypeCode.UInt32 => TryCreate<uint>(property),
-				TypeCode.Int64 => TryCreate<long>(property),
-				TypeCode.UInt64 => TryCreate<ulong>(property),
-				_ => null
-			},
-			DirectBinderKind.StringList when property.PropertyType == typeof(string[]) => TryCreate<string[]>(property),
+			DirectBinderKind.Enum => TryCreate<long>(property),
 			DirectBinderKind.StringList => TryCreate<List<string>>(property),
+			DirectBinderKind.StringArray => TryCreate<string[]>(property),
 			_ => null
 		};
 	}
@@ -87,8 +76,9 @@ internal static class DirectSetterCompiler
 				return null;
 		}
 
-		// The binder classifies Nullable<T> by its underlying type and an enum by its underlying integer type, so the cell
-		// value may need lifting or converting to the enum.
+		// The binder classifies Nullable<T> by its underlying type and hands an enum its bits as a long, so the cell value
+		// may need lifting or converting to the enum. Convert narrows unchecked through the enum's underlying type, which
+		// keeps the bits of a ulong enum above long.MaxValue that travel as a negative long.
 		Expression assigned = property.PropertyType == typeof(TValue) ? value : Expression.Convert(value, property.PropertyType);
 
 		return Expression.Lambda<Action<object, TValue>>(Expression.Assign(target, assigned), instance, value).Compile();

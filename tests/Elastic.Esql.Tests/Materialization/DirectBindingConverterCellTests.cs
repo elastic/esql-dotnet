@@ -86,6 +86,18 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
+	public void ReadRows_UlongEnumCellAboveLongMaxValue_BindsLikeTheSerializer()
+	{
+		var options = CreateOptions();
+		JsonSerializer.Deserialize<HugeModel>("""{"value":18446744073709551615}""", options)!.Value.Should().Be(Huge.Max);
+		BuildLayout<HugeModel>(("value", "unsigned_long")).DirectBinder!.Kinds.Should().Equal([DirectBinderKind.Enum]);
+
+		var rows = ReadRows<HugeModel>("""{"columns":[{"name":"value","type":"unsigned_long"}],"values":[[18446744073709551615]]}""", options);
+
+		rows.Single().Value.Should().Be(Huge.Max);
+	}
+
+	[Test]
 	public void ReadRows_NullableEnumOnNumericColumn_BindsTheValue()
 	{
 		BuildLayout<NullableLevelModel>(("level", "integer")).DirectBinder!.Kinds.Should().Equal([DirectBinderKind.Enum]);
@@ -1141,6 +1153,13 @@ public class DirectBindingConverterCellTests
 	private sealed class TinyModel
 	{
 		public Tiny Value { get; set; }
+	}
+
+	private enum Huge : ulong { Zero, Max = ulong.MaxValue }
+
+	private sealed class HugeModel
+	{
+		public Huge Value { get; set; }
 	}
 
 	private sealed class CountingLevelModel

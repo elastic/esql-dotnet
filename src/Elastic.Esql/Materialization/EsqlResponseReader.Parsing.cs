@@ -182,7 +182,7 @@ internal sealed partial class EsqlResponseReader
 						else if (reader.ValueTextEquals("type"u8))
 						{
 							_ = reader.Read();
-							type = reader.GetString();
+							type = ReadColumnType(ref reader);
 						}
 						else
 						{
@@ -190,9 +190,7 @@ internal sealed partial class EsqlResponseReader
 						}
 					}
 
-					list.Add(new ColumnInfo(
-						name ?? throw new JsonException("ES|QL column is missing the \"name\" property."),
-						type ?? throw new JsonException("ES|QL column is missing the \"type\" property.")));
+					list.Add(CreateColumn(name, type));
 				}
 				columns = [.. list];
 			}
@@ -460,12 +458,9 @@ internal sealed partial class EsqlResponseReader
 				}
 
 				if (count == staged.Length)
-					GrowStagedColumns(ref staged, count);
+					PooledArrays.Grow(ref staged, 0, count, count * 2, clearArray: true);
 
-				staged[count++] = new ColumnInfo(
-					name ?? throw new JsonException("ES|QL column is missing the \"name\" property."),
-					type ?? throw new JsonException("ES|QL column is missing the \"type\" property.")
-				);
+				staged[count++] = CreateColumn(name, type);
 			}
 
 			columns = staged.AsSpan(0, count).ToArray();
@@ -479,16 +474,6 @@ internal sealed partial class EsqlResponseReader
 		state = reader.CurrentState;
 		consumed = reader.Position;
 		return true;
-	}
-
-	private static void GrowStagedColumns(ref ColumnInfo[] staged, int count)
-	{
-		var grown = ArrayPool<ColumnInfo>.Shared.Rent(count * 2);
-		staged.AsSpan(0, count).CopyTo(grown);
-
-		// The array goes back with its entries cleared, so the pool keeps no response's column names alive.
-		ArrayPool<ColumnInfo>.Shared.Return(staged, clearArray: true);
-		staged = grown;
 	}
 
 	private static readonly string[] EsqlTypeNames =
@@ -536,6 +521,12 @@ internal sealed partial class EsqlResponseReader
 
 		return reader.GetString();
 	}
+
+	private static ColumnInfo CreateColumn(string? name, string? type) =>
+		new(
+			name ?? throw new JsonException("ES|QL column is missing the \"name\" property."),
+			type ?? throw new JsonException("ES|QL column is missing the \"type\" property.")
+		);
 
 	private static async Task<(JsonReaderState State, string? Id, bool? IsRunning)> AdvanceToValuesArrayFromAsyncCursorAsync(
 		IAsyncBufferCursor cursor,

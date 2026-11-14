@@ -173,7 +173,7 @@ internal sealed partial class EsqlResponseReader
 				return false;
 
 			var instance = binder.CreateObject();
-			if (!TryAssignCells(source, binder, buffers, spans[..recorded], strings, instance))
+			if (!TryAssignCells(source, binder, buffers, spans[..recorded], instance))
 				return false;
 
 			item = (T)instance;
@@ -241,7 +241,7 @@ internal sealed partial class EsqlResponseReader
 					return false;
 				}
 			}
-			else if (kinds[i] == DirectBinderKind.StringList)
+			else if (kinds[i] is DirectBinderKind.StringList or DirectBinderKind.StringArray)
 			{
 				if (!TryValidateStringList(ref reader, tokenType, binder.IsCollection[i], out incomplete))
 					return false;
@@ -310,7 +310,7 @@ internal sealed partial class EsqlResponseReader
 		{
 			var column = span.Column;
 			var kind = binder.Kinds[column];
-			if (kind is not (DirectBinderKind.String or DirectBinderKind.StringList))
+			if (kind is not (DirectBinderKind.String or DirectBinderKind.StringList or DirectBinderKind.StringArray))
 				continue;
 
 #if !NETSTANDARD2_0
@@ -331,7 +331,7 @@ internal sealed partial class EsqlResponseReader
 				if (!TryGetString(ref cellReader, cellReader.TokenType, out strings[column]))
 					return false;
 			}
-			else if (binder.Properties[column].PropertyType == typeof(string[]))
+			else if (kind == DirectBinderKind.StringArray)
 			{
 				var scratch = buffers.StringListScratch;
 				scratch.Clear();
@@ -391,9 +391,9 @@ internal sealed partial class EsqlResponseReader
 		DirectRowBinder binder,
 		RowAssemblyBuffers buffers,
 		ReadOnlySpan<CellSpan> spans,
-		string?[] strings,
 		object instance)
 	{
+		var strings = buffers.StringCells(binder.Kinds.Length);
 		var lists = buffers.ListCells(binder.Kinds.Length);
 
 		foreach (var span in spans)
@@ -410,10 +410,13 @@ internal sealed partial class EsqlResponseReader
 
 			if (kind == DirectBinderKind.StringList)
 			{
-				if (lists[column] is string[] array)
-					Assign(binder.TypedSetters[column], binder.Properties[column], instance, array);
-				else
-					Assign(binder.TypedSetters[column], binder.Properties[column], instance, (List<string?>)lists[column]!);
+				Assign(binder.TypedSetters[column], binder.Properties[column], instance, (List<string?>)lists[column]!);
+				continue;
+			}
+
+			if (kind == DirectBinderKind.StringArray)
+			{
+				Assign(binder.TypedSetters[column], binder.Properties[column], instance, (string[])lists[column]!);
 				continue;
 			}
 
@@ -440,42 +443,16 @@ internal sealed partial class EsqlResponseReader
 		RowAssemblyBuffers buffers,
 		object instance)
 	{
-		var property = binder.Properties[span.Column];
 		var state = CellReaderState(binder);
 
 		// ES|QL returns a single-valued multi-value field as a bare scalar, and the row path rewrites it as [value].
 		var cellReader = span.Wrap
-			? new Utf8JsonReader(
-				source.IsSingleSegment
-					? WrapInArray(source.First.Span.Slice((int)span.Start, (int)span.Length), buffers.RowBuffer)
-					: WrapInArray(source.Slice(span.Start, span.Length), buffers.RowBuffer),
-				isFinalBlock: true,
-				state
-			)
+			? new Utf8JsonReader(WrapInArray(source, span, buffers.RowBuffer), isFinalBlock: true, state)
 			: CreateCellReader(source, span, state);
 
 		_ = cellReader.Read();
 
-		if (binder.ConverterCells[span.Column] is { } cell)
-			return cell.TryBind(ref cellReader, property, instance);
-
-		var cellTypeInfo = binder.CellTypeInfos[span.Column]!;
-		object? value;
-		try
-		{
-			value = JsonSerializer.Deserialize(ref cellReader, cellTypeInfo);
-		}
-		catch (JsonException)
-		{
-			return false;
-		}
-
-		// The serializer raises its nullability error for this value, and the direct path must not accept what it rejects.
-		if (value is null && cellTypeInfo.Options.RespectNullableAnnotations && !property.IsSetNullable)
-			return false;
-
-		property.Set!(instance, value);
-		return true;
+		return binder.ConverterCells[span.Column]!.TryBind(ref cellReader, instance);
 	}
 
 	private static Utf8JsonReader CreateCellReader(in ReadOnlySequence<byte> source, in CellSpan span, JsonReaderState state) =>
@@ -483,20 +460,16 @@ internal sealed partial class EsqlResponseReader
 			? new Utf8JsonReader(source.First.Span.Slice((int)span.Start, (int)span.Length), isFinalBlock: true, state)
 			: new Utf8JsonReader(source.Slice(span.Start, span.Length), isFinalBlock: true, state);
 
-	private static ReadOnlySpan<byte> WrapInArray(in ReadOnlySequence<byte> value, PooledBufferWriter buffer)
+	private static ReadOnlySpan<byte> WrapInArray(in ReadOnlySequence<byte> source, in CellSpan span, PooledBufferWriter buffer)
 	{
 		buffer.ResetWrittenCount();
 		buffer.Write((byte)'[');
-		buffer.Write(value);
-		buffer.Write((byte)']');
-		return buffer.WrittenSpan;
-	}
 
-	private static ReadOnlySpan<byte> WrapInArray(ReadOnlySpan<byte> value, PooledBufferWriter buffer)
-	{
-		buffer.ResetWrittenCount();
-		buffer.Write((byte)'[');
-		buffer.Write(value);
+		if (source.IsSingleSegment)
+			buffer.Write(source.First.Span.Slice((int)span.Start, (int)span.Length));
+		else
+			buffer.Write(source.Slice(span.Start, span.Length));
+
 		buffer.Write((byte)']');
 		return buffer.WrittenSpan;
 	}
@@ -877,51 +850,15 @@ internal sealed partial class EsqlResponseReader
 	/// </summary>
 	private static void AssignEnum(DirectRowBinder binder, int column, long bits, object instance)
 	{
-		var typeCode = binder.EnumTypeCodes[column];
-		var property = binder.Properties[column];
-
-		if (binder.TypedSetters[column] is not { } typedSetter)
+		if (binder.TypedSetters[column] is { } typedSetter)
 		{
-			// Set unboxes its value as the property type, so the bits are boxed as the enum rather than as its integer type.
-			var enumType = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
-			property.Set!(instance, typeCode == TypeCode.UInt64 ? Enum.ToObject(enumType, unchecked((ulong)bits)) : Enum.ToObject(enumType, bits));
+			((Action<object, long>)typedSetter)(instance, bits);
 			return;
 		}
 
-		switch (typeCode)
-		{
-			case TypeCode.SByte:
-				((Action<object, sbyte>)typedSetter)(instance, (sbyte)bits);
-				break;
-
-			case TypeCode.Byte:
-				((Action<object, byte>)typedSetter)(instance, (byte)bits);
-				break;
-
-			case TypeCode.Int16:
-				((Action<object, short>)typedSetter)(instance, (short)bits);
-				break;
-
-			case TypeCode.UInt16:
-				((Action<object, ushort>)typedSetter)(instance, (ushort)bits);
-				break;
-
-			case TypeCode.Int32:
-				((Action<object, int>)typedSetter)(instance, (int)bits);
-				break;
-
-			case TypeCode.UInt32:
-				((Action<object, uint>)typedSetter)(instance, (uint)bits);
-				break;
-
-			case TypeCode.Int64:
-				((Action<object, long>)typedSetter)(instance, bits);
-				break;
-
-			default:
-				((Action<object, ulong>)typedSetter)(instance, unchecked((ulong)bits));
-				break;
-		}
+		// Set unboxes its value as the property type, so the bits are boxed as the enum rather than as its integer type.
+		// Enum.ToObject converts a ulong to long unchecked before it boxes, so the long overload gives a ulong enum the same value.
+		binder.Properties[column].Set!(instance, Enum.ToObject(binder.EnumTypes[column]!, bits));
 	}
 
 	// Reads back the value TryReadDirectValue stored for the kind, or the string TryDecodeStringCells decoded, so keep the

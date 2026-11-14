@@ -24,10 +24,12 @@ internal enum DirectBinderKind
 	Guid,
 	Enum,
 	StringList,
+	StringArray,
 
 	/// <summary>
 	/// Cell deserialized through its own contract (enums other than a <see cref="DirectBinderKind.Enum"/> cell, dates
-	/// without a built-in kind, collections other than a <see cref="StringList"/>, dictionaries, nested objects).
+	/// without a built-in kind, collections other than a <see cref="StringList"/> or a <see cref="StringArray"/>,
+	/// dictionaries, nested objects).
 	/// </summary>
 	Converter
 }
@@ -48,24 +50,21 @@ internal sealed class DirectRowBinder
 	public required JsonPropertyInfo[] Properties { get; init; }
 
 	/// <summary>
-	/// Per-column <c>Action&lt;object, TValue&gt;</c> compiled for the exact cell type, or null where the column
-	/// assigns through the boxing <see cref="JsonPropertyInfo.Set"/> (Native AOT, struct targets, unresolvable members).
-	/// A <see cref="DirectBinderKind.Converter"/> column keeps its setter in <see cref="ConverterCells"/>.
+	/// Per-column <c>Action&lt;object, TValue&gt;</c> compiled for the exact cell type, which is <c>long</c> for the bits of
+	/// an enum cell, or null where the column assigns through the boxing <see cref="JsonPropertyInfo.Set"/> (Native AOT,
+	/// struct targets, unresolvable members). A <see cref="DirectBinderKind.Converter"/> column keeps its setter in
+	/// <see cref="ConverterCells"/>.
 	/// </summary>
 	public required Delegate?[] TypedSetters { get; init; }
 
 	/// <summary>
-	/// Contract used to deserialize a <see cref="DirectBinderKind.Converter"/> cell, the list contract that creates the list
-	/// of a <see cref="DirectBinderKind.StringList"/> cell, or null for the built-in kinds and the
-	/// <see cref="DirectBinderKind.Enum"/> kind.
+	/// Contract used to deserialize a <see cref="DirectBinderKind.Converter"/> cell, the list contract of a
+	/// <see cref="DirectBinderKind.StringList"/> cell, which creates its list, or of a <see cref="DirectBinderKind.StringArray"/>
+	/// cell, or null for the built-in kinds and the <see cref="DirectBinderKind.Enum"/> kind.
 	/// </summary>
 	public required JsonTypeInfo?[] CellTypeInfos { get; init; }
 
-	/// <summary>
-	/// The typed cell that reads and assigns a <see cref="DirectBinderKind.Converter"/> column, or null for every other
-	/// kind. A converter column with a null entry, as under Native AOT, reads through <see cref="CellTypeInfos"/> and
-	/// assigns through <see cref="JsonPropertyInfo.Set"/>.
-	/// </summary>
+	/// <summary>The cell that reads and assigns a <see cref="DirectBinderKind.Converter"/> column, or null for every other kind.</summary>
 	public required ConverterCell?[] ConverterCells { get; init; }
 
 	/// <summary>
@@ -73,6 +72,12 @@ internal sealed class DirectRowBinder
 	/// type, or <see cref="TypeCode.Empty"/> for every other kind.
 	/// </summary>
 	public required TypeCode[] EnumTypeCodes { get; init; }
+
+	/// <summary>
+	/// The enum type of a <see cref="DirectBinderKind.Enum"/> column without its nullable wrapper, which boxes the bits
+	/// where the column has no typed setter, or null for every other kind.
+	/// </summary>
+	public required Type?[] EnumTypes { get; init; }
 
 	/// <summary>
 	/// Per column, whether the target property is a collection. A bare scalar cell for such a column is wrapped in
@@ -83,9 +88,9 @@ internal sealed class DirectRowBinder
 	public required Func<object> CreateObject { get; init; }
 
 	/// <summary>
-	/// Number of <see cref="DirectBinderKind.Converter"/>, <see cref="DirectBinderKind.StringList"/> and
-	/// <see cref="DirectBinderKind.Enum"/> columns. A row with any validates every cell before it creates the instance,
-	/// decodes a string list or deserializes a converter cell.
+	/// Number of <see cref="DirectBinderKind.Converter"/>, <see cref="DirectBinderKind.Enum"/>,
+	/// <see cref="DirectBinderKind.StringArray"/> and <see cref="DirectBinderKind.StringList"/> columns. A row with any
+	/// validates every cell before it creates the instance, decodes a string list or deserializes a converter cell.
 	/// </summary>
 	public required int ValidatedCellCount { get; init; }
 
@@ -140,6 +145,7 @@ internal sealed class DirectRowBinder
 		var cellTypeInfos = new JsonTypeInfo?[count];
 		var converterCells = new ConverterCell?[count];
 		var enumTypeCodes = new TypeCode[count];
+		var enumTypes = new Type?[count];
 		var isCollection = new bool[count];
 		var validatedCellCount = 0;
 		var bound = new HashSet<JsonPropertyInfo>();
@@ -175,10 +181,11 @@ internal sealed class DirectRowBinder
 			}
 
 			// An enum cell needs no cell reader and reads no reference metadata, so the converter cell conditions do not apply.
-			if (TryClassifyEnum(property, columns[i].Type, metadata, out var typeCode))
+			if (TryClassifyEnum(property, columns[i].Type, options, out var enumType))
 			{
 				kinds[i] = DirectBinderKind.Enum;
-				enumTypeCodes[i] = typeCode;
+				enumTypeCodes[i] = Type.GetTypeCode(enumType);
+				enumTypes[i] = enumType;
 				typedSetters[i] = metadata.GetOrCompileSetter(property, DirectBinderKind.Enum);
 				validatedCellCount++;
 				continue;
@@ -189,9 +196,9 @@ internal sealed class DirectRowBinder
 
 			if (property.CustomConverter is null && TryResolveStringListContract(property.PropertyType, options) is { } listTypeInfo)
 			{
-				kinds[i] = DirectBinderKind.StringList;
+				kinds[i] = property.PropertyType == typeof(string[]) ? DirectBinderKind.StringArray : DirectBinderKind.StringList;
 				cellTypeInfos[i] = listTypeInfo;
-				typedSetters[i] = metadata.GetOrCompileSetter(property, DirectBinderKind.StringList);
+				typedSetters[i] = metadata.GetOrCompileSetter(property, kinds[i]);
 				validatedCellCount++;
 				continue;
 			}
@@ -223,6 +230,7 @@ internal sealed class DirectRowBinder
 			CellTypeInfos = cellTypeInfos,
 			ConverterCells = converterCells,
 			EnumTypeCodes = enumTypeCodes,
+			EnumTypes = enumTypes,
 			IsCollection = isCollection,
 			CreateObject = typeInfo.CreateObject,
 			ValidatedCellCount = validatedCellCount,
@@ -267,14 +275,12 @@ internal sealed class DirectRowBinder
 
 	/// <summary>
 	/// Classifies an enum property, or the nullable form of one, on a numeric column as an enum cell when the serializer
-	/// reads it with its own converters and those accept a number. <paramref name="typeCode"/> is the code of the enum's
-	/// underlying integer type.
+	/// reads it with its own converters and those accept a number. <paramref name="enumType"/> is the enum type without
+	/// its nullable wrapper.
 	/// </summary>
-	private static bool TryClassifyEnum(JsonPropertyInfo property, string columnType, JsonMetadataManager metadata, out TypeCode typeCode)
+	private static bool TryClassifyEnum(JsonPropertyInfo property, string columnType, JsonSerializerOptions options, out Type enumType)
 	{
-		typeCode = TypeCode.Empty;
-		var options = metadata.Options;
-		var enumType = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
+		enumType = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
 
 		if (!enumType.IsEnum || columnType is not ("byte" or "integer" or "long" or "short" or "unsigned_long"))
 			return false;
@@ -298,7 +304,6 @@ internal sealed class DirectRowBinder
 			return false;
 		}
 
-		typeCode = Type.GetTypeCode(enumType);
 		return true;
 	}
 
