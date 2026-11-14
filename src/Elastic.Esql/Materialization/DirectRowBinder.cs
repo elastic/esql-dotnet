@@ -58,9 +58,9 @@ internal sealed class DirectRowBinder
 	public required Delegate?[] TypedSetters { get; init; }
 
 	/// <summary>
-	/// Contract used to deserialize a <see cref="DirectBinderKind.Converter"/> cell, the list contract of a
-	/// <see cref="DirectBinderKind.StringList"/> cell, which creates its list, or of a <see cref="DirectBinderKind.StringArray"/>
-	/// cell, or null for the built-in kinds and the <see cref="DirectBinderKind.Enum"/> kind.
+	/// The list contract that creates the list of a <see cref="DirectBinderKind.StringList"/> cell, or null for every other
+	/// kind. A <see cref="DirectBinderKind.Converter"/> cell holds its own contract, and a
+	/// <see cref="DirectBinderKind.StringArray"/> cell collects its elements in the row scratch.
 	/// </summary>
 	public required JsonTypeInfo?[] CellTypeInfos { get; init; }
 
@@ -199,7 +199,9 @@ internal sealed class DirectRowBinder
 			if (property.CustomConverter is null && TryResolveStringListContract(property.PropertyType, options) is { } listTypeInfo)
 			{
 				kinds[i] = property.PropertyType == typeof(string[]) ? DirectBinderKind.StringArray : DirectBinderKind.StringList;
-				cellTypeInfos[i] = listTypeInfo;
+				if (kinds[i] == DirectBinderKind.StringList)
+					cellTypeInfos[i] = listTypeInfo;
+
 				typedSetters[i] = metadata.GetOrCompileSetter(property, kinds[i]);
 				validatedCellCount++;
 				continue;
@@ -212,7 +214,6 @@ internal sealed class DirectRowBinder
 				return null;
 
 			kinds[i] = DirectBinderKind.Converter;
-			cellTypeInfos[i] = cellTypeInfo;
 			converterCells[i] = metadata.GetOrCreateConverterCell(property, cellTypeInfo);
 			validatedCellCount++;
 		}
