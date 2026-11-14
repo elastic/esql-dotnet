@@ -38,7 +38,7 @@ internal enum DirectBinderKind
 /// <remarks>
 /// Binding directly is a large net win over the assemble-and-deserialize pipeline, which tokenizes, re-writes and
 /// re-parses every cell. Built once per (target type, column schema) and cached on the <see cref="ColumnLayout"/>.
-/// It is immutable after construction because layouts are shared across threads.
+/// It does not change after TryCreate returns, because layouts are shared across threads.
 /// </remarks>
 internal sealed class DirectRowBinder
 {
@@ -106,6 +106,8 @@ internal sealed class DirectRowBinder
 		CellMaxDepths = new int[columnCount];
 		BranchProperties = new JsonPropertyInfo[branchCount];
 		BranchCreators = new Func<object>[branchCount];
+		LeafParents = new int[columnCount];
+		BranchParents = new int[branchCount];
 		Root = layout.Root;
 		Leaves = layout.LeafNodesByColumnIndex;
 	}
@@ -175,6 +177,31 @@ internal sealed class DirectRowBinder
 	/// <summary>Per branch, at its <see cref="ColumnNode.BranchIndex"/>, the creator of the nested object. Empty for a flat layout.</summary>
 	public Func<object>[] BranchCreators { get; }
 
+	/// <summary>
+	/// Per column, the <see cref="ColumnNode.BranchIndex"/> of the branch that holds the column's leaf, or -1 for a leaf of
+	/// the row object.
+	/// </summary>
+	public int[] LeafParents { get; }
+
+	/// <summary>
+	/// Per branch, at its <see cref="ColumnNode.BranchIndex"/>, the index of the branch that holds it, or -1 for a branch
+	/// of the row object. Empty for a flat layout.
+	/// </summary>
+	public int[] BranchParents { get; }
+
+	/// <summary>
+	/// The columns of the required leaves under a branch. The per-row check for required nested members reads this list and
+	/// <see cref="RequiredBranches"/> in place of every column and every branch, so its cost grows with the required nested
+	/// members alone.
+	/// </summary>
+	public int[] RequiredNestedLeaves { get; private set; } = [];
+
+	/// <summary>
+	/// The <see cref="ColumnNode.BranchIndex"/> of each branch whose property is required, which the per-row check for
+	/// required nested members reads in place of every branch.
+	/// </summary>
+	public int[] RequiredBranches { get; private set; } = [];
+
 	/// <summary>The layout's root, whose children are the result type's columns and branches.</summary>
 	public ColumnNode Root { get; }
 
@@ -222,7 +249,7 @@ internal sealed class DirectRowBinder
 
 		var binder = new DirectRowBinder(layout, typeInfo.CreateObject!);
 		var builder = new Builder(metadata, columns.ToArray(), binder);
-		return builder.TryAddLevel(layout.Root, typeInfo, ColumnLayout.EffectiveMaxDepth(metadata.Options) - 1) ? binder : null;
+		return builder.TryAddLevel(layout.Root, typeInfo, ColumnLayout.EffectiveMaxDepth(metadata.Options) - 1) ? builder.Complete() : null;
 	}
 
 	// Types with serialization callbacks must stay on the slow path: the fast path may create (and discard) an instance on a
@@ -241,6 +268,8 @@ internal sealed class DirectRowBinder
 		private readonly EsqlResponseReader.ColumnInfo[] _columns = columns;
 		private readonly bool _readsReferenceMetadata = metadata.Options.ReferenceHandler is { } handler && handler != ReferenceHandler.IgnoreCycles;
 		private readonly DirectRowBinder _binder = binder;
+		private readonly List<int> _requiredNestedLeaves = [];
+		private readonly List<int> _requiredBranches = [];
 
 		/// <summary>
 		/// Adds the leaves and branches under <paramref name="node"/>, whose object reads through <paramref name="contract"/>
@@ -272,15 +301,28 @@ internal sealed class DirectRowBinder
 			return true;
 		}
 
+		/// <summary>Hands the binder the required nested members the walk collected, once every level is added.</summary>
+		public DirectRowBinder Complete()
+		{
+			_binder.RequiredNestedLeaves = [.. _requiredNestedLeaves];
+			_binder.RequiredBranches = [.. _requiredBranches];
+			return _binder;
+		}
+
 		private bool TryAddLeaf(ColumnNode leaf, JsonTypeInfo contract, int cellMaxDepth, HashSet<JsonPropertyInfo> bound)
 		{
 			if (FindBindableProperty(leaf, contract, _options.PropertyNameCaseInsensitive, bound) is not { } property)
 				return false;
 
 			var column = leaf.ColumnIndex;
+			var parent = leaf.Parent!.BranchIndex;
 			_binder.Properties[column] = property;
 			_binder.IsCollection[column] = leaf.IsCollection;
 			_binder.CellMaxDepths[column] = cellMaxDepth;
+			_binder.LeafParents[column] = parent;
+			if (property.IsRequired && parent >= 0)
+				_requiredNestedLeaves.Add(column);
+
 			return TryClassifyCell(column, property, cellMaxDepth);
 		}
 
@@ -342,7 +384,7 @@ internal sealed class DirectRowBinder
 		private bool TryAddBranch(ColumnNode branch, JsonTypeInfo contract, int cellMaxDepth, HashSet<JsonPropertyInfo> bound)
 		{
 			// The layout marks the root by its empty name, so it indexes no branch reached through a property whose JSON name
-			// is empty, and such a layout keeps the batched path.
+			// is empty, and such a layout keeps the assembled path.
 			if (branch.BranchIndex < 0)
 				return false;
 
@@ -359,6 +401,10 @@ internal sealed class DirectRowBinder
 			// be, so no setter is compiled for it.
 			_binder.BranchProperties[branch.BranchIndex] = property;
 			_binder.BranchCreators[branch.BranchIndex] = nested.CreateObject!;
+			_binder.BranchParents[branch.BranchIndex] = branch.Parent!.BranchIndex;
+			if (property.IsRequired)
+				_requiredBranches.Add(branch.BranchIndex);
+
 			return TryAddLevel(branch, nested, cellMaxDepth - 1);
 		}
 
@@ -427,7 +473,7 @@ internal sealed class DirectRowBinder
 		return match;
 	}
 
-	/// <summary>Classifies a flat column's property type or a scalar read target as a built-in kind read through the stock converter.</summary>
+	/// <summary>Classifies a column's property type or a scalar read target as a built-in kind read through the stock converter.</summary>
 	internal static bool TryClassifyScalar(Type type, JsonSerializerOptions options, out DirectBinderKind kind) =>
 		TryClassify(type, out kind) && UsesBuiltInConverter(type, options);
 

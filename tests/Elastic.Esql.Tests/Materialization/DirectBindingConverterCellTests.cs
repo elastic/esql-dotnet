@@ -1489,6 +1489,19 @@ public class DirectBindingConverterCellTests
 	}
 
 	[Test]
+	public void ReadRows_NullRequiredLeafUnderActiveBranch_ThrowsLikeTheSerializer()
+	{
+		var options = CreateOptions();
+		var serializerRead = () => JsonSerializer.Deserialize<OptionalStreetModel>("""{"name":"a","place":{"city":"c"}}""", options);
+		serializerRead.Should().Throw<JsonException>();
+		BuildLayout<OptionalStreetModel>(("name", "keyword"), ("place.street", "keyword"), ("place.city", "keyword")).DirectBinder.Should().NotBeNull();
+
+		var act = () => ReadRows<OptionalStreetModel>(PlaceColumnsJson + """[["a",null,"c"]]}""", options);
+
+		act.Should().Throw<JsonException>().WithMessage("*required*");
+	}
+
+	[Test]
 	public void ReadRows_ConverterCellUnderBranchDeeperThanTheRowAllows_ThrowsLikeTheSerializer()
 	{
 		var options = CreateOptions();
@@ -2078,6 +2091,18 @@ public class DirectBindingConverterCellTests
 
 		public string Name { get; set; } = string.Empty;
 		public required Place Place { get; set; }
+	}
+
+	private sealed class OptionalStreetModel
+	{
+		public string Name { get; set; } = string.Empty;
+		public RequiredStreetPlace? Place { get; set; }
+	}
+
+	private sealed class RequiredStreetPlace
+	{
+		public required string Street { get; set; }
+		public string City { get; set; } = string.Empty;
 	}
 
 	private sealed class CountingHolderModel

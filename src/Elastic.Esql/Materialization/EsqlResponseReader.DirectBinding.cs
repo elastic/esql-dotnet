@@ -141,11 +141,12 @@ internal sealed partial class EsqlResponseReader
 	/// assigns nothing, so a row that fails it or ends mid-buffer has run no nested type's deserialization callback. Once
 	/// that pass has seen the closing bracket, each string cell and each string list cell decodes into the scratch, and a
 	/// string that does not decode sends the row to the fallback before any converter cell runs. A row of a layout with
-	/// branches then marks each branch above a non-null cell as active, and falls back when a required branch is not. The
-	/// assigning pass then assigns the cells in column order for a flat layout and in the tree's order for a nested one,
-	/// the order the serializer's setters see. A cell that only the assigning pass decodes can still send the row to the
-	/// fallback (a converter cell its contract rejects, a null converter result for a property that does not accept null)
-	/// after the converter cells in that cell or before it have run their callbacks.
+	/// branches then marks each branch above a non-null cell as active, and falls back when the assembled row would hold
+	/// an object without one of its required members. The assigning pass then assigns the cells in column order for a flat
+	/// layout and in the tree's order for a nested one, the order the serializer's setters see. A cell that only the
+	/// assigning pass decodes can still send the row to the fallback (a converter cell its contract rejects, a null
+	/// converter result for a property that does not accept null) after the converter cells in that cell or before it have
+	/// run their callbacks.
 	/// </summary>
 	private static bool TryBindValidatedRow<T>(
 		ref Utf8JsonReader reader,
@@ -197,9 +198,10 @@ internal sealed partial class EsqlResponseReader
 			{
 				MarkRowBranches(binder, spans, activeBranches);
 
-				// A required nested object the row leaves empty is absent from the assembled row, which the serializer rejects,
-				// so the row falls back before any object exists.
-				if (HasInactiveRequiredBranch(binder, activeBranches))
+				// A required nested object the row leaves empty, or a null required leaf of an object the row fills, is absent
+				// from the assembled row, which the serializer rejects, so the row falls back before any object exists. The
+				// assembled row omits an optional object the row leaves empty, so the serializer never sees its required members.
+				if (OmitsRequiredNestedMember(binder, spans, activeBranches))
 					return false;
 			}
 
@@ -256,9 +258,10 @@ internal sealed partial class EsqlResponseReader
 
 			if (tokenType == JsonTokenType.Null)
 			{
-				// A null cell leaves the property at its initializer, as the assembled row omits it. For a
-				// required member that omission is the serializer's error to raise.
-				if (binder.Properties[i].IsRequired)
+				// A null cell leaves the property at its initializer, as the assembled row omits it. For a required member of
+				// the row object that omission is the serializer's error to raise. A required member of a nested object counts
+				// only when the assembled row holds that object, which the branch marks show once the row is whole.
+				if (binder.Properties[i].IsRequired && binder.LeafParents[i] < 0)
 					return false;
 
 				// A token spans at least one byte, so the empty span marks the null cell, and it overwrites whatever a
@@ -440,16 +443,30 @@ internal sealed partial class EsqlResponseReader
 		}
 	}
 
-	private static bool HasInactiveRequiredBranch(DirectRowBinder binder, ReadOnlySpan<bool> activeBranches)
+	/// <summary>
+	/// Whether the assembled row would hold an object without one of its required nested members: a required branch left
+	/// inactive under the row object or an active branch, or a required leaf left null under an active branch.
+	/// </summary>
+	private static bool OmitsRequiredNestedMember(DirectRowBinder binder, ReadOnlySpan<CellSpan> spans, ReadOnlySpan<bool> activeBranches)
 	{
-		for (var i = 0; i < activeBranches.Length; i++)
+		foreach (var branch in binder.RequiredBranches)
 		{
-			if (!activeBranches[i] && binder.BranchProperties[i].IsRequired)
+			if (!activeBranches[branch] && HoldsObject(binder.BranchParents[branch], activeBranches))
+				return true;
+		}
+
+		foreach (var column in binder.RequiredNestedLeaves)
+		{
+			if (spans[column].Length == 0 && HoldsObject(binder.LeafParents[column], activeBranches))
 				return true;
 		}
 
 		return false;
 	}
+
+	/// <summary>Whether the assembled row holds the object of the branch at <paramref name="branch"/>, or the row object at -1.</summary>
+	private static bool HoldsObject(int branch, ReadOnlySpan<bool> activeBranches) =>
+		branch < 0 || activeBranches[branch];
 
 	private static bool TryAssignCells(in RecordedRow row, object instance)
 	{

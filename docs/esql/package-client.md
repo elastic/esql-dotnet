@@ -463,7 +463,8 @@ cells, each retried or re-read row allocates and discards one partially bound in
 setter with side effects runs more than once for such rows. A type with a nested object or with converter, string list
 or enum cells checks the whole row before it creates any instance, so it discards the instances it created only when a
 converter cell fails after that check. A row that leaves a `required` property holding a nested object without a value
-falls back before any object is created.
+falls back before any object is created. An optional property whose nested object the row leaves without a value keeps
+its initializer, as it does through the serializer, whatever members the nested type requires.
 
 A nested result type that meets the conditions in the list binds each row as it arrives, as a flat one does. A nested
 result type that misses one is deserialized in batches of up to 64 rows or 64 KB, so the first row becomes available
