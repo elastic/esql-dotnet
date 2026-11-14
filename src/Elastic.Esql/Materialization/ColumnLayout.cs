@@ -142,7 +142,7 @@ internal sealed class ColumnLayout
 		// read the cached layout serves. A resolver outside the modifier-free chain can hand the nullable form a contract
 		// whose wrapper holds a custom converter while the type under it keeps the stock one, which no converter check sees,
 		// so a single column takes a built-in kind only where a row would bind directly. The table lookup goes first, so a
-		// one-column object target, which the binder has judged already, skips a second resolver judgment.
+		// one-column object target skips a resolver judgment it does not need.
 		var scalarKind = columnCount == 1 && DirectRowBinder.TryClassifyScalar(targetType, options, out var kind) && metadata.ResolverIsModifierFree
 			? kind
 			: (DirectBinderKind?)null;

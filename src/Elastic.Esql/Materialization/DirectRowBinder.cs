@@ -128,8 +128,9 @@ internal sealed class DirectRowBinder
 	/// parameterized constructors, serialization callbacks, extension data, number handling on the type or a property, a
 	/// property-level converter no cell contract can be built for, populate-style object creation, a required member
 	/// without a column, two columns for one property, a mapped property whose JSON name starts with $ under options that
-	/// read reference metadata or on a type with polymorphism options, a converter cell or a string list cell under a depth
-	/// limit of one, or either under options that read reference metadata.
+	/// read reference metadata or on a type with polymorphism options, a column whose name equals the type's discriminator
+	/// name, a converter cell or a string list cell under a depth limit of one, or either under options that read reference
+	/// metadata.
 	/// A <c>List&lt;string&gt;</c> or <c>string[]</c> cell that the serializer reads with its own collection converter and
 	/// its stock converter for string is read as a string list, an enum cell on a numeric column that the serializer reads
 	/// with its own converters, which accept numbers, is read as an enum, and any other cell that is not one of the built-in
@@ -203,10 +204,10 @@ internal sealed class DirectRowBinder
 			if ((readsReferenceMetadata || typeInfo.PolymorphismOptions is not null) && property.Name.Length > 0 && property.Name[0] == '$')
 				return null;
 
-			// A custom discriminator name is metadata without a $. The serializer reads it in first position as the
-			// discriminator and rejects it later, so a row with such a column never binds through the property. The serializer
-			// compares it ordinally with the name in the row object, the column's own, which the lookup above can map to a
-			// property whose name differs in case.
+			// A custom discriminator name is metadata without a $. The serializer reads such a column as the type discriminator,
+			// in first position under the default options and in any position under AllowOutOfOrderMetadataProperties, and never
+			// binds it to the property. It compares the name ordinally with the name in the row object, the column's own, which
+			// the lookup above can map to a property whose name differs in case.
 			if (string.Equals(leafNodes[i].PropertyName, typeInfo.PolymorphismOptions?.TypeDiscriminatorPropertyName, StringComparison.Ordinal))
 				return null;
 

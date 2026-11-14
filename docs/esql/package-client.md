@@ -389,8 +389,9 @@ document. A type qualifies for this path when all of the following hold:
   hold a string, and rejects any other name with a leading `$`, and without one it rejects every such name on a type
   with type discriminators
 - no column's name equals, case included, the discriminator name that `[JsonPolymorphic]` sets through
-  `TypeDiscriminatorPropertyName`, because the serializer reads such a column as the discriminator in first position and
-  rejects it in a later position
+  `TypeDiscriminatorPropertyName`, because the serializer reads such a column as the type discriminator, in first
+  position under the default options and in any position under `AllowOutOfOrderMetadataProperties`, and never binds it
+  to the property
 - no two columns map to the same property
 - every column is flat, so a dotted name such as `address.city` that resolves into a nested object keeps the type on the
   fallback
