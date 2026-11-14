@@ -48,6 +48,16 @@ public static class EsqlMetadata
 	/// </summary>
 	public static T SourceAs<T>() => Throw<T>();
 
+	/// <summary>
+	/// Projects one member of the document from the <c>_source</c> metadata field rather than from
+	/// its columns, as in <c>Lines = EsqlMetadata.SourceAs(o.Lines)</c>: a list of objects, which the
+	/// columns flatten into one list per field, arrives as the document holds it.
+	/// </summary>
+	/// <param name="member">The document member to read from <c>_source</c>.</param>
+#pragma warning disable IDE0060 // the parameter is intentionally unused: this is a marker method for expression tree translation
+	public static T SourceAs<T>(T member) => Throw<T>();
+#pragma warning restore IDE0060
+
 	private static T Throw<T>() =>
 		throw new InvalidOperationException("EsqlMetadata members are markers for use inside LINQ expressions only.");
 }

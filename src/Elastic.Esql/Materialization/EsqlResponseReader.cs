@@ -7,7 +7,9 @@ using System.Collections.Concurrent;
 #if NET10_0_OR_GREATER
 using System.IO.Pipelines;
 #endif
+using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization.Metadata;
 using Elastic.Esql.Core;
 
@@ -18,15 +20,19 @@ namespace Elastic.Esql.Materialization;
 /// </summary>
 internal sealed partial class EsqlResponseReader
 {
-	private static readonly JsonWriterOptions SkipValidationWriterOptions = new() { SkipValidation = true };
 	private readonly JsonMetadataManager _metadata;
 	private readonly ConcurrentDictionary<ColumnLayoutCacheKey, ColumnLayoutCacheEntry> _columnLayoutCache = [];
 
 	/// <summary>The <see cref="JsonSerializerOptions"/> used for deserialization.</summary>
 	public JsonSerializerOptions Options => _metadata.Options;
 
-	internal EsqlResponseReader(JsonMetadataManager metadata) =>
+	internal EsqlResponseReader(JsonMetadataManager metadata, IReadOnlyList<SourceMember>? sourceMembers = null)
+	{
 		_metadata = metadata ?? throw new ArgumentNullException(nameof(metadata));
+		_sourceMembers = sourceMembers ?? [];
+	}
+
+	private readonly IReadOnlyList<SourceMember> _sourceMembers;
 
 	internal readonly record struct ColumnInfo(string Name, string Type);
 	private readonly record struct ColumnLayoutCacheKey(Type TargetType, int SchemaHash, int ColumnCount);
@@ -62,53 +68,6 @@ internal sealed partial class EsqlResponseReader
 		}
 	}
 
-	private interface IBufferCursor
-	{
-		ReadOnlySequence<byte> Buffer { get; }
-		bool IsCompleted { get; }
-		bool IsEofReached { get; }
-		void AdvanceTo(SequencePosition consumed, SequencePosition examined);
-	}
-
-	private interface IAsyncBufferCursor : IBufferCursor
-	{
-		ValueTask<bool> ReadAsync(CancellationToken cancellationToken);
-	}
-
-	private interface ISyncBufferCursor : IBufferCursor
-	{
-		bool Read();
-	}
-
-	private sealed class AsyncStreamBufferCursor(AsyncStreamBuffer asyncBuffer) : IAsyncBufferCursor
-	{
-		public ReadOnlySequence<byte> Buffer => asyncBuffer.Buffer;
-
-		public bool IsCompleted => asyncBuffer.IsCompleted;
-
-		public bool IsEofReached => asyncBuffer.IsEofReached;
-
-		public ValueTask<bool> ReadAsync(CancellationToken cancellationToken) =>
-			asyncBuffer.ReadAsync(cancellationToken);
-
-		public void AdvanceTo(SequencePosition consumed, SequencePosition examined) =>
-			asyncBuffer.AdvanceTo(consumed, examined);
-	}
-
-	private sealed class SyncStreamBufferCursor(SyncStreamBuffer syncBuffer) : ISyncBufferCursor
-	{
-		public ReadOnlySequence<byte> Buffer => syncBuffer.Buffer;
-
-		public bool IsCompleted => syncBuffer.IsCompleted;
-
-		public bool IsEofReached => syncBuffer.IsEofReached;
-
-		public bool Read() => syncBuffer.Read();
-
-		public void AdvanceTo(SequencePosition consumed, SequencePosition examined) =>
-			syncBuffer.AdvanceTo(consumed, examined);
-	}
-
 	/// <summary>
 	/// Cursor over an already-drained response region. Exposes the remaining bytes directly instead of
 	/// re-copying them through a stream and a second pooled buffer.
@@ -128,7 +87,7 @@ internal sealed partial class EsqlResponseReader
 		public bool Read() => _consumed < end;
 
 		// Positions originate from Buffer, a single-segment sequence over the backing array, so
-		// GetInteger() is the absolute array index (the same contract SyncStreamBuffer relies on).
+		// GetInteger() is the absolute array index (the same contract StreamBuffer relies on).
 		public void AdvanceTo(SequencePosition consumed, SequencePosition examined) =>
 			_consumed = consumed.GetInteger();
 	}
@@ -145,6 +104,7 @@ internal sealed partial class EsqlResponseReader
 		// For a pipe, a completed read result already means no more data will arrive.
 		public bool IsEofReached => _result.IsCompleted;
 
+		[AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder<>))]
 		public async ValueTask<bool> ReadAsync(CancellationToken cancellationToken)
 		{
 			_result = await pipeReader.ReadAsync(cancellationToken).ConfigureAwait(false);
@@ -161,6 +121,7 @@ internal sealed partial class EsqlResponseReader
 	/// </summary>
 	private ColumnLayout GetColumnLayout<T>(ColumnInfo[] columns)
 	{
+		JsonMetadataManager.TryMakeReadOnly(Options);
 		var targetType = typeof(T);
 		var schemaHash = ComputeSchemaHash(columns);
 		var key = new ColumnLayoutCacheKey(targetType, schemaHash, columns.Length);
@@ -168,8 +129,10 @@ internal sealed partial class EsqlResponseReader
 		if (_columnLayoutCache.TryGetValue(key, out var cachedEntry) && cachedEntry.Matches(columns))
 			return cachedEntry.Layout;
 
-		var layout = ColumnLayout.Build(columns, targetType, _metadata);
-		_columnLayoutCache[key] = new ColumnLayoutCacheEntry(columns, layout);
+		var layout = ColumnLayout.Build(columns, targetType, _metadata, _sourceMembers);
+		// Mutable options resolve contracts the serializer does not keep, so a layout built on them is not reused.
+		if (Options.IsReadOnly)
+			_columnLayoutCache[key] = new ColumnLayoutCacheEntry(columns, layout);
 		return layout;
 	}
 
@@ -186,52 +149,61 @@ internal sealed partial class EsqlResponseReader
 		return hashCode.ToHashCode();
 	}
 
-	private static JsonTypeInfo<T>? TryResolveTypeInfo<T>(JsonSerializerOptions options)
-	{
-		try
-		{
-			return options.GetTypeInfo(typeof(T)) as JsonTypeInfo<T>;
-		}
-		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
-		{
-			// No metadata for T: rows deserialize through the non-generic options-based overload instead.
-			return null;
-		}
-	}
-
 	/// <summary>
 	/// Resolves <see cref="JsonTypeInfo{T}"/> for <c>List&lt;T&gt;</c>, enabling batched row deserialization.
 	/// Returns <see langword="null"/> when the configured resolver has no metadata for <c>List&lt;T&gt;</c>
 	/// (e.g. a source-generated context without a <c>List&lt;T&gt;</c> registration); callers must then use
 	/// the per-row typed path so AOT never silently falls back to reflection.
 	/// </summary>
-	private static JsonTypeInfo<List<T>>? TryResolveListTypeInfo<T>(JsonSerializerOptions options)
+	private static JsonTypeInfo<List<T>>? TryResolveListTypeInfo<T>(JsonSerializerOptions options) =>
+		// A user converter for List<T> would see the internal batch wrapper instead of the caller's rows, so only the
+		// framework's own list converter keeps batching transparent.
+		JsonMetadataManager.TryResolveTypeInfo(typeof(List<T>), options) is { } typeInfo && JsonMetadataManager.IsBuiltInConverter(typeInfo.Converter)
+			? typeInfo as JsonTypeInfo<List<T>>
+			: null;
+
+	private readonly record struct RowMaterializationPlan<T>(
+		int EstimatedRowSize,
+		bool IsScalar,
+		JsonTypeInfo<T>? TypeInfo,
+		JsonSerializerOptions Options,
+		DirectBinderKind? ScalarKind,
+		bool WrapScalarInArray)
 	{
-		try
-		{
-			// TryGetTypeInfo answers "not registered" without an exception, which matters for
-			// source-generated contexts that omit List<T>: this runs once per enumeration. A user
-			// converter for List<T> would see the internal batch wrapper instead of the caller's
-			// rows, so only the framework's own list converter keeps batching transparent.
-			return options.TryGetTypeInfo(typeof(List<T>), out var typeInfo)
-				&& typeInfo.Converter.GetType().Assembly == typeof(JsonSerializerOptions).Assembly
-				? typeInfo as JsonTypeInfo<List<T>>
-				: null;
-		}
-		catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
-		{
-			// A resolver that throws for List<T> (for example the reflection fallback under Native AOT) means: fall back to the per-row path.
-			return null;
-		}
+		public RowAssemblyBuffers CreateAssemblyBuffers() => new(EstimatedRowSize, IsScalar, WrapScalarInArray);
 	}
 
-	private readonly record struct RowMaterializationPlan<T>(int EstimatedRowSize, bool IsScalar, JsonTypeInfo<T>? TypeInfo, JsonSerializerOptions Options);
-
-	private static RowMaterializationPlan<T> CreateRowMaterializationPlan<T>(ColumnInfo[] columns, JsonSerializerOptions options)
+	private static RowMaterializationPlan<T> CreateRowMaterializationPlan<T>(ColumnLayout layout, JsonSerializerOptions options)
 	{
-		var estimatedRowSize = Math.Max(256, columns.Length * 32);
-		var isScalar = columns.Length == 1 && TypeHelper.IsSingleValueType(typeof(T));
-		var typeInfo = TryResolveTypeInfo<T>(options);
-		return new RowMaterializationPlan<T>(estimatedRowSize, isScalar, typeInfo, options);
+		var estimatedRowSize = Math.Max(256, layout.ColumnCount * 32);
+		// Null when T has no metadata: rows then deserialize through the non-generic options-based overload.
+		var typeInfo = JsonMetadataManager.TryResolveTypeInfo(typeof(T), options);
+		var isScalar = layout.ColumnCount == 1 && IsScalarTarget(typeof(T), typeInfo);
+		var scalarKind = isScalar ? layout.ScalarKind : null;
+
+		// A collection target takes the whole cell, so a single-valued multi-value column needs the same
+		// wrap the row path applies to a collection property.
+		var wrapScalarInArray = isScalar && ColumnLayout.IsCollectionContract(typeof(T), typeInfo, propertyConverter: null, options);
+
+		return new RowMaterializationPlan<T>(estimatedRowSize, isScalar, typeInfo as JsonTypeInfo<T>, options, scalarKind, wrapScalarInArray);
+	}
+
+	/// <summary>
+	/// A single-column response binds the cell itself to <c>T</c>, unless <c>T</c> is a document-like target, an object
+	/// or dictionary contract whose one property (or key) is what the column maps to, or a type without metadata that
+	/// is outside the single-value list the translation of a single-value Select uses.
+	/// </summary>
+	private static bool IsScalarTarget(Type type, JsonTypeInfo? typeInfo) =>
+		!IsDocumentTarget(type)
+		&& (typeInfo is null ? TypeHelper.IsSingleValueType(type) : typeInfo.Kind is JsonTypeInfoKind.None or JsonTypeInfoKind.Enumerable);
+
+	/// <summary>
+	/// A document-like target reads the whole row whatever the column count, so a one-column query keeps the shape of a wider one.
+	/// <c>JsonArray</c> and <c>JsonValue</c> cannot hold the row object, so they bind the cell.
+	/// </summary>
+	private static bool IsDocumentTarget(Type type)
+	{
+		var t = Nullable.GetUnderlyingType(type) ?? type;
+		return t == typeof(object) || t == typeof(JsonDocument) || t == typeof(JsonElement) || t == typeof(JsonNode) || t == typeof(JsonObject);
 	}
 }

@@ -6,6 +6,7 @@ using System.Collections.Frozen;
 using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Elastic.Esql.Tests.TypeMapping.Escaping;
 
@@ -47,6 +48,8 @@ namespace Elastic.Esql.Tests;
 [JsonSerializable(typeof(AttributedProduct))]
 [JsonSerializable(typeof(NullableNestedModel))]
 [JsonSerializable(typeof(AddressModel))]
+[JsonSerializable(typeof(SourcedOrder))]
+[JsonSerializable(typeof(SourcedOrderDto))]
 [JsonSerializable(typeof(SimpleDocument))]
 [JsonSerializable(typeof(MetricDocument))]
 [JsonSerializable(typeof(EventDocument))]
@@ -775,13 +778,25 @@ public record SpecialCharacterProjection([property: JsonPropertyName("user-agent
 [JsonSerializable(typeof(NullableNestedModel))]
 [JsonSerializable(typeof(FlatDotFallbackModel))]
 [JsonSerializable(typeof(Level1Root))]
+[JsonSerializable(typeof(TypedSetterDerivedModel))]
+[JsonSerializable(typeof(TypedSetterStructModel))]
+[JsonSerializable(typeof(EscapedCellsRecord))]
+[JsonSerializable(typeof(NullableCellsRecord))]
+[JsonSerializable(typeof(BinaryRecord))]
+[JsonSerializable(typeof(JsonArrayRecord))]
+[JsonSerializable(typeof(NumberArrayBinaryRecord))]
 [JsonSerializable(typeof(int))]
 [JsonSerializable(typeof(int?))]
 [JsonSerializable(typeof(long))]
 [JsonSerializable(typeof(double))]
 [JsonSerializable(typeof(bool))]
 [JsonSerializable(typeof(string))]
+[JsonSerializable(typeof(PrivateSetterModel))]
 public sealed partial class MaterializationTestJsonContext : JsonSerializerContext;
+
+// Unsealed so a test can derive a hand-written context that inherits the generated one's [JsonSerializable].
+[JsonSerializable(typeof(string))]
+internal partial class UnsealedTestJsonContext : JsonSerializerContext;
 
 public class ArrayStringPropertyModel
 {
@@ -810,6 +825,104 @@ public class ScalarIntModel
 {
 	public int Value { get; set; }
 	public string Name { get; set; } = string.Empty;
+}
+
+/// <summary>Positional record whose parameterized constructor forces rows through the JSON assembly path.</summary>
+public record EscapedCellsRecord(string Text, int Count, Dictionary<string, string>? Attributes, List<int>? Numbers);
+
+/// <summary>Positional record with all-nullable cells, forcing null cells through the JSON assembly path.</summary>
+public record NullableCellsRecord(string? First, int? Middle, string? Last);
+
+/// <summary>Positional record with a byte array member, forcing a base64 cell through the JSON assembly path.</summary>
+public record BinaryRecord(string Name, byte[] Data);
+
+/// <summary>Positional record with a JsonArray member, forcing a single-valued cell through the JSON assembly path.</summary>
+public record JsonArrayRecord(string Name, JsonArray? Tags);
+
+/// <summary>Positional record whose byte array member reads through a converter that takes only a JSON number array.</summary>
+public record NumberArrayBinaryRecord(string Name, [property: JsonConverter(typeof(NumberArrayByteConverter))] byte[] Data);
+
+/// <summary>Positional record whose byte array member names a factory that hands back the serializer's own converter.</summary>
+public record FactoryBinaryRecord(string Name, [property: JsonConverter(typeof(DeferringConverterFactory))] byte[] Data);
+
+/// <summary>Reads a JSON number array into bytes and rejects any other token, so a bare number cell must arrive wrapped.</summary>
+public class NumberArrayByteConverter : JsonConverter<byte[]>
+{
+	public override byte[] Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+	{
+		if (reader.TokenType != JsonTokenType.StartArray)
+			throw new JsonException($"Expected a number array, got {reader.TokenType}.");
+
+		var bytes = new List<byte>();
+		while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+			bytes.Add(reader.GetByte());
+
+		return [.. bytes];
+	}
+
+	public override void Write(Utf8JsonWriter writer, byte[] value, JsonSerializerOptions options)
+	{
+		writer.WriteStartArray();
+		foreach (var b in value)
+			writer.WriteNumberValue(b);
+		writer.WriteEndArray();
+	}
+}
+
+/// <summary>Reads a JSON number array into a list and rejects any other token, so a bare number cell must arrive wrapped.</summary>
+public class ArrayOnlyIntListConverter : JsonConverter<List<int>>
+{
+	public override List<int> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+	{
+		if (reader.TokenType != JsonTokenType.StartArray)
+			throw new JsonException($"Expected an array, got {reader.TokenType}.");
+
+		var values = new List<int>();
+		while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+			values.Add(reader.GetInt32());
+
+		return values;
+	}
+
+	public override void Write(Utf8JsonWriter writer, List<int> value, JsonSerializerOptions options)
+	{
+		writer.WriteStartArray();
+		foreach (var number in value)
+			writer.WriteNumberValue(number);
+		writer.WriteEndArray();
+	}
+}
+
+/// <summary>Hands back the converter the options already resolve, so a member that names it reads as if it named none.</summary>
+public class DeferringConverterFactory : JsonConverterFactory
+{
+	public override bool CanConvert(Type typeToConvert) => typeToConvert == typeof(byte[]) || typeToConvert == typeof(List<int>);
+
+	public override JsonConverter? CreateConverter(Type typeToConvert, JsonSerializerOptions options) => options.GetConverter(typeToConvert);
+}
+
+public class TypedSetterBaseModel
+{
+	public string Name { get; set; } = string.Empty;
+}
+
+public class TypedSetterDerivedModel : TypedSetterBaseModel
+{
+	public int? Count { get; set; }
+	public DateTime? When { get; set; }
+}
+
+public struct TypedSetterStructModel
+{
+	public int X { get; set; }
+	public string Y { get; set; }
+}
+
+/// <summary>A generated context cannot reach the private setter, so its <c>Set</c> throws like the serializer.</summary>
+public sealed class PrivateSetterModel
+{
+	[JsonInclude]
+	public int Count { get; private set; }
 }
 
 public class ScalarDoubleModel
@@ -1032,3 +1145,46 @@ public class ValueTypeDocument
 	public TimeOnly At { get; set; }
 }
 
+/// <summary>A line of an order: a list of these is an object list, which the columns flatten.</summary>
+public class SourcedLine
+{
+	public string Sku { get; set; } = string.Empty;
+
+	public int Qty { get; set; }
+}
+
+/// <summary>A shipping address holding lines of its own, for a path below the top of the document.</summary>
+public class SourcedShipping
+{
+	public List<SourcedLine> Lines { get; set; } = [];
+}
+
+/// <summary>An order document whose lines are read from <c>_source</c>.</summary>
+public class SourcedOrder
+{
+	public string Reference { get; set; } = string.Empty;
+
+	public double Total { get; set; }
+
+	public List<SourcedLine> Lines { get; set; } = [];
+
+	public List<SourcedLine> Returns { get; set; } = [];
+
+	public SourcedLine? First { get; set; }
+
+	public SourcedShipping? Shipping { get; set; }
+}
+
+/// <summary>The projection of an order, with members read from the columns or from <c>_source</c>.</summary>
+public class SourcedOrderDto
+{
+	public string Reference { get; set; } = string.Empty;
+
+	public double Total { get; set; }
+
+	public List<SourcedLine> Lines { get; set; } = [];
+
+	public List<SourcedLine> Returns { get; set; } = [];
+
+	public SourcedLine? First { get; set; }
+}

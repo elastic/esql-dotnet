@@ -82,7 +82,10 @@ internal sealed class EsqlExpressionVisitor(EsqlQueryProvider provider, bool inl
 			!Context.Parameters.HasParameters ? null : Context.Parameters,
 			queryOptions: Context.QueryOptions,
 			executorOptions: Context.ExecutorOptions
-		);
+		)
+		{
+			SourceMembers = [.. Context.SourceMembers]
+		};
 	}
 
 	protected override Expression VisitConstant(ConstantExpression node)

@@ -11,7 +11,9 @@ using System.Text.Json.Serialization;
 
 using Elastic.Esql.Core;
 using Elastic.Esql.Formatting;
+using Elastic.Esql.Materialization;
 using Elastic.Esql.QueryModel;
+using Elastic.Esql.QueryModel.Commands;
 
 namespace Elastic.Esql.Translation;
 
@@ -57,6 +59,12 @@ internal sealed class EsqlTranslationContext
 	/// </summary>
 	public MetadataField ActiveMetadata { get; set; } = MetadataField.None;
 
+	/// <summary>
+	/// The members the last projection declared as read from <c>_source</c>, with
+	/// <c>EsqlMetadata.SourceAs(o.Member)</c>.
+	/// </summary>
+	public List<SourceMember> SourceMembers { get; } = [];
+
 	/// <summary>True when the <c>FORK</c> command is in scope and <c>_fork</c> is therefore implicitly available.</summary>
 	public bool ForkActive { get; set; }
 
@@ -92,6 +100,42 @@ internal sealed class EsqlTranslationContext
 				$"'{nameof(EsqlMetadata)}.{memberName}' was referenced but '{nameof(MetadataField)}.{flag}' was not requested on 'From'.");
 
 		return name;
+	}
+
+	/// <summary>
+	/// Requests <c>METADATA _source</c> for a projection that reads the document, with
+	/// <c>EsqlMetadata.SourceAs</c>, and returns its name. <c>_source</c> is added to the <c>FROM</c>
+	/// command when it was not requested there, as long as nothing since has shaped the columns:
+	/// after a <c>KEEP</c>, a <c>STATS</c> or a <c>FORK</c> the document is no longer in the rows.
+	/// </summary>
+	public string RequestSourceOrThrow()
+	{
+		const string sourceName = "_source";
+
+		if ((ActiveMetadata & MetadataField.Source) != 0)
+			return sourceName;
+
+		var fromIndex = Commands.FindIndex(command => command is FromCommand);
+		if (fromIndex < 0)
+		{
+			throw new NotSupportedException(
+				$"{nameof(EsqlMetadata)}.{nameof(EsqlMetadata.SourceAs)} reads the document's _source, which only a FROM command provides.");
+		}
+
+		var shaped = Commands.Skip(fromIndex + 1).FirstOrDefault(command =>
+			command is not (WhereCommand or SortCommand or LimitCommand or EvalCommand or RenameCommand or DropCommand or LookupJoinCommand));
+		if (shaped is not null)
+		{
+			throw new NotSupportedException(
+				$"{nameof(EsqlMetadata)}.{nameof(EsqlMetadata.SourceAs)} reads the document's _source, which the rows no longer "
+				+ $"carry after {shaped.GetType().Name.Replace("Command", string.Empty).ToUpperInvariant()}. "
+				+ $"Request {nameof(MetadataField)}.{nameof(MetadataField.Source)} on From, or read the document before it.");
+		}
+
+		var from = (FromCommand)Commands[fromIndex];
+		Commands[fromIndex] = new FromCommand(from.IndexPattern, from.Metadata | MetadataField.Source);
+		ActiveMetadata |= MetadataField.Source;
+		return sourceName;
 	}
 
 	private Dictionary<Type, HashSet<string>>? _anonymousTypeFields;
@@ -166,21 +210,18 @@ internal sealed class EsqlTranslationContext
 	/// is present, the value is serialized through <see cref="JsonSerializer"/> to honour that converter;
 	/// otherwise it is formatted via <see cref="EsqlFormatting.FormatValue"/>.
 	/// </summary>
-	public string FormatValue(object? value, MemberInfo? propertyContext = null)
-	{
-		if (value is not null && Metadata.FindPropertyConverter(propertyContext) is not null)
-			return EsqlFormatting.FormatJsonElement(SerializeToElement(value, propertyContext));
-
-		return EsqlFormatting.FormatValue(value, SerializerOptions);
-	}
+	public string FormatValue(object? value, MemberInfo? propertyContext = null) =>
+		SerializeWithPropertyConverter(value, propertyContext) is { } element
+			? EsqlFormatting.FormatJsonElement(element)
+			: EsqlFormatting.FormatValue(value, SerializerOptions);
 
 	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Serialization delegates to the user-provided JsonSerializerOptions/JsonSerializerContext which is expected to include an AOT-safe TypeInfoResolver.")]
 	[UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Serialization delegates to the user-provided JsonSerializerOptions/JsonSerializerContext which is expected to include an AOT-safe TypeInfoResolver.")]
 	private JsonElement SerializeToElement(object? value, MemberInfo? propertyContext = null)
 	{
 		// A property-level converter receives the original value; the duration literal is only the default for members without one.
-		if (value is not null && Metadata.FindPropertyConverter(propertyContext) is { } converter)
-			return JsonSerializer.SerializeToElement(value, value.GetType(), Metadata.GetOptionsWithConverter(converter));
+		if (SerializeWithPropertyConverter(value, propertyContext) is { } converted)
+			return converted;
 
 		if (value is TimeSpan ts)
 			value = EsqlFormatting.FormatTimeSpanRaw(ts);
@@ -206,6 +247,13 @@ internal sealed class EsqlTranslationContext
 
 		return JsonSerializer.SerializeToElement(value, value?.GetType() ?? typeof(object), SerializerOptions);
 	}
+
+	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Serialization delegates to the user-provided JsonSerializerOptions/JsonSerializerContext which is expected to include an AOT-safe TypeInfoResolver.")]
+	[UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Serialization delegates to the user-provided JsonSerializerOptions/JsonSerializerContext which is expected to include an AOT-safe TypeInfoResolver.")]
+	private JsonElement? SerializeWithPropertyConverter(object? value, MemberInfo? propertyContext) =>
+		value is not null && Metadata.GetOptionsWithPropertyConverter(propertyContext) is { } converterOptions
+			? JsonSerializer.SerializeToElement(value, value.GetType(), converterOptions)
+			: null;
 
 	private bool UsesDefaultNumericSerialization(Type elementType, object collection) =>
 		!HasRegisteredConverter(elementType)

@@ -48,4 +48,13 @@ public static partial class EsqlQueryableExtensions
 
 		return esqlQueryable;
 	}
+
+	/// <summary>
+	/// Reads each row from the document's <c>_source</c> rather than from its columns: the same as
+	/// <c>Select(o => EsqlMetadata.SourceAs&lt;T&gt;())</c>. A list of objects, which the columns flatten
+	/// into one list per field, arrives as the document holds it.
+	/// </summary>
+	/// <exception cref="InvalidOperationException">Thrown if the queryable is not backed by an ES|QL provider.</exception>
+	public static IEsqlQueryable<T> AsDocuments<T>(this IQueryable<T> queryable) =>
+		queryable.AsEsqlQueryable().Select(_ => EsqlMetadata.SourceAs<T>()).AsEsqlQueryable();
 }

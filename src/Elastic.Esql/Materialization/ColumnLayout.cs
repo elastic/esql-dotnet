@@ -4,13 +4,15 @@
 
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Elastic.Esql.Core;
 
 namespace Elastic.Esql.Materialization;
 
 /// <summary>Raw JSON bytes captured for a single column value during phase-1 buffering.</summary>
-internal readonly record struct ValueSlice(int Start, int Length, JsonTokenType FirstToken, bool IsNull);
+internal readonly record struct ValueSlice(int Start, int Length, bool IsNull);
 
 /// <summary>
 /// A node in the pre-computed column tree. Leaf nodes (<see cref="ColumnIndex"/> >= 0) map to a
@@ -23,6 +25,13 @@ internal sealed class ColumnNode
 	public byte[] PrefixBytes { get; init; } = [];
 	public int ColumnIndex { get; init; } = -1;
 	public bool IsCollection { get; init; }
+
+	/// <summary>
+	/// On the <c>_source</c> leaf, the members declared as read from the document: the leaf then writes
+	/// each of them, not the document itself.
+	/// </summary>
+	public SourceBinding[]? SourceBindings { get; set; }
+
 	public int BranchIndex { get; set; } = -1;
 	public ColumnNode? Parent { get; set; }
 	public List<ColumnNode>? Children { get; set; }
@@ -34,7 +43,7 @@ internal sealed class ColumnNode
 /// </summary>
 internal sealed class ColumnLayout
 {
-	internal const int DefaultMaxDepth = 64;
+	private const int DefaultMaxDepth = 64;
 
 	/// <summary>Virtual root whose <see cref="ColumnNode.Children"/> are the top-level properties.</summary>
 	public ColumnNode Root { get; }
@@ -54,6 +63,13 @@ internal sealed class ColumnLayout
 	/// <summary>Direct-binding fast path metadata for eligible flat layouts, or null when rows must use the assemble-and-deserialize path.</summary>
 	public DirectRowBinder? DirectBinder { get; }
 
+	/// <summary>
+	/// The built-in kind a single-column read binds its cell as, or null when a one-column read of a scalar target assembles
+	/// its cell. The kind is kept here because the plan is built on every read, and the resolver judgment behind it reads
+	/// type attributes on each call.
+	/// </summary>
+	public DirectBinderKind? ScalarKind { get; private init; }
+
 	private ColumnLayout(
 		ColumnNode root,
 		int columnCount,
@@ -70,6 +86,9 @@ internal sealed class ColumnLayout
 		DirectBinder = directBinder;
 	}
 
+	/// <summary>The depth limit the serializer enforces under <paramref name="options"/>, where a limit of zero means the default.</summary>
+	internal static int EffectiveMaxDepth(JsonSerializerOptions options) => options.MaxDepth > 0 ? options.MaxDepth : DefaultMaxDepth;
+
 	/// <summary>
 	/// Builds a <see cref="ColumnLayout"/> for the given columns and target type.
 	/// Throws <see cref="JsonException"/> if the resolved nesting depth exceeds
@@ -80,7 +99,8 @@ internal sealed class ColumnLayout
 	public static ColumnLayout Build(
 		ReadOnlySpan<EsqlResponseReader.ColumnInfo> columns,
 		Type targetType,
-		JsonMetadataManager metadata)
+		JsonMetadataManager metadata,
+		IReadOnlyList<SourceMember>? sourceMembers = null)
 	{
 		var options = metadata.Options;
 		var columnCount = columns.Length;
@@ -109,9 +129,12 @@ internal sealed class ColumnLayout
 			InsertIntoTree(root, segments, i, isCollection);
 		}
 
+		if (sourceMembers is { Count: > 0 })
+			BindSourceMembers(root, columns, sourceMembers, typeInfo);
+
 		var maxDepth = ComputeMaxDepth(root);
 
-		var effectiveMaxDepth = options.MaxDepth > 0 ? options.MaxDepth : DefaultMaxDepth;
+		var effectiveMaxDepth = EffectiveMaxDepth(options);
 		if (maxDepth > effectiveMaxDepth)
 			throw new JsonException(
 				$"ES|QL column nesting depth ({maxDepth}) exceeds the configured maximum depth ({effectiveMaxDepth}). " +
@@ -123,10 +146,20 @@ internal sealed class ColumnLayout
 		// The binder is cached together with this layout in the reader's column layout cache, so
 		// eligibility is decided once per (target type, column schema).
 		var directBinder = branchNodeCount == 0 && maxDepth <= 1 && columnCount > 0 && typeInfo is not null
-			? DirectRowBinder.TryCreate(leafNodesByColumnIndex, typeInfo, options)
+			&& sourceMembers is not { Count: > 0 }
+			? DirectRowBinder.TryCreate(leafNodesByColumnIndex, columns, typeInfo, metadata)
 			: null;
 
-		return new ColumnLayout(root, columnCount, maxDepth, leafNodesByColumnIndex, branchNodeCount, directBinder);
+		// Taken after the target's contract resolved, so the parts consulted for it are locked and the answer holds for every
+		// read the cached layout serves. A resolver outside the modifier-free chain can hand the nullable form a contract
+		// whose wrapper holds a custom converter while the type under it keeps the stock one, which no converter check sees,
+		// so a single column takes a built-in kind only where a row would bind directly. The table lookup goes first, so a
+		// one-column object target skips a resolver judgment it does not need.
+		var scalarKind = columnCount == 1 && DirectRowBinder.TryClassifyScalar(targetType, options, out var kind) && metadata.ResolverIsModifierFree
+			? kind
+			: (DirectBinderKind?)null;
+
+		return new ColumnLayout(root, columnCount, maxDepth, leafNodesByColumnIndex, branchNodeCount, directBinder) { ScalarKind = scalarKind };
 	}
 
 	/// <summary>
@@ -160,6 +193,53 @@ internal sealed class ColumnLayout
 		return result;
 	}
 
+	/// <summary>
+	/// Hands the declared members to the <c>_source</c> leaf, each with the name the row gives it and
+	/// whether the target is a collection, so that a single object in the document still fills a list.
+	/// </summary>
+	private static void BindSourceMembers(
+		ColumnNode root,
+		ReadOnlySpan<EsqlResponseReader.ColumnInfo> columns,
+		IReadOnlyList<SourceMember> sourceMembers,
+		JsonTypeInfo? typeInfo)
+	{
+		var sourceIndex = -1;
+		for (var i = 0; i < columns.Length; i++)
+		{
+			if (columns[i].Name == "_source")
+				sourceIndex = i;
+		}
+
+		if (sourceIndex < 0 || root.Children is null)
+			return;
+
+		var leaf = root.Children.Find(child => child.ColumnIndex == sourceIndex);
+		if (leaf is null)
+			return;
+
+		leaf.SourceBindings = [.. sourceMembers.Select(member => member.Path.Count == 0
+			? new SourceBinding([], [], IsCollection: false) { CollectionMembers = CollectionMembers(typeInfo) }
+			: new SourceBinding(
+				BuildPrefixBytes(member.Name),
+				[.. member.Path],
+				typeInfo is not null && IsCollectionMember(typeInfo, member.Name)))];
+	}
+
+	private static HashSet<string> CollectionMembers(JsonTypeInfo? typeInfo) =>
+		typeInfo is null
+			? []
+			: [.. typeInfo.Properties.Where(prop => TypeHelper.IsEnumerableType(prop.PropertyType)).Select(prop => prop.Name)];
+
+	private static bool IsCollectionMember(JsonTypeInfo typeInfo, string jsonName)
+	{
+		foreach (var prop in typeInfo.Properties)
+		{
+			if (string.Equals(prop.Name, jsonName, StringComparison.Ordinal))
+				return TypeHelper.IsEnumerableType(prop.PropertyType);
+		}
+		return false;
+	}
+
 	private static bool HasPropertyWithJsonName(JsonTypeInfo typeInfo, string jsonName)
 	{
 		foreach (var prop in typeInfo.Properties)
@@ -188,16 +268,8 @@ internal sealed class ColumnLayout
 			if (TypeHelper.IsEnumerableType(propType))
 				return null;
 
-			try
-			{
-				var subTypeInfo = options.GetTypeInfo(propType);
-				return subTypeInfo.Kind == JsonTypeInfoKind.Object ? subTypeInfo : null;
-			}
-			catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
-			{
-				// Property type not registered: treat the dotted column as flat instead of nested.
-				return null;
-			}
+			// Property type not registered: treat the dotted column as flat instead of nested.
+			return JsonMetadataManager.TryResolveTypeInfo(propType, options) is { Kind: JsonTypeInfoKind.Object } sub ? sub : null;
 		}
 		return null;
 	}
@@ -230,23 +302,36 @@ internal sealed class ColumnLayout
 				return false;
 
 			if (i == segments.Length - 1)
-				return TypeHelper.IsEnumerableType(matchedProp.PropertyType);
+				return IsCollectionContract(
+					matchedProp.PropertyType,
+					JsonMetadataManager.TryResolveTypeInfo(matchedProp.PropertyType, options),
+					matchedProp.CustomConverter,
+					options
+				);
 
 			var propType = Nullable.GetUnderlyingType(matchedProp.PropertyType) ?? matchedProp.PropertyType;
-			try
-			{
-				currentTypeInfo = options.GetTypeInfo(propType);
-				if (currentTypeInfo.Kind != JsonTypeInfoKind.Object)
-					return false;
-			}
-			catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
-			{
-				// Intermediate type not registered: the path cannot resolve to a collection column.
+
+			// Intermediate type not registered: the path cannot resolve to a collection column.
+			if (JsonMetadataManager.TryResolveTypeInfo(propType, options) is not { Kind: JsonTypeInfoKind.Object } next)
 				return false;
-			}
+
+			currentTypeInfo = next;
 		}
 
 		return false;
+	}
+
+	/// <summary>Determines whether a bare single-valued cell for <paramref name="type"/> is wrapped in an array before its converter reads it.</summary>
+	internal static bool IsCollectionContract(Type type, JsonTypeInfo? typeInfo, JsonConverter? propertyConverter, JsonSerializerOptions options)
+	{
+		// JsonArray's contract kind is None, but its converter takes only an array, so a bare cell still needs the wrap.
+		if (typeof(JsonArray).IsAssignableFrom(type) || typeInfo?.Kind == JsonTypeInfoKind.Enumerable)
+			return true;
+
+		// A custom converter's contract kind is always None, so the token shape it reads is unknown and the CLR type
+		// decides: a collection type gets the wrap.
+		var converter = (propertyConverter is null ? null : JsonMetadataManager.ExpandConverter(propertyConverter, type, options)) ?? typeInfo?.Converter;
+		return converter is not null && !JsonMetadataManager.IsBuiltInConverter(converter) && TypeHelper.IsEnumerableType(type);
 	}
 
 	private static void InsertIntoTree(ColumnNode parent, string[] segments, int columnIndex, bool isCollection)
