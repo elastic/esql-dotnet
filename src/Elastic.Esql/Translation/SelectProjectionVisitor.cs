@@ -6,6 +6,7 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Elastic.Esql.Formatting;
+using Elastic.Esql.Materialization;
 
 namespace Elastic.Esql.Translation;
 
@@ -42,7 +43,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 	/// Translates a Select lambda to projection commands.
 	/// </summary>
 	public ProjectionResult Translate(LambdaExpression lambda) =>
-		TranslateCore(() => Visit(lambda.Body));
+		TranslateCore(() => ClassifyLambda(lambda));
 
 	/// <summary>
 	/// Translates a value computed from the row into the column of <paramref name="member"/>: the projection of a
@@ -75,7 +76,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		_outerFieldRemappings = outerFieldRemappings;
 		try
 		{
-			return TranslateCore(() => Visit(lambda.Body));
+			return TranslateCore(() => ClassifyLambda(lambda));
 		}
 		finally
 		{
@@ -84,8 +85,32 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 		}
 	}
 
+	/// <summary>
+	/// Classifies the members of a projection lambda. The whole row from the document,
+	/// <c>Select(o => EsqlMetadata.SourceAs&lt;T&gt;())</c>, is <c>_source</c>, declared as a member with an empty path.
+	/// </summary>
+	private void ClassifyLambda(LambdaExpression lambda)
+	{
+		if (lambda.Body is MethodCallExpression
+			{
+				Method: { Name: nameof(EsqlMetadata.SourceAs), DeclaringType: var rowDecl },
+				Arguments.Count: 0
+			}
+			&& rowDecl == typeof(EsqlMetadata))
+		{
+			var sourceName = _context.RequestSourceOrThrow();
+			_projections.Add(new ProjectionEntry(ProjectionKind.Keep, sourceName, sourceName, null));
+			_context.SourceMembers.Add(new SourceMember(string.Empty, []));
+			return;
+		}
+
+		_ = Visit(lambda.Body);
+	}
+
 	private ProjectionResult TranslateCore(Action classifyMembers)
 	{
+		// only the last projection's members reach the result row
+		_context.SourceMembers.Clear();
 		_projections.Clear();
 		_activeRenames = [];
 		_referencedFields.Clear();
@@ -305,6 +330,30 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 			return;
 		}
 
+		// EsqlMetadata.SourceAs(o.Member) -> the member is read from _source, which is kept;
+		// the member contributes no column of its own
+		if (sourceExpression is MethodCallExpression
+			{
+				Method: { Name: nameof(EsqlMetadata.SourceAs), DeclaringType: var sourceMemberDecl },
+				Arguments: [var sourceMember]
+			}
+			&& sourceMemberDecl == typeof(EsqlMetadata))
+		{
+			if (sourceMember is not MemberExpression member || !ExpressionTranslationHelpers.IsRootedInParameter(member))
+			{
+				throw new NotSupportedException(
+					$"{nameof(EsqlMetadata)}.{nameof(EsqlMetadata.SourceAs)} takes a member of the document, as in "
+					+ "\"Lines = EsqlMetadata.SourceAs(o.Lines)\".");
+			}
+
+			var metaName = _context.RequestSourceOrThrow();
+			if (!_projections.Exists(entry => entry.Kind == ProjectionKind.Keep && entry.ResultField == metaName))
+				_projections.Add(new ProjectionEntry(ProjectionKind.Keep, metaName, metaName, null));
+
+			_context.SourceMembers.Add(new SourceMember(resultField, member.ResolveFieldName(_context.Metadata).Split('.')));
+			return;
+		}
+
 		// EsqlMetadata.SourceAs<T>() -> KEEP _source (target type is reflected by the destination property).
 		if (sourceExpression is MethodCallExpression
 			{
@@ -312,7 +361,7 @@ internal sealed class SelectProjectionVisitor(EsqlTranslationContext context) : 
 			}
 			&& sourceAsDecl == typeof(EsqlMetadata))
 		{
-			var metaName = _context.ResolveMetadataMemberOrThrow(nameof(EsqlMetadata.Source));
+			var metaName = _context.RequestSourceOrThrow();
 			_projections.Add(metaName == resultField
 				? new ProjectionEntry(ProjectionKind.Keep, metaName, metaName, null)
 				: new ProjectionEntry(ProjectionKind.Rename, resultField, metaName, null));

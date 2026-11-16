@@ -26,8 +26,13 @@ internal sealed partial class EsqlResponseReader
 	/// <summary>The <see cref="JsonSerializerOptions"/> used for deserialization.</summary>
 	public JsonSerializerOptions Options => _metadata.Options;
 
-	internal EsqlResponseReader(JsonMetadataManager metadata) =>
+	internal EsqlResponseReader(JsonMetadataManager metadata, IReadOnlyList<SourceMember>? sourceMembers = null)
+	{
 		_metadata = metadata ?? throw new ArgumentNullException(nameof(metadata));
+		_sourceMembers = sourceMembers ?? [];
+	}
+
+	private readonly IReadOnlyList<SourceMember> _sourceMembers;
 
 	internal readonly record struct ColumnInfo(string Name, string Type);
 	private readonly record struct ColumnLayoutCacheKey(Type TargetType, int SchemaHash, int ColumnCount);
@@ -124,7 +129,7 @@ internal sealed partial class EsqlResponseReader
 		if (_columnLayoutCache.TryGetValue(key, out var cachedEntry) && cachedEntry.Matches(columns))
 			return cachedEntry.Layout;
 
-		var layout = ColumnLayout.Build(columns, targetType, _metadata);
+		var layout = ColumnLayout.Build(columns, targetType, _metadata, _sourceMembers);
 		// Mutable options resolve contracts the serializer does not keep, so a layout built on them is not reused.
 		if (Options.IsReadOnly)
 			_columnLayoutCache[key] = new ColumnLayoutCacheEntry(columns, layout);
