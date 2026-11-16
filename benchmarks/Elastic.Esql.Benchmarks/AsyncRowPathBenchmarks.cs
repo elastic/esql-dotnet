@@ -18,6 +18,9 @@ public class AsyncRowPathBenchmarks
 	private const int FlatRowCount = 100;
 	private const int WideRowCount = 1000;
 
+	// Mirrors the transport's own PipeReader construction except for the segment size.
+	private static readonly StreamPipeReaderOptions LargeSegmentOptions = new(bufferSize: 64 * 1024, minimumReadSize: 16 * 1024, leaveOpen: false);
+
 	private byte[] _flatPayload = null!;
 	private byte[] _widePayload = null!;
 	private EsqlResponseReader _reader = null!;
@@ -88,6 +91,27 @@ public class AsyncRowPathBenchmarks
 	{
 		using var stream = new MemoryStream(_widePayload, writable: false);
 		var pipeReader = PipeReader.Create(stream, new StreamPipeReaderOptions(leaveOpen: false));
+		var count = 0;
+
+		try
+		{
+			await using var result = await _reader.ReadRowsAsync<WideDocument>(pipeReader);
+			await foreach (var _ in result.Rows)
+				count++;
+		}
+		finally
+		{
+			await pipeReader.CompleteAsync().ConfigureAwait(false);
+		}
+
+		return count;
+	}
+
+	[Benchmark]
+	public async Task<int> Wide_PipeReader_LargeSegments()
+	{
+		using var stream = new MemoryStream(_widePayload, writable: false);
+		var pipeReader = PipeReader.Create(stream, LargeSegmentOptions);
 		var count = 0;
 
 		try

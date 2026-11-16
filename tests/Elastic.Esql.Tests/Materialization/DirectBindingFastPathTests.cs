@@ -2,6 +2,7 @@
 // Elasticsearch B.V licenses this file to you under the Apache 2.0 License.
 // See the LICENSE file in the project root for more information
 
+using System.Buffers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
@@ -15,10 +16,12 @@ public class DirectBindingFastPathTests
 	public void TryBindRowDirect_FlatRow_BindsAllValues()
 	{
 		var binder = CreateBinder<ScalarStringModel>(("value", "keyword"), ("count", "integer"));
-		var reader = new Utf8JsonReader("[\"hello\",42]"u8);
+		using var buffers = new RowAssemblyBuffers(256, isScalar: false, wrapScalarInArray: false);
+		var source = new ReadOnlySequence<byte>("[\"hello\",42]"u8.ToArray());
+		var reader = new Utf8JsonReader(source);
 		reader.Read();
 
-		var result = EsqlResponseReader.TryBindRowDirect<ScalarStringModel>(ref reader, binder, out var item, out var incomplete);
+		var result = EsqlResponseReader.TryBindRowDirect<ScalarStringModel>(ref reader, source, binder, buffers, out var item, out var incomplete);
 
 		result.Should().BeTrue();
 		incomplete.Should().BeFalse();
@@ -30,10 +33,12 @@ public class DirectBindingFastPathTests
 	public void TryBindRowDirect_NullCell_LeavesInitializerValue()
 	{
 		var binder = CreateBinder<ScalarStringModel>(("value", "keyword"), ("count", "integer"));
-		var reader = new Utf8JsonReader("[null,5]"u8);
+		using var buffers = new RowAssemblyBuffers(256, isScalar: false, wrapScalarInArray: false);
+		var source = new ReadOnlySequence<byte>("[null,5]"u8.ToArray());
+		var reader = new Utf8JsonReader(source);
 		reader.Read();
 
-		var result = EsqlResponseReader.TryBindRowDirect<ScalarStringModel>(ref reader, binder, out var item, out var incomplete);
+		var result = EsqlResponseReader.TryBindRowDirect<ScalarStringModel>(ref reader, source, binder, buffers, out var item, out var incomplete);
 
 		result.Should().BeTrue();
 		incomplete.Should().BeFalse();
@@ -45,10 +50,12 @@ public class DirectBindingFastPathTests
 	public void TryBindRowDirect_ArrayCell_ReturnsFalseWithoutIncomplete()
 	{
 		var binder = CreateBinder<ScalarStringModel>(("value", "keyword"), ("count", "integer"));
-		var reader = new Utf8JsonReader("[[\"a\",\"b\"],1]"u8);
+		using var buffers = new RowAssemblyBuffers(256, isScalar: false, wrapScalarInArray: false);
+		var source = new ReadOnlySequence<byte>("[[\"a\",\"b\"],1]"u8.ToArray());
+		var reader = new Utf8JsonReader(source);
 		reader.Read();
 
-		var result = EsqlResponseReader.TryBindRowDirect<ScalarStringModel>(ref reader, binder, out _, out var incomplete);
+		var result = EsqlResponseReader.TryBindRowDirect<ScalarStringModel>(ref reader, source, binder, buffers, out _, out var incomplete);
 
 		result.Should().BeFalse();
 		incomplete.Should().BeFalse();
@@ -58,10 +65,12 @@ public class DirectBindingFastPathTests
 	public void TryBindRowDirect_StringNumberCell_ReturnsFalseWithoutIncomplete()
 	{
 		var binder = CreateBinder<ScalarStringModel>(("value", "keyword"), ("count", "integer"));
-		var reader = new Utf8JsonReader("[\"hello\",\"42\"]"u8);
+		using var buffers = new RowAssemblyBuffers(256, isScalar: false, wrapScalarInArray: false);
+		var source = new ReadOnlySequence<byte>("[\"hello\",\"42\"]"u8.ToArray());
+		var reader = new Utf8JsonReader(source);
 		reader.Read();
 
-		var result = EsqlResponseReader.TryBindRowDirect<ScalarStringModel>(ref reader, binder, out _, out var incomplete);
+		var result = EsqlResponseReader.TryBindRowDirect<ScalarStringModel>(ref reader, source, binder, buffers, out _, out var incomplete);
 
 		result.Should().BeFalse();
 		incomplete.Should().BeFalse();
@@ -71,10 +80,12 @@ public class DirectBindingFastPathTests
 	public void TryBindRowDirect_FewerCellsThanColumns_ReturnsFalseWithoutIncomplete()
 	{
 		var binder = CreateBinder<ScalarStringModel>(("value", "keyword"), ("count", "integer"));
-		var reader = new Utf8JsonReader("[\"hello\"]"u8);
+		using var buffers = new RowAssemblyBuffers(256, isScalar: false, wrapScalarInArray: false);
+		var source = new ReadOnlySequence<byte>("[\"hello\"]"u8.ToArray());
+		var reader = new Utf8JsonReader(source);
 		reader.Read();
 
-		var result = EsqlResponseReader.TryBindRowDirect<ScalarStringModel>(ref reader, binder, out _, out var incomplete);
+		var result = EsqlResponseReader.TryBindRowDirect<ScalarStringModel>(ref reader, source, binder, buffers, out _, out var incomplete);
 
 		result.Should().BeFalse();
 		incomplete.Should().BeFalse();
@@ -84,10 +95,12 @@ public class DirectBindingFastPathTests
 	public void TryBindRowDirect_MoreCellsThanColumns_ReturnsFalseWithoutIncomplete()
 	{
 		var binder = CreateBinder<ScalarStringModel>(("value", "keyword"), ("count", "integer"));
-		var reader = new Utf8JsonReader("[\"hello\",1,2]"u8);
+		using var buffers = new RowAssemblyBuffers(256, isScalar: false, wrapScalarInArray: false);
+		var source = new ReadOnlySequence<byte>("[\"hello\",1,2]"u8.ToArray());
+		var reader = new Utf8JsonReader(source);
 		reader.Read();
 
-		var result = EsqlResponseReader.TryBindRowDirect<ScalarStringModel>(ref reader, binder, out _, out var incomplete);
+		var result = EsqlResponseReader.TryBindRowDirect<ScalarStringModel>(ref reader, source, binder, buffers, out _, out var incomplete);
 
 		result.Should().BeFalse();
 		incomplete.Should().BeFalse();
@@ -97,10 +110,12 @@ public class DirectBindingFastPathTests
 	public void TryBindRowDirect_TruncatedRow_ReturnsIncomplete()
 	{
 		var binder = CreateBinder<ScalarStringModel>(("value", "keyword"), ("count", "integer"));
-		var reader = new Utf8JsonReader("[\"hello\""u8, isFinalBlock: false, default);
+		using var buffers = new RowAssemblyBuffers(256, isScalar: false, wrapScalarInArray: false);
+		var source = new ReadOnlySequence<byte>("[\"hello\""u8.ToArray());
+		var reader = new Utf8JsonReader(source, isFinalBlock: false, default);
 		reader.Read();
 
-		var result = EsqlResponseReader.TryBindRowDirect<ScalarStringModel>(ref reader, binder, out _, out var incomplete);
+		var result = EsqlResponseReader.TryBindRowDirect<ScalarStringModel>(ref reader, source, binder, buffers, out _, out var incomplete);
 
 		result.Should().BeFalse();
 		incomplete.Should().BeTrue();

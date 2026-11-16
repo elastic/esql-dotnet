@@ -1223,7 +1223,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		// converter is free not to preserve the order of the values it is given, and the
 		// check above reads the value as written in the source, so neither it nor that
 		// order carries over to what the field actually holds.
-		if (_context.Metadata.FindPropertyConverter(ConvertedMember(first) ?? ConvertedMember(second)) is not null)
+		if (_context.Metadata.GetOptionsWithPropertyConverter(ConvertedMember(first) ?? ConvertedMember(second)) is not null)
 		{
 			throw new NotSupportedException(
 				$"String method {methodName} on a property with a JsonConverter is not supported: "
@@ -1772,7 +1772,7 @@ internal sealed class WhereClauseVisitor(EsqlTranslationContext context) : Expre
 		// serializer's converters, does not apply to one of its values, so the two need not
 		// meet, and the count of values need not be the one written either. A multi-field
 		// of the property holds the written form as well.
-		if (_context.Metadata.FindPropertyConverter(ConvertedMember(source)) is not null
+		if (_context.Metadata.GetOptionsWithPropertyConverter(ConvertedMember(source)) is not null
 			|| _context.HasRegisteredConverter(source.Type)
 			|| source.Type.IsDefined(typeof(JsonConverterAttribute), inherit: false))
 		{

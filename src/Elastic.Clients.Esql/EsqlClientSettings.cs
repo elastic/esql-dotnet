@@ -98,7 +98,7 @@ public class EsqlClientSettings
 		if (JsonSerializerContext is not null)
 		{
 			// Copying the context's options keeps its converters, number handling and other serializer settings; only the resolver chain changes.
-			return new JsonSerializerOptions(JsonSerializerContext.Options)
+			var options = new JsonSerializerOptions(JsonSerializerContext.Options)
 			{
 				TypeInfoResolver = JsonTypeInfoResolver.Combine(
 					JsonSerializerContext,
@@ -106,16 +106,12 @@ public class EsqlClientSettings
 				),
 				PropertyNamingPolicy = JsonSerializerContext.Options.PropertyNamingPolicy ?? JsonNamingPolicy.CamelCase
 			};
+
+			// No caller reaches these and the manager caches only on read-only options.
+			JsonMetadataManager.TryMakeReadOnly(options);
+			return options;
 		}
 
-		return JsonSerializerOptions ?? CreateDefaultJsonOptions();
+		return JsonSerializerOptions ?? EsqlQueryProvider.CreateDefaultJsonOptions();
 	}
-
-	[UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Default options are a convenience for non-trimmed apps; Native AOT callers pass a JsonSerializerContext, and the reflection fallback is deliberately retained for converter-attributed types.")]
-	[UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Default options are a convenience for non-trimmed apps; Native AOT callers pass a JsonSerializerContext, and the reflection fallback is deliberately retained for converter-attributed types.")]
-	private static JsonSerializerOptions CreateDefaultJsonOptions() =>
-		new(JsonSerializerOptions.Default)
-		{
-			PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-		};
 }

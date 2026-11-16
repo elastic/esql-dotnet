@@ -550,11 +550,9 @@ public sealed partial class BatchTestJsonContext : JsonSerializerContext;
 [JsonSerializable(typeof(BatchPerson))]
 public sealed partial class BatchTestNoListJsonContext : JsonSerializerContext;
 
-public class BatchAddress
-{
-	public string Street { get; set; } = string.Empty;
-	public string City { get; set; } = string.Empty;
-}
+// A positional record has no parameterless constructor, which keeps BatchPerson off the direct path and on the batched
+// path these tests cover.
+public record BatchAddress(string Street, string City);
 
 public class BatchPerson
 {

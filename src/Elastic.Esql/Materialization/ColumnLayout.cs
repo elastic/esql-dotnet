@@ -4,13 +4,15 @@
 
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Elastic.Esql.Core;
 
 namespace Elastic.Esql.Materialization;
 
 /// <summary>Raw JSON bytes captured for a single column value during phase-1 buffering.</summary>
-internal readonly record struct ValueSlice(int Start, int Length, JsonTokenType FirstToken, bool IsNull);
+internal readonly record struct ValueSlice(int Start, int Length, bool IsNull);
 
 /// <summary>
 /// A node in the pre-computed column tree. Leaf nodes (<see cref="ColumnIndex"/> >= 0) map to a
@@ -34,7 +36,7 @@ internal sealed class ColumnNode
 /// </summary>
 internal sealed class ColumnLayout
 {
-	internal const int DefaultMaxDepth = 64;
+	private const int DefaultMaxDepth = 64;
 
 	/// <summary>Virtual root whose <see cref="ColumnNode.Children"/> are the top-level properties.</summary>
 	public ColumnNode Root { get; }
@@ -51,24 +53,41 @@ internal sealed class ColumnLayout
 	/// <summary>Total count of non-root branch nodes (nested objects).</summary>
 	public int BranchNodeCount { get; }
 
-	/// <summary>Direct-binding fast path metadata for eligible flat layouts, or null when rows must use the assemble-and-deserialize path.</summary>
-	public DirectRowBinder? DirectBinder { get; }
+	/// <summary>Direct-binding fast path metadata for eligible layouts, flat or nested, or null when rows must use the assemble-and-deserialize path.</summary>
+	public DirectRowBinder? DirectBinder { get; private set; }
+
+	/// <summary>
+	/// Whether the row streams read this layout's rows in batches where the options resolve a list contract for the row
+	/// type. Batching only pays off for a nested layout without a binder, where every per-row Deserialize call allocates
+	/// serializer-internal depth-tracking state. A layout with a binder binds each row directly and streams it like a flat
+	/// one. A batch wraps its rows in a JSON array, adding one nesting level over the per-row object deserialize, so it
+	/// needs strictly more depth headroom than the layout itself.
+	/// </summary>
+	public bool BatchesRows { get; private set; }
+
+	/// <summary>
+	/// The built-in kind a single-column read binds its cell as, or null when a one-column read of a scalar target assembles
+	/// its cell. The kind is kept here because the plan is built on every read, and the resolver judgment behind it reads
+	/// type attributes on each call.
+	/// </summary>
+	public DirectBinderKind? ScalarKind { get; private init; }
 
 	private ColumnLayout(
 		ColumnNode root,
 		int columnCount,
 		int maxDepth,
 		ColumnNode[] leafNodesByColumnIndex,
-		int branchNodeCount,
-		DirectRowBinder? directBinder)
+		int branchNodeCount)
 	{
 		Root = root;
 		ColumnCount = columnCount;
 		MaxDepth = maxDepth;
 		LeafNodesByColumnIndex = leafNodesByColumnIndex;
 		BranchNodeCount = branchNodeCount;
-		DirectBinder = directBinder;
 	}
+
+	/// <summary>The depth limit the serializer enforces under <paramref name="options"/>, where a limit of zero means the default.</summary>
+	internal static int EffectiveMaxDepth(JsonSerializerOptions options) => options.MaxDepth > 0 ? options.MaxDepth : DefaultMaxDepth;
 
 	/// <summary>
 	/// Builds a <see cref="ColumnLayout"/> for the given columns and target type.
@@ -111,7 +130,7 @@ internal sealed class ColumnLayout
 
 		var maxDepth = ComputeMaxDepth(root);
 
-		var effectiveMaxDepth = options.MaxDepth > 0 ? options.MaxDepth : DefaultMaxDepth;
+		var effectiveMaxDepth = EffectiveMaxDepth(options);
 		if (maxDepth > effectiveMaxDepth)
 			throw new JsonException(
 				$"ES|QL column nesting depth ({maxDepth}) exceeds the configured maximum depth ({effectiveMaxDepth}). " +
@@ -120,13 +139,24 @@ internal sealed class ColumnLayout
 		var leafNodesByColumnIndex = new ColumnNode[columnCount];
 		var branchNodeCount = IndexNodes(root, leafNodesByColumnIndex, 0);
 
+		// Taken after the target's contract resolved, so the parts consulted for it are locked and the answer holds for every
+		// read the cached layout serves. A resolver outside the modifier-free chain can hand the nullable form a contract
+		// whose wrapper holds a custom converter while the type under it keeps the stock one, which no converter check sees,
+		// so a single column takes a built-in kind only where a row would bind directly. The table lookup goes first, so a
+		// one-column object target skips a resolver judgment it does not need.
+		var scalarKind = columnCount == 1 && DirectRowBinder.TryClassifyScalar(targetType, options, out var kind) && metadata.ResolverIsModifierFree
+			? kind
+			: (DirectBinderKind?)null;
+
+		var layout = new ColumnLayout(root, columnCount, maxDepth, leafNodesByColumnIndex, branchNodeCount) { ScalarKind = scalarKind };
+
 		// The binder is cached together with this layout in the reader's column layout cache, so
 		// eligibility is decided once per (target type, column schema).
-		var directBinder = branchNodeCount == 0 && maxDepth <= 1 && columnCount > 0 && typeInfo is not null
-			? DirectRowBinder.TryCreate(leafNodesByColumnIndex, typeInfo, options)
+		layout.DirectBinder = columnCount > 0 && typeInfo is not null
+			? DirectRowBinder.TryCreate(layout, columns, typeInfo, metadata)
 			: null;
-
-		return new ColumnLayout(root, columnCount, maxDepth, leafNodesByColumnIndex, branchNodeCount, directBinder);
+		layout.BatchesRows = layout.DirectBinder is null && branchNodeCount > 0 && maxDepth < effectiveMaxDepth;
+		return layout;
 	}
 
 	/// <summary>
@@ -188,16 +218,8 @@ internal sealed class ColumnLayout
 			if (TypeHelper.IsEnumerableType(propType))
 				return null;
 
-			try
-			{
-				var subTypeInfo = options.GetTypeInfo(propType);
-				return subTypeInfo.Kind == JsonTypeInfoKind.Object ? subTypeInfo : null;
-			}
-			catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
-			{
-				// Property type not registered: treat the dotted column as flat instead of nested.
-				return null;
-			}
+			// Property type not registered: treat the dotted column as flat instead of nested.
+			return JsonMetadataManager.TryResolveTypeInfo(propType, options) is { Kind: JsonTypeInfoKind.Object } sub ? sub : null;
 		}
 		return null;
 	}
@@ -230,23 +252,36 @@ internal sealed class ColumnLayout
 				return false;
 
 			if (i == segments.Length - 1)
-				return TypeHelper.IsEnumerableType(matchedProp.PropertyType);
+				return IsCollectionContract(
+					matchedProp.PropertyType,
+					JsonMetadataManager.TryResolveTypeInfo(matchedProp.PropertyType, options),
+					matchedProp.CustomConverter,
+					options
+				);
 
 			var propType = Nullable.GetUnderlyingType(matchedProp.PropertyType) ?? matchedProp.PropertyType;
-			try
-			{
-				currentTypeInfo = options.GetTypeInfo(propType);
-				if (currentTypeInfo.Kind != JsonTypeInfoKind.Object)
-					return false;
-			}
-			catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
-			{
-				// Intermediate type not registered: the path cannot resolve to a collection column.
+
+			// Intermediate type not registered: the path cannot resolve to a collection column.
+			if (JsonMetadataManager.TryResolveTypeInfo(propType, options) is not { Kind: JsonTypeInfoKind.Object } next)
 				return false;
-			}
+
+			currentTypeInfo = next;
 		}
 
 		return false;
+	}
+
+	/// <summary>Determines whether a bare single-valued cell for <paramref name="type"/> is wrapped in an array before its converter reads it.</summary>
+	internal static bool IsCollectionContract(Type type, JsonTypeInfo? typeInfo, JsonConverter? propertyConverter, JsonSerializerOptions options)
+	{
+		// JsonArray's contract kind is None, but its converter takes only an array, so a bare cell still needs the wrap.
+		if (typeof(JsonArray).IsAssignableFrom(type) || typeInfo?.Kind == JsonTypeInfoKind.Enumerable)
+			return true;
+
+		// A custom converter's contract kind is always None, so the token shape it reads is unknown and the CLR type
+		// decides: a collection type gets the wrap.
+		var converter = (propertyConverter is null ? null : JsonMetadataManager.ExpandConverter(propertyConverter, type, options)) ?? typeInfo?.Converter;
+		return converter is not null && !JsonMetadataManager.IsBuiltInConverter(converter) && TypeHelper.IsEnumerableType(type);
 	}
 
 	private static void InsertIntoTree(ColumnNode parent, string[] segments, int columnIndex, bool isCollection)

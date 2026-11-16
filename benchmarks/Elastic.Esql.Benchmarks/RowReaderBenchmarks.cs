@@ -18,14 +18,24 @@ public class RowReaderBenchmarks
 
 	private byte[] _esqlFlatPayload = null!;
 	private byte[] _rawJsonFlatPayload = null!;
+	private byte[] _esqlFlatEnumPayload = null!;
+	private byte[] _rawJsonFlatEnumPayload = null!;
 	private byte[] _esqlNestedPayload = null!;
 	private byte[] _rawJsonNestedPayload = null!;
+	private byte[] _esqlNestedOptionalAbsentPayload = null!;
+	private byte[] _rawJsonNestedOptionalAbsentPayload = null!;
 	private byte[] _esqlDeepPayload = null!;
 	private byte[] _rawJsonDeepPayload = null!;
 	private byte[] _esqlWidePayload = null!;
 	private byte[] _rawJsonWidePayload = null!;
 	private byte[] _esqlMixedPayload = null!;
 	private byte[] _rawJsonMixedPayload = null!;
+	private byte[] _esqlRichPayload = null!;
+	private byte[] _rawJsonRichPayload = null!;
+	private byte[] _esqlStringEnumPayload = null!;
+	private byte[] _rawJsonStringEnumPayload = null!;
+	private byte[] _esqlScalarStringPayload = null!;
+	private byte[] _esqlScalarIntPayload = null!;
 
 	private EsqlResponseReader _reader = null!;
 	private JsonSerializerOptions _options = null!;
@@ -43,8 +53,14 @@ public class RowReaderBenchmarks
 		_esqlFlatPayload = BuildEsqlFlatPayload();
 		_rawJsonFlatPayload = BuildRawJsonFlatPayload();
 
+		_esqlFlatEnumPayload = BuildEsqlFlatEnumPayload();
+		_rawJsonFlatEnumPayload = BuildRawJsonFlatEnumPayload();
+
 		_esqlNestedPayload = BuildEsqlNestedPayload();
 		_rawJsonNestedPayload = BuildRawJsonNestedPayload();
+
+		_esqlNestedOptionalAbsentPayload = BuildEsqlNestedOptionalAbsentPayload();
+		_rawJsonNestedOptionalAbsentPayload = BuildRawJsonNestedOptionalAbsentPayload();
 
 		_esqlDeepPayload = BuildEsqlDeepPayload();
 		_rawJsonDeepPayload = BuildRawJsonDeepPayload();
@@ -54,6 +70,15 @@ public class RowReaderBenchmarks
 
 		_esqlMixedPayload = BuildEsqlMixedPayload();
 		_rawJsonMixedPayload = BuildRawJsonMixedPayload();
+
+		_esqlRichPayload = BuildEsqlRichPayload();
+		_rawJsonRichPayload = BuildRawJsonRichPayload();
+
+		_esqlStringEnumPayload = BuildEsqlStringEnumPayload();
+		_rawJsonStringEnumPayload = BuildRawJsonStringEnumPayload();
+
+		_esqlScalarStringPayload = BuildEsqlPayload(["name:keyword"], (w, i) => w.WriteStringValue($"item-{i}"));
+		_esqlScalarIntPayload = BuildEsqlPayload(["count:integer"], (w, i) => w.WriteNumberValue(i));
 	}
 
 	// =========================================================================
@@ -73,6 +98,30 @@ public class RowReaderBenchmarks
 		JsonSerializer.Deserialize<List<FlatDocument>>(_rawJsonFlatPayload, _options)!;
 
 	// =========================================================================
+	// Flat with a numeric enum (the enum is the only validated cell)
+	// =========================================================================
+
+	[Benchmark]
+	public List<FlatEnumDocument> Esql_FlatWithEnum()
+	{
+		using var stream = new MemoryStream(_esqlFlatEnumPayload, writable: false);
+		using var result = _reader.ReadRows<FlatEnumDocument>(stream);
+		return result.Rows.ToList();
+	}
+
+	[Benchmark]
+	public List<FlatEnumDocument> RawJson_FlatWithEnum() =>
+		JsonSerializer.Deserialize<List<FlatEnumDocument>>(_rawJsonFlatEnumPayload, _options)!;
+
+	[Benchmark]
+	public List<FlatIntLevelDocument> Esql_FlatWithIntInPlaceOfEnum()
+	{
+		using var stream = new MemoryStream(_esqlFlatEnumPayload, writable: false);
+		using var result = _reader.ReadRows<FlatIntLevelDocument>(stream);
+		return result.Rows.ToList();
+	}
+
+	// =========================================================================
 	// Nested (1-level nested object)
 	// =========================================================================
 
@@ -87,6 +136,22 @@ public class RowReaderBenchmarks
 	[Benchmark]
 	public List<NestedDocument> RawJson_NestedOneLevel() =>
 		JsonSerializer.Deserialize<List<NestedDocument>>(_rawJsonNestedPayload, _options)!;
+
+	// =========================================================================
+	// Nested optional absent (a nested object with a required member, null in every row)
+	// =========================================================================
+
+	[Benchmark]
+	public List<OptionalNestedDocument> Esql_NestedOptionalAbsent()
+	{
+		using var stream = new MemoryStream(_esqlNestedOptionalAbsentPayload, writable: false);
+		using var result = _reader.ReadRows<OptionalNestedDocument>(stream);
+		return result.Rows.ToList();
+	}
+
+	[Benchmark]
+	public List<OptionalNestedDocument> RawJson_NestedOptionalAbsent() =>
+		JsonSerializer.Deserialize<List<OptionalNestedDocument>>(_rawJsonNestedOptionalAbsentPayload, _options)!;
 
 	// =========================================================================
 	// Deep (3-level nested object)
@@ -135,6 +200,58 @@ public class RowReaderBenchmarks
 	[Benchmark]
 	public List<MixedDocument> RawJson_MixedFlatAndNested() =>
 		JsonSerializer.Deserialize<List<MixedDocument>>(_rawJsonMixedPayload, _options)!;
+
+	// =========================================================================
+	// Rich (flat scalars plus an enum and a multi-value list column)
+	// =========================================================================
+
+	[Benchmark]
+	public List<RichDocument> Esql_FlatWithEnumAndList()
+	{
+		using var stream = new MemoryStream(_esqlRichPayload, writable: false);
+		using var result = _reader.ReadRows<RichDocument>(stream);
+		return result.Rows.ToList();
+	}
+
+	[Benchmark]
+	public List<RichDocument> RawJson_FlatWithEnumAndList() =>
+		JsonSerializer.Deserialize<List<RichDocument>>(_rawJsonRichPayload, _options)!;
+
+	// =========================================================================
+	// Flat with a string enum (a converter cell on a keyword column)
+	// =========================================================================
+
+	[Benchmark]
+	public List<StringEnumDocument> Esql_FlatWithStringEnum()
+	{
+		using var stream = new MemoryStream(_esqlStringEnumPayload, writable: false);
+		using var result = _reader.ReadRows<StringEnumDocument>(stream);
+		return result.Rows.ToList();
+	}
+
+	[Benchmark]
+	public List<StringEnumDocument> RawJson_FlatWithStringEnum() =>
+		JsonSerializer.Deserialize<List<StringEnumDocument>>(_rawJsonStringEnumPayload, _options)!;
+
+	// =========================================================================
+	// Scalar (single column)
+	// =========================================================================
+
+	[Benchmark]
+	public List<string> Esql_ScalarStrings()
+	{
+		using var stream = new MemoryStream(_esqlScalarStringPayload, writable: false);
+		using var result = _reader.ReadRows<string>(stream);
+		return result.Rows.ToList();
+	}
+
+	[Benchmark]
+	public List<int> Esql_ScalarInts()
+	{
+		using var stream = new MemoryStream(_esqlScalarIntPayload, writable: false);
+		using var result = _reader.ReadRows<int>(stream);
+		return result.Rows.ToList();
+	}
 
 	// =========================================================================
 	// Payload generators — ES|QL format
@@ -204,6 +321,31 @@ public class RowReaderBenchmarks
 			Category = $"cat-{i % 5}"
 		}, _options);
 
+	private static byte[] BuildEsqlFlatEnumPayload() =>
+		BuildEsqlPayload(
+			["name:keyword", "count:integer", "score:double", "active:boolean", "category:keyword", "level:integer"],
+			(w, i) =>
+			{
+				w.WriteStringValue($"item-{i}");
+				w.WriteNumberValue(i);
+				w.WriteNumberValue(i * 1.5);
+				w.WriteBooleanValue(true);
+				w.WriteStringValue($"cat-{i % 5}");
+				w.WriteNumberValue(i % 3);
+			}
+		);
+
+	private byte[] BuildRawJsonFlatEnumPayload() =>
+		BuildRawJsonPayload(i => new FlatEnumDocument
+		{
+			Name = $"item-{i}",
+			Count = i,
+			Score = i * 1.5,
+			Active = true,
+			Category = $"cat-{i % 5}",
+			Level = (Priority)(i % 3)
+		}, _options);
+
 	private static byte[] BuildEsqlNestedPayload() =>
 		BuildEsqlPayload(
 			["name:keyword", "age:integer", "address.street:keyword", "address.city:keyword"],
@@ -222,6 +364,26 @@ public class RowReaderBenchmarks
 			Name = $"person-{i}",
 			Age = 20 + (i % 50),
 			Address = new NestedAddress { Street = $"street-{i}", City = $"city-{i % 10}" }
+		}, _options);
+
+	private static byte[] BuildEsqlNestedOptionalAbsentPayload() =>
+		BuildEsqlPayload(
+			["name:keyword", "age:integer", "address.street:keyword", "address.city:keyword"],
+			(w, i) =>
+			{
+				w.WriteStringValue($"person-{i}");
+				w.WriteNumberValue(20 + (i % 50));
+				w.WriteNullValue();
+				w.WriteNullValue();
+			}
+		);
+
+	private byte[] BuildRawJsonNestedOptionalAbsentPayload() =>
+		BuildRawJsonPayload(i => new OptionalNestedDocument
+		{
+			Name = $"person-{i}",
+			Age = 20 + (i % 50),
+			Address = null
 		}, _options);
 
 	private static byte[] BuildEsqlDeepPayload() =>
@@ -311,5 +473,48 @@ public class RowReaderBenchmarks
 			Age = 25 + (i % 40),
 			Address = new NestedAddress { Street = $"street-{i}", City = $"city-{i % 10}" },
 			Contact = new MixedContact { Email = $"user{i}@test.com", Phone = $"555-{i:D4}" }
+		}, _options);
+
+	private static byte[] BuildEsqlRichPayload() =>
+		BuildEsqlPayload(
+			["name:keyword", "count:integer", "level:integer", "tags:keyword"],
+			(w, i) =>
+			{
+				w.WriteStringValue($"item-{i}");
+				w.WriteNumberValue(i);
+				w.WriteNumberValue(i % 3);
+				w.WriteStartArray();
+				w.WriteStringValue($"t{i}");
+				w.WriteStringValue("shared");
+				w.WriteEndArray();
+			}
+		);
+
+	private byte[] BuildRawJsonRichPayload() =>
+		BuildRawJsonPayload(i => new RichDocument
+		{
+			Name = $"item-{i}",
+			Count = i,
+			Level = (Priority)(i % 3),
+			Tags = [$"t{i}", "shared"]
+		}, _options);
+
+	private static byte[] BuildEsqlStringEnumPayload() =>
+		BuildEsqlPayload(
+			["name:keyword", "count:integer", "level:keyword"],
+			(w, i) =>
+			{
+				w.WriteStringValue($"item-{i}");
+				w.WriteNumberValue(i);
+				w.WriteStringValue(((Priority)(i % 3)).ToString());
+			}
+		);
+
+	private byte[] BuildRawJsonStringEnumPayload() =>
+		BuildRawJsonPayload(i => new StringEnumDocument
+		{
+			Name = $"item-{i}",
+			Count = i,
+			Level = (Priority)(i % 3)
 		}, _options);
 }

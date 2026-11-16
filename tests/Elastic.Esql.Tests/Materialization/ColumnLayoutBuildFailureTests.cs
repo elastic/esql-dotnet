@@ -43,8 +43,8 @@ public class ColumnLayoutBuildFailureTests
 	[Test]
 	public void ReadRows_ResolverThrowsUnexpectedException_ListResolutionPropagates()
 	{
-		// Nested columns give the layout a branch node, which routes streaming through the
-		// batched path that resolves List<T> metadata; a flat schema never requests List<T>.
+		// A hand-written resolver leaves the nested layout without a binder, so streaming takes the batched path, which
+		// resolves the List<T> metadata a flat schema never requests.
 		const string json =
 			"""{"columns":[{"name":"name","type":"keyword"},{"name":"address.street","type":"keyword"}],"values":[["John","123 Main St"]]}""";
 
